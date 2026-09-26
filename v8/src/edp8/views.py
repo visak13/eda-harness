@@ -25,6 +25,7 @@ from . import seat_choice
 from .board import Board, BoardError, is_quick
 from .schemas import (
     EventKind,
+    Gate,
     MessageKind,
     Participant,
     Role,
@@ -428,7 +429,9 @@ def _owner_gates(board: Board, viewer: Participant) -> list[tuple[str, Any]]:
             continue
         for sub in (t, *board._descendants(t.id)):
             for ev in board.open_gates(sub.id):
-                out.append((sub.id, ev))
+                # S16 (pain p-77ab1bf1): never offer a gate the board would refuse this viewer's answer on
+                if board.gate_answer_refusal(viewer, sub.id, Gate(ev.data.get("gate"))) is None:
+                    out.append((sub.id, ev))
     return out
 
 

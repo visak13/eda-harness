@@ -153,17 +153,27 @@ def _open_signoff(board, epic):
     board.gate_open(epic.id, Gate.design_signoff, by="architect")
 
 
+def _refused_then_legacy_signoff(board, epic):
+    """S16: gate_open refuses a sign-off the answer would refuse, with the same words; a gate opened
+    before the offence landed (raw event) is still refused at answer time."""
+    with pytest.raises(BoardError) as ei:
+        _open_signoff(board, epic)
+    board._emit(epic.id, EventKind.gate_opened, {"gate": Gate.design_signoff, "by": "architect", "note": ""})
+    return ei.value
+
+
 def test_signoff_lint_refuses_owner_checked_story_criterion(board, rig):
     epic = make_epic(board, rig)
     story = make_story(board, rig, epic)
     board.criterion_create(rig["owner"], ticket_id=story.id, text="human check", check=Check.look,
                            checked_by="owner", override_reason="force the no-seat-path offender")
     advance_to_designed(board, rig, epic, design_doc(board, rig, epic.id))  # design_signoff needs a designed epic
-    _open_signoff(board, epic)
+    opened = _refused_then_legacy_signoff(board, epic)
     with pytest.raises(BoardError) as ei:
         board.gate_answer(rig["owner"], epic.id, Gate.design_signoff, "go")
     assert ei.value.code == "transition"
     assert story.id in ei.value.message and "owner" in ei.value.message
+    assert opened.message == ei.value.message
 
 
 def test_signoff_lint_refuses_blocks_cycle(board, rig):
@@ -173,10 +183,11 @@ def test_signoff_lint_refuses_blocks_cycle(board, rig):
     board.link_create(rig["architect"], from_id=a.id, to_id=b.id, relation=Relation.blocks)
     board.link_create(rig["architect"], from_id=b.id, to_id=a.id, relation=Relation.blocks)
     advance_to_designed(board, rig, epic, design_doc(board, rig, epic.id))  # design_signoff needs a designed epic
-    _open_signoff(board, epic)
+    opened = _refused_then_legacy_signoff(board, epic)
     with pytest.raises(BoardError) as ei:
         board.gate_answer(rig["owner"], epic.id, Gate.design_signoff, "go")
     assert ei.value.code == "transition" and "cycle" in ei.value.message
+    assert opened.message == ei.value.message
 
 
 def test_signoff_lint_refuses_non_review_behind_review_story(board, rig):
@@ -186,10 +197,11 @@ def test_signoff_lint_refuses_non_review_behind_review_story(board, rig):
                                  title="rv", parent_id=epic.id)
     board.link_create(rig["architect"], from_id=review.id, to_id=deliver.id, relation=Relation.blocks)
     advance_to_designed(board, rig, epic, design_doc(board, rig, epic.id))  # design_signoff needs a designed epic
-    _open_signoff(board, epic)
+    opened = _refused_then_legacy_signoff(board, epic)
     with pytest.raises(BoardError) as ei:
         board.gate_answer(rig["owner"], epic.id, Gate.design_signoff, "go")
     assert ei.value.code == "transition" and review.id in ei.value.message and deliver.id in ei.value.message
+    assert opened.message == ei.value.message
 
 
 def test_signoff_lint_passes_clean_epic(board, rig):
@@ -325,6 +337,7 @@ def test_design_signoff_allowed_over_the_cap_once_the_owner_answered_scope(board
     board.gate_answer(rig["owner"], epic.id, Gate.scope, "raise the cap")
     make_story(board, rig, epic)  # 9th now allowed by the scope raise
     assert len(board._open_stories(epic.id)) == 9
+    advance_to_designed(board, rig, epic, design_doc(board, rig, epic.id))  # S16: only a signable epic
     board.gate_open(epic.id, Gate.design_signoff, by="architect")
     assert board.open_gates(epic.id, Gate.design_signoff)
 

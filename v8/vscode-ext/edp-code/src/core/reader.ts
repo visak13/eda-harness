@@ -150,6 +150,21 @@ export function parseReaderInbound(raw: unknown): ReaderToHost | null {
   return null;
 }
 
+/** S16 (owner art-1e28857706): the tickets whose review context may hold a design's sign-off, in the order to ask.
+ *  A design is shared by the epic and its stories, but its design_signoff is open on the epic (or on a quick task,
+ *  its own root). So a doc opened from a story (the Docs tab's first design_ref holder) is also asked on its epic. */
+export function reviewSources(source: string, ticket: { epic_id?: string | null; parent_id?: string | null } | null | undefined): string[] {
+  const root = ticket?.epic_id ?? null;
+  return root && root !== source ? [source, root] : [source];
+}
+
+/** The review context to show: the first candidate that holds an open sign-off, else the first one read (the source's
+ *  own when it could be read, so its header still says why there is none). `ctxs` is in reviewSources order; null =
+ *  that read failed or was refused. */
+export function pickReviewContext<T extends { gate_event_id: string | null }>(ctxs: readonly (T | null)[]): T | null {
+  return ctxs.find(c => c?.gate_event_id) ?? ctxs.find(c => c) ?? null;
+}
+
 /** `POST /v1/gates/decide`: the version shown is the version reviewed; the board refuses it if the doc moved,
  *  the gate closed or the viewer is not the epic's human owner. */
 export function decideBody(doc: ReaderDoc, gate: ReaderGate, decision: 'approve' | 'request_changes', feedback: string, key: string) {

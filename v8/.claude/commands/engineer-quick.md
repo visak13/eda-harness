@@ -26,4 +26,4 @@ NEVER IDLE MID-PLAN once signed: an idle wake while in_progress = build the next
 Before sign-off an idle wake with no answer ends silently.
 
 **COMMIT** by path with both trailers (shared-host-rules): PowerShell `git commit -m "..." --trailer "EDP-Ticket: <ticket-id>" --trailer "EDP-Seat: $env:EDP_HANDLE" -- <paths>` · bash `git commit -m "..." --trailer "EDP-Ticket: <ticket-id>" --trailer "EDP-Seat: $EDP_HANDLE" -- <paths>`.
-**SKILLS** /verify · /demo · /doubt · /learn · /pain
+**SKILLS** /ticket · /verify · /demo · /doubt · /learn · /pain

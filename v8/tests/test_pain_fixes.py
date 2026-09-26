@@ -112,6 +112,9 @@ def test_an_answered_scope_gate_lifts_the_story_cap_for_design_signoff(b):
     board.gate_open(epic.id, Gate.scope, by="arch", note="need more stories")
     board.gate_answer(ps["owner"], epic.id, Gate.scope, "add as many as you want")
     board.ticket_create(ps["arch"], kind=TicketKind.story, work_type=WorkType.feature, title="S9", parent_id=epic.id)
+    d = board.doc_create(ps["arch"], doc_type=DocType.design, title="d", body_md="b", scope=epic.id)
+    board.ticket_update(ps["arch"], epic.id, design_ref=d.id)  # S16: only a signable epic is opened
+    board.criterion_create(ps["arch"], ticket_id=epic.id, text="ships", check=Check.command)
     board.gate_open(epic.id, Gate.design_signoff, by="arch", note="sign")  # no longer refused
     assert board.open_gates(epic.id, Gate.design_signoff)
 
@@ -207,9 +210,9 @@ def test_a_quick_design_signoff_needs_a_design_note(b):
     board, ps = b
     t = board.ticket_create(ps["owner"], kind=TicketKind.story, work_type=WorkType.feature, title="Q",
                             words="w", tags=["quick"], assignee="eng")
-    board.gate_open(t.id, Gate.design_signoff, by="eng", note="review")
-    with pytest.raises(BoardError, match="no design note"):
-        board.gate_answer(ps["owner"], t.id, Gate.design_signoff, "approved")
+    with pytest.raises(BoardError, match="no design note"):  # S16: refused at open
+        board.gate_open(t.id, Gate.design_signoff, by="eng", note="review")
+    assert not board.open_gates(t.id, Gate.design_signoff)
 
 
 # ------------------------------------------------------------------ per-flow card (owner m-b13c61ddea)

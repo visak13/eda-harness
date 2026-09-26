@@ -1052,6 +1052,10 @@ class Board:
             self._emit(ticket_id, EventKind.criterion_checker_overridden,
                        {"criterion": c.id, "from": derived, "to": final,
                         "reason": override_reason, "by": actor.id})
+        # S16: the other order of c-c80f7cd8f0 — design_ref first, criteria second also lands the epic
+        # in `designed` (epic-7f3d64e6de sat in `drafted` with both set).
+        if t.kind == TicketKind.epic and t.design_ref:
+            self._advance_epic_phase(self.ticket(t.id), TicketStatus.designed, trigger="criterion added")
         return c
 
     def criterion_update(self, actor: Participant, id_: str, *, evidence_ref: str | None = None,
@@ -1703,6 +1707,14 @@ class Board:
             if n > STORY_CAP and not self._scope_cap_raised(t.id):
                 raise BoardError("scope", f"the epic has {n} open stories (> {STORY_CAP}); design_signoff is refused",
                                  f"split the epic, drop/fold stories to {STORY_CAP} or fewer, or ask the owner to answer a scope gate")
+        if gate == Gate.design_signoff:
+            # S16 (pain p-77ab1bf1): never open a sign-off the owner's answer would refuse. An epic that
+            # already has both pieces but predates the auto-carry is carried to `designed` first.
+            if t.kind == TicketKind.epic and t.design_ref and self.criteria(t.id):
+                self._advance_epic_phase(t, TicketStatus.designed, trigger="design_signoff opened")
+            refusal = self.design_signoff_refusal(t.id)
+            if refusal is not None:
+                raise refusal
         if self.open_gates(ticket_id, gate):
             return self.open_gates(ticket_id, gate)[0]
         ev = self._emit(t.id, EventKind.gate_opened, {"gate": gate, "by": by, "note": note})
@@ -1780,45 +1792,63 @@ class Board:
             records.safely(self.autolink_library, ticket_id, trigger="design_signoff")
         return ev
 
-    def _gate_answer_locked(self, actor: Participant, ticket_id: str, gate: Gate, answer: str) -> Event:
+    def gate_answer_refusal(self, actor: Participant, ticket_id: str, gate: Gate) -> BoardError | None:
+        """The refusal `actor` answering `gate` on `ticket_id` would get, or None when the answer would
+        land. One rule for the answer itself and for every list that offers the gate (S16 §4.16:
+        Needs you never lists a gate the owner cannot answer)."""
         if actor.role not in HUMAN_GATE_ANSWERERS:
-            raise BoardError("scope", f"gate {gate} is answered by a human owner, not {actor.role}")
+            return BoardError("scope", f"gate {gate} is answered by a human owner, not {actor.role}")
         if not self.open_gates(ticket_id, gate):
-            raise BoardError("transition", f"no open {gate} gate on {ticket_id}")
+            return BoardError("transition", f"no open {gate} gate on {ticket_id}")
         if gate == Gate.design_signoff:
             if actor.type != "human" or self.epic_owner(ticket_id) != actor.id:
-                raise BoardError("scope", "this review has no matching human owner")
-            # finding 5 (second-opinion 2026-09-08): design_signoff is answered on the EPIC itself,
-            # in the `designed` phase — never on a child story, and never on an epic with no design
-            # (a drafted, criterion-less epic could otherwise be carried straight to signed_off,
-            # skipping `designed`). Validate the designed-phase invariants before advancing.
-            epic = self.ticket(ticket_id)
-            if is_quick(epic) and epic.parent_id is None:
-                # s-ccdafcb229 (owner m-b13c61ddea): a quick task is its own epic — its engineer's design
-                # note is the owner's review point, answered on the ticket before any edit.
-                if not epic.design_ref:
-                    raise BoardError("transition", f"quick task {epic.id} has no design note to sign off",
-                                     "the engineer sets design_ref to its design note first")
-                return self._record_gate_answer(actor, ticket_id, gate, answer)
-            if epic.kind != TicketKind.epic:
-                raise BoardError("scope",
-                                 f"design_signoff is answered on the epic, not {ticket_id} ({epic.kind.value})",
-                                 "open and answer the gate on the epic ticket")
-            # pain p-3fd57a36: a child story started before the owner answered carries the epic to
-            # in_progress (_after_status); the open gate stays answerable there — the answer never
-            # moves the epic backward (_advance_epic_phase is forward-only).
-            # Astra finding 6: nor does the board's own in_review carry strand an open gate.
-            answerable = (TicketStatus.designed, TicketStatus.signed_off, TicketStatus.in_progress,
-                          TicketStatus.in_review)
-            if not (epic.design_ref and self.criteria(epic.id) and epic.status in answerable):
-                raise BoardError("transition",
-                                 f"epic {epic.id} is {epic.status.value} with no signed-off-ready design — set "
-                                 f"its design_ref and acceptance criteria (→ designed) before sign-off",
-                                 "the board carries an epic to `designed` when its design_ref is set")
-            offence = self._design_signoff_lint(epic.id)
-            if offence:
-                raise BoardError("transition", offence,
-                                 "fix the named criterion or link, then answer the gate again")
+                return BoardError("scope", "this review has no matching human owner")
+            return self.design_signoff_refusal(ticket_id)
+        return None
+
+    def design_signoff_refusal(self, ticket_id: str) -> BoardError | None:
+        """Why a design_signoff on this ticket cannot be answered (so is not opened either), naming
+        the missing piece; None when it is signable. S16 (pain p-77ab1bf1): gate_open used to accept
+        a gate the answer then refused, and the owner's Approve did nothing."""
+        # finding 5 (second-opinion 2026-09-08): design_signoff is answered on the EPIC itself,
+        # in the `designed` phase — never on a child story, and never on an epic with no design
+        # (a drafted, criterion-less epic could otherwise be carried straight to signed_off,
+        # skipping `designed`). Validate the designed-phase invariants before advancing.
+        epic = self.ticket(ticket_id)
+        if is_quick(epic) and epic.parent_id is None:
+            # s-ccdafcb229 (owner m-b13c61ddea): a quick task is its own epic — its engineer's design
+            # note is the owner's review point, answered on the ticket before any edit.
+            if not epic.design_ref:
+                return BoardError("transition", f"quick task {epic.id} has no design note to sign off",
+                                  "the engineer sets design_ref to its design note first")
+            return None
+        if epic.kind != TicketKind.epic:
+            return BoardError("scope",
+                              f"design_signoff is answered on the epic, not {ticket_id} ({epic.kind.value})",
+                              "open and answer the gate on the epic ticket")
+        # pain p-3fd57a36: a child story started before the owner answered carries the epic to
+        # in_progress (_after_status); the open gate stays answerable there — the answer never
+        # moves the epic backward (_advance_epic_phase is forward-only).
+        # Astra finding 6: nor does the board's own in_review carry strand an open gate.
+        answerable = (TicketStatus.designed, TicketStatus.signed_off, TicketStatus.in_progress,
+                      TicketStatus.in_review)
+        missing = [what for what, have in (("design_ref", epic.design_ref),
+                                           ("acceptance criteria", self.criteria(epic.id))) if not have]
+        if missing or epic.status not in answerable:
+            why = f"it has no {' and no '.join(missing)}" if missing else f"it is {epic.status.value}, not designed"
+            return BoardError("transition",
+                              f"epic {epic.id} is not ready for design sign-off: {why}",
+                              "set the epic's design_ref and write its acceptance criteria; the board "
+                              "carries it to `designed` when both are present")
+        offence = self._design_signoff_lint(epic.id)
+        if offence:
+            return BoardError("transition", offence, "fix the named criterion or link, then answer the gate again")
+        return None
+
+    def _gate_answer_locked(self, actor: Participant, ticket_id: str, gate: Gate, answer: str) -> Event:
+        refusal = self.gate_answer_refusal(actor, ticket_id, gate)
+        if refusal is not None:
+            raise refusal
         return self._record_gate_answer(actor, ticket_id, gate, answer)
 
     def _record_gate_answer(self, actor: Participant, ticket_id: str, gate: Gate, answer: str) -> Event:

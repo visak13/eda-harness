@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from edp8.board import Board
-from edp8.schemas import Check, DocType, Gate, Role, TicketKind, TicketStatus, WorkType
+from edp8.schemas import Check, DocType, EventKind, Gate, Role, TicketKind, TicketStatus, WorkType
 from edp8.store import Store
 
 
@@ -116,7 +116,10 @@ def test_design_signoff_refused_on_a_story(board, rig):
     board.ticket_update(rig["architect"], epic.id, design_ref=d.id)
     story = board.ticket_create(rig["architect"], kind=TicketKind.story, work_type=WorkType.feature,
                                 title="a slice", parent_id=epic.id)
-    board.gate_open(story.id, Gate.design_signoff, by=rig["architect"].id, note="please")
+    with pytest.raises(Exception) as ei:  # S16: refused at open too
+        board.gate_open(story.id, Gate.design_signoff, by=rig["architect"].id, note="please")
+    assert "epic" in str(ei.value)
+    board._emit(story.id, EventKind.gate_opened, {"gate": Gate.design_signoff, "by": "architect", "note": ""})
     with pytest.raises(Exception) as ei:
         board.gate_answer(rig["owner"], story.id, Gate.design_signoff, "signed")
     assert "epic" in str(ei.value)
@@ -128,10 +131,13 @@ def test_design_signoff_refused_on_an_undesigned_epic(board, rig):
     it would skip `designed`. The reproduced bug (m-4ec93f8271)."""
     epic = _epic(board, rig)
     assert board.ticket(epic.id).status == TicketStatus.drafted
-    board.gate_open(epic.id, Gate.design_signoff, by=rig["architect"].id, note="please")
+    with pytest.raises(Exception) as ei:  # S16: refused at open, naming both missing pieces
+        board.gate_open(epic.id, Gate.design_signoff, by=rig["architect"].id, note="please")
+    assert "it has no design_ref and no acceptance criteria" in str(ei.value)
+    board._emit(epic.id, EventKind.gate_opened, {"gate": Gate.design_signoff, "by": "architect", "note": ""})
     with pytest.raises(Exception) as ei:
         board.gate_answer(rig["owner"], epic.id, Gate.design_signoff, "signed")
-    assert "designed" in str(ei.value)
+    assert "not ready for design sign-off" in str(ei.value)
     assert board.ticket(epic.id).status == TicketStatus.drafted  # NOT signed_off
 
 

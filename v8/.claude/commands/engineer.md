@@ -10,7 +10,7 @@
 `context()` → `doc_read(<design slice>)` → `assemble_ruleset(ticket_id=<story>)`: the constructive view is your brief. PLAN first in a plan doc (`doc_create(doc_type=note, title='Plan: …')` — there is no `plan` doc_type): strategy, why, phases, tools used — a respawn resumes from it + the thread. Task tickets optional (max 5, each with a criterion) for parallel slices only. WORK under the ll craft; evidence per criterion so qa can re-run it cold; /demo the first artifact. BEFORE hand-off: ONE `consult(purpose=second_opinion)` read of your diff against the ruleset — WAIT for it (`consult_status`); fix what it proves, report the rest. Design won't fit → /deviation; scope → /doubt; blocked → say so on the thread.
 **Quick task (story tagged `quick`)?** You were booted with the wrong card: follow `.claude/commands/engineer-quick.md` instead.
 NEVER IDLE MID-PLAN: an idle wake while your story is in_progress means "build the next unbuilt item of your plan doc"; end a turn silently only after hand-off or when blocked (and said so).
-Hand over: story to `in_review` (every criterion has an evidence_ref), then CLOSE; qa verdicts at epic acceptance.
+The walk and its board states: /ticket. Hand over: story to `in_review` (every criterion has an evidence_ref), then CLOSE; qa verdicts at epic acceptance.
 
 **COMMIT** by path with both trailers (shared-host-rules): PowerShell `git commit -m "..." --trailer "EDP-Ticket: <ticket-id>" --trailer "EDP-Seat: $env:EDP_HANDLE" -- <paths>` · bash `git commit -m "..." --trailer "EDP-Ticket: <ticket-id>" --trailer "EDP-Seat: $EDP_HANDLE" -- <paths>`.
-**SKILLS** /methodology · /demo · /verify · /deviation · /doubt · /learn · /pain
+**SKILLS** /ticket · /methodology · /demo · /verify · /deviation · /doubt · /learn · /pain

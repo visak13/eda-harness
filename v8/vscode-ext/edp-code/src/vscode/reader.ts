@@ -5,13 +5,13 @@
 // token; the webview gets plain data and posts intents that pass `parseReaderInbound`.
 import { randomUUID } from 'node:crypto';
 import * as vscode from 'vscode';
-import { BoardError, type Board, type BoardDoc } from '../core/api';
+import { BoardError, type Board, type BoardDoc, type DocContext } from '../core/api';
 import { authFailed as identityFailed } from '../core/viewer';
 import { chatHtml } from '../core/chatHtml';
 import { canResolve } from '../core/docs';
 import { TICKET_ID } from '../core/chatProtocol';
 import { DOC_ID, parseDocPath } from '../core/docUri';
-import { compareChoices, decideBody, decideProblem, diffPair, parseReaderInbound, readerComments, READER_VIEW,
+import { compareChoices, decideBody, decideProblem, diffPair, parseReaderInbound, pickReviewContext, readerComments, READER_VIEW, reviewSources,
   type HostToReader, type ReaderDoc, type ReaderGate, type ReaderState, type ReaderToHost, type ReaderWrite } from '../core/reader';
 import { docUri } from './docs';
 import { docReaderDraft } from '../core/quotes';
@@ -275,9 +275,21 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
     const source = p.source ?? (scope && TICKET_ID.test(scope) ? scope : null);
     if (doc.docType !== 'design' || !source) return { gate: null, error: null };
     try {
+      const b = this.board();
+      const src = await b.ticket(source).catch(() => undefined);
+      // S16: the sign-off is open on the epic (or the quick task), not on a story sharing its design_ref, so the review
+      // resolves to whichever candidate holds the open gate; an approval then lands on that ticket
+      const ctxs: (DocContext | null)[] = [];
+      let firstError: unknown = null;
+      for (const id of reviewSources(source, src)) {
+        try { const c = await b.docContext(p.id, id, p.version); ctxs.push(c); if (c.gate_event_id) break; }
+        catch (e) { firstError ??= e; ctxs.push(null); }
+      }
+      const c = pickReviewContext(ctxs);
+      if (!c) throw firstError;
       // C22: the ticket's design_ref names the design its sign-off is for (unknown when the read fails)
-      const [c, designRef] = await Promise.all([this.board().docContext(p.id, source, p.version),
-        this.board().ticket(source).then(t => t.design_ref ?? null, () => undefined)]);
+      const designRef = c.ticket_id === source ? (src ? src.design_ref ?? null : undefined)
+        : await b.ticket(c.ticket_id).then(t => t.design_ref ?? null, () => undefined);
       return { gate: { ticketId: c.ticket_id, ticketTitle: c.source_title, gateEventId: c.gate_event_id, canApprove: !!c.can_approve,
         canReview: !!c.can_review, currentVersion: c.current_version, designRef }, error: null };
     } catch (e) {

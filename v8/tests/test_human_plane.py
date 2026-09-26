@@ -66,10 +66,19 @@ def test_unknown_handle_is_prose_not_error(client, rig, published):
 
 
 # ----------------------------------------------------------------------- ownership routing
+def _signable(client, epic, who):
+    """S16: gate_open(design_signoff) needs a signable epic (design_ref + a criterion → `designed`)."""
+    assert client.post("/v1/criteria", json={"ticket_id": epic, "text": "ships", "check": "command"},
+                       headers={"X-Participant": who}).json()["ok"]
+    doc = client.post("/v1/docs", json={"doc_type": "design", "title": "d", "body_md": "x", "scope": epic},
+                      headers={"X-Participant": who}).json()["value"]["id"]
+    assert client.patch(f"/v1/tickets/{epic}", json={"design_ref": doc}, headers={"X-Participant": who}).json()["ok"]
+
 
 def test_gate_routes_to_epic_owning_human(client, rig, published):
     assert client.patch(f"/v1/tickets/{rig['epic']}", json={"assignee": "arch"},
                         headers={"X-Participant": "aksou"}).json()["ok"]
+    _signable(client, rig["epic"], "arch")
     r = client.post(f"/v1/gates/{rig['epic']}/design_signoff/open", json={"note": "ready"},
                     headers={"X-Participant": "arch"}).json()
     assert r["ok"], r
@@ -77,6 +86,7 @@ def test_gate_routes_to_epic_owning_human(client, rig, published):
 
 
 def test_other_owner_does_not_see_my_epic_events(client, rig):
+    _signable(client, rig["epic"], "arch")
     client.post(f"/v1/gates/{rig['epic']}/design_signoff/open", json={"note": "n"},
                 headers={"X-Participant": "aksou"})
     mine = client.get("/v1/events", params={"since": 0}, headers={"X-Participant": "aksou"}).json()["value"]

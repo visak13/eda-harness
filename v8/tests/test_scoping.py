@@ -90,10 +90,20 @@ def test_role_with_no_seat_stays_a_note_and_wakes_nobody(client, two_epics, publ
     assert not published
 
 
+def _signable(client, epic, who):
+    """S16: gate_open(design_signoff) needs a signable epic (design_ref + a criterion → `designed`)."""
+    assert client.post("/v1/criteria", json={"ticket_id": epic, "text": "ships", "check": "command"},
+                       headers={"X-Participant": who}).json()["ok"]
+    doc = client.post("/v1/docs", json={"doc_type": "design", "title": "d", "body_md": "x", "scope": epic},
+                      headers={"X-Participant": who}).json()["value"]["id"]
+    assert client.patch(f"/v1/tickets/{epic}", json={"design_ref": doc}, headers={"X-Participant": who}).json()["ok"]
+
+
 def test_agent_created_epic_pages_no_owner(client, board, two_epics, published):
     b = two_epics["b"]
     owner = board.participant("owner")
     assert board.epic_owner(b) is None
+    _signable(client, b, f"architect.{b}")
     g = client.post(f"/v1/gates/{b}/design_signoff/open", json={"note": "n"},
                     headers={"X-Participant": f"architect.{b}"}).json()
     assert g["ok"] and "no human owner" in g["hint"]
