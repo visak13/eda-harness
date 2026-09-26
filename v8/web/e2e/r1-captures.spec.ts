@@ -127,9 +127,8 @@ test("captures", async ({ page }) => {
   // Settings
   await page.goto(`/ui/settings?as=owner`); await page.waitForTimeout(800); await shot(page, "07-settings-profile");
   await page.goto(`/ui/settings?as=owner&tab=slack`); await page.waitForTimeout(600); await shot(page, "07-settings-slack");
-  // Epics + Seats + Decisions
+  // Epics + Seats (S20: the Needs you page is gone; its "10-needs-you" shot is retired, architect m-3d26dc914d)
   await page.goto(`/ui/epics?as=owner`); await page.waitForTimeout(600); await shot(page, "08-epics");
   await page.goto(`/ui/seats?as=owner`); await page.waitForTimeout(600); await shot(page, "09-seats");
-  await page.goto(`/ui/me?as=owner`); await page.waitForTimeout(600); await shot(page, "10-needs-you");
   fs.writeFileSync(path.join(OUT, "errors.json"), JSON.stringify(errors, null, 2));
 });
