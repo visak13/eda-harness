@@ -323,8 +323,10 @@ class Board:
     # the epic's phase from facts (design_ref set → designed; design_signoff answered → signed_off;
     # a child story starting → in_progress, via the parent derivation in _after_status) and every
     # read stamps a one-line provenance header on the words, so the phase is never a seat's memory.
+    # s-ccdafcb229 (owner m-b0a7f9cda9): every story released → the epic is carried to in_review by the
+    # board too (no agent spends tokens on it); qa then marks the stories and the epic done.
     _EPIC_PHASE_ORDER = (TicketStatus.drafted, TicketStatus.designed, TicketStatus.signed_off,
-                         TicketStatus.in_progress)
+                         TicketStatus.in_progress, TicketStatus.in_review)
 
     def _epic_phase_header(self, epic: Ticket) -> str:
         """The one-line provenance stamped above an epic's verbatim words: when they were recorded,
@@ -337,7 +339,7 @@ class Board:
         return f"words recorded {recorded}; phase: {epic.status.value}; governed by {gov}"
 
     def _advance_epic_phase(self, epic: Ticket, to: TicketStatus, *, trigger: str) -> None:
-        """Machine-carry an epic FORWARD along drafted→designed→signed_off→in_progress from a fact,
+        """Machine-carry an epic FORWARD along drafted→designed→signed_off→in_progress→in_review from a fact,
         no architect memory. Idempotent and monotonic: a no-op if the epic already sits at or past
         `to`, or is terminal; it never moves an epic backward. Bypasses _guard_transition (a
         board-authored transition, like the ready-release at _release_successors)."""
@@ -639,7 +641,8 @@ class Board:
             if self._consult_inflight(t.id):
                 raise BoardError("transition", "review handoff held: consult in flight",
                                  "wait for the result, address findings, then ticket_update(status='in_review')")
-            if t.assignee and actor.id != t.assignee and r not in (Role.coordinator,):
+            epic_by_architect = r == Role.architect and t.kind == TicketKind.epic  # owner m-b0a7f9cda9
+            if t.assignee and actor.id != t.assignee and r not in (Role.coordinator,) and not epic_by_architect:
                 raise BoardError("scope", "only the assignee hands a ticket to review")
             if not crits:
                 # §24.1(a): a zero-criteria ticket is never evidence-complete, so it must not reach
@@ -651,8 +654,9 @@ class Board:
                 raise BoardError("transition", "in_review needs evidence_ref on every criterion",
                                  f"criteria without evidence: {missing} — /verify, doc_create(report), criterion_update")
         if to == TicketStatus.done:
-            if r not in CRITERION_CHECKERS | {Role.coordinator}:
-                raise BoardError("scope", "done is set by the checker (qa/owner) or the coordinator")
+            # the architect completes its own EPIC's walk (owner m-b0a7f9cda9); the guards below still hold
+            if r not in CRITERION_CHECKERS | {Role.coordinator} and not (r == Role.architect and t.kind == TicketKind.epic):
+                raise BoardError("scope", "done is set by the checker (qa/owner), or by the architect on its epic")
             if not crits:
                 raise BoardError("transition", "done needs criteria", "a ticket with no criteria cannot be verified")
             failing = [c.id for c in crits if c.verdict != Verdict.passed]
@@ -752,6 +756,13 @@ class Board:
                 parent.status = TicketStatus.in_progress
                 self.store.put("ticket", parent)
                 self._emit(parent.id, EventKind.status_changed, {"from": "ready", "to": "in_progress", "by": "board"})
+            elif (parent.kind == TicketKind.epic and parent.status == TicketStatus.in_review
+                  and t.status in (TicketStatus.in_progress, TicketStatus.blocked)):
+                # a story sent back (a qa fail) reopens the epic's work: in_review → in_progress
+                parent.status = TicketStatus.in_progress
+                self.store.put("ticket", parent)
+                self._emit(parent.id, EventKind.status_changed,
+                           {"from": "in_review", "to": "in_progress", "by": "board", "trigger": f"child {t.id} reopened"})
             elif active and parent.kind == TicketKind.epic:
                 # finding 4 (second-opinion 2026-09-08): also machine-carry an epic still in `designed`
                 # (or `drafted`) forward when a child starts. A story can be started while its
@@ -768,6 +779,8 @@ class Board:
             if kids and all(k.status == TicketStatus.dropped or self._released(k) for k in kids):
                 if parent.kind == TicketKind.epic and parent.status not in (TicketStatus.done, TicketStatus.partial):
                     self.gate_open(parent.id, Gate.acceptance, by="board")
+                    self._advance_epic_phase(self.ticket(parent.id), TicketStatus.in_review,
+                                             trigger="every story released")
                 elif parent.kind == TicketKind.story and parent.status == TicketStatus.in_progress:
                     self._emit(parent.id, EventKind.status_changed, {"note": "all tasks done; hand the story to review"})
 

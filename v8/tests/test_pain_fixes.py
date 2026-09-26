@@ -105,3 +105,66 @@ def test_an_answered_scope_gate_lifts_the_story_cap_for_design_signoff(b):
     board.gate_open(epic.id, Gate.design_signoff, by="arch", note="sign")  # no longer refused
     assert board.open_gates(epic.id, Gate.design_signoff)
 
+
+
+# ------------------------------------------------------------------ epic walk (owner m-b0a7f9cda9)
+
+def _epic_with_evidenced_story(board, ps):
+    from edp8.schemas import Gate
+    epic, story = _designed_epic_with_story(board, ps)
+    board.gate_answer(ps["owner"], epic.id, Gate.design_signoff, "signed off")
+    board.ticket_update(ps["arch"], story.id, assignee="eng")
+    board.ticket_update(ps["eng"], story.id, status=TicketStatus.in_progress)
+    rep = board.doc_create(ps["eng"], doc_type=DocType.report, title="R", body_md="done", scope=story.id)
+    (c,) = board.criteria(story.id)
+    board.criterion_update(ps["eng"], c.id, evidence_ref=rep.id)
+    return epic, story, c
+
+
+def test_the_board_carries_the_epic_to_in_review_when_every_story_is_released(b):
+    from edp8.schemas import Gate
+    board, ps = b
+    epic, story, _ = _epic_with_evidenced_story(board, ps)
+    assert board.ticket(epic.id).status == TicketStatus.in_progress
+    board.ticket_update(ps["eng"], story.id, status=TicketStatus.in_review)
+    assert board.ticket(epic.id).status == TicketStatus.in_review  # no seat moved it
+    assert board.open_gates(epic.id, Gate.acceptance)
+
+
+def test_a_story_sent_back_reopens_the_epic(b):
+    board, ps = b
+    epic, story, c = _epic_with_evidenced_story(board, ps)
+    board.ticket_update(ps["eng"], story.id, status=TicketStatus.in_review)
+    board.criterion_update(ps["qa"], c.id, verdict=Verdict.failed)
+    board.ticket_update(ps["qa"], story.id, status=TicketStatus.in_progress)
+    assert board.ticket(epic.id).status == TicketStatus.in_progress
+
+
+def test_qa_verdicts_close_the_story_and_the_epic_without_a_status_call(b):
+    board, ps = b
+    epic, story, c = _epic_with_evidenced_story(board, ps)
+    board.ticket_update(ps["eng"], story.id, status=TicketStatus.in_review)
+    board.criterion_update(ps["qa"], c.id, verdict=Verdict.passed)
+    assert board.ticket(story.id).status == TicketStatus.done
+    rep = board.doc_create(ps["qa"], doc_type=DocType.report, title="QA", body_md="ok", scope=epic.id)
+    (ec,) = board.criteria(epic.id)
+    board.criterion_update(ps["qa"], ec.id, evidence_ref=rep.id)
+    board.criterion_update(ps["qa"], ec.id, verdict=Verdict.passed)
+    assert board.ticket(epic.id).status == TicketStatus.done  # in_review was board-carried
+
+
+def test_the_architect_may_finish_its_epic_but_not_a_story(b):
+    from edp8.board import BoardError
+    board, ps = b
+    epic, story, c = _epic_with_evidenced_story(board, ps)
+    board.ticket_update(ps["eng"], story.id, status=TicketStatus.in_review)
+    with pytest.raises(BoardError, match="done is set"):
+        board.ticket_update(ps["arch"], story.id, status=TicketStatus.done)
+    board.criterion_update(ps["qa"], c.id, verdict=Verdict.passed)
+    (ec,) = board.criteria(epic.id)
+    ec.verdict, ec.evidence_ref = Verdict.passed, "r"
+    board.store.put("criterion", ec)  # verdict stored without the auto-advance (e.g. a board restart)
+    allowed = {t["to"]: t["allowed"] for t in board.legal_transitions(ps["arch"], epic.id)["transitions"]}
+    assert allowed["done"] and allowed["partial"]
+    board.ticket_update(ps["arch"], epic.id, status=TicketStatus.done)
+    assert board.ticket(epic.id).status == TicketStatus.done

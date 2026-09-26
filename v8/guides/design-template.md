@@ -30,5 +30,5 @@ blank.
 
 Base concerns to fold into the sections above, not skipped: scope/done, workspace, cost/
 time, tech preferences, actors/data/sensitivity, deliverable form. Audit the completed
-draft with /ocak before presenting it for sign-off (plan-mode ExitPlanMode = sign-off,
+draft with /ocak before presenting it for sign-off on the board (the owner's design_signoff answer = sign-off,
 recorded on the epic thread).

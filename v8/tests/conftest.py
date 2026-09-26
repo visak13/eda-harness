@@ -59,3 +59,10 @@ def no_pool_watch(monkeypatch: pytest.MonkeyPatch) -> None:
     queued pairing and minted into the fleet's tokens.json. A test that wants the watcher sets it itself."""
     monkeypatch.delenv("EDP_POOL_URL", raising=False)
     monkeypatch.delenv("EDP8_POOL_WATCH", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def no_seat_permission_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A seat shell carries EDP_SKIP_PERMISSIONS=1 (bypass mode), which flips codex_seat.sandbox_for to
+    danger-full-access; tests that assert the role sandbox must not inherit it. A test that wants it sets it."""
+    monkeypatch.delenv("EDP_SKIP_PERMISSIONS", raising=False)

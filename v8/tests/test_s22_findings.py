@@ -131,7 +131,9 @@ def test_finding1_gate_opens_when_child_jumps_ready_to_in_review_under_a_ready_e
     board.store.put("ticket", child)
     board.ticket_update(r["engineer"], story.id, status=TicketStatus.in_review)
     assert board.ticket(story.id).status == TicketStatus.in_review
-    assert board.ticket(epic.id).status == TicketStatus.in_progress  # active branch moved it
+    # the active branch moved it to in_progress, then every story released carried it on to in_review
+    # (s-ccdafcb229, owner m-b0a7f9cda9)
+    assert board.ticket(epic.id).status == TicketStatus.in_review
     assert board.open_gates(epic.id, Gate.acceptance)  # ...and the gate STILL opened
 
 
