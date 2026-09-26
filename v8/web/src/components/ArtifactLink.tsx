@@ -92,6 +92,31 @@ export function CopyArtifactLink({ id, className }: { id: string; className?: st
   );
 }
 
+/** A content-less artifact (a `workspace:` path or other ref the board holds no bytes for, t-8e94ffd3ad):
+ *  says so and offers the path to copy, never a View/Open that fetches nothing. */
+export function NotUploaded({ uri }: { uri: string }): React.JSX.Element {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  return (
+    <span className={styles.notUploaded} data-testid="not-uploaded">
+      <span>not uploaded — {uri || "no path recorded"}</span>
+      {uri ? (
+        <button
+          type="button"
+          className={styles.copy}
+          data-testid="copy-path"
+          aria-label={`Copy path ${uri}`}
+          onClick={() => {
+            const write = navigator.clipboard?.writeText(uri) ?? Promise.reject(new Error("no clipboard"));
+            write.then(() => setState("copied")).catch(() => setState("failed"));
+          }}
+        >
+          {state === "copied" ? "Path copied" : state === "failed" ? "Copy failed" : "Copy path"}
+        </button>
+      ) : null}
+    </span>
+  );
+}
+
 /** An authenticated blob: URL for an artifact's bytes (null until loaded, or when the board does
  *  not serve it inline). Revoked on unmount. */
 export function useArtifactBlobUrl(id: string, enabled: boolean): string | null {

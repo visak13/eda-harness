@@ -71,6 +71,16 @@ def ext_for(content_type: str) -> str:
     return _EXT.get(content_type, "bin")
 
 
+def content_path(art) -> Path:
+    """Where an artifact's stored bytes live (whether or not they exist)."""
+    return uploads_dir() / f"{art.id}.{ext_for(getattr(art, 'content_type', '') or 'application/octet-stream')}"
+
+
+def has_content(art) -> bool:
+    """True when the board holds the artifact's bytes; a `workspace:`/url ref never does (t-8e94ffd3ad)."""
+    return content_path(art).is_file()
+
+
 def content_disposition(disposition: str, filename: str) -> str:
     """An RFC 6266 Content-Disposition value that survives a non-Latin or quoted filename
     (finding 14). Starlette encodes response headers as latin-1, so a raw UTF-8 filename raised

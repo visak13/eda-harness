@@ -320,3 +320,32 @@ def test_video_cap_is_larger_but_still_enforced(board_app, monkeypatch):
     assert _upload(c, b"x" * 65, "big.txt").status_code == 413
     # no partial temp files are left behind by a refused upload
     assert not list(uploads.uploads_dir().glob(".upload-*"))
+
+
+# --------------------------------------------------------------------------- content-less refs (t-8e94ffd3ad)
+
+
+def test_thread_attachment_carries_has_content_and_uri(board_app):
+    """An uploaded file says has_content=true; a workspace: ref (no bytes) says false and carries its
+    uri, so the card labels it instead of offering a dead Open file."""
+    board, c, epic = board_app["board"], board_app["client"], board_app["epic"]
+    up = _upload(c, PNG, "a.png").json()["value"]["id"]
+    ref = c.post("/v1/artifacts", json={"form": "file", "uri": "workspace:v8/web/dist/shot.png", "note": "shot"},
+                 headers=OWN).json()["value"]["id"]
+    m = c.post("/v1/messages", json={"ticket_id": epic, "kind": "note", "text": "see",
+                                     "artifacts": [up, ref]}, headers=OWN).json()
+    assert m["ok"], m
+    from edp8 import views
+    cards = {a["id"]: a for a in views.thread_page(board, epic)["thread"][-1]["attachments"]}
+    assert cards[up]["has_content"] is True and cards[up]["uri"] == f"/v1/artifacts/{up}/content"
+    assert cards[ref]["has_content"] is False and cards[ref]["uri"] == "workspace:v8/web/dist/shot.png"
+    # the same fields on the HTTP thread route and the artifact record
+    page = c.get(f"/v1/tickets/{epic}/thread", headers=OWN).json()
+    assert page["ok"], page
+    wire = {a["id"]: a for a in page["value"]["thread"][-1]["attachments"]}
+    assert wire[ref]["has_content"] is False and wire[ref]["uri"].startswith("workspace:")
+    assert wire[up]["has_content"] is True
+    recs = {r["record"]["id"]: r["record"] for r in
+            c.get(f"/v1/tickets/{epic}/contextual", headers=OWN).json()["value"]["records"]}
+    assert recs[ref]["has_content"] is False and recs[up]["has_content"] is True
+    assert c.get(f"/v1/artifacts/{ref}", headers=OWN).json()["value"]["has_content"] is False

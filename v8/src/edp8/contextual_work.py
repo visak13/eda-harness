@@ -1,5 +1,6 @@
 """Direct-ticket history and linked records; never silently substitute an epic subtree."""
 from typing import Literal
+from . import uploads
 from .board import Board
 from .schemas import EventKind, MessageKind, TicketStatus
 
@@ -23,7 +24,10 @@ def contextual_work(board: Board, ticket_id: str, category: HistoryCategory = "a
             continue
         group = {"designed_by": "Design", "uses_strategy": "References", "uses_domain": "References",
                  "evidence_for": "Evidence", "produced": "Deliverables"}.get(link.relation.value, "Other")
-        records.append({"record": record.model_dump(mode="json"), "group": group, "relation": link.relation,
+        dumped = record.model_dump(mode="json")
+        if doc is None:
+            dumped["has_content"] = uploads.has_content(art)  # the file card labels a content-less ref (t-8e94ffd3ad)
+        records.append({"record": dumped, "group": group, "relation": link.relation,
                         "type": "doc" if doc else "artifact"})
     if ticket.design_ref and not any(r["record"]["id"] == ticket.design_ref and r["group"] == "Design" for r in records):
         records.insert(0, {"record": board.doc(ticket.design_ref).model_dump(mode="json"), "group": "Design", "relation": "design_ref", "type": "doc"})

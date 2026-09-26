@@ -785,14 +785,17 @@ def _msg(m: Any) -> dict[str, Any]:
 
 
 def _attachments(board: Board, ids: list[str]) -> list[dict[str, Any]]:
-    """Attachment cards for a thread row (R1): id, form, filename, content type, note — never bytes."""
+    """Attachment cards for a thread row (R1): id, form, filename, content type, note — never bytes.
+    `has_content`/`uri` let the card label a content-less ref instead of a dead Open (t-8e94ffd3ad)."""
+    from . import uploads
     out = []
     for aid in ids:
         a = board.store.get("artifact", aid)
         if a is None or getattr(a, "staged", False):
             continue
         out.append({"id": a.id, "form": a.form.value, "filename": getattr(a, "filename", "") or "",
-                    "content_type": getattr(a, "content_type", "") or "", "note": a.note})
+                    "content_type": getattr(a, "content_type", "") or "", "note": a.note,
+                    "has_content": uploads.has_content(a), "uri": a.uri or ""})
     return out
 
 

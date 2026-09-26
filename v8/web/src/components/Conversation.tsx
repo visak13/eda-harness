@@ -4,7 +4,7 @@ import type { MessageAttachment, MessageView } from "../api/types";
 import { Avatar } from "./Avatar";
 import { Icon } from "./Icon";
 import { Term } from "./Term";
-import { ArtifactVideo, dispositionOf, fetchArtifactContent, isVideoType, MessageText, openArtifact, PREVIEW_TYPES } from "./ArtifactLink";
+import { ArtifactVideo, dispositionOf, fetchArtifactContent, isVideoType, MessageText, NotUploaded, openArtifact, PREVIEW_TYPES } from "./ArtifactLink";
 import { ThreadHistoryControls, type useThreadHistory } from "./useThreadHistory";
 import { pendingWork } from "./PendingNavigation";
 import { useScrollToHash } from "./useScrollToHash";
@@ -79,7 +79,8 @@ export function stripTokens(text: string, attachments: MessageAttachment[] | und
 }
 
 function AttachmentCard({ a }: { a: MessageAttachment }): React.JSX.Element {
-  const image = a.form === "image" && PREVIEW_TYPES.has(a.content_type);
+  const stored = a.has_content !== false;
+  const image = stored && a.form === "image" && PREVIEW_TYPES.has(a.content_type);
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!image) return;
@@ -93,7 +94,7 @@ function AttachmentCard({ a }: { a: MessageAttachment }): React.JSX.Element {
     return () => { cancelled = true; if (blobUrl) URL.revokeObjectURL(blobUrl); };
   }, [a.id, image]);
   const name = a.filename || a.note || a.id;
-  const video = isVideoType(a.content_type);
+  const video = stored && isVideoType(a.content_type);
   return (
     <div className={styles.attachment} data-testid="attachment-card" data-artifact={a.id}>
       {video ? <ArtifactVideo id={a.id} label={a.note || name} /> : (
@@ -104,9 +105,11 @@ function AttachmentCard({ a }: { a: MessageAttachment }): React.JSX.Element {
       <div className={styles.caption}>
         <span className={styles.filename}>{name}</span>
         <span>{a.note && a.note !== name ? `${a.note} · ` : ""}{image ? "image attachment" : video ? "video attachment" : `${a.form} attachment`}</span>
-        <button type="button" className={styles.view} onClick={() => void openArtifact(a.id)}>
-          <Icon name="external" size={16} /> {image ? "View image" : "Open file"}
-        </button>
+        {stored ? (
+          <button type="button" className={styles.view} onClick={() => void openArtifact(a.id)}>
+            <Icon name="external" size={16} /> {image ? "View image" : "Open file"}
+          </button>
+        ) : <NotUploaded uri={a.uri ?? ""} />}
       </div>
     </div>
   );

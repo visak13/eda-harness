@@ -1000,8 +1000,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         if getattr(art, "staged", False) and art.created_by != a.id:  # §18.1 finding 4: staged uploads
             raise HTTPException(404, f"{id_!r} is not an artifact")  # are invisible to everyone but the uploader
         from . import uploads
-        content_path = uploads.uploads_dir() / f"{id_}.{uploads.ext_for(art.content_type or 'application/octet-stream')}"
-        return ok({**_dump(art), "has_content": content_path.is_file()})
+        return ok({**_dump(art), "has_content": uploads.has_content(art)})
 
     # messages / gates -----------------------------------------------------------
     # Addressed traffic and @mentions are mirrored into edp-broker inboxes

@@ -5,7 +5,7 @@ import { identity } from "../auth/identity";
 import { useDocDrawer } from "./DocDrawer";
 import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
-import { dispositionOf, fetchArtifactContent, PREVIEW_TYPES } from "./ArtifactLink";
+import { dispositionOf, fetchArtifactContent, NotUploaded, PREVIEW_TYPES } from "./ArtifactLink";
 import ui from "./ui.module.css";
 import styles from "./ContextualWork.module.css";
 
@@ -21,7 +21,7 @@ export interface WorkContext {
   /** Oldest first; by/at/text on a board with S-UI (the header badge lists and jumps to them). */
   unresolved_asks?: { id: string; kind: string; to: string; by?: string; at?: string; text?: string }[];
   gates: { id: string; data: { gate: string } }[];
-  records: { type: string; group: string; relation: string; record: { id: string; title?: string; note?: string; version?: number; scope?: string; filename?: string; form?: string; content_type?: string; has_content?: boolean } }[];
+  records: { type: string; group: string; relation: string; record: { id: string; title?: string; note?: string; version?: number; scope?: string; filename?: string; form?: string; content_type?: string; has_content?: boolean; uri?: string } }[];
   events: { id: string; created_at: string; created_by: string; kind: string; data: Record<string, unknown> }[];
 }
 
@@ -85,6 +85,7 @@ function FileCard({ record, relation }: { record: WorkContext["records"][number]
     <div className={styles.cardBody}>
       <Link className={styles.rowLink} to={`/artifact/${encodeURIComponent(record.id)}`}>{name}</Link>
       <span className={styles.cardMeta}>{record.note && record.note !== name ? `${record.note} · ` : ""}{image ? "image" : record.form || "file"}{record.content_type ? ` · ${record.content_type}` : ""}</span>
+      {record.has_content === false && (record.form === "image" || record.form === "file") ? <NotUploaded uri={record.uri ?? ""} /> : null}
       <span className={styles.cardMeta}>{relation.replaceAll("_", " ")} · {record.scope === "global" || record.scope?.startsWith("domain:") ? "shared" : "this work"}</span>
     </div>
   </li>;

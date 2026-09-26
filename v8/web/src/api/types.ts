@@ -79,6 +79,10 @@ export interface MessageAttachment {
   filename: string;
   content_type: string;
   note: string;
+  /** False when the board holds no bytes (a `workspace:` ref): label it, never fetch (absent on an older board). */
+  has_content?: boolean;
+  /** The artifact's uri: the content route, or the ref path a content-less card shows. */
+  uri?: string;
 }
 
 export interface MessageView {

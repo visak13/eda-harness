@@ -9,6 +9,7 @@ import {
   dispositionOf,
   fetchArtifactContent,
   isVideoType,
+  NotUploaded,
   openArtifact,
 } from "../components/ArtifactLink";
 import styles from "./Artifact.module.css";
@@ -98,7 +99,9 @@ export function ArtifactPage(): React.JSX.Element {
         <img className={styles.preview} src={preview} alt={a.note || name} data-testid="artifact-preview" />
       ) : null}
       <div className={styles.actions}>
-        {!stored ? (
+        {!stored && (a.form === "image" || a.form === "file") && a.has_content === false && !/^https?:\/\//i.test(a.uri) ? (
+          <NotUploaded uri={a.uri} />
+        ) : !stored ? (
           /^https?:\/\//i.test(a.uri) ? <a className={styles.button} href={a.uri} target="_blank" rel="noopener noreferrer">Open reference</a> : <p className={styles.note}>Reference: {a.uri}</p>
         ) : !preview ? (
           <button
