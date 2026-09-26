@@ -16,17 +16,32 @@ import { AdminError, Done } from "./shared";
 
 const PROVIDERS = ["anthropic", "openai", "openrouter", "google", "groq", "mistral", "deepseek", "xai", "ollama"];
 
-interface Draft { id: string; harness: string; provider: string; context_window: string; effort_cap: string }
-const EMPTY: Draft = { id: "", harness: "", provider: "", context_window: "", effort_cap: "" };
+interface Draft { id: string; harness: string; provider: string; context_window: string; auto_compact: string; effort_cap: string }
+const EMPTY: Draft = { id: "", harness: "", provider: "", context_window: "", auto_compact: "", effort_cap: "medium" };
+const PROVIDER_RE = /^[A-Za-z0-9_-]+$/;
 
 function draftOf(id: string, e: ModelEntry): Draft {
-  return { id, harness: e.harness, provider: e.provider ?? "", context_window: e.context_window ? String(e.context_window) : "", effort_cap: e.effort_cap ?? "" };
+  const n = (v: unknown) => (typeof v === "number" ? String(v) : "");
+  return { id, harness: e.harness, provider: e.provider ?? "", context_window: n(e.context_window), auto_compact: n(e.auto_compact), effort_cap: e.effort_cap ?? "medium" };
 }
 
-/** The entry a draft saves; fields the form does not edit (auto_compact, future keys) are kept. */
+/** The entry a draft saves; keys the form does not edit are kept. */
 function entryOf(d: Draft, prev?: ModelEntry): ModelEntry {
-  const cw = Number(d.context_window);
-  return { ...prev, harness: d.harness, provider: d.provider.trim(), context_window: d.context_window.trim() && Number.isFinite(cw) ? cw : null, effort_cap: d.effort_cap || null };
+  return { ...prev, harness: d.harness, provider: d.provider.trim(), context_window: Number(d.context_window), auto_compact: Number(d.auto_compact), effort_cap: d.effort_cap };
+}
+
+/** The board's rules (model_catalog.validate), checked before the PUT so the form says what is missing. */
+function draftProblem(d: Draft, clash: boolean): string | null {
+  const id = d.id.trim();
+  const w = Number(d.context_window);
+  const c = Number(d.auto_compact);
+  if (!id) return "Name the model id.";
+  if (clash) return `${id} is already in the catalog; edit it instead.`;
+  if (!PROVIDER_RE.test(d.provider.trim())) return "Name the provider: letters, digits, - or _ (e.g. openrouter).";
+  if (!Number.isInteger(w) || w <= 0) return "Give the context window in tokens.";
+  if (!Number.isInteger(c) || c <= 0 || c >= w) return "Auto-compact must be a token count below the context window.";
+  if (d.harness === "claude" && d.effort_cap === "high") return "Claude models are capped at medium or lower.";
+  return null;
 }
 
 function catalogOf(v: AdminModelsView): ModelsCatalogIn {
@@ -62,8 +77,12 @@ export function ModelsEditor(): React.JSX.Element {
       onSuccess: () => { setLastDone(editing ? `Saved ${id}.` : `Added ${id}. Tick it under a role below to use it.`); setDraft(null); setEditing(null); },
     });
   };
+  const [blocked, setBlocked] = useState<string | null>(null);
   const remove = (id: string) => {
     if (!data) return;
+    const emptied = Object.entries(data.role_models).filter(([, ids]) => ids.length === 1 && ids[0] === id).map(([r]) => r);
+    setBlocked(emptied.length ? `${id} is the only model of ${emptied.join(", ")}: add another model to that role before removing it.` : null);
+    if (emptied.length) return;
     const models = { ...data.models };
     delete models[id];
     const role_models = Object.fromEntries(Object.entries(data.role_models).map(([r, ids]) => [r, ids.filter((x) => x !== id)]));
@@ -90,17 +109,18 @@ export function ModelsEditor(): React.JSX.Element {
         {q.isLoading ? <p className={ui.empty}>Loading…</p> : null}
         {data ? (
           <div className={styles.tableWrap}>
-            <table className={styles.table} data-testid="models-table">
+            <table className={`${styles.table} ${styles.modelsTable}`} data-testid="models-table">
               <thead>
-                <tr><th>Model</th><th>Harness</th><th>Provider</th><th>Window</th><th>Effort cap</th><th>Roles</th><th /></tr>
+                <tr><th>Model</th><th>Harness</th><th>Provider</th><th>Window</th><th>Compact at</th><th>Effort cap</th><th>Roles</th><th /></tr>
               </thead>
               <tbody>
                 {visible.map(([id, e]) => (
                   <tr key={id} data-testid={`model-row-${id}`}>
                     <td><span className={styles.row}><ProviderIcon harness={e.harness} /><strong>{modelLabel(id)}</strong>{modelLabel(id) !== id ? <code className={styles.usage}>{id}</code> : null}</span></td>
-                    <td>{e.harness}</td>
-                    <td>{e.provider || "—"}</td>
-                    <td>{e.context_window ? e.context_window.toLocaleString() : "—"}</td>
+                    <td className={styles.num}>{e.harness}</td>
+                    <td className={styles.num}>{e.provider || "—"}</td>
+                    <td className={styles.num}>{e.context_window ? e.context_window.toLocaleString("en-US") : "—"}</td>
+                    <td className={styles.num}>{typeof e.auto_compact === "number" ? e.auto_compact.toLocaleString("en-US") : "—"}</td>
                     <td>{e.effort_cap ?? "none"}</td>
                     <td className={styles.usage}>{rolesOf(id).join(", ") || "not in a role"}</td>
                     <td>
@@ -113,7 +133,7 @@ export function ModelsEditor(): React.JSX.Element {
                     </td>
                   </tr>
                 ))}
-                {!visible.length ? <tr><td colSpan={7} className={ui.empty}>No models for the selected harnesses.</td></tr> : null}
+                {!visible.length ? <tr><td colSpan={8} className={ui.empty}>No models for the selected harnesses.</td></tr> : null}
               </tbody>
             </table>
           </div>
@@ -123,6 +143,7 @@ export function ModelsEditor(): React.JSX.Element {
           <ModelForm draft={draft} editing={editing} harnesses={selected} pending={save.isPending} taken={Object.keys(data?.models ?? {})}
             onChange={setDraft} onCancel={() => { setDraft(null); setEditing(null); save.reset(); }} onSubmit={submitDraft} />
         ) : null}
+        {blocked ? <p className={ui.banner} role="alert" data-testid="models-remove-blocked">{blocked}</p> : null}
         <AdminError error={save.error} testid="models-save-error" />
         <Done text={lastDone} testid="models-saved" />
       </section>
@@ -139,39 +160,44 @@ function ModelForm({ draft, editing, harnesses, pending, taken, onChange, onCanc
   const set = (k: keyof Draft) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => onChange({ ...draft, [k]: e.target.value });
   const id = draft.id.trim();
   const clash = !editing && taken.includes(id);
-  const invalid = !id || !draft.harness || !draft.provider.trim() || clash;
+  const problem = draftProblem(draft, clash);
+  const invalid = problem !== null || !draft.harness;
+  const touched = Boolean(id || draft.provider || draft.context_window || draft.auto_compact);
   return (
     <form className={styles.notice} data-testid="model-form" onSubmit={(e) => { e.preventDefault(); if (!invalid) onSubmit(); }}>
       <strong>{editing ? `Edit ${editing}` : "Add a model"}</strong>
-      <div className={styles.capGrid}>
-        <label className={styles.capCell}>
+      <div className={styles.formGrid}>
+        <label className={styles.formCell}>
           <span className={styles.usage}>Model id</span>
-          <input className={`${ui.input} ${styles.wide}`} value={draft.id} onChange={set("id")} disabled={Boolean(editing)} placeholder="e.g. openrouter/qwen3-coder" data-testid="model-form-id" />
+          <input className={ui.input} value={draft.id} onChange={set("id")} disabled={Boolean(editing)} placeholder="e.g. openrouter/qwen3-coder" data-testid="model-form-id" />
         </label>
-        <label className={styles.capCell}>
+        <label className={styles.formCell}>
           <span className={styles.usage}>Harness</span>
-          <select className={`${ui.select} ${styles.wide}`} value={draft.harness} onChange={set("harness")} data-testid="model-form-harness">
+          <select className={ui.select} value={draft.harness} onChange={set("harness")} data-testid="model-form-harness">
             {harnesses.map((h) => <option key={h} value={h}>{h}</option>)}
           </select>
         </label>
-        <label className={styles.capCell}>
+        <label className={styles.formCell}>
           <span className={styles.usage}>Provider</span>
-          <input className={`${ui.input} ${styles.wide}`} list="model-providers" value={draft.provider} onChange={set("provider")} placeholder="e.g. openrouter" data-testid="model-form-provider" />
+          <input className={ui.input} list="model-providers" value={draft.provider} onChange={set("provider")} placeholder="e.g. openrouter" data-testid="model-form-provider" />
           <datalist id="model-providers">{PROVIDERS.map((p) => <option key={p} value={p} />)}</datalist>
         </label>
-        <label className={styles.capCell}>
+        <label className={styles.formCell}>
           <span className={styles.usage}>Context window (tokens)</span>
-          <input className={`${ui.input} ${styles.wide}`} type="number" min={1} value={draft.context_window} onChange={set("context_window")} placeholder="optional" data-testid="model-form-window" />
+          <input className={ui.input} type="number" min={1} value={draft.context_window} onChange={set("context_window")} placeholder="e.g. 262144" data-testid="model-form-window" />
         </label>
-        <label className={styles.capCell}>
+        <label className={styles.formCell}>
+          <span className={styles.usage}>Auto-compact at (tokens)</span>
+          <input className={ui.input} type="number" min={1} value={draft.auto_compact} onChange={set("auto_compact")} placeholder="below the window, e.g. 180000" data-testid="model-form-compact" />
+        </label>
+        <label className={styles.formCell}>
           <span className={styles.usage}>Effort cap</span>
-          <select className={`${ui.select} ${styles.wide}`} value={draft.effort_cap} onChange={set("effort_cap")} data-testid="model-form-cap">
-            <option value="">none (high allowed)</option>
-            {EFFORTS.map((e) => <option key={e} value={e}>{e}</option>)}
+          <select className={ui.select} value={draft.effort_cap} onChange={set("effort_cap")} data-testid="model-form-cap">
+            {EFFORTS.map((e) => <option key={e} value={e} disabled={e === "high" && draft.harness === "claude"}>{e}</option>)}
           </select>
         </label>
       </div>
-      {clash ? <p className={styles.fieldNote} data-testid="model-form-clash">{id} is already in the catalog; edit it instead.</p> : null}
+      {problem && (touched || clash) ? <p className={styles.fieldNote} data-testid={clash ? "model-form-clash" : "model-form-problem"}>{problem}</p> : null}
       {draft.harness === "pi" ? <p className={styles.usage}>Pi runs any provider/model. The provider's API key comes from its secret setting in Admin → Settings.</p> : null}
       <div className={styles.row}>
         <button type="submit" className={`${ui.button} ${ui.buttonPrimary}`} disabled={invalid || pending} data-testid="model-form-save">
@@ -210,7 +236,8 @@ function RoleModels({ data, visibleIds, onSave, pending }: {
                   {ids.map((id) => <option key={id} value={id}>{modelLabel(id)}</option>)}
                 </select>
               </label>
-              {!ids.length ? <span className={styles.fieldNote}>No model: this role runs on the board's fallback.</span> : null}
+              {!ids.length ? <span className={styles.fieldNote}>Pick at least one model: the board refuses an empty role.</span> : null}
+              {ids.some((id) => !visibleIds.includes(id)) ? <span className={styles.usage} data-testid={`role-hidden-${role}`}>also {ids.filter((id) => !visibleIds.includes(id)).map(modelLabel).join(", ")} (unselected harness)</span> : null}
             </div>
             <div className={styles.row}>
               {visibleIds.map((id) => (
@@ -235,12 +262,13 @@ function RoleModels({ data, visibleIds, onSave, pending }: {
 
 /** Run a stub prompt on a private seat of one model: proves the harness, provider and credential. */
 function TestSpawn({ data, visibleIds }: { data: AdminModelsView; visibleIds: string[] }): React.JSX.Element {
-  const roles = Object.keys(data.role_models);
   const [model, setModel] = useState("");
   const [role, setRole] = useState("");
   const [effort, setEffort] = useState("");
   const m = visibleIds.includes(model) ? model : visibleIds[0] ?? "";
-  const r = roles.includes(role) ? role : roles[0] ?? "engineer";
+  // the board runs a test only for a role whose catalog holds the model
+  const roles = Object.keys(data.role_models).filter((x) => data.role_models[x]?.includes(m));
+  const r = roles.includes(role) ? role : roles[0] ?? "";
   const run = useMutation({ mutationFn: () => testSpawnModel({ model: m, role: r, ...(effort ? { effort } : {}) }) });
   return (
     <section className={styles.card} data-testid="test-spawn">
@@ -257,10 +285,11 @@ function TestSpawn({ data, visibleIds }: { data: AdminModelsView; visibleIds: st
           <option value="">default effort</option>
           {EFFORTS.map((e) => <option key={e} value={e}>{e}</option>)}
         </select>
-        <button type="button" className={`${ui.button} ${ui.buttonPrimary}`} disabled={!m || run.isPending} onClick={() => run.mutate()} data-testid="test-spawn-run">
+        <button type="button" className={`${ui.button} ${ui.buttonPrimary}`} disabled={!m || !r || run.isPending} onClick={() => run.mutate()} data-testid="test-spawn-run">
           {run.isPending ? "Running…" : "Test spawn"}
         </button>
       </div>
+      {m && !r ? <p className={styles.fieldNote} data-testid="test-spawn-no-role">Add {m} to a role above first: a test runs as one of the roles that may use it.</p> : null}
       {run.isPending ? <p className={ui.empty} role="status">Starting a private {data.models[m]?.harness ?? ""} seat and waiting for its reply…</p> : null}
       <AdminError error={run.error} testid="test-spawn-error" />
       {run.data ? (

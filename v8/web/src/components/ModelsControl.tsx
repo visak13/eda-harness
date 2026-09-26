@@ -55,7 +55,7 @@ export function ModelsControl({ epicId }: { epicId: string }): React.JSX.Element
       ))}
       <p className={styles.note}>
         Applies to the next seat spawned for each role on {epicId}; a seat already running keeps its model.
-        Claude seats are capped at effort medium.
+        Each model's effort cap comes from its catalog entry (Admin → Seats &amp; models → Models).
       </p>
       {err ? <p className={ui.banner} role="alert" data-testid="models-error">{(err as BoardApiError).hint ?? err.message}</p> : null}
       {saved ? <p className={styles.note} role="status" data-testid="models-saved">{saved}</p> : null}

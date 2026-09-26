@@ -168,7 +168,7 @@ export function OpenTopicDialog({ open, onClose, onOpened }: {
               disabled={locked} onModel={setModel} onEffort={setEffort} />
           ) : null}
           <p className={styles.muted} data-testid="topic-open-effort-cap">
-            Claude seats are capped at effort medium fleet-wide; high applies to GPT seats only.
+            Each model's effort cap comes from its catalog entry (Admin → Seats &amp; models → Models).
           </p>
         </fieldset>
         <label className={ui.sectionLabel} htmlFor="topic-open-experts">Experts (optional)</label>

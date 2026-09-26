@@ -115,7 +115,7 @@ describe("NewEpicDialog (human #22)", () => {
     expect(screen.getByTestId("new-epic-cap-architect")).toHaveTextContent("");
     fireEvent.change(eff("architect"), { target: { value: "high" } });
     fireEvent.change(eff("adversary"), { target: { value: "low" } });
-    expect(screen.getByTestId("new-epic-effort-cap")).toHaveTextContent(/capped at effort medium/);
+    expect(screen.getByTestId("new-epic-effort-cap")).toHaveTextContent(/effort cap comes from its catalog entry/);
     // a provider glyph sits beside each model, a role glyph beside each role
     expect(screen.getByTestId("new-epic-row-architect").querySelector("[data-provider-icon='gpt']")).not.toBeNull();
     expect(screen.getByTestId("new-epic-row-qa").querySelector("[data-provider-icon='claude']")).not.toBeNull();

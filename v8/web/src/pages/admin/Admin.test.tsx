@@ -377,9 +377,9 @@ describe("Models editor (S12)", () => {
   type Cat = { models: Record<string, Record<string, unknown>>; role_models: Record<string, string[]>; selected: string[]; warnings: string[] };
   const CATALOG: Cat = {
     models: {
-      "claude-opus-5-5": { harness: "claude", provider: "anthropic", context_window: 200000, effort_cap: "medium" },
-      "gpt-6-sol": { harness: "codex", provider: "openai", context_window: null, effort_cap: null },
-      "hidden-model": { harness: "pi", provider: "openrouter", effort_cap: null, auto_compact: 0.8 },
+      "claude-opus-5-5": { harness: "claude", provider: "anthropic", context_window: 200000, auto_compact: 150000, effort_cap: "medium" },
+      "gpt-6-sol": { harness: "codex", provider: "openai", context_window: 272000, auto_compact: 200000, effort_cap: "high" },
+      "hidden-model": { harness: "pi", provider: "openrouter", context_window: 131072, auto_compact: 100000, effort_cap: "high", extra_key: "kept" },
     },
     role_models: { engineer: ["claude-opus-5-5", "gpt-6-sol"], qa: ["claude-opus-5-5"] },
     selected: ["claude", "codex"],
@@ -429,9 +429,12 @@ describe("Models editor (S12)", () => {
     fireEvent.change(screen.getByTestId("model-form-provider"), { target: { value: "openrouter" } });
     fireEvent.change(screen.getByTestId("model-form-window"), { target: { value: "128000" } });
     fireEvent.change(screen.getByTestId("model-form-cap"), { target: { value: "medium" } });
+    expect(screen.getByTestId("model-form-problem")).toHaveTextContent("Auto-compact must be a token count below the context window");
+    expect(screen.getByTestId("model-form-save")).toBeDisabled();
+    fireEvent.change(screen.getByTestId("model-form-compact"), { target: { value: "100000" } });
     fireEvent.click(screen.getByTestId("model-form-save"));
     await waitFor(() => expect(s.puts).toHaveLength(1));
-    expect(s.puts[0].models["qwen3-coder"]).toEqual({ harness: "pi", provider: "openrouter", context_window: 128000, effort_cap: "medium" });
+    expect(s.puts[0].models["qwen3-coder"]).toEqual({ harness: "pi", provider: "openrouter", context_window: 128000, auto_compact: 100000, effort_cap: "medium" });
     expect(s.puts[0].models["gpt-6-sol"]).toBeDefined(); // the unselected codex entry is kept
     expect(await screen.findByTestId("model-row-qwen3-coder")).toHaveTextContent("openrouter");
 
@@ -462,11 +465,20 @@ describe("Models editor (S12)", () => {
     fireEvent.change(screen.getByTestId("model-form-provider"), { target: { value: "groq" } });
     fireEvent.click(screen.getByTestId("model-form-save"));
     await waitFor(() => expect(s.puts).toHaveLength(1));
-    expect(s.puts[0].models["hidden-model"]).toMatchObject({ provider: "groq", auto_compact: 0.8 });
+    expect(s.puts[0].models["hidden-model"]).toMatchObject({ provider: "groq", context_window: 131072, auto_compact: 100000, extra_key: "kept" });
 
     server.use(http.put("/v1/admin/models", () => refuse(400, "provider groq has no credential")));
     fireEvent.click(await screen.findByTestId("model-remove-hidden-model"));
     expect(await screen.findByTestId("models-save-error")).toHaveTextContent("no credential");
+  });
+
+  it("refuses to remove a role's only model before the PUT", async () => {
+    const s = stateful(CATALOG);
+    mount("models", s.handlers);
+    await screen.findByTestId("model-row-claude-opus-5-5");
+    fireEvent.click(screen.getByTestId("model-remove-claude-opus-5-5"));
+    expect(screen.getByTestId("models-remove-blocked")).toHaveTextContent("only model of qa");
+    expect(s.puts).toHaveLength(0);
   });
 
   it("catches a duplicate id before the PUT", async () => {

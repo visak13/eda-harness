@@ -156,7 +156,7 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
               onEffort={(e) => setEfforts((p) => ({ ...p, [r]: e }))} />
           ))}
           <p className={styles.muted} data-testid="new-epic-effort-cap">
-            Claude seats are capped at effort medium fleet-wide; high applies to GPT seats only.
+            Each model's effort cap comes from its catalog entry (Admin → Seats &amp; models → Models).
           </p>
         </fieldset>
         <label className={styles.check}>

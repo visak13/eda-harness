@@ -31,6 +31,9 @@
 }
 .model select,
 .effort select { width: 100%; min-width: 0; }
+/* a host dialog's column-label rule (NewEpicDialog .roleModels label) must not stack the glyph over the select */
+.row .model,
+.row .effort { flex-direction: row; }
 .cap {
   font-size: 12px;
   line-height: 16px;

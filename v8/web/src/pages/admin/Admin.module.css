@@ -201,7 +201,26 @@
 }
 
 /* S12 Models editor */
-.wide {
+.modelsTable th {
+  white-space: nowrap;
+}
+.num {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.formCell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.formCell input,
+.formCell select {
   width: 100%;
 }
 .capitalize {
