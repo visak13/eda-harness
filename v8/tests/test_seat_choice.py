@@ -62,7 +62,7 @@ def test_resolve_inherits_the_epic_choice_unless_the_spawn_names_its_own(home):
 
 def test_resolve_claude_is_the_no_model_default_and_high_is_capped(home):
     c = seat_choice.resolve(None, None, ["seat-model:claude", "seat-effort:high"], home)
-    assert c.model is None and c.effort == "medium" and "2026-08-04" in c.note
+    assert c.model is None and c.effort == "medium" and "capped to medium" in c.note
     c = seat_choice.resolve(None, None, [], home)  # no choice at all = pool defaults
     assert (c.model, c.effort, c.note) == (None, None, None)
     c = seat_choice.resolve(None, None, ["seat-effort:xhigh"], home)  # junk effort is dropped
@@ -235,7 +235,8 @@ def cat_home(home):
 def test_shipped_models_json_carries_the_owners_per_role_catalog_exactly():
     from pathlib import Path
     v8 = Path(__file__).resolve().parents[1]
-    assert seat_choice.catalog(v8) == OWNER_TABLE  # the validator side: edp-pool test_seats_registry
+    # t-67dad8c6aa added the Help seat's row (doctor); the owner's table is otherwise exact
+    assert seat_choice.catalog(v8) == {**OWNER_TABLE, "doctor": ["claude-opus-5-5"]}
 
 
 def test_role_tags_roundtrip():
@@ -266,7 +267,9 @@ def test_rule_old_seat_model_tag_still_honoured(cat_home):
 def test_rule_missing_falls_to_the_first_catalog_entry(cat_home):
     for role, ids in OWNER_TABLE.items():
         assert seat_choice.resolve(None, None, [], cat_home, role=role).model == ids[0]
-    assert seat_choice.resolve(None, None, [], cat_home, role="owner").model is None  # not in the catalog
+    # S12 (owner bug m-549b8adc3a): a role not in the catalog gets the catalog default, never None
+    assert seat_choice.resolve(None, None, [], cat_home, role="owner").model == seat_choice.default_model(cat_home)
+    assert seat_choice.default_model(cat_home) is not None
     assert seat_choice.resolve(None, None, [], cat_home).model is None               # no role given
 
 

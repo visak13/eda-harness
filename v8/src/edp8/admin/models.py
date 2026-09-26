@@ -20,6 +20,7 @@ from .context import AdminContext
 class CatalogIn(BaseModel):
     models: dict[str, dict[str, Any]]
     role_models: dict[str, list[str]]
+    default_model: str | None = None  # omitted = keep the catalog's current default
 
 
 class TestSpawnIn(BaseModel):
@@ -54,9 +55,24 @@ def _warnings(models: dict[str, Any]) -> list[str]:
                    find_tool(row["harness"], key=keys[row["harness"]]) is None})
 
 
+def _harness_defaults(models: dict[str, Any]) -> dict[str, Any]:
+    """For each Codex row: the window and compaction Codex itself applies (`codex debug models`), which
+    the UI shows as "Codex default (N)" wherever the row leaves the number unset."""
+    rows = [(mid, row) for mid, row in models.items()
+            if isinstance(row, dict) and row.get("harness") in model_catalog.HARNESS_WINDOWS]
+    if not rows:
+        return {}
+    known = model_catalog.codex_windows()
+    return {mid: {**known[slug], "source": "codex debug models"}
+            for mid, row in rows if (slug := str(row.get("model") or mid)) in known}
+
+
 def _view(raw: dict[str, Any]) -> dict[str, Any]:
-    return {"models": raw.get("models") or {}, "role_models": raw.get("role_models") or {},
-            "selected": list(harness.selected(raw)), "warnings": _warnings(raw.get("models") or {})}
+    models = raw.get("models") or {}
+    return {"models": models, "role_models": raw.get("role_models") or {},
+            "default_model": raw.get(model_catalog.DEFAULT_KEY),
+            "harness_defaults": _harness_defaults(models),
+            "selected": list(harness.selected(raw)), "warnings": _warnings(models)}
 
 
 def router(ctx: AdminContext, admin_actor) -> APIRouter:
@@ -68,15 +84,19 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
 
     @r.put("/v1/admin/models")
     def put_models(body: CatalogIn, a: Participant = Depends(admin_actor)):
-        errors = model_catalog.validate(body.models, body.role_models)
+        raw = model_catalog.read()
+        default = body.default_model if body.default_model is not None else raw.get(model_catalog.DEFAULT_KEY)
+        errors = model_catalog.validate(body.models, body.role_models, default)
         for mid, row in body.models.items():
             if row.get("harness") == "pi" and not _credential_present(str(row.get("provider") or "")):
                 errors.append(f"{mid}: provider credential missing for {row.get('provider')!r}")
         if errors:
-            raise HTTPException(422, {"errors": errors})
-        raw = model_catalog.read()
+            # a plain sentence, like every other admin refusal: the UI shows error.message verbatim
+            raise HTTPException(422, "; ".join(errors))
         raw["models"] = body.models
         raw["role_models"] = body.role_models
+        if default:
+            raw[model_catalog.DEFAULT_KEY] = default
         model_catalog.write(raw)
         return {"ok": True, "value": _view(raw), "hint": "catalog saved for new spawns"}
 

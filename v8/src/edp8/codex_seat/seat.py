@@ -91,6 +91,18 @@ def role_skill_roots(agent_home: str | os.PathLike[str], role: str) -> list[str]
     return [str((skills / n).resolve()) for n in names if (skills / n / "SKILL.md").is_file()]
 
 
+def compaction_args(env: dict[str, str]) -> list[str]:
+    """S12 (owner m-bfe93b313c): the catalog row's owner-set compaction and window as codex overrides.
+    Unset = no flag, so Codex keeps its own threshold (90% of the model's window)."""
+    out: list[str] = []
+    for var, key in (("EDP_CODEX_AUTO_COMPACT", "model_auto_compact_token_limit"),
+                     ("EDP_CODEX_CONTEXT_WINDOW", "model_context_window")):
+        val = str(env.get(var) or "").strip()
+        if val.isdigit() and int(val) > 0:
+            out += ["-c", f"{key}={int(val)}"]
+    return out
+
+
 def board_args(role: str, mcp_url: str | None = None) -> list[str]:
     """The edp8 board as streamable-HTTP MCP, identity headers read from env BY NAME (never argv)."""
     base = (mcp_url or settings.get("EDP8_MCP_URL")).rstrip("/")
@@ -187,6 +199,7 @@ class CodexSeat:
     def argv(self) -> list[str]:
         cargs, self.disabled_servers = containment_args(self.codex, discover=self._discover, env=self.env, cwd=self.cwd)
         argv = [*codex_head(self.codex), "app-server", *cargs, "-c", "approval_policy=never"]
+        argv += compaction_args(self.env)
         if self.board:
             argv += board_args(self.role, self.env.get("EDP8_MCP_URL"))
         if sandbox_for(self.role, self.env) == "workspace-write":

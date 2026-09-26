@@ -571,3 +571,19 @@ def test_js_string_number_and_nullish_semantics(tmp_path):
     text, _ = te.call("Monitor", {"command": "exit 0", "description": "r", "timeout_ms": 30000}, "c")
     assert "expires in 1m" in text  # Math.round(0.5) = 1, Python round() would say 0m
 
+
+
+def test_owner_compaction_is_a_codex_override_on_every_start(tmp_path):
+    """S12 (owner m-bfe93b313c): EDP_CODEX_AUTO_COMPACT / EDP_CODEX_CONTEXT_WINDOW (the pool sets them from
+    the catalog row on launch and resume) become -c overrides on the app-server argv, which start() uses for
+    a fresh and a resumed thread alike; unset adds no flag, so Codex keeps its own threshold."""
+    def argv(env):
+        return seat_mod.CodexSeat(cwd=V8, role="engineer", handle="engineer.t", log_dir=tmp_path, codex_bin="codex",
+                                  env=env, board=False, discover=lambda _c: ([], None)).argv()
+    tuned = argv({"EDP_CODEX_AUTO_COMPACT": "500000", "EDP_CODEX_CONTEXT_WINDOW": "872000",
+                  "EDP_CODEX_RESUME": "1"})
+    assert tuned[tuned.index("model_auto_compact_token_limit=500000") - 1] == "-c"
+    assert "model_context_window=872000" in tuned
+    plain = argv({"EDP_CODEX_AUTO_COMPACT": "", "EDP_CODEX_CONTEXT_WINDOW": ""})
+    assert not any(a.startswith(("model_auto_compact_token_limit", "model_context_window")) for a in plain)
+    assert seat_mod.compaction_args({"EDP_CODEX_AUTO_COMPACT": "abc"}) == []

@@ -37,5 +37,8 @@ def _no_operator_spawn_defaults(tmp_path):
     for var in ("CLAUDE_CODE_AUTO_COMPACT_WINDOW",
                 "CLAUDE_CODE_MAX_OUTPUT_TOKENS"):
         mp.delenv(var, raising=False)
+    # S12: models.json resolves to the data dir's editable catalog when one exists
+    # (edp_contracts.seats.config_path); a test's registry must never be the host's.
+    mp.setenv("EDP8_DATA", str(tmp_path / "absent-data-dir"))
     yield
     mp.undo()

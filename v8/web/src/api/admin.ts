@@ -83,8 +83,15 @@ export interface ModelEntry {
   auto_compact?: number | boolean | null;
   effort_cap?: string | null;
 }
-export interface ModelsCatalogIn { models: Record<string, ModelEntry>; role_models: Record<string, string[]> }
-export interface AdminModelsView extends ModelsCatalogIn { selected: string[]; warnings: string[] }
+/** `default_model`: what a role absent from role_models spawns on (omitted in a PUT = keep the current one). */
+export interface ModelsCatalogIn { models: Record<string, ModelEntry>; role_models: Record<string, string[]>; default_model?: string | null }
+/** The numbers a harness applies itself when a row leaves them unset (today: Codex, from `codex debug models`). */
+export interface HarnessDefault { context_window: number; auto_compact: number; max_context_window?: number; source?: string }
+export interface AdminModelsView extends ModelsCatalogIn {
+  selected: string[];
+  warnings: string[];
+  harness_defaults?: Record<string, HarnessDefault>;
+}
 export interface TestSpawnResult { reply: string; model: string; harness: string; provider: string }
 
 export const getAdminModels = () => api<AdminModelsView>("/v1/admin/models");

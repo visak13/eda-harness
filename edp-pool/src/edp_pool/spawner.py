@@ -153,15 +153,22 @@ def seat_model_for(role: str, agent_home: str | None) -> str | None:
     drill ran planners/curiosity on the config-dir default model (Opus 5)
     because only SOME engine tools pass `model` down; now an explicit None
     is resolved from models.json here, so the registry binds EVERY spawned
-    role. Absent registry / unmapped role → None (legacy host default)."""
+    role. S12 (owner bug m-549b8adc3a): the role's first `role_models` entry, else its legacy `roles`
+    seat, else the catalog's `default_model` — so a role no table names (a custom role, a new Help
+    seat) still spawns with --model. None only with no registry at all (legacy host default)."""
     if not agent_home:
         return None
     try:
-        from edp_contracts.seats import seat_for_role
+        from edp_contracts.seats import catalog_model_for, seat_for_role
+        listed = catalog_model_for(agent_home, role)
+        if listed:
+            return listed
         seat = seat_for_role(agent_home, role)
+        if seat is not None:
+            return seat.model
+        return catalog_model_for(agent_home, None)
     except Exception:      # noqa: BLE001 — registry trouble never blocks spawn
         return None
-    return seat.model if seat is not None else None
 
 
 class SubprocessSpawner(Spawner):

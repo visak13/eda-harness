@@ -26,9 +26,27 @@ function draftOf(id: string, e: ModelEntry): Draft {
   return { id, harness: e.harness, provider: e.provider ?? "", context_window: n(e.context_window), auto_compact: n(e.auto_compact), effort_cap: e.effort_cap ?? "medium" };
 }
 
-/** The entry a draft saves; keys the form does not edit are kept. */
+/** Harnesses that report their own window and compaction (model_catalog.HARNESS_WINDOWS): a blank field
+ *  leaves the harness's number in force. */
+const HARNESS_WINDOWS = new Set(["codex"]);
+const HARNESS_NAME: Record<string, string> = { codex: "Codex" };
+
+/** The entry a draft saves; keys the form does not edit are kept, a blank Codex number is left unset. */
 function entryOf(d: Draft, prev?: ModelEntry): ModelEntry {
-  return { ...prev, harness: d.harness, provider: d.provider.trim(), context_window: Number(d.context_window), auto_compact: Number(d.auto_compact), effort_cap: d.effort_cap };
+  const out: ModelEntry = { ...prev, harness: d.harness, provider: d.provider.trim(), context_window: Number(d.context_window), auto_compact: Number(d.auto_compact), effort_cap: d.effort_cap };
+  if (HARNESS_WINDOWS.has(d.harness)) {
+    if (!d.context_window.trim()) delete out.context_window;
+    if (!d.auto_compact.trim()) delete out.auto_compact;
+  }
+  return out;
+}
+
+/** A window/compact cell: the row's own number, else "Codex default (N)" from the harness, else a dash. */
+function tokens(own: unknown, harness: string, fallback: number | undefined): string {
+  if (typeof own === "number") return own.toLocaleString("en-US");
+  if (HARNESS_WINDOWS.has(harness) && typeof fallback === "number") return `${HARNESS_NAME[harness] ?? harness} default (${fallback.toLocaleString("en-US")})`;
+  if (HARNESS_WINDOWS.has(harness)) return `${HARNESS_NAME[harness] ?? harness} default`;
+  return "—";
 }
 
 /** The board's rules (model_catalog.validate), checked before the PUT so the form says what is missing. */
@@ -39,8 +57,11 @@ function draftProblem(d: Draft, clash: boolean): string | null {
   if (!id) return "Name the model id.";
   if (clash) return `${id} is already in the catalog; edit it instead.`;
   if (!PROVIDER_RE.test(d.provider.trim())) return "Name the provider: letters, digits, - or _ (e.g. openrouter).";
-  if (!Number.isInteger(w) || w <= 0) return "Give the context window in tokens.";
-  if (!Number.isInteger(c) || c <= 0 || c >= w) return "Auto-compact must be a token count below the context window.";
+  const own = HARNESS_WINDOWS.has(d.harness);  // Codex: blank = the harness's own number
+  const wSet = !own || d.context_window.trim() !== "";
+  const cSet = !own || d.auto_compact.trim() !== "";
+  if (wSet && (!Number.isInteger(w) || w <= 0)) return "Give the context window in tokens.";
+  if (cSet && (!Number.isInteger(c) || c <= 0 || (wSet && c >= w))) return "Auto-compact must be a token count below the context window.";
   if (d.harness === "claude" && d.effort_cap === "high") return "Claude models are capped at medium or lower.";
   return null;
 }
@@ -54,7 +75,7 @@ function useMissingHarnesses(): Set<string> {
 const NOT_INSTALLED = "harness not installed: install it (Admin → Integrations → Seat harnesses)";
 
 function catalogOf(v: AdminModelsView): ModelsCatalogIn {
-  return { models: v.models, role_models: v.role_models };
+  return { models: v.models, role_models: v.role_models, default_model: v.default_model };
 }
 
 export function ModelsEditor(): React.JSX.Element {
@@ -129,8 +150,8 @@ export function ModelsEditor(): React.JSX.Element {
                     <td><span className={styles.row}><ProviderIcon harness={e.harness} /><strong>{modelLabel(id)}</strong>{modelLabel(id) !== id ? <code className={styles.usage}>{id}</code> : null}</span></td>
                     <td className={styles.num}>{e.harness}{missing.has(e.harness) ? <div className={styles.fieldNote} data-testid={`model-why-${id}`}>{NOT_INSTALLED}</div> : null}</td>
                     <td className={styles.num}>{e.provider || "—"}</td>
-                    <td className={styles.num}>{e.context_window ? e.context_window.toLocaleString("en-US") : "—"}</td>
-                    <td className={styles.num}>{typeof e.auto_compact === "number" ? e.auto_compact.toLocaleString("en-US") : "—"}</td>
+                    <td className={styles.num} data-testid={`model-window-${id}`}>{tokens(e.context_window || undefined, e.harness, data.harness_defaults?.[id]?.context_window)}</td>
+                    <td className={styles.num} data-testid={`model-compact-${id}`}>{tokens(e.auto_compact, e.harness, data.harness_defaults?.[id]?.auto_compact)}</td>
                     <td>{e.effort_cap ?? "none"}</td>
                     <td className={styles.usage}>{rolesOf(id).join(", ") || "not in a role"}</td>
                     <td>
@@ -194,11 +215,11 @@ function ModelForm({ draft, editing, harnesses, pending, taken, onChange, onCanc
         </label>
         <label className={styles.formCell}>
           <span className={styles.usage}>Context window (tokens)</span>
-          <input className={ui.input} type="number" min={1} value={draft.context_window} onChange={set("context_window")} placeholder="e.g. 262144" data-testid="model-form-window" />
+          <input className={ui.input} type="number" min={1} value={draft.context_window} onChange={set("context_window")} placeholder={HARNESS_WINDOWS.has(draft.harness) ? `blank = ${HARNESS_NAME[draft.harness] ?? draft.harness} default` : "e.g. 262144"} data-testid="model-form-window" />
         </label>
         <label className={styles.formCell}>
           <span className={styles.usage}>Auto-compact at (tokens)</span>
-          <input className={ui.input} type="number" min={1} value={draft.auto_compact} onChange={set("auto_compact")} placeholder="below the window, e.g. 180000" data-testid="model-form-compact" />
+          <input className={ui.input} type="number" min={1} value={draft.auto_compact} onChange={set("auto_compact")} placeholder={HARNESS_WINDOWS.has(draft.harness) ? `blank = ${HARNESS_NAME[draft.harness] ?? draft.harness} default` : "below the window, e.g. 180000"} data-testid="model-form-compact" />
         </label>
         <label className={styles.formCell}>
           <span className={styles.usage}>Effort cap</span>

@@ -128,6 +128,12 @@ class CodexSpawner:
             entry = model_entry(self._agent_home or os.getcwd(), model)
             if entry and entry.get("harness") == "codex":
                 env["EDP_CODEX_MODEL"] = str(entry.get("model") or model)
+                # S12 (owner m-bfe93b313c): an owner-set window/compaction reaches codex as -c overrides
+                # (seat.argv, shared by launch and resume); unset leaves Codex's own numbers
+                for key, var in (("auto_compact", "EDP_CODEX_AUTO_COMPACT"),
+                                 ("context_window", "EDP_CODEX_CONTEXT_WINDOW")):
+                    if isinstance(entry.get(key), int) and not isinstance(entry.get(key), bool):
+                        env[var] = str(entry[key])
             elif not model and not env.get("EDP_CODEX_MODEL"):
                 import json
                 from edp_contracts.seats import config_path

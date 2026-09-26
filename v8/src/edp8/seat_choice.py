@@ -21,7 +21,8 @@ that is not an epic never carries these tags; the choice is resolved from its ep
 PER ROLE (S-ROLES, design-34bf11cc07 §4.1, owner m-bba708e10e): models.json `role_models` is the
 per-role catalog (role → [model ids], first = default). Resolution for a spawn of `role`: the
 spawn's own model wins, else the epic's `model:<role>=` tag, else the old `seat-model:` tag, else
-the role's first catalog entry. The pool routes by the entry's `harness`, regardless of id spelling.
+the role's first catalog entry, else the catalog's `default_model` (a role with no catalog row).
+The pool routes by the entry's `harness`, regardless of id spelling.
 
 CAP: Each catalog entry names its effort cap; Claude entries may not exceed medium.
 """
@@ -143,6 +144,21 @@ def catalog(home: str | os.PathLike | None) -> dict[str, list[str]]:
                                    if isinstance(ids, list) and any(ids)}, reg)
 
 
+def default_model(home: str | os.PathLike | None) -> str | None:
+    """The model a role absent from `role_models` spawns on, custom roles included (owner bug m-549b8adc3a:
+    an unlisted role must never launch a harness on its CLI's own default). models.json `default_model`
+    when it sits on a selected harness, else the first selected catalog model; None only for no catalog."""
+    reg = _registry(home)
+    entries = reg.get("models") if isinstance(reg.get("models"), dict) else {}
+    picked = harness.selected(reg)
+    want = reg.get("default_model")
+    if want and harness.harness_of(str(want), entries) in picked:
+        return str(want)
+    for ids in catalog(home).values():
+        return ids[0]
+    return next((m for m in entries if harness.harness_of(m, entries) in picked), None)
+
+
 def seat_names(home: str | os.PathLike | None) -> set[str]:
     """The legacy seat names in models.json `seats` (e.g. "astra", "builder") — a spawn may still name one."""
     seats = _registry(home).get("seats")
@@ -202,7 +218,7 @@ def resolve(model: str | None, effort: str | None, epic_tags: Iterable[str] | No
             agent_home: str | os.PathLike | None, *, role: str | None = None) -> SeatChoice:
     """PURE (given the registry). Model: the spawn's explicit `model` wins, else the epic's
     `model:<role>=` tag, else its old `seat-model:` tag ("claude" = no per-spawn model, the pool's
-    roles column), else the role's first catalog entry. Effort: explicit, else the epic's
+    roles column), else the role's first catalog entry, else the catalog default. Effort: explicit, else the epic's
     `seat-effort:<role>=` tag, else its old whole-epic `seat-effort:`;
     outside low/medium/high is dropped; a Claude seat is capped at medium."""
     tags = list(epic_tags or [])
@@ -212,7 +228,7 @@ def resolve(model: str | None, effort: str | None, epic_tags: Iterable[str] | No
     if m and m.lower() == CLAUDE:
         m = None
     elif m is None and role:
-        m = (catalog(agent_home).get(role) or [None])[0]
+        m = (catalog(agent_home).get(role) or [None])[0] or default_model(agent_home)
     role_effort = role_efforts_from_tags(tags).get(role) if role else None
     e = (effort or role_effort or tag_effort or "").strip().lower() or None
     if e is not None and e not in EFFORTS:

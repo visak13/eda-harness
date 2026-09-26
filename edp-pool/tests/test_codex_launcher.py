@@ -150,3 +150,24 @@ def _stack(sp):
         out.append(x)
         todo += [getattr(x, a) for a in ("_primary", "_second", "_inner") if getattr(x, a, None) is not None]
     return out
+
+
+def test_owner_compaction_reaches_launch_and_resume_env(monkeypatch, tmp_path):
+    """S12 (owner m-bfe93b313c): a Codex row's owner-set auto_compact/window ride the seat env on launch AND
+    resume (the seat turns them into -c overrides); a row without them leaves Codex's own numbers."""
+    for var in ("EDP_CODEX_AUTO_COMPACT", "EDP_CODEX_CONTEXT_WINDOW"):
+        monkeypatch.delenv(var, raising=False)
+    (tmp_path / "models.json").write_text(json.dumps({"models": {
+        "tuned": {"harness": "codex", "provider": "codex", "model": "gpt-6-sol", "auto_compact": 500000,
+                  "context_window": 872000},
+        "plain": {"harness": "codex", "provider": "codex", "model": "gpt-6-astra"}}}), encoding="utf-8")
+    seen = _capture(monkeypatch)
+    sp = cl.CodexSpawner(log_dir=str(tmp_path / "logs"), agent_home=str(tmp_path))
+    for resume in (None, "thread-state"):
+        sp.launch("s1", "engineer", "engineer.1", model="tuned", resume_session=resume)
+        env = seen["kw"]["env"]
+        assert env["EDP_CODEX_RESUME"] == ("1" if resume else "0")
+        assert env["EDP_CODEX_AUTO_COMPACT"] == "500000" and env["EDP_CODEX_CONTEXT_WINDOW"] == "872000"
+    sp.launch("s2", "engineer", "engineer.2", model="plain")
+    assert "EDP_CODEX_AUTO_COMPACT" not in seen["kw"]["env"]
+    assert "EDP_CODEX_CONTEXT_WINDOW" not in seen["kw"]["env"]

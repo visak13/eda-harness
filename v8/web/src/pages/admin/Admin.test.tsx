@@ -549,6 +549,23 @@ describe("Models editor (S12)", () => {
     };
   }
 
+  it("a Codex row without numbers shows Codex default (N) and saves blank as unset (m-ab7426f038)", async () => {
+    const cat = structuredClone(CATALOG) as Cat & { harness_defaults?: Record<string, unknown> };
+    cat.models["gpt-6-sol"] = { harness: "codex", provider: "codex", effort_cap: "high" };
+    cat.harness_defaults = { "gpt-6-sol": { context_window: 272000, auto_compact: 244800, source: "codex debug models" } };
+    const s = stateful(cat);
+    mount("models", s.handlers);
+    expect(await screen.findByTestId("model-window-gpt-6-sol")).toHaveTextContent("Codex default (272,000)");
+    expect(screen.getByTestId("model-compact-gpt-6-sol")).toHaveTextContent("Codex default (244,800)");
+    expect(screen.getByTestId("model-compact-claude-opus-5-5")).toHaveTextContent("150,000");
+    fireEvent.click(screen.getByTestId("model-edit-gpt-6-sol"));
+    expect(screen.getByTestId("model-form-compact")).toHaveAttribute("placeholder", "blank = Codex default");
+    fireEvent.change(screen.getByTestId("model-form-compact"), { target: { value: "500000" } });
+    fireEvent.click(screen.getByTestId("model-form-save"));
+    await waitFor(() => expect(s.puts).toHaveLength(1));
+    expect(s.puts[0].models["gpt-6-sol"]).toEqual({ harness: "codex", provider: "codex", effort_cap: "high", auto_compact: 500000 });
+  });
+
   it("lists only selected-harness models, shows warnings and the hidden count", async () => {
     const s = stateful(CATALOG);
     mount("models", s.handlers);

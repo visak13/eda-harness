@@ -108,6 +108,8 @@
     "qa": "astra"
   },
   "_openai_note": "2026-09-14 owner (m-96cbd61919, m-e6ef892737): roles_openai is an OPTION next to roles, not a replacement — every role maps to gpt-6-astra at thinking medium for now. A role runs on it when the pool routes that role to the Pi harness (EDP_PI_ROLES); the Claude column stays authoritative for every other seat. Model ids are Pi ids: openai-codex/<id> = Codex subscription login, openai/<id> = OPENAI_API_KEY.",
+  "default_model": "claude-opus-5-5",
+  "_catalog_note": "2026-09-27 S12 (owner m-549b8adc3a, m-bfe93b313c): default_model is what any role absent from role_models spawns on (custom roles included), so no seat launches on a harness's own default. Codex rows carry no context_window/auto_compact: the window comes from Codex (`codex debug models`) and compaction stays at Codex's own threshold unless the owner sets auto_compact, which the seat passes as -c model_auto_compact_token_limit. The data-dir copy merges new shipped rows at init and board start, never overwriting owner edits or removals.",
   "models": {
     "claude-fable-5-1": {
       "harness": "claude",
@@ -126,15 +128,11 @@
     "gpt-6-astra": {
       "harness": "codex",
       "provider": "codex",
-      "context_window": 272000,
-      "auto_compact": 200000,
       "effort_cap": "high"
     },
     "gpt-6-sol": {
       "harness": "codex",
       "provider": "codex",
-      "context_window": 272000,
-      "auto_compact": 200000,
       "effort_cap": "high"
     }
   }

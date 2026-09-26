@@ -161,6 +161,19 @@ def model_entry(agent_home: str | os.PathLike, model: str | None) -> dict | None
     return None
 
 
+def catalog_model_for(agent_home: str | os.PathLike, role: str | None) -> str | None:
+    """S12: the role's default catalog model (`role_models[role][0]`), or with role=None / an unlisted
+    role the catalog's `default_model`; None when the file or both keys are absent. Ids are opaque."""
+    try:
+        raw = json.loads(config_path(agent_home).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    ids = (raw.get("role_models") or {}).get(role) if role else None
+    if isinstance(ids, list) and ids and ids[0]:
+        return str(ids[0])
+    return str(raw["default_model"]) if role is None and raw.get("default_model") else None
+
+
 def seat_for_role(agent_home: str | os.PathLike, role: str,
                   column: str = "roles") -> Seat | None:
     """The seat bound to `role`, or None when no registry / unmapped role
