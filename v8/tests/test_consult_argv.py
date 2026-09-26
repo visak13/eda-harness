@@ -85,10 +85,11 @@ def _base(**kw):
     return _build_argv("codex", **kw)
 
 
-def test_fresh_turn_prompt_last_behind_double_dash():
+def test_fresh_turn_prompt_rides_stdin_behind_double_dash():
     argv = _base()
     assert argv[:2] == ["codex", "exec"]
-    assert argv[-2:] == ["--", "hello"]
+    assert argv[-2:] == ["--", "-"]
+    assert "hello" not in argv
     assert "resume" not in argv and "-i" not in argv
 
 
@@ -96,19 +97,29 @@ def test_fresh_turn_images_are_variadic_and_terminated():
     argv = _base(images=["a.png", "b.png"])
     i = argv.index("-i")
     assert argv[i:i + 3] == ["-i", "a.png", "b.png"]
-    assert argv[i + 3:] == ["--", "hello"]        # `--` terminates the variadic -i
+    assert argv[i + 3:] == ["--", "-"]        # `--` terminates the variadic -i
 
 
 def test_resume_turn_shape():
     argv = _base(resume_thread="0199-thread", images=["shot.png"])
     r = argv.index("resume")
     assert argv.index("-m") < r and argv.index("-c") < r
-    assert argv[r:] == ["resume", "-i", "shot.png", "--", "0199-thread", "hello"]
+    assert argv[r:] == ["resume", "-i", "shot.png", "--", "0199-thread", "-"]
 
 
 def test_resume_without_images():
     argv = _base(resume_thread="t1")
-    assert argv[-4:] == ["resume", "--", "t1", "hello"]
+    assert argv[-4:] == ["resume", "--", "t1", "-"]
+
+
+def test_huge_prompt_never_reaches_the_command_line():
+    """pain p-c8744541: a 100k-char prompt used to overflow Windows' 32767-char
+    command line (WinError 206); argv stays short whatever the prompt size."""
+    big = "x" * 100_000
+    for kw in ({}, {"resume_thread": "t1"}):
+        argv = _base(prompt=big, **kw)
+        assert len(subprocess.list2cmdline(argv)) < 32767
+        assert big not in argv
 
 
 def test_config_args_are_globals_before_subcommand():
@@ -307,7 +318,7 @@ def _fake_codex(*, answer: str | None, thread: str | None = "tid-1",
     """Return a stand-in for consult._run_codex that emulates codex: writes the
     `-o` last-message file (unless answer is None → fail-closed path) and streams a
     thread.started event. `writes_file` simulates a rogue write to that path."""
-    def fake(argv, timeout_s):
+    def fake(argv, timeout_s, stdin_text=None):
         lines = []
         if thread:
             lines.append(json.dumps({"type": "thread.started", "thread_id": thread}))
@@ -349,8 +360,9 @@ def _load_manifest(resp) -> dict:
 def test_consult_argv_carries_profile_config_and_sandbox(_logs, monkeypatch):
     seen = {}
 
-    def spy(argv, timeout_s):
+    def spy(argv, timeout_s, stdin_text=None):
         seen["argv"] = argv
+        seen["stdin"] = stdin_text
         Path(argv[argv.index("-o") + 1]).write_text("ok", encoding="utf-8")
         return json.dumps({"type": "thread.started", "thread_id": "t"}) + "\n", 0, False
 
@@ -358,6 +370,7 @@ def test_consult_argv_carries_profile_config_and_sandbox(_logs, monkeypatch):
     resp = consult_mod.consult("second_opinion", "q")   # → design profile
     assert resp["ok"], resp
     argv = seen["argv"]
+    assert argv[-1] == "-" and seen["stdin"] and seen["stdin"].rstrip().endswith("q")
     assert "-s" in argv and argv[argv.index("-s") + 1] == "read-only"
     joined = " ".join(argv)
     assert "approval_policy=never" in joined
@@ -390,7 +403,7 @@ def test_consult_fails_closed_when_mcp_discovery_fails(_logs, monkeypatch):
     monkeypatch.setattr(consult_mod, "discover_mcp_servers",
                         lambda codex, timeout_s=30: ([], "`codex mcp list --json` exited 1: boom"))
 
-    def boom(argv, timeout_s):
+    def boom(argv, timeout_s, stdin_text=None):
         raise AssertionError("codex must not run when MCP discovery fails")
 
     monkeypatch.setattr(consult_mod, "_run_codex", boom)
@@ -409,7 +422,7 @@ def test_requested_vs_provider_model_recorded(_logs, monkeypatch):
 def test_single_invocation_no_retry(_logs, monkeypatch):
     calls = {"n": 0}
 
-    def once(argv, timeout_s):
+    def once(argv, timeout_s, stdin_text=None):
         calls["n"] += 1
         Path(argv[argv.index("-o") + 1]).write_text("hi", encoding="utf-8")
         return "\n", 0, False
@@ -452,7 +465,7 @@ def test_undecodable_image_fails_before_run(_logs, monkeypatch):
     bad = _logs / "bad.png"
     bad.write_bytes(b"\x89PNG\r\n\x1a\nnot really a png")
 
-    def boom(argv, timeout_s):
+    def boom(argv, timeout_s, stdin_text=None):
         raise AssertionError("codex must not run when an image is undecodable")
 
     monkeypatch.setattr(consult_mod, "_run_codex", boom)
@@ -562,7 +575,7 @@ def test_boundary_rejected_before_codex_runs(_ue, monkeypatch, tmp_path):
     monkeypatch.setenv(consult_mod._LOG_DIR_ENV, str(tmp_path / "logs"))
     monkeypatch.setattr(consult_mod, "_resolve_bin", lambda: "codex")
 
-    def boom(argv, timeout_s):
+    def boom(argv, timeout_s, stdin_text=None):
         raise AssertionError("codex must not run when write_dir is in the UE tree")
 
     monkeypatch.setattr(consult_mod, "_run_codex", boom)
@@ -813,7 +826,7 @@ def test_consult_unattributed_new_file_during_run_does_not_fail(_ue_git, monkeyp
     # the log-attribution guard, end to end. (c-fe4f824d82)
     concurrent = _ue_git / "Source" / "seat11_new.cpp"
 
-    def fake(argv, timeout_s):
+    def fake(argv, timeout_s, stdin_text=None):
         concurrent.parent.mkdir(parents=True, exist_ok=True)
         concurrent.write_text("// seat 11's file\n", encoding="utf-8")   # not in the log
         Path(argv[argv.index("-o") + 1]).write_text("text advice", encoding="utf-8")

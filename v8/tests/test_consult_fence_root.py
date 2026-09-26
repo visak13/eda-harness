@@ -114,7 +114,7 @@ def test_thread_note_has_no_path_from_an_unrelated_dirty_repo(raw_client, tmp_pa
     monkeypatch.setattr(consult_mod, "_resolve_bin", lambda: "codex")
     monkeypatch.setattr(consult_mod, "discover_mcp_servers", lambda codex, timeout_s=30: (list(_FAKE_MCP), None))
 
-    def fake_codex(argv, timeout_s):
+    def fake_codex(argv, timeout_s, stdin_text=None):
         Path(argv[argv.index("-o") + 1]).write_text("here is the second opinion", encoding="utf-8")
         return json.dumps({"type": "thread.started", "thread_id": "t"}) + "\n", 0, False
 

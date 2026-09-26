@@ -378,16 +378,22 @@ def _resolve_bin() -> str:
     return _DEFAULT_BIN
 
 
+#: codex's "read the prompt from stdin" positional (codex exec [PROMPT] / resume [ID] [PROMPT]).
+STDIN_PROMPT = "-"
+
+
 def _build_argv(codex: str, *, prompt: str, workdir: str, last_message_file: str,
                 model: str, effort: str, sandbox: str = "read-only",
                 config_args: list[str] | None = None,
                 images: list[str] | None = None,
                 resume_thread: str | None = None) -> list[str]:
-    """Fresh turn:  `codex exec <globals> [-i img...] -- <prompt>`
-    Resume turn: `codex exec <globals> resume [-i img]* -- <thread_id> <prompt>`
+    """Fresh turn:  `codex exec <globals> [-i img...] -- -`
+    Resume turn: `codex exec <globals> resume [-i img]* -- <thread_id> -`
 
-    Globals (incl. the profile `-c` overrides) precede the subcommand; the prompt
-    is the LAST positional behind `--` so a leading '-' is never parsed as a flag.
+    Globals (incl. the profile `-c` overrides) precede the subcommand. The prompt
+    never rides argv (Windows caps a command line at 32767 chars — pain p-c8744541):
+    the LAST positional is `-`, so codex reads the prompt from stdin (`_run_codex`
+    writes it). `prompt` stays a parameter so the caller passes one value to both.
     On a FRESH turn `-i` is variadic and must be terminated by `--`; on RESUME `-i`
     is per-flag and sits AFTER the `resume` subcommand. PURE — no IO."""
     imgs = [i for i in (images or []) if i]
@@ -403,12 +409,12 @@ def _build_argv(codex: str, *, prompt: str, workdir: str, last_message_file: str
         argv.append("resume")
         for img in imgs:
             argv += ["-i", img]
-        argv += ["--", resume_thread, prompt]
+        argv += ["--", resume_thread, STDIN_PROMPT]
     else:
         if imgs:
             argv.append("-i")
             argv += imgs
-        argv += ["--", prompt]
+        argv += ["--", STDIN_PROMPT]
     return argv
 
 
@@ -915,9 +921,11 @@ def _kill_tree(proc: subprocess.Popen) -> None:
         pass
 
 
-def _run_codex(argv: list[str], timeout_s: int) -> tuple[str, int | None, bool]:
-    """Run codex, merging stderr into stdout (the real error lands on stderr),
-    empty stdin (else the CLI hangs forever). Returns (raw, exit_code, timed_out);
+def _run_codex(argv: list[str], timeout_s: int,
+               stdin_text: str | None = None) -> tuple[str, int | None, bool]:
+    """Run codex, merging stderr into stdout (the real error lands on stderr).
+    stdin carries the prompt (`-` positional) and is then closed; with no prompt it
+    is empty (else the CLI hangs forever). Returns (raw, exit_code, timed_out);
     a timeout kills the whole child process tree and returns whatever was captured."""
     kwargs: dict[str, Any] = {}
     if os.name == "nt":
@@ -925,10 +933,11 @@ def _run_codex(argv: list[str], timeout_s: int) -> tuple[str, int | None, bool]:
     else:
         kwargs["start_new_session"] = True
     proc = subprocess.Popen(
-        argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+        argv, stdin=subprocess.DEVNULL if stdin_text is None else subprocess.PIPE,
+        stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", **kwargs)
     try:
-        raw, _ = proc.communicate(timeout=timeout_s)
+        raw, _ = proc.communicate(input=stdin_text, timeout=timeout_s)
         return raw or "", proc.returncode, False
     except subprocess.TimeoutExpired:
         _kill_tree(proc)
@@ -1366,7 +1375,7 @@ def _consult_locked(purpose: str, question: str, *, context: str, files: list[st
     pre_status = git_status_map(fence_root)
     start = time.monotonic()
     try:
-        raw, exit_code, timed_out = _run_codex(argv, timeout_s)
+        raw, exit_code, timed_out = _run_codex(argv, timeout_s, stdin_text=prompt)
     except (OSError, ValueError) as e:
         manifest["error"] = f"launch failed: {e}"
         _save_manifest()
