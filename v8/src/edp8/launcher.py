@@ -108,6 +108,12 @@ def bundle_exe() -> str:
     return sys.executable
 
 
+def _detach_via() -> str | None:
+    """The console interpreter that runs detach's intermediate: in a bundle the console stub, because the GUI
+    stub (a Start-menu launch) returns no stdout and the start would fail after spawning (S8, owner look)."""
+    return bundle_exe() if bundled() else None
+
+
 def _venv_python(d: Path) -> Path:
     return d / ".venv" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
 
@@ -328,7 +334,7 @@ def start(svc: str, *, wait_s: float = 90.0) -> dict[str, Any]:
         raise LaunchError(foreign_text(svc, facts))
     argv = service_argv(svc)
     log = _log_path(svc)
-    ident, _ = detach(argv, cwd=str(service_cwd(svc)), env=child_env(svc), log=str(log))
+    ident, _ = detach(argv, cwd=str(service_cwd(svc)), env=child_env(svc), log=str(log), via=_detach_via())
     job = _job(svc)
     assign_job(job, ident.pid)  # Windows: the job also reaches orphans at stop; False (no-op) elsewhere
     pid = ident.pid
@@ -524,7 +530,7 @@ def ensure_supervisor(*, wait_s: float = 20.0) -> dict[str, Any]:
     if home is not None:
         env["EDP_HOME"] = env["EDP8_HOME"] = str(home)
     env["EDP8_RUN_DIR"] = str(settings.run_dir())
-    ident, _ = detach(argv, cwd=str(service_cwd("board")), env=env, log=str(log))
+    ident, _ = detach(argv, cwd=str(service_cwd("board")), env=env, log=str(log), via=_detach_via())
     deadline = time.monotonic() + wait_s
     while time.monotonic() < deadline and ident.live():
         rec = run_state.read(SUPERVISOR)

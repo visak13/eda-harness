@@ -49,6 +49,26 @@ def test_service_argv_in_a_windows_bundle_uses_the_console_stub(monkeypatch, tmp
     assert launcher.service_argv("board") == [str(tmp_path / "heronry.exe"), "--heronry-service", "board"]
 
 
+def test_a_start_from_the_gui_stub_detaches_through_the_console_stub(monkeypatch, tmp_path):
+    """Owner look, S8 step 6: a Start-menu launch runs Heronry Desktop.exe (GUI subsystem); detach's intermediate
+    must run through heronry.exe, whose stdout carries the pid, or every start fails after spawning."""
+    gui = tmp_path / "Heronry Desktop.exe"
+    gui.write_bytes(b"")
+    (tmp_path / "heronry.exe").write_bytes(b"")
+    monkeypatch.setattr(sys, "executable", str(gui))
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert launcher._detach_via() == str(tmp_path / "heronry.exe")
+    monkeypatch.setattr(sys, "executable", "C:/x/.venv/Scripts/python.exe")
+    assert launcher._detach_via() is None
+
+
+def test_detach_names_an_intermediate_that_reports_no_pid(monkeypatch):
+    from edp_contracts import proc
+    monkeypatch.setattr(proc.subprocess, "run", lambda *a, **k: proc.subprocess.CompletedProcess(a, 0, "", ""))
+    with pytest.raises(RuntimeError, match="reported no process id"):
+        proc.detach(["heronry.exe", "--heronry-service", "board"], via="C:/Apps/Heronry Desktop.exe")
+
+
 def test_service_argv_without_a_console_stub_re_enters_the_app_itself(monkeypatch, tmp_path):
     app = tmp_path / "Heronry Desktop"
     app.write_bytes(b"")

@@ -280,19 +280,26 @@ else:
 
 
 def detach(argv: Sequence[str], *, cwd: str | None = None, env: Mapping[str, str] | None = None,
-           log: str | None = None, timeout: float = 30.0) -> tuple[ProcId, bool]:
+           log: str | None = None, timeout: float = 30.0, via: str | None = None) -> tuple[ProcId, bool]:
     """Launch `argv` OUT OF this process's tree; return its ProcId and whether it left the job.
 
     An intermediate process starts the target (own session on POSIX; own group, no window and
     CREATE_BREAKAWAY_FROM_JOB on Windows, retried without breakaway when the job forbids it) and exits.
     The target then has a dead parent, so no ``children()`` walk from the caller reaches it, and a
     ``kill_tree`` of the caller leaves it running. The target runs with CREATE_NO_WINDOW, never
-    DETACHED_PROCESS, so a venv launcher stub cannot pop a fresh visible console."""
+    DETACHED_PROCESS, so a venv launcher stub cannot pop a fresh visible console.
+
+    `via` is the interpreter that runs the intermediate (default: this one). It must be a console program:
+    the pid comes back on its stdout, which a GUI-subsystem app stub (Heronry Desktop.exe) never delivers."""
     spec = {"argv": list(argv), "cwd": cwd, "env": dict(env) if env is not None else None, "log": log}
-    py = getattr(sys, "_base_executable", None) or sys.executable
+    py = via or getattr(sys, "_base_executable", None) or sys.executable
     out = subprocess.run([py, "-c", _DETACH_CODE], input=json.dumps(spec), capture_output=True, text=True,
                          timeout=timeout, check=True, creationflags=hidden_flags())
-    rec = json.loads(out.stdout.strip().splitlines()[-1])
+    lines = (out.stdout or "").strip().splitlines()
+    if not lines:
+        raise RuntimeError(f"could not start {argv[0]}: {py} reported no process id"
+                           + (f" ({out.stderr.strip()[-300:]})" if (out.stderr or "").strip() else ""))
+    rec = json.loads(lines[-1])
     return ProcId.of(int(rec["pid"])), bool(rec.get("breakaway"))
 
 
