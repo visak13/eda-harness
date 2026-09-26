@@ -829,7 +829,13 @@ def fence_remediate(write_dir: str | None, pre_status: dict[str, str] | None,
         p = Path(path)
         rogue_sha = _sha256_file(p)
         pre_existing = before_mtimes.get(path) is not None
-        if not _log_attributes(path, written):
+        if not _log_attributes(path, written) and _shell_names(path, shell_text):
+            # qa s-ccdafcb229 finding 4: same rule as the git branch — named by this run's shell, unproven
+            report.append({"path": path, "action": "shell_named_uncertain", "attribution": "shell_text",
+                           "tracked": None, "pre_dirty": pre_existing, "sha256": rogue_sha, "ok": False,
+                           "detail": "a shell command of this run names the path but no file_change "
+                                     "record proves a write; left untouched, reported as uncertain"})
+        elif not _log_attributes(path, written):
             report.append({"path": path, "action": "unattributed_concurrent",
                            "attribution": "none", "tracked": None,
                            "pre_dirty": pre_existing, "sha256": rogue_sha, "ok": True,

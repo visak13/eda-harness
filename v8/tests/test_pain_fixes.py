@@ -456,3 +456,31 @@ def test_astra11_an_unblocked_epic_whose_stories_are_released_goes_to_in_review(
     assert board.ticket(epic.id).status == TicketStatus.blocked  # an explicit block wins while it lasts
     board.ticket_update(ps["arch"], epic.id, status=TicketStatus.in_progress)
     assert board.ticket(epic.id).status == TicketStatus.in_review
+
+
+# ------------------------------------------------------------------ qa s-ccdafcb229 adversary round
+
+def test_qa1_only_the_checker_or_its_own_architect_closes_an_epic_as_partial(b):
+    from edp8.board import BoardError
+    board, ps = b
+    epic, story, c = _epic_with_evidenced_story(board, ps)
+    board.ticket_update(ps["owner"], epic.id, assignee="arch")
+    other = board.participant_create("agent", Role.architect, "arch2", id_="arch2")
+    for who in (other, ps["eng"]):
+        with pytest.raises(BoardError, match="partial on an epic"):
+            board.ticket_update(who, epic.id, status=TicketStatus.partial)
+    board.ticket_update(ps["arch"], epic.id, status=TicketStatus.partial)
+    assert board.ticket(epic.id).status == TicketStatus.partial
+
+
+def test_qa3_epic_lines_passed_before_the_last_hand_off_close_the_epic(b):
+    board, ps = b
+    epic, story, c = _epic_with_evidenced_story(board, ps)
+    rep = board.doc_create(ps["qa"], doc_type=DocType.report, title="QA", body_md="ok", scope=epic.id)
+    (ec,) = board.criteria(epic.id)
+    board.criterion_update(ps["qa"], ec.id, evidence_ref=rep.id)
+    board.criterion_update(ps["qa"], ec.id, verdict=Verdict.passed)
+    board.ticket_update(ps["eng"], story.id, status=TicketStatus.in_review)
+    board.criterion_update(ps["qa"], c.id, verdict=Verdict.passed)
+    assert board.ticket(story.id).status == TicketStatus.done
+    assert board.ticket(epic.id).status == TicketStatus.done

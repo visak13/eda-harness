@@ -984,3 +984,18 @@ def test_a_path_only_a_shell_command_names_is_reported_uncertain_not_concurrent(
     assert e["action"] == "shell_named_uncertain" and e["ok"] is False
     assert tracked.read_text(encoding="utf-8") == "CHANGED\n"       # never reverted on shell text
     assert _real_escapes(rep) == []
+
+
+def test_the_non_git_fence_reports_a_shell_named_path_uncertain_too(tmp_path):
+    """qa s-ccdafcb229 (adversary finding 4): the mtime fallback applies the same shell-named rule."""
+    plain = tmp_path / "not_a_repo"
+    plain.mkdir()
+    f = plain / "x.txt"
+    before = _snapshot_mtimes([plain])
+    f.write_text("CHANGED\n", encoding="utf-8")
+    log = json.dumps({"type": "item.completed", "item": {
+        "type": "command_execution", "command": f'Set-Content "{f}" CHANGED'}})
+    rep = fence_remediate(None, None, before, plain, run_log=log)
+    e = next(e for e in rep["escapes"] if _norm(f) == e["path"])
+    assert e["action"] == "shell_named_uncertain" and e["ok"] is False
+    assert f.exists() and _real_escapes(rep) == []

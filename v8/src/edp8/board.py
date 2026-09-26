@@ -367,6 +367,8 @@ class Board:
         self._emit(epic.id, EventKind.status_changed,
                    {"from": old.value, "to": to.value, "by": "board", "trigger": trigger})
         self._after_status(epic)
+        if to == TicketStatus.in_review:  # qa s-ccdafcb229 finding 3: epic lines verdicted before the last
+            self._auto_advance(epic)      # story's hand-off close the epic now, not on a later verdict
 
     def children(self, ticket_id: str) -> list[Ticket]:
         # every child: the store's default 500-row window would silently cut a long-lived epic (C17 second opinion)
@@ -672,6 +674,10 @@ class Board:
             if missing:
                 raise BoardError("transition", "in_review needs evidence_ref on every criterion",
                                  f"criteria without evidence: {missing} — /verify, doc_create(report), criterion_update")
+        if to == TicketStatus.partial and t.kind == TicketKind.epic                 and r not in CRITERION_CHECKERS and not self._own_epic_architect(actor, t):
+            # qa s-ccdafcb229 adversary finding 1: closing an epic as partial is the checker's or its own
+            # architect's call, like done (no all-pass guard: partial means some criteria did not pass)
+            raise BoardError("scope", "partial on an epic is set by the checker (qa/owner), or by the architect on its epic")
         if to == TicketStatus.done:
             # the architect completes its own EPIC's walk (owner m-b0a7f9cda9); the guards below still hold
             if r not in CRITERION_CHECKERS and not self._own_epic_architect(actor, t):
