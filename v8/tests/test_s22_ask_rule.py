@@ -35,6 +35,19 @@ def test_live_author_unanswered_counts(rig):
     assert _pending_owner_request(b, epic) is True
 
 
+def test_status_to_a_human_waits_in_needs_you_until_they_reply(rig):
+    # owner m-bf83c16da7: a seat's "blocked — pick one" went to the owner as kind=status and never
+    # surfaced. A status/finding/deviation TO a human is an ask; the same kinds to an agent are not.
+    b, owner, arch, qa, epic = rig
+    s = b.message_send(arch, ticket_id=epic.id, to="owner", kind=MessageKind.status, text="Blocked: pick 1 or 2")
+    b.message_send(arch, ticket_id=epic.id, to=qa.id, kind=MessageKind.status, text="fyi")
+    b.message_send(arch, ticket_id=epic.id, to="owner", kind=MessageKind.note, text="just a note")
+    assert [m["id"] for m in b.inbox(owner)] == [s.id]
+    assert b.inbox(qa) == []
+    b.message_send(owner, ticket_id=epic.id, to=arch.id, kind=MessageKind.note, text="go", reply_to=s.id)
+    assert b.inbox(owner) == []
+
+
 def test_closed_seat_asks_drop_out(rig):
     b, owner, arch, qa, epic = rig
     q1 = b.message_send(arch, ticket_id=epic.id, to="owner", kind=MessageKind.question, text="one")

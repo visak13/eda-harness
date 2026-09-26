@@ -15,7 +15,7 @@ def attention(board: Board, actor: Participant, *, since: int = -1,
         cursor = board.store.max_seq()
         if request is None and since < 0:
             return {"participant": actor.id, "cursor": cursor, "requests": []}
-        asks = {m["id"]: m for m in board.inbox(actor) if m["kind"] == "question"}
+        asks = {m["id"]: m for m in board.inbox(actor) if m["kind"] != "steer"}
         gates = {ev.id: (tid, ev) for tid, ev in views._owner_gates(board, actor)}
         if request is not None:
             event = board.store.get("event", request)

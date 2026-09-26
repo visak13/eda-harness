@@ -1999,9 +1999,13 @@ class Board:
         """Unanswered questions AND steers addressed to this participant, oldest first. A directed
         steer to a booting seat must survive the whoami->subscribe race, so this is queried BY
         RECIPIENT (indexed) — a global scan capped at 200 rows silently dropped every recent ask
-        once the board grew (drill 2026-09-03). Empty list == clear to close."""
-        asks = list(reversed(self.store.query("message", {"to": p.id,
-                                                          "kind": [MessageKind.question, MessageKind.steer]},
+        once the board grew (drill 2026-09-03). Empty list == clear to close.
+        A HUMAN is also waited on by a status, finding or deviation sent to them: a seat's "blocked —
+        pick one" went out as kind=status and never reached Needs you (owner m-bf83c16da7)."""
+        kinds = [MessageKind.question, MessageKind.steer]
+        if p.type == "human":
+            kinds += [MessageKind.status, MessageKind.finding, MessageKind.deviation]
+        asks = list(reversed(self.store.query("message", {"to": p.id, "kind": kinds},
                                               limit=100, newest_first=True)))
         if p.role.value != p.id:
             # a bare-role address (legacy rows, or a role with no seat when sent) reaches the
