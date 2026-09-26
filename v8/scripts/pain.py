@@ -4,6 +4,7 @@ Pain points stay OUTSIDE the board (owner ruling): they are fixed from a shell o
 framework. This script gives the append-only file structure instead of a new plane:
 
   python scripts/pain.py list [--all] [--area tools] [--json]   open records (default) as a table
+                                                                (`--open` is accepted: it is the default)
   python scripts/pain.py file  '<json-object>'                  append one record (assigns an id)
   python scripts/pain.py resolve <id> --status fixed|invalid|superseded [--by <sha>] [--note ...]
   python scripts/pain.py show <id>                              the record and its resolution trail
@@ -12,6 +13,8 @@ File: v8/.pain/pain-points.jsonl — one JSON object per line, append-only, BOM-
   record:     {"id","ts","role","handle","severity","area","symptom","expected","evidence",
                "workaround","cost", "supersedes"?, "dup_of"?}
   resolution: {"id","resolves":true,"status","fixed_by","ts","note"}   (latest line per id wins)
+A record with "dup_of" and no resolution of its own takes its original's status, so resolving the
+original closes its duplicates too and `list` never shows a duplicate of a resolved record.
 """
 
 from __future__ import annotations
@@ -59,7 +62,11 @@ def _load() -> tuple[list[dict], dict[str, dict]]:
 
 
 def _status(rec: dict, res: dict[str, dict]) -> str:
-    return res.get(rec["id"], {}).get("status", "open")
+    own = res.get(rec["id"])
+    if own:
+        return own.get("status", "open")
+    orig = res.get(rec.get("dup_of") or "")
+    return orig.get("status", "open") if orig else "open"
 
 
 def _append(obj: dict) -> None:
@@ -132,6 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("list"); s.add_argument("--all", action="store_true"); s.add_argument("--area")
+    s.add_argument("--open", action="store_true", help="open records only (the default)")
     s.add_argument("--json", action="store_true"); s.set_defaults(fn=cmd_list)
     s = sub.add_parser("file"); s.add_argument("record"); s.set_defaults(fn=cmd_file)
     s = sub.add_parser("resolve"); s.add_argument("id"); s.add_argument("--status", choices=STATUSES[1:], required=True)
