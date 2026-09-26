@@ -169,10 +169,22 @@ test("the reader: the design opens in an editor tab, rendered, with an outline a
   await titleAction(/^Full screen/).click();
   await expect(sidebar).toBeHidden({ timeout: 10_000 });
   await expect(page.locator(".part.auxiliarybar")).toBeHidden();
+  // t-93da8bf09d: Zen hides the menu and status bar and silences notifications, so the reader shows the way out
+  await expect(r.locator("#rd-fullhint")).toBeVisible({ timeout: 10_000 });
+  await expect(r.locator("#rd-fullhint")).toContainText("Ctrl+K Z");
+  await expect(r.locator("#rd-full")).toHaveText("Exit full screen");
   await page.screenshot({ path: shot("reader-design-fullscreen.png") });
-  await titleAction(/^Full screen/).click();
+  // the editor title's toggle is now Exit full screen (inZenMode); it leaves, and the banner goes
+  await titleAction(/^Exit full screen/).click();
   await expect(sidebar).toBeVisible({ timeout: 10_000 });
   await expect(page.locator(".part.auxiliarybar")).toBeVisible();
+  await expect(r.locator("#rd-fullhint")).toBeHidden();
+  // the banner's own Exit leaves too
+  await r.locator("#rd-full").click();
+  await expect(sidebar).toBeHidden({ timeout: 10_000 });
+  await r.locator("#rd-fullhint-exit").click();
+  await expect(sidebar).toBeVisible({ timeout: 10_000 });
+  await expect(r.locator("#rd-fullhint")).toBeHidden();
   // an older version: no review actions (the board says can_approve only on the current one)
   await r.locator("#rd-version").selectOption("1");
   await expect(activeTab()).toContainText("Spike design · v1", { timeout: 20_000 });
