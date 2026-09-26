@@ -24,7 +24,7 @@ from edp8 import control, doctor, fixes, pool_adapter, topics
 from edp8.admin import services as admin_services
 from edp8.board import BoardError
 from edp8.bundles import ALL_TOOLS, READ_ONLY_ROLES, ROLE_BUNDLES, tools_for_role
-from edp8.schemas import EventKind, TicketKind, WorkType
+from edp8.schemas import EventKind, MessageKind, TicketKind, WorkType
 
 V8 = Path(__file__).resolve().parents[1]
 
@@ -389,3 +389,58 @@ def test_heronry_doctor_agent_reports_the_boards_refusal(tmp_path, monkeypatch, 
                         env.client.post(url.removeprefix("http://board.test"), json=json, headers=headers))
     assert doctor_cmd(["--agent", "help"]) == 1
     assert "refused the help request (403)" in capsys.readouterr().err
+
+
+# ----------------------------------------------------------------------------- t-67dad8c6aa: restart respawn rule
+def test_restart_requeues_a_help_seat_only_for_an_unanswered_ask_newer_than_its_last_shell(tmp_path, monkeypatch):
+    """Architect m-8036363721: a board restart re-spawned doctor.<topic> for an idle help thread whose only ask
+    was 9 minutes old and had already been put to a seat that died. The rebuild re-queues a help seat only
+    when an unanswered ask is newer than the seat's last shell; else the next message re-queues it."""
+    from datetime import timedelta
+
+    from edp8.schemas import Session, SessionState
+    env = make_env(tmp_path, monkeypatch)
+    b = env.board
+    tid = env.client.post("/v1/help", json={"text": "seats die"}, headers=BOB_H).json()["value"]["topic"]["id"]
+    pid = f"doctor.{tid}"
+    ask = max(b.store.query("message", {"ticket_id": tid}, limit=-1), key=lambda m: m.created_at)
+
+    def restart() -> bool:
+        b._pending_pairings.clear()
+        b._rederive_pending_pairings()
+        return pid in b._pending_pairings
+
+    assert restart() is True  # never had a shell: the ask is owed a seat
+    # the seat got a shell after the ask, then died without answering: a restart does NOT re-spawn it bare
+    b.store.put("session", Session(id="sess-h1", participant_id=pid, pool_id="p-h1", state=SessionState.dead,
+                                   created_at=ask.created_at + timedelta(microseconds=1), reason="clean exit: other"))
+    assert restart() is False
+    # the person's next message re-queues it straight away (message_send → ensure_seat) ...
+    b._pending_pairings.clear()
+    later = env.client.post("/v1/help", json={"text": "any news?"}, headers=BOB_H)
+    assert later.status_code == 200 and pid in b._pending_pairings
+    # ... and that newer, unanswered ask survives a restart
+    assert restart() is True
+    # once the seat answers it, a restart leaves the thread waiting for the next message
+    seat = b.store.get("participant", pid)
+    b.message_send(seat, ticket_id=tid, to="bob", kind=MessageKind.answer, text="the pool is down; restart it")
+    assert restart() is False
+    # a Library (sme) topic is unaffected: its resident seat is always re-queued
+    lib = topics.create(b, _owner(env), title="lib")["topic"].id
+    b._pending_pairings.clear()
+    b._rederive_pending_pairings()
+    assert f"sme.{lib}" in b._pending_pairings
+
+
+def test_the_help_seat_spawns_on_its_catalog_model(tmp_path, monkeypatch):
+    """t-67dad8c6aa: the shipped catalog lists doctor, so the Help seat's spawn carries `--model <id>` instead of
+    the CLI default (the failed seat ran bare on Opus 4.8)."""
+    from edp8 import model_catalog, seat_choice
+    reg = json.loads((V8 / "models.json").read_text(encoding="utf-8"))
+    default = reg["role_models"]["doctor"][0]
+    assert model_catalog.validate(reg["models"], reg["role_models"]) == []
+    monkeypatch.setenv("EDP_MODELS_CONFIG", str(V8 / "models.json"))  # the shipped catalog, not this host's data dir
+    env = make_env(tmp_path, monkeypatch)
+    tid = env.client.post("/v1/help", json={"text": "hi"}, headers=BOB_H).json()["value"]["topic"]["id"]
+    assert seat_choice.catalog(V8)["doctor"][0] == default
+    assert env.board.seat_choice_for(tid, role="doctor").pool_model == default

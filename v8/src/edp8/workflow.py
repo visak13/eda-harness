@@ -43,6 +43,26 @@ in progress, resume the next unbuilt item of your plan; end the turn silently on
 """
 
 
+#: t-67dad8c6aa: Claude Code's own slash commands and bundled skills (claude 2.1.280). A role card or skill
+#: named like one is booted as `/<name>` and may resolve to the built-in instead of the card, so no card,
+#: skill or role takes one of these names. The one place this list lives; tests/test_card_collisions.py.
+CLAUDE_BUILTIN_COMMANDS = frozenset({
+    "add-dir", "agents", "bashes", "bug", "clear", "compact", "config", "context", "copy", "cost", "doctor",
+    "exit", "export", "fast", "feedback", "help", "hooks", "ide", "init", "install-github-app",
+    "install-slack-app", "login", "logout", "mcp", "memory", "migrate-installer", "model", "output-style",
+    "permissions", "plan", "plugin", "plugins", "pr-comments", "privacy-settings", "quit", "release-notes",
+    "remote-env", "rename", "resume", "review", "rewind", "sandbox", "security-review", "skills", "stats",
+    "status", "statusline", "tasks", "terminal-setup", "theme", "todos", "upgrade", "usage", "vim",
+    # bundled skills, invoked the same way
+    "claude-api", "code-review", "fewer-permission-prompts", "keybindings-help", "loop", "run", "schedule",
+    "simplify", "update-config", "workflow-authoring",
+})
+#: A name in both sets, kept on measured evidence that the project card wins over the built-in.
+#: doctor: card_collision_drill.py (edp-pool/scripts) ran `/doctor` as the project card on claude 2.1.280
+#: (t-67dad8c6aa, architect ruling m-e8f1a59731: no rename; the Help seat's failure was the argv swallow).
+CLAUDE_BUILTIN_EXCEPTIONS = {"doctor": "project card measured to win on claude 2.1.280 (t-67dad8c6aa)"}
+
+
 def ref(wf_id: str, version: int) -> str:
     return f"{wf_id}@{version}"
 

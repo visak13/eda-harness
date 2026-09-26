@@ -16,7 +16,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.types import Scope
+from starlette.responses import RedirectResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 log = logging.getLogger("edp8.webapp")
 
@@ -45,6 +46,25 @@ class _ImmutableStatic(StaticFiles):
         resp = await super().get_response(path, scope)
         resp.headers["Cache-Control"] = _IMMUTABLE
         return resp
+
+
+class CollapseLeadingSlashes:
+    """t-67dad8c6aa (owner art-fddcc29837): `//ui/library/topics/<id>`, typed by hand, answered a bare 404.
+    A GET/HEAD whose path starts with repeated slashes is redirected (308) to the same path with one leading
+    slash, query kept. The Location always starts with exactly one `/`, so it can never become a
+    protocol-relative `//host` redirect."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        path = scope.get("path") or ""
+        if scope["type"] == "http" and path.startswith("//") and scope.get("method") in ("GET", "HEAD"):
+            qs = scope.get("query_string", b"").decode("latin-1")
+            target = "/" + path.lstrip("/") + (f"?{qs}" if qs else "")
+            await RedirectResponse(target, status_code=308)(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
 
 
 def mount_spa(app: FastAPI, prefix: str, dist: str | Path | None = None) -> bool:

@@ -982,6 +982,10 @@ class Board:
                     self._enqueue_pairing(f"{checker}.{t.id}", checker, t.id)
             elif is_topic(t) and t.status not in _TERMINAL:  # S-SME-SURFACE: resident until the owner closes
                 role = topic_seat_role(t)  # S19: a help topic's resident seat is the doctor
+                if is_help(t):
+                    from . import topics  # local: topics imports board
+                    if not topics.help_seat_owed(self, t):  # t-67dad8c6aa: the next message re-queues it
+                        continue
                 self._enqueue_pairing(f"{role}.{t.id}", role, t.id)
 
     def _pairing_epic_active(self, ticket_id: str) -> bool:

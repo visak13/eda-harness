@@ -136,3 +136,14 @@ def test_real_create_app_boots_even_if_bundle_absent(monkeypatch, tmp_path):
     c = TestClient(app)
     assert c.get("/ui/x").status_code == 503
     assert c.get("/healthz").json()["ok"] is True
+
+
+def test_repeated_leading_slashes_redirect_to_the_single_slash_path(client):
+    """t-67dad8c6aa: `//ui/library/topics/<id>` (typed by hand) was a bare 404; it now redirects to `/ui/…`,
+    query kept, and never to a protocol-relative `//host` Location."""
+    r = client.get("http://testserver//ui/library/topics/topic-x?tab=thread", follow_redirects=False)
+    assert r.status_code == 308 and r.headers["location"] == "/ui/library/topics/topic-x?tab=thread"
+    r = client.get("http://testserver///evil.example/ui", follow_redirects=False)
+    assert r.status_code == 308 and r.headers["location"] == "/evil.example/ui"
+    assert client.get("http://testserver//v1/whoami", headers=H, follow_redirects=True).status_code == 200
+    assert client.post("http://testserver//v1/whoami", headers=H, follow_redirects=False).status_code != 308  # GET/HEAD only

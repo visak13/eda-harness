@@ -188,6 +188,23 @@ def ensure_seat(board: Board, topic_id: str) -> str | None:
     return pid
 
 
+def help_seat_owed(board: Board, t: Ticket) -> bool:
+    """t-67dad8c6aa (architect m-8036363721): after a board restart, a help thread's resident seat comes back
+    only when the thread holds an unanswered message newer than the seat's last shell; otherwise it waits
+    for the next message (message_send re-queues it). An idle help thread whose last ask was already put to
+    a seat that then died is not re-spawned bare on every restart."""
+    pid = seat_of(board, t.id)
+    msgs = board.store.query("message", {"ticket_id": t.id}, limit=200, newest_first=True)
+    last_ask = next((m for m in msgs if m.created_by not in (pid, "board")), None)  # type: ignore[union-attr]
+    if last_ask is None:
+        return False
+    if any(m.created_by == pid and m.created_at > last_ask.created_at for m in msgs):  # type: ignore[union-attr]
+        return False  # answered
+    shells = board.store.query("session", {"participant_id": pid})
+    last_shell = max((s.created_at for s in shells), default=None)  # type: ignore[union-attr]
+    return last_shell is None or last_ask.created_at > last_shell
+
+
 def close(board: Board, actor: Participant, topic_id: str) -> Ticket:
     """The owner closes the topic: status done (board-authored — topics have no delivery walk), the seat
     released through the pool, the thread read-only. Docs and proposals stay in the Library."""

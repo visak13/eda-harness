@@ -1703,6 +1703,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     from .ui import router as ui_router
     from .webapp import mount_spa
+    from .webapp.serve import CollapseLeadingSlashes
+
+    app.add_middleware(CollapseLeadingSlashes)  # t-67dad8c6aa: `//ui/…` redirects to `/ui/…`, never a bare 404
 
     # Cutover switch (design §4.1 Transition, S12; rollback contract narrowed by ruling on
     # report-0e7081b562's second opinion — c-a8c1be7137). EDP8_UI selects which renderer owns /ui:
