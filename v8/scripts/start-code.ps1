@@ -73,7 +73,8 @@ $node = Join-Path $serverDir $lock.node
 $toolsNorm = ([IO.Path]::GetFullPath($toolsRoot)).TrimEnd("\") + "\"
 $userDir = Join-Path $DATA "user"
 $extDir = Join-Path $DATA "extensions"
-$config = Join-Path $DATA "config.yaml"
+# not config.yaml: Bitdefender left that name write-locked after a quarantine restore (owner m-90da0dca59)
+$config = Join-Path $DATA "code-server.yaml"
 $stateFile = Join-Path $RUN "code.json"
 # DNS-rebinding guard (s-03c7e9168b, design-628b968271 + steer m-b7adc0f74f): the host-allowlist
 # guard (edp8.code_guard, the edp8 venv's python) owns 127.0.0.1:$PORT; code-server sits on a random
