@@ -165,7 +165,9 @@ def _wrap(tool: ToolDef, *, board_url: str, admin_token: str | None, workspace_r
 
     params = [inspect.Parameter("ctx", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=Context)]
     for fname, field in tool.args_model.model_fields.items():
-        default = inspect.Parameter.empty if field.is_required() else field.default
+        # default_factory fields (list args such as record_decision replaces/domains) have no
+        # field.default; call the factory so the tool schema marks them optional (pain p-13393743)
+        default = inspect.Parameter.empty if field.is_required() else field.get_default(call_default_factory=True)
         annotation = Annotated[field.annotation, Field(description=field.description or "")]
         params.append(inspect.Parameter(fname, inspect.Parameter.KEYWORD_ONLY,
                                         default=default, annotation=annotation))
