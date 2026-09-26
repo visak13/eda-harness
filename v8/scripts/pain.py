@@ -87,6 +87,8 @@ def cmd_list(a: argparse.Namespace) -> int:
     for r in rows:
         st = _status(r, res)
         by = res.get(r["id"], {}).get("fixed_by") or ""
+        if not by and r.get("dup_of"):  # a dup names the commit of the record it duplicates
+            by = res.get(r["dup_of"], {}).get("fixed_by") or ""
         print(f"{r['id']}  {st:<10} {r.get('severity','?'):<6} {r.get('area','?'):<7} {r.get('ts','')[:10]}  "
               f"{r.get('role','?'):<9} {(r.get('symptom') or '')[:90]}" + (f"  [{by}]" if by else ""))
     print(f"\n{len(rows)} shown ({sum(1 for r in recs if _status(r, res) == 'open')} open of {len(recs)})")
