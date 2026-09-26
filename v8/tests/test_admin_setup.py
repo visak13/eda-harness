@@ -44,6 +44,60 @@ def test_start_opens_setup_until_done(tmp_path, monkeypatch, capsys):
     assert opened == [] and "/ui/setup" not in capsys.readouterr().out
 
 
+class _Tty:
+    def __init__(self, tty: bool):
+        self.tty = tty
+
+    def isatty(self) -> bool:
+        return self.tty
+
+    def write(self, s):  # stdout stand-in
+        return len(s)
+
+    def flush(self):
+        pass
+
+
+def test_start_never_opens_a_browser_for_a_seat_a_test_or_the_fleet(tmp_path, monkeypatch):
+    """m-98e4f2770f: test and seat `start`s opened /ui/setup tabs in the owner's own browser. A browser opens only
+    for a person at a TTY with no seat identity, outside dev mode and without HERONRY_NO_BROWSER/--no-browser;
+    otherwise the URL is only printed — asserted on start() itself with the opener monkeypatched."""
+    make_env(tmp_path, monkeypatch)
+    opened: list[str] = []
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url))
+    monkeypatch.setattr(cli, "_targets", lambda pos: ["board"])
+    monkeypatch.setattr(cli, "_via_control", lambda *a: {"service": "board", "state": "already_running"})
+    import edp8.launcher as launcher
+    monkeypatch.setattr(launcher, "ensure_supervisor", lambda: {"service": "supervisor", "state": "already_running"})
+    monkeypatch.setenv("HERONRY_NO_UPDATE_CHECK", "1")
+    for k in ("EDP_HANDLE", "EDP8_PARTICIPANT", "HERONRY_NO_BROWSER"):
+        monkeypatch.delenv(k, raising=False)
+    import edp8.settings as st0
+    monkeypatch.setattr(st0, "dev_mode", lambda: False)
+
+    def run(stdin_tty=True, stdout_tty=True, argv=()):
+        monkeypatch.setattr("sys.stdin", _Tty(stdin_tty))
+        monkeypatch.setattr("sys.stdout", _Tty(stdout_tty))
+        assert cli.start(list(argv)) == 0
+
+    run(stdin_tty=False)                       # a test/script: stdin not a TTY
+    run(stdout_tty=False)                      # output piped
+    run(argv=["--no-browser"])
+    monkeypatch.setenv("EDP_HANDLE", "engineer.s-x")   # a seat shell
+    run()
+    monkeypatch.delenv("EDP_HANDLE")
+    monkeypatch.setenv("HERONRY_NO_BROWSER", "1")      # edp.ps1 / the test fixture
+    run()
+    monkeypatch.delenv("HERONRY_NO_BROWSER")
+    import edp8.settings as st
+    monkeypatch.setattr(st, "dev_mode", lambda: True)  # the fleet's source checkout
+    run()
+    assert opened == []
+    monkeypatch.setattr(st, "dev_mode", lambda: False)  # a person at a terminal on an installed copy
+    run()
+    assert len(opened) == 1 and "/ui/setup?code=" in opened[0]
+
+
 def test_whoami_says_who_is_an_admin(tmp_path, monkeypatch):
     """The SPA shows Admin only to admins: /v1/whoami carries the computed flag (init human or admin flag)."""
     env = make_env(tmp_path, monkeypatch)

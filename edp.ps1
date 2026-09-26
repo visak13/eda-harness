@@ -92,6 +92,7 @@ function Heronry {
   $shown = "heronry " + ($args -join " ")
   if ($WhatIf) { Say "WHATIF: $shown"; return 0 }
   Say "-> $shown"
+  $env:HERONRY_NO_BROWSER = "1"          # fleet ops never open a browser tab (first-run /ui/setup; m-98e4f2770f)
   $ErrorActionPreference = "Continue"   # PS 5.1: a native stderr line must be shown, not thrown
   & $Py -m edp8.cli @args 2>&1 | ForEach-Object { Say "   | $_" }
   $LASTEXITCODE

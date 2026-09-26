@@ -16,6 +16,7 @@ service's module and nothing else, before anything GUI-related is imported.
 
 from __future__ import annotations
 
+import os
 import sys
 
 #: frozen-bundle re-entry: service name -> module run as __main__
@@ -193,8 +194,29 @@ def start(argv: list[str]) -> int:
         if line:
             print(line)
     if rc == 0 and "board" in _targets(pos):
-        _first_run_setup(open_browser=not opts.get("no-browser"))
+        _first_run_setup(open_browser=_may_open_browser(opts))
     return rc
+
+
+def _may_open_browser(opts: dict) -> bool:
+    """Only a person at a terminal gets a browser tab (m-98e4f2770f: test and seat `start`s opened five
+    /ui/setup tabs in the owner's own browser). All must hold, else the URL is only printed: no --no-browser
+    and no HERONRY_NO_BROWSER; no seat identity in the environment; not a source checkout (dev mode, the
+    fleet); stdin and stdout are a TTY."""
+    from . import settings
+    if opts.get("no-browser") or os.environ.get("HERONRY_NO_BROWSER"):
+        return False
+    if os.environ.get("EDP_HANDLE") or os.environ.get("EDP8_PARTICIPANT"):
+        return False
+    try:
+        if settings.dev_mode():
+            return False
+    except Exception:  # noqa: BLE001 — undecidable = do not open
+        return False
+    try:
+        return bool(sys.stdin and sys.stdin.isatty() and sys.stdout and sys.stdout.isatty())
+    except (ValueError, OSError):
+        return False
 
 
 def _first_run_setup(open_browser: bool) -> None:

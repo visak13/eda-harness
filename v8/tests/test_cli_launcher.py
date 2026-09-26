@@ -47,7 +47,7 @@ def inst(tmp_path):
     env = {k: v for k, v in os.environ.items() if not k.startswith(("EDP", "HERONRY", "CLAUDE_CONFIG_DIR", "PYTHONPATH"))}
     env.update(EDP_HOME=str(tmp_path / "home"), EDP_CLAUDE_CONFIG_DIR=str(tmp_path / "claude"),
                EDP8_PORT=str(board), EDP8_MCP_PORT=str(mcp), EDP_POOL_PORT=str(pool), EDP_BROKER_PORT=str(broker),
-               EDP8_EMBEDDER="none", PYTHONIOENCODING="utf-8", HERONRY_NO_UPDATE_CHECK="1")
+               EDP8_EMBEDDER="none", PYTHONIOENCODING="utf-8", HERONRY_NO_UPDATE_CHECK="1", HERONRY_NO_BROWSER="1")
     env[MARKER] = uuid.uuid4().hex
     for svc, project in (("POOL", ROOT / "edp-pool"), ("BROKER", ROOT / "edp-broker")):
         py = _venv_py(project)
