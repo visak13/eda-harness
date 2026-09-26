@@ -31,7 +31,7 @@ def board():
 
 @pytest.fixture
 def rig(board):
-    roles = {"owner": Role.owner, "coordinator": Role.coordinator, "architect": Role.architect,
+    roles = {"owner": Role.owner, "architect": Role.architect,
              "engineer": Role.engineer, "qa": Role.qa}
     return {h: board.participant_create("human" if h == "owner" else "agent", r, h)
             for h, r in roles.items()}
@@ -214,8 +214,8 @@ def test_qa_fail_does_not_reblock_a_released_successor(board, rig):
     advance_to_designed(board, rig, succ, design_doc(board, rig, epic.id), checked_by="qa")
     board.link_create(rig["architect"], from_id=blocker.id, to_id=succ.id, relation=Relation.blocks)
     board.ticket_update(rig["owner"], succ.id, status=TicketStatus.signed_off)
-    board.ticket_update(rig["coordinator"], blocker.id, status=TicketStatus.ready)
-    board.ticket_update(rig["coordinator"], blocker.id, assignee=rig["engineer"].id)
+    board.ticket_update(rig["architect"], blocker.id, status=TicketStatus.ready)
+    board.ticket_update(rig["architect"], blocker.id, assignee=rig["engineer"].id)
     board.ticket_update(rig["engineer"], blocker.id, status=TicketStatus.in_progress)
     assert board.ticket(succ.id).status == TicketStatus.signed_off    # held while blocker unreleased
     crit = board.criteria(blocker.id)[0]
@@ -244,8 +244,8 @@ def test_successor_not_released_while_a_criterion_lacks_evidence(board, rig):
     # the blocks link must exist BEFORE succ is signed off, or succ auto-readies with no blocker
     board.link_create(rig["architect"], from_id=blocker.id, to_id=succ.id, relation=Relation.blocks)
     board.ticket_update(rig["owner"], succ.id, status=TicketStatus.signed_off)
-    board.ticket_update(rig["coordinator"], blocker.id, status=TicketStatus.ready)
-    board.ticket_update(rig["coordinator"], blocker.id, assignee=rig["engineer"].id)
+    board.ticket_update(rig["architect"], blocker.id, status=TicketStatus.ready)
+    board.ticket_update(rig["architect"], blocker.id, assignee=rig["engineer"].id)
     board.ticket_update(rig["engineer"], blocker.id, status=TicketStatus.in_progress)
     ev = board.doc_create(rig["engineer"], doc_type=DocType.report, title="e", body_md="ok", scope=epic.id)
     board.criterion_update(rig["engineer"], c1.id, evidence_ref=ev.id)  # only one of two
@@ -351,8 +351,8 @@ def test_auto_advance_and_release_wait_for_the_doers_consult(board, rig, tmp_pat
     advance_to_designed(board, rig, succ, design_doc(board, rig, epic.id), checked_by="qa")
     board.link_create(rig["architect"], from_id=blocker.id, to_id=succ.id, relation=Relation.blocks)
     board.ticket_update(rig["owner"], succ.id, status=TicketStatus.signed_off)
-    board.ticket_update(rig["coordinator"], blocker.id, status=TicketStatus.ready)
-    board.ticket_update(rig["coordinator"], blocker.id, assignee=rig["engineer"].id)
+    board.ticket_update(rig["architect"], blocker.id, status=TicketStatus.ready)
+    board.ticket_update(rig["architect"], blocker.id, assignee=rig["engineer"].id)
     board.ticket_update(rig["engineer"], blocker.id, status=TicketStatus.in_progress)
     consult_mod.inflight_mark(blocker.id, "run-1", rig["engineer"].id)
     crit = board.criteria(blocker.id)[0]

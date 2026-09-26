@@ -396,6 +396,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         rsi.ensure_p0(board.store)
     except Exception as e:  # noqa: BLE001 — never block startup on the monitor's bookkeeping
         logging.getLogger("edp8.service").warning("rsi p-0 bootstrap failed: %s", e)
+    retired = getattr(board.store, "retired_roles", None)
+    if retired:  # s-ccdafcb229: coordinator/consultant/owner-agent seats deleted at open
+        logging.getLogger("edp8.service").warning("retired role seats deleted: %s", retired)
     moved = getattr(board.store, "migrated_reviewer", None)
     if moved and any(moved.values()):  # S-ROLES: reviewer -> qa at open (Store._migrate_reviewer_locked)
         logging.getLogger("edp8.service").warning("migrated reviewer -> qa: %s", moved)
@@ -696,7 +699,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def participant_create(b: ParticipantIn, x_admin: str | None = Header(default=None),
                            x_participant: str | None = Header(default=None),
                            x_token: str | None = Header(default=None)):
-        # admin registers anyone; a spawner role (coordinator/engineer/architect) registers AGENT participants
+        # admin registers anyone; a spawner role (engineer/architect) registers AGENT participants
         # for the tickets it spawns shells on — the scope a per-ticket spawn needs, nothing more.
         if x_admin != admin_token:
             if not x_participant:
@@ -708,7 +711,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             err = _verify_token(a, x_token)  # same gate as actor(): public mode refuses header-only
             if err:
                 raise HTTPException(401, err)
-            if a.role not in (Role.owner, Role.coordinator, Role.engineer, Role.architect) or b.type != "agent":
+            if a.role not in (Role.owner, Role.engineer, Role.architect) or b.type != "agent":
                 raise HTTPException(403, "only admin, or a spawner role registering an agent participant")
         p = board.participant_create(b.type, b.role, b.handle, location=b.location, model=b.model, id_=b.id)
         return ok(_dump(p))

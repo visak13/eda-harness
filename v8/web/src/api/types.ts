@@ -43,7 +43,7 @@ export const GATE_KINDS = ["design_signoff", "poc", "demo", "adversarial", "budg
 export type GateKind = (typeof GATE_KINDS)[number];
 
 export const ROLES = [
-  "owner", "coordinator", "architect", "sme", "engineer", "adversary", "qa", "consultant",
+  "owner", "architect", "sme", "engineer", "adversary", "qa",
 ] as const;
 export type Role = (typeof ROLES)[number];
 
@@ -287,6 +287,8 @@ export interface EpicSummaryRow {
   id: string;
   title: string;
   status: string;
+  /** s-ccdafcb229: quick tasks are listed with the epics; they open on the ticket page. */
+  kind?: "epic" | "quick";
   created_at: ISODateString;
   criteria: CritCounts;
   open_gates: number;

@@ -33,7 +33,6 @@ def rig(client):
         ("eng", "engineer", "agent"),
         ("rev", "adversary", "agent"),
         ("qa", "qa", "agent"),
-        ("coord", "coordinator", "agent"),
     ]
     for pid, role, typ in people:
         r = client.post("/v1/participants", json={"type": typ, "role": role, "handle": pid, "id": pid},
@@ -143,7 +142,7 @@ def test_docs_version_endpoint(client, rig):
 
 def test_events_since(client, rig):
     epic = make_epic(client, rig)
-    r = client.get("/v1/events?since=0", headers=rig["coord"])
+    r = client.get("/v1/events?since=0&watch=true", headers=rig["owner"])
     body = r.json()
     assert body["ok"] is True
     kinds = [e["kind"] for e in body["value"]]
@@ -152,7 +151,7 @@ def test_events_since(client, rig):
 
 def test_events_subject_id_filter(client, rig):
     epic = make_epic(client, rig)
-    r = client.get(f"/v1/events?subject_id={epic['id']}", headers=rig["coord"])
+    r = client.get(f"/v1/events?subject_id={epic['id']}&watch=true", headers=rig["owner"])
     body = r.json()
     assert body["ok"] is True
     assert all(e["subject_id"] == epic["id"] for e in body["value"])
@@ -196,7 +195,7 @@ def test_board_watch_subscription_gets_every_event():
                          "against the equivalent /v1/events replay path.")
 def test_feed_streams_replayed_events_then_ready(client, rig):
     epic = make_epic(client, rig)
-    with client.stream("GET", "/v1/feed?since=0", headers=rig["coord"]) as r:
+    with client.stream("GET", "/v1/feed?since=0", headers=rig["owner"]) as r:
         assert r.status_code == 200
         lines = []
         for line in r.iter_lines():
@@ -246,8 +245,8 @@ def test_find_empty_without_index(client, rig):
                          "proven by curl against a spawned board + feed.test.ts (S19 qa)")
 def test_feed_ready_frame_carries_the_cursor(client, rig):
     make_epic(client, rig)
-    top = client.get("/v1/events?since=0&limit=1000", headers=rig["coord"]).json()["value"][-1]["seq"]
-    with client.stream("GET", "/v1/feed?since=-1&watch=true", headers=rig["coord"]) as r:
+    top = client.get("/v1/events?since=0&limit=1000", headers=rig["owner"]).json()["value"][-1]["seq"]
+    with client.stream("GET", "/v1/feed?since=-1&watch=true", headers=rig["owner"]) as r:
         assert r.status_code == 200
         ready = next(line for line in r.iter_lines() if line.startswith(": ready"))
     assert ready == f": ready {top}"

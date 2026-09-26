@@ -39,7 +39,7 @@ class StubPool:
 
 
 def rig(board):
-    roles = {"owner": Role.owner, "coordinator": Role.coordinator, "architect": Role.architect,
+    roles = {"owner": Role.owner, "architect": Role.architect,
              "engineer": Role.engineer, "qa": Role.qa}
     return {h: board.participant_create("human" if h == "owner" else "agent", r, h)
             for h, r in roles.items()}
@@ -58,8 +58,8 @@ def story_to_in_review(board, r, epic, *, title="S", tags=("review_required",)):
     crit = board.criterion_create(r["architect"], ticket_id=story.id, text="c", check=Check.command)
     board.ticket_update(r["architect"], story.id, status=TicketStatus.designed)
     board.ticket_update(r["owner"], story.id, status=TicketStatus.signed_off)
-    board.ticket_update(r["coordinator"], story.id, status=TicketStatus.ready)
-    board.ticket_update(r["coordinator"], story.id, assignee=r["engineer"].id)
+    board.ticket_update(r["architect"], story.id, status=TicketStatus.ready)
+    board.ticket_update(r["architect"], story.id, assignee=r["engineer"].id)
     board.ticket_update(r["engineer"], story.id, status=TicketStatus.in_progress)
     ev = board.doc_create(r["engineer"], doc_type=DocType.report, title="e", body_md="ok", scope=epic.id)
     board.criterion_update(r["engineer"], crit.id, evidence_ref=ev.id)
@@ -235,13 +235,13 @@ def test_finding7_unreleased_blocker_walks_ready_successor_back():
     epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
     # predecessor still in progress (unreleased)
     pred = story_to_signed_off(board, r, epic, title="A")
-    board.ticket_update(r["coordinator"], pred.id, status=TicketStatus.ready)
-    board.ticket_update(r["coordinator"], pred.id, assignee=r["engineer"].id)
+    board.ticket_update(r["architect"], pred.id, status=TicketStatus.ready)
+    board.ticket_update(r["architect"], pred.id, assignee=r["engineer"].id)
     board.ticket_update(r["engineer"], pred.id, status=TicketStatus.in_progress)
     assert board._released(board.ticket(pred.id)) is False
     # successor already ready
     succ = story_to_signed_off(board, r, epic, title="B")
-    board.ticket_update(r["coordinator"], succ.id, status=TicketStatus.ready)
+    board.ticket_update(r["architect"], succ.id, status=TicketStatus.ready)
     assert board.ticket(succ.id).status == TicketStatus.ready
     board.link_create(r["architect"], from_id=pred.id, to_id=succ.id, relation=Relation.blocks)
     assert board.ticket(succ.id).status == TicketStatus.signed_off  # walked back behind the blocker

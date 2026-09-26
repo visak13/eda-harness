@@ -23,7 +23,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validat
 
 class Role(StrEnum):
     owner = "owner"
-    coordinator = "coordinator"  # retired seat (kept for old records); the owner shell orchestrates
+    # "coordinator" and "consultant" are not roles (s-ccdafcb229, owner m-b0a7f9cda9): the store deletes
+    # their old participant rows at open (Store._retire_roles_locked); "consultant" survives only as prose
+    # for the codex model behind consult()
     architect = "architect"
     sme = "sme"
     engineer = "engineer"
@@ -31,7 +33,6 @@ class Role(StrEnum):
     # old reviewer participants/criteria/docs to qa at open (Store._migrate_reviewer_locked)
     adversary = "adversary"
     qa = "qa"
-    consultant = "consultant"
     # S-SME-SURFACE (owner m-de07c37d0c): a named human from the owner's team linked to ONE Library topic;
     # its token reaches that topic's page, docs and thread and nothing else (service.topic_actor)
     expert = "expert"
@@ -779,7 +780,7 @@ TRANSITIONS: dict[TicketStatus, set[TicketStatus]] = {
 
 # Which roles may create which ticket kinds.
 TICKET_CREATORS: dict[TicketKind, set[Role]] = {
-    TicketKind.epic: {Role.owner, Role.coordinator},
+    TicketKind.epic: {Role.owner},
     TicketKind.story: {Role.architect, Role.owner},  # owner: a quick task (S-QUICK, tag `quick`, parent optional)
     TicketKind.task: {Role.engineer, Role.architect},
     TicketKind.topic: {Role.owner},  # S-SME-SURFACE: the owner opens a Library topic

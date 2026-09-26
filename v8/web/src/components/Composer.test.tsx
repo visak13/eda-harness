@@ -278,7 +278,7 @@ describe("Composer help (promise #16)", () => {
     const dialog = screen.getByRole("dialog", { name: "How sending works" });
     expect(dialog).toHaveTextContent(/wakes that seat's shell/);
     expect(dialog).toHaveTextContent(/one running agent shell bound to one ticket, named role\.ticket/);
-    expect(dialog).toHaveTextContent(/architect, engineer, reviewer, qa, owner or coordinator/);
+    expect(dialog).toHaveTextContent(/architect, engineer, qa, adversary, sme or owner/);
     fireEvent.click(screen.getByRole("button", { name: "Close help" }));
     expect(screen.queryByRole("dialog", { name: "How sending works" })).not.toBeInTheDocument();
     fireEvent.click(toggle);

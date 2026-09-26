@@ -30,11 +30,18 @@ _NOT = re.compile(r"\(not " + _ROLES + r"\)")
 _FILE_SCOPE = re.compile(r"<!--\s*roles:\s*([a-z ,]+?)\s*-->")
 
 
+def _cards() -> list[tuple[str, Path]]:
+    """(role, card) for every role card, per-flow cards included (`engineer-quick.md` is the
+    engineer role's quick-flow card, owner m-b13c61ddea). The owner is a human with no card."""
+    return [(p.stem.split("-")[0], p) for p in sorted((V8 / ".claude" / "commands").glob("*.md"))
+            if p.stem.split("-")[0] in SEAT_ROLES]
+
+
 def _card_skills() -> dict[str, set[str]]:
     """skill name -> roles whose card lists it on the **SKILLS** line."""
     out: dict[str, set[str]] = {}
-    for role in SEAT_ROLES:
-        text = (V8 / ".claude" / "commands" / f"{role}.md").read_text(encoding="utf-8")
+    for role, card in _cards():
+        text = card.read_text(encoding="utf-8")
         for line in text.splitlines():
             if line.startswith("**SKILLS**"):
                 for name in re.findall(r"/([a-z-]+)", line):
@@ -44,8 +51,8 @@ def _card_skills() -> dict[str, set[str]]:
 
 def _scoped_files() -> list[tuple[Path, set[str]]]:
     files: list[tuple[Path, set[str]]] = []
-    for role in SEAT_ROLES:
-        files.append((V8 / ".claude" / "commands" / f"{role}.md", {role}))
+    for role, card in _cards():
+        files.append((card, {role}))
     for p in sorted((V8 / ".claude" / "skills").glob("*/SKILL.md")) + sorted((V8 / "guides").glob("*.md")):
         m = _FILE_SCOPE.search(p.read_text(encoding="utf-8"))
         roles = {r.strip() for r in m.group(1).split(",")} if m else set(SEAT_ROLES)

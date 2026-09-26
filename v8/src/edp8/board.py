@@ -551,8 +551,7 @@ class Board:
                 t.title = new_title
                 changed["title"] = new_title
         if description is not None or tags is not None:
-            if actor.id not in (t.created_by, t.assignee) and actor.role not in (Role.architect, Role.owner,
-                                                                                  Role.coordinator):
+            if actor.id not in (t.created_by, t.assignee) and actor.role not in (Role.architect, Role.owner):
                 raise BoardError("scope", f"{actor.role} may not edit this ticket's description/tags",
                                  "the creator, the assignee, the architect or the owner may")
             if description is not None:
@@ -571,9 +570,9 @@ class Board:
                     from .topics import _now, config
                     t.topic_config = {**config(self, t), "tags_set_by": {"by": actor.id, "at": _now()}}
         if assignee is not None:
-            if actor.role not in (Role.coordinator, Role.architect, Role.engineer, Role.owner):
+            if actor.role not in (Role.architect, Role.engineer, Role.owner):
                 raise BoardError("scope", f"{actor.role} may not assign tickets",
-                                 "coordinator/architect/owner assign; an engineer assigns its own tasks")
+                                 "architect/owner assign; an engineer assigns its own tasks")
             doer = self.participant(assignee)
             why = self.checker_as_doer_reason(t, doer)
             if why:  # S-ADV finding 3: the invariant holds on every path, not only the REST spawn
@@ -639,8 +638,8 @@ class Board:
             if r not in (Role.owner, Role.architect):
                 raise BoardError("scope", "sign-off is recorded by the owner, or by the architect quoting the owner")
         if to == TicketStatus.ready:
-            if r not in (Role.coordinator, Role.architect, Role.owner, Role.engineer):
-                raise BoardError("scope", "ready is set by coordinator/architect/owner (engineer: its tasks)")
+            if r not in (Role.architect, Role.owner, Role.engineer):
+                raise BoardError("scope", "ready is set by architect/owner (engineer: its tasks)")
             open_blockers = [b for b in self.blockers(t.id) if not self._released(b)]
             if open_blockers:
                 raise BoardError("transition", "blocked by unfinished tickets",
@@ -662,7 +661,7 @@ class Board:
                 raise BoardError("transition", "review handoff held: consult in flight",
                                  "wait for the result, address findings, then ticket_update(status='in_review')")
             epic_by_architect = r == Role.architect and t.kind == TicketKind.epic  # owner m-b0a7f9cda9
-            if t.assignee and actor.id != t.assignee and r not in (Role.coordinator,) and not epic_by_architect:
+            if t.assignee and actor.id != t.assignee and not epic_by_architect:
                 raise BoardError("scope", "only the assignee hands a ticket to review")
             if not crits:
                 # §24.1(a): a zero-criteria ticket is never evidence-complete, so it must not reach
@@ -675,7 +674,7 @@ class Board:
                                  f"criteria without evidence: {missing} — /verify, doc_create(report), criterion_update")
         if to == TicketStatus.done:
             # the architect completes its own EPIC's walk (owner m-b0a7f9cda9); the guards below still hold
-            if r not in CRITERION_CHECKERS | {Role.coordinator} and not (r == Role.architect and t.kind == TicketKind.epic):
+            if r not in CRITERION_CHECKERS and not (r == Role.architect and t.kind == TicketKind.epic):
                 raise BoardError("scope", "done is set by the checker (qa/owner), or by the architect on its epic")
             if not crits:
                 raise BoardError("transition", "done needs criteria", "a ticket with no criteria cannot be verified")
@@ -1871,11 +1870,6 @@ class Board:
             tk = self.store.get("ticket", tid)
             if tk is not None and all(x.id != tk.id for x in mine):
                 mine.append(tk)  # type: ignore[arg-type]
-        if p.role == Role.coordinator:
-            for t in self.store.query("ticket", {"kind": TicketKind.epic}):
-                if t.status not in _TERMINAL and all(x.id != t.id for x in mine):
-                    mine.append(t)  # type: ignore[arg-type]
-            mine = [t for t in mine if not (t.kind == TicketKind.epic and t.status in _TERMINAL)]
         if p.role in CRITERION_CHECKERS:
             # §24.1(b) (live failure m-969cb61cfe): a qa seat is named qa.<epic_id> and verdicts ONLY
             # its own epic. Two qa seats for dropped epics were seeing — and starting to verdict — a
@@ -2324,13 +2318,11 @@ class Board:
 
     def epic_participant(self, p: Participant, epic: Ticket) -> bool:
         """Is p one of this epic's participants (C17: who may read its decision list)? An owner, unless the
-        epic has another human owner (None = an agent/coordinator epic, which every owner may read); the
-        coordinator; a seat named for, assigned to, or the creator of a ticket of the epic."""
+        epic has another human owner (None = an agent-created epic, which every owner may read); a seat
+        named for, assigned to, or the creator of a ticket of the epic."""
         if p.role == Role.owner:
             oid = self.epic_owner(epic.id)
             return oid is None or oid == p.id
-        if p.role == Role.coordinator:
-            return True
         tickets = [epic, *self._descendants(epic.id)]
         named = p.id.split(".", 1)[1] if "." in p.id else None
         return any(t.id == named or t.assignee == p.id or t.created_by == p.id for t in tickets)
@@ -2689,18 +2681,13 @@ class Board:
                 out.append(Reason.gate_party)
             return out
         if ev.kind in (EventKind.shell_dead, EventKind.shell_stalled):
-            if p.role == Role.coordinator:
-                out.append(Reason.on_ticket)
-            else:
-                r = self._on_ticket_reason(p, ev.subject_id, parents=True)
-                if r:
-                    out.append(r)
+            r = self._on_ticket_reason(p, ev.subject_id, parents=True)
+            if r:
+                out.append(r)
             return out
         if ev.kind in (EventKind.status_changed, EventKind.ticket_created, EventKind.assigned,
                        EventKind.criterion_checked):
-            if p.role == Role.coordinator:
-                out.append(Reason.on_ticket)
-            elif d.get("assignee") == p.id:
+            if d.get("assignee") == p.id:
                 out.append(Reason.on_ticket)
             else:
                 r = self._on_ticket_reason(p, ev.subject_id, parents=True)

@@ -21,7 +21,7 @@ def board():
 
 @pytest.fixture
 def rig(board):
-    roles = {"owner": Role.owner, "coordinator": Role.coordinator, "architect": Role.architect,
+    roles = {"owner": Role.owner, "architect": Role.architect,
              "engineer": Role.engineer, "qa": Role.qa}
     return {h: board.participant_create("human" if h == "owner" else "agent", r, h)
             for h, r in roles.items()}
@@ -83,7 +83,7 @@ def test_child_story_start_advances_epic_to_in_progress(board, rig):
     _criterion(board, rig, story.id, checked_by="qa")
     board.ticket_update(rig["architect"], story.id, design_ref=d.id, status=TicketStatus.designed)
     board.ticket_update(rig["owner"], story.id, status=TicketStatus.signed_off)  # -> ready (no gate)
-    board.ticket_update(rig["coordinator"], story.id, assignee=rig["engineer"].id)
+    board.ticket_update(rig["architect"], story.id, assignee=rig["engineer"].id)
     board.ticket_update(rig["engineer"], story.id, status=TicketStatus.in_progress)
     assert board.ticket(epic.id).status == TicketStatus.in_progress  # carried by the board
 
@@ -102,7 +102,7 @@ def test_child_start_advances_epic_from_designed_not_only_signed_off(board, rig)
     _criterion(board, rig, story.id, checked_by="qa")
     board.ticket_update(rig["architect"], story.id, design_ref=d.id, status=TicketStatus.designed)
     board.ticket_update(rig["owner"], story.id, status=TicketStatus.signed_off)  # -> ready (no epic gate)
-    board.ticket_update(rig["coordinator"], story.id, assignee=rig["engineer"].id)
+    board.ticket_update(rig["architect"], story.id, assignee=rig["engineer"].id)
     assert board.ticket(epic.id).status == TicketStatus.designed  # epic still designed, not signed off
     board.ticket_update(rig["engineer"], story.id, status=TicketStatus.in_progress)
     assert board.ticket(epic.id).status == TicketStatus.in_progress  # carried from `designed`

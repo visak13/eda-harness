@@ -67,7 +67,7 @@ def test_every_card_listing_learn_is_a_learn_role():
     for card in (V8 / ".claude" / "commands").glob("*.md"):
         skills = next((ln for ln in card.read_text(encoding="utf-8").splitlines() if ln.startswith("**SKILLS**")), "")
         if re.search(r"/learn\b", skills):
-            assert card.stem in LEARN_ROLES, card.stem
+            assert card.stem.split("-")[0] in LEARN_ROLES, card.stem  # engineer-quick = engineer
 
 
 # ----------------------------------------------------------------------------- the loop on a board

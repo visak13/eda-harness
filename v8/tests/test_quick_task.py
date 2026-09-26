@@ -318,13 +318,18 @@ def _story(api, who, epic, title="S", work_type="feature"):
 
 
 def test_adv1_spawn_never_mints_an_owner_or_retired_role(api):
-    """S-ADV finding 1: POST /v1/sessions/spawn role=owner (or coordinator/consultant) is refused; no participant."""
+    """S-ADV finding 1: POST /v1/sessions/spawn role=owner is refused; the retired coordinator/consultant
+    roles no longer exist, so the request fails validation. No participant either way."""
     client = api["client"]
     epic = _epic(api, OWNER, "X", assignee="arch")
     for role in ("owner", "coordinator", "consultant"):
         r = client.post("/v1/sessions/spawn", json={"role": role, "participant_id": f"new-{role}", "ticket_id": epic},
                         headers=ARCH)
-        assert not r.json()["ok"] and "is not spawned" in r.text, r.text
+        assert not r.json().get("ok"), r.text  # a 422 validation body carries no envelope
+        if role == "owner":
+            assert "is not spawned" in r.text, r.text
+        else:
+            assert r.status_code in (400, 422), r.text
         assert not client.get(f"/v1/participants/new-{role}", headers=OWNER).json()["ok"]
     assert api["calls"] == []
 

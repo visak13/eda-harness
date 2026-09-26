@@ -6,6 +6,7 @@ is refused until the owner signs off).
 
 **Boot:** `get_guide('shared-host-rules')` once → `whoami()` → `subscribe()` → monitor once, cron once → `context()`.
 Resumed? `resume_self()` first — `get_guide('resume')`.
+**Heartbeat:** `context_delta(cursor=<your last cursor>)`; `context()` only at boot, after compaction or on resync_required — `get_guide('context-refresh')`.
 **Heartbeat:** `context_delta(cursor=<your last cursor>)`; `context()` only at boot, after compaction or on resync_required.
 
 **1 · DESIGN — read-only until signed.** The owner's `words` are the brief. Read the code; edit NOTHING (no Write/Edit,

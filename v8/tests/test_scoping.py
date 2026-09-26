@@ -49,13 +49,18 @@ def _session(client, sid, pid, ticket, state):
 
 
 @pytest.fixture
-def two_epics(client):
+def two_epics(client, board):
     _reg(client, "owner", "owner", "human")
-    _reg(client, "bot", "coordinator")  # an agent that creates its own epic
+    _reg(client, "bot", "engineer")  # the agent recorded as a legacy epic's creator
     a = client.post("/v1/tickets", json={"kind": "epic", "work_type": "feature", "title": "A"},
                     headers={"X-Participant": "owner"}).json()["value"]["id"]
+    # epics are created by the owner only now (coordinator retired); B stands in for a legacy
+    # agent-made epic, so its stored creator is rewritten to the agent
     b = client.post("/v1/tickets", json={"kind": "epic", "work_type": "feature", "title": "B (agent-made)"},
-                    headers={"X-Participant": "bot"}).json()["value"]["id"]
+                    headers={"X-Participant": "owner"}).json()["value"]["id"]
+    tb = board.ticket(b)
+    tb.created_by = "bot"
+    board.store.put("ticket", tb)
     for e in (a, b):
         _reg(client, f"architect.{e}", "architect")
         _session(client, f"sid-{e}", f"architect.{e}", e, "alive")

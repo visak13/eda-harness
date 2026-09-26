@@ -11,7 +11,7 @@ import type { TicketTransitions } from "../api/types";
 const TRANSITIONS: TicketTransitions = {
   status: "in_review",
   transitions: [
-    { to: "done", allowed: false, reason: "done is set by the checker (reviewer/qa/owner) or the coordinator" },
+    { to: "done", allowed: false, reason: "done is set by the checker (qa/owner), or by the architect on its epic" },
     { to: "in_progress", allowed: true, reason: null },
     { to: "partial", allowed: true, reason: null },
   ],

@@ -34,13 +34,11 @@ def rig(board):
     """Every role registered as participants, keyed by role name."""
     roles = {
         "owner": Role.owner,
-        "coordinator": Role.coordinator,
         "architect": Role.architect,
         "sme": Role.sme,
         "engineer": Role.engineer,
         "adversary": Role.adversary,
         "qa": Role.qa,
-        "consultant": Role.consultant,
     }
     out = {}
     for handle, role in roles.items():
@@ -164,8 +162,8 @@ def test_in_review_needs_evidence_on_every_criterion(board, rig):
     d = design_doc(board, rig, epic.id)
     advance_to_designed(board, rig, epic, d)
     advance_to_signed_off(board, rig, epic)
-    board.ticket_update(rig["coordinator"], epic.id, status=TicketStatus.ready)
-    board.ticket_update(rig["coordinator"], epic.id, assignee=rig["engineer"].id)
+    board.ticket_update(rig["architect"], epic.id, status=TicketStatus.ready)
+    board.ticket_update(rig["architect"], epic.id, assignee=rig["engineer"].id)
     board.ticket_update(rig["engineer"], epic.id, status=TicketStatus.in_progress)
     with pytest.raises(BoardError) as ei:
         board.ticket_update(rig["engineer"], epic.id, status=TicketStatus.in_review)
@@ -178,8 +176,8 @@ def test_done_needs_all_criteria_passed(board, rig):
     d = design_doc(board, rig, epic.id)
     advance_to_designed(board, rig, epic, d, checked_by="qa")
     advance_to_signed_off(board, rig, epic)
-    board.ticket_update(rig["coordinator"], epic.id, status=TicketStatus.ready)
-    board.ticket_update(rig["coordinator"], epic.id, assignee=rig["engineer"].id)
+    board.ticket_update(rig["architect"], epic.id, status=TicketStatus.ready)
+    board.ticket_update(rig["architect"], epic.id, assignee=rig["engineer"].id)
     board.ticket_update(rig["engineer"], epic.id, status=TicketStatus.in_progress)
     crit = board.criteria(epic.id)[0]
     ev = board.doc_create(rig["engineer"], doc_type=DocType.report, title="evidence", body_md="ok",
@@ -198,9 +196,9 @@ def test_verdict_by_doer_refused(board, rig):
     d = design_doc(board, rig, epic.id)
     advance_to_designed(board, rig, epic, d, checked_by="qa")
     advance_to_signed_off(board, rig, epic)
-    board.ticket_update(rig["coordinator"], epic.id, status=TicketStatus.ready)
+    board.ticket_update(rig["architect"], epic.id, status=TicketStatus.ready)
     with pytest.raises(BoardError) as ei:
-        board.ticket_update(rig["coordinator"], epic.id, assignee=rig["qa"].id)
+        board.ticket_update(rig["architect"], epic.id, assignee=rig["qa"].id)
     assert ei.value.code == "scope"
     assert "never becomes its assignee" in ei.value.message
     assert board.ticket(epic.id).assignee is None
@@ -211,8 +209,8 @@ def test_verdict_by_wrong_checker_role_refused(board, rig):
     d = design_doc(board, rig, epic.id)
     advance_to_designed(board, rig, epic, d, checked_by="qa")
     advance_to_signed_off(board, rig, epic)
-    board.ticket_update(rig["coordinator"], epic.id, status=TicketStatus.ready)
-    board.ticket_update(rig["coordinator"], epic.id, assignee=rig["engineer"].id)
+    board.ticket_update(rig["architect"], epic.id, status=TicketStatus.ready)
+    board.ticket_update(rig["architect"], epic.id, assignee=rig["engineer"].id)
     board.ticket_update(rig["engineer"], epic.id, status=TicketStatus.in_progress)
     crit = board.criteria(epic.id)[0]
     assert crit.checked_by == "qa"
@@ -268,7 +266,7 @@ def test_story_auto_promotes_to_ready_when_blocker_done(board, rig):
     board.ticket_update(rig["owner"], story.id, status=TicketStatus.signed_off)
     # finish the knowledge ticket
     board.ticket_update(rig["owner"], knowledge.id, status=TicketStatus.signed_off)
-    board.ticket_update(rig["coordinator"], knowledge.id, assignee=rig["engineer"].id)
+    board.ticket_update(rig["architect"], knowledge.id, assignee=rig["engineer"].id)
     board.ticket_update(rig["engineer"], knowledge.id, status=TicketStatus.in_progress)
     kcrit = board.criteria(knowledge.id)[0]
     ev = board.doc_create(rig["engineer"], doc_type=DocType.report, title="evidence", body_md="ok",
@@ -310,7 +308,7 @@ def test_child_in_progress_promotes_parent_epic_to_in_progress(board, rig):
     ed = design_doc(board, rig, epic.id)
     advance_to_designed(board, rig, epic, ed)
     advance_to_signed_off(board, rig, epic)
-    board.ticket_update(rig["coordinator"], story.id, assignee=rig["engineer"].id)
+    board.ticket_update(rig["architect"], story.id, assignee=rig["engineer"].id)
     board.ticket_update(rig["engineer"], story.id, status=TicketStatus.in_progress)
     epic = board.ticket(epic.id)
     assert epic.status == TicketStatus.in_progress
@@ -325,7 +323,7 @@ def test_all_stories_done_opens_acceptance_gate_on_epic(board, rig):
     ed = design_doc(board, rig, epic.id)
     advance_to_designed(board, rig, epic, ed, checked_by="qa")
     advance_to_signed_off(board, rig, epic)
-    board.ticket_update(rig["coordinator"], story.id, assignee=rig["engineer"].id)
+    board.ticket_update(rig["architect"], story.id, assignee=rig["engineer"].id)
     board.ticket_update(rig["engineer"], story.id, status=TicketStatus.in_progress)
     crit = board.criteria(story.id)[0]
     ev = board.doc_create(rig["engineer"], doc_type=DocType.report, title="evidence", body_md="ok",
@@ -351,7 +349,7 @@ def test_gate_answer_by_owner_only(board, rig):
     epic = make_epic(board, rig)
     board.gate_open(epic.id, Gate.acceptance)
     with pytest.raises(BoardError) as ei:
-        board.gate_answer(rig["coordinator"], epic.id, Gate.acceptance, "looks good")
+        board.gate_answer(rig["architect"], epic.id, Gate.acceptance, "looks good")
     assert ei.value.code == "scope"
     board.gate_answer(rig["owner"], epic.id, Gate.acceptance, "approved")
 
@@ -373,7 +371,7 @@ def test_context_engineer_sees_words_chain_criteria_docs_thread(board, rig):
     story = make_story(board, rig, epic)
     sd = design_doc(board, rig, epic.id)
     advance_to_designed(board, rig, story, sd)
-    board.ticket_update(rig["coordinator"], story.id, assignee=rig["engineer"].id)
+    board.ticket_update(rig["architect"], story.id, assignee=rig["engineer"].id)
     board.message_send(rig["architect"], ticket_id=story.id, to=None, kind=MessageKind.note, text="fyi")
 
     ctx = board.context(rig["engineer"], story.id)
@@ -423,37 +421,23 @@ def test_owner_relevance(board, rig):
     assert board.relevant(ev_status_note, owner) is True
 
     # status_changed is NOT relevant to owner
-    board.ticket_update(rig["coordinator"], epic.id, assignee=rig["engineer"].id)
+    board.ticket_update(rig["architect"], epic.id, assignee=rig["engineer"].id)
     status_ev = board.store.query("event", {"subject_id": epic.id, "kind": EventKind.assigned})[-1]
     assert board.relevant(status_ev, owner) is False
 
 
-def test_coordinator_relevance(board, rig):
-    epic = make_epic(board, rig)
-    coord = rig["coordinator"]
-    created_ev = board.store.query("event", {"subject_id": epic.id, "kind": EventKind.ticket_created})[0]
-    assert board.relevant(created_ev, coord) is True
-
-    board.ticket_update(rig["coordinator"], epic.id, assignee=rig["engineer"].id)
-    assigned_ev = board.store.query("event", {"subject_id": epic.id, "kind": EventKind.assigned})[-1]
-    assert board.relevant(assigned_ev, coord) is True
-
-    d = design_doc(board, rig, epic.id)
-    advance_to_designed(board, rig, epic, d)
-    board.ticket_update(rig["owner"], epic.id, status=TicketStatus.signed_off)
-    status_ev = board.store.query("event", {"subject_id": epic.id, "kind": EventKind.status_changed})[-1]
-    assert board.relevant(status_ev, coord) is True
-
-    sess = board.session_upsert(id_="sess-1", participant_id=rig["engineer"].id, ticket_id=epic.id,
-                                 pool_id="pool-1", state=SessionState.dead)
-    dead_ev = board.store.query("event", {"subject_id": epic.id, "kind": EventKind.shell_dead})[0]
-    assert board.relevant(dead_ev, coord) is True
+def test_coordinator_and_consultant_roles_retired():
+    """Owner ruling: the coordinator and consultant roles no longer exist (was test_coordinator_relevance)."""
+    assert not hasattr(Role, "coordinator")
+    assert not hasattr(Role, "consultant")
+    assert "coordinator" not in {r.value for r in Role}
+    assert "consultant" not in {r.value for r in Role}
 
 
 def test_engineer_relevance_messages_and_own_ticket_status(board, rig):
     epic = make_epic(board, rig)
     engineer = rig["engineer"]
-    board.ticket_update(rig["coordinator"], epic.id, assignee=engineer.id)
+    board.ticket_update(rig["architect"], epic.id, assignee=engineer.id)
 
     board.message_send(rig["architect"], ticket_id=epic.id, to="engineer", kind=MessageKind.note, text="hi")
     msg_ev = board.store.query("event", {"subject_id": epic.id, "kind": EventKind.message_sent})[-1]
@@ -468,7 +452,7 @@ def test_engineer_relevance_messages_and_own_ticket_status(board, rig):
     # not on the ticket -> not relevant
     other_epic = board.ticket_create(rig["owner"], kind=TicketKind.epic, work_type=WorkType.feature,
                                       title="unrelated")
-    board.ticket_update(rig["coordinator"], other_epic.id, assignee=rig["sme"].id)  # a checker is never a doer (S-ADV 3)
+    board.ticket_update(rig["architect"], other_epic.id, assignee=rig["sme"].id)  # a checker is never a doer (S-ADV 3)
     unrelated_ev = board.store.query("event", {"subject_id": other_epic.id, "kind": EventKind.assigned})[-1]
     assert board.relevant(unrelated_ev, engineer) is False
 
@@ -477,16 +461,16 @@ def test_replay_respects_relevance(board, rig):
     epic = make_epic(board, rig)
     start = board.store.max_seq()
     board.message_send(rig["engineer"], ticket_id=epic.id, to="owner", kind=MessageKind.note, text="a")
-    board.ticket_update(rig["coordinator"], epic.id, assignee=rig["engineer"].id)
+    board.ticket_update(rig["architect"], epic.id, assignee=rig["engineer"].id)
 
     owner_events = board.replay(rig["owner"], start)
     kinds = [e.kind for _, e in owner_events]
     assert EventKind.message_sent in kinds
     assert EventKind.assigned not in kinds
 
-    coord_events = board.replay(rig["coordinator"], start)
-    coord_kinds = [e.kind for _, e in coord_events]
-    assert EventKind.assigned in coord_kinds
+    eng_events = board.replay(rig["engineer"], start)
+    eng_kinds = [e.kind for _, e in eng_events]
+    assert EventKind.assigned in eng_kinds  # the assignee sees its own assignment
 
 
 # ------------------------------------------------------------------ sessions
@@ -524,8 +508,8 @@ def drive_to_done(board, rig, ticket, checked_by_key="qa"):
     """Drive a signed_off (or ready) ticket through in_progress -> evidence -> in_review -> verdict -> done."""
     t = board.ticket(ticket.id)
     if t.status == TicketStatus.signed_off:
-        board.ticket_update(rig["coordinator"], t.id, status=TicketStatus.ready)
-    board.ticket_update(rig["coordinator"], t.id, assignee=rig["engineer"].id)
+        board.ticket_update(rig["architect"], t.id, status=TicketStatus.ready)
+    board.ticket_update(rig["architect"], t.id, assignee=rig["engineer"].id)
     board.ticket_update(rig["engineer"], t.id, status=TicketStatus.in_progress)
     for crit in board.criteria(t.id):
         ev = board.doc_create(rig["engineer"], doc_type=DocType.report, title="evidence", body_md="ok",
@@ -581,8 +565,8 @@ def test_my_tickets_and_context_for_checker_roles(board, rig):
     assert crit.checked_by == "qa"
     board.ticket_update(rig["architect"], story.id, status=TicketStatus.designed)
     board.ticket_update(rig["owner"], story.id, status=TicketStatus.signed_off)
-    board.ticket_update(rig["coordinator"], story.id, status=TicketStatus.ready)
-    board.ticket_update(rig["coordinator"], story.id, assignee=rig["engineer"].id)
+    board.ticket_update(rig["architect"], story.id, status=TicketStatus.ready)
+    board.ticket_update(rig["architect"], story.id, assignee=rig["engineer"].id)
     board.ticket_update(rig["engineer"], story.id, status=TicketStatus.in_progress)
     ev = board.doc_create(rig["engineer"], doc_type=DocType.report, title="evidence", body_md="ok",
                           scope=epic.id)

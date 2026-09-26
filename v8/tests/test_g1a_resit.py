@@ -39,8 +39,7 @@ def rig(client):
     """Two owner-humans, each owning their own epic. Owner A's epic carries a strategy doc and an
     owner-checked, evidence-bearing criterion pending sign-off — the surface findings 1/2 probe."""
     for pid, role, typ in [("alice", "owner", "human"), ("bob", "owner", "human"),
-                           ("arch", "architect", "agent"), ("craft", "sme", "agent"),
-                           ("coord", "coordinator", "agent")]:
+                           ("arch", "architect", "agent"), ("craft", "sme", "agent")]:
         _post(client, "/v1/participants", {"type": typ, "role": role, "handle": pid, "id": pid}, ADMIN)
     epic_a = _post(client, "/v1/tickets", {"kind": "epic", "work_type": "feature", "title": "A"},
                    {"X-Participant": "alice"})["id"]
@@ -72,13 +71,20 @@ def test_verdict_write_refuses_a_foreign_owner(rig):
 
 
 def test_owner_may_verdict_an_epic_with_no_human_owner(client):
-    # a coordinator-created epic has no human owner (epic_owner is None); the scope guard must NOT
-    # refuse an owner there — the "reaches every owner" case the helper docstring promises.
+    # a legacy agent-created epic has no human owner (epic_owner is None); the scope guard must NOT
+    # refuse an owner there — the "reaches every owner" case the helper docstring promises. Epics are
+    # created by the owner only now (the coordinator role is retired), so the legacy creator is
+    # written onto the stored ticket.
     for pid, role, typ in [("alice", "owner", "human"), ("arch", "architect", "agent"),
-                           ("craft", "sme", "agent"), ("coord", "coordinator", "agent")]:
+                           ("craft", "sme", "agent")]:
         _post(client, "/v1/participants", {"type": typ, "role": role, "handle": pid, "id": pid}, ADMIN)
     epic = _post(client, "/v1/tickets", {"kind": "epic", "work_type": "feature", "title": "agent epic"},
-                 {"X-Participant": "coord"})["id"]
+                 {"X-Participant": "alice"})["id"]
+    board = client.app.state.board
+    t = board.ticket(epic)
+    t.created_by = "arch"
+    board.store.put("ticket", t)
+    assert board.epic_owner(epic) is None
     kt = _post(client, "/v1/tickets", {"kind": "story", "work_type": "knowledge", "title": "k",
                                        "parent_id": epic, "assignee": "craft"}, {"X-Participant": "arch"})["id"]
     crit = _post(client, "/v1/criteria", {"ticket_id": kt, "text": "signed", "check": "look",

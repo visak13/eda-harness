@@ -129,6 +129,7 @@ class Store:
             if self._conn.execute("SELECT count(*) FROM fts").fetchone()[0] == 0:
                 self._fts_rebuild_locked()
             self.migrated_reviewer = self._migrate_reviewer_locked()
+            self.retired_roles = self._retire_roles_locked()
 
     # S-ROLES (s-a0c67e6aa7, owner m-bba708e10e): "reviewer" is no longer a role — qa checks stories.
     # (table, indexed column, JSON path) rows still naming it; migrated to qa at every open (idempotent).
@@ -149,6 +150,19 @@ class Store:
             "WHERE json_extract(body, '$.owner_role')='reviewer'")
         counts["doc_versions"] = cur.rowcount
         return counts
+
+    def _retire_roles_locked(self) -> list[str]:
+        """s-ccdafcb229 (owner m-b0a7f9cda9): the coordinator and consultant roles and the owner-role AGENT
+        are gone — the owner is the human. Their participant rows are deleted at open (idempotent), so
+        an old board loads under the smaller Role enum and those seats can no longer authenticate.
+        Events/messages keep their ids as plain strings. Returns the deleted participant ids."""
+        rows = self._conn.execute(
+            "SELECT id FROM participant WHERE role IN ('coordinator','consultant') "
+            "OR (role='owner' AND json_extract(body, '$.type')='agent')").fetchall()
+        ids = [r[0] for r in rows]
+        if ids:
+            self._conn.executemany("DELETE FROM participant WHERE id=?", [(i,) for i in ids])
+        return ids
 
     def _migrate_columns(self, t: str, cols: list[str]) -> None:
         """A new indexed column on an existing table: ALTER + backfill from the JSON body,

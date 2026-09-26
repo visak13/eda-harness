@@ -54,7 +54,7 @@ FIRST_WAIT_S = 60.0                     # let the board listen and the index hyd
 CODE_MODULES = ("knowledge", "search", "store", "exam")  # §3 T2: the retrieval code a regression lives in
 REQUIRED_FIELDS = ("expected_ids", "required_ids")
 # the unpersisted identity the finding is sent as (no participant row is written)
-ACTOR = Participant(id="rsi", type="agent", role=Role.consultant, handle="rsi", created_by="rsi")
+ACTOR = Participant(id="rsi", type="agent", role=Role.adversary, handle="rsi", created_by="rsi")
 
 
 class RsiError(Exception):

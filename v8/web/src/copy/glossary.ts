@@ -102,8 +102,6 @@ const role: Table = {
   qa: { label: "QA", meaning: "Verifies the required behavior." },
   sme: { label: "SME", meaning: "Advises on a specialist domain." },
   adversary: { label: "Adversary", meaning: "Hostile review that hunts for hidden faults." },
-  consultant: { label: "Consultant", meaning: "An outside craft advisor brought in for a task." },
-  coordinator: { label: "Coordinator", meaning: "A retired role; the owner shell now orchestrates." },
 };
 
 const check: Table = {

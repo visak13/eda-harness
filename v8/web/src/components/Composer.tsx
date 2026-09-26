@@ -78,8 +78,8 @@ function ComposerHelp({ onClose }: { onClose: () => void }): React.JSX.Element {
         (for example <code>engineer.s-12</code>). Only a live seat can be woken.
       </p>
       <p>
-        <strong>Role</strong> — the job a seat does: architect, engineer, reviewer, qa, owner or
-        coordinator. Addressing a role wakes the seat holding that role on this epic.
+        <strong>Role</strong> — the job a seat does: architect, engineer, qa, adversary, sme or owner.
+        Addressing a role wakes the seat holding that role on this epic.
       </p>
     </div>
   );

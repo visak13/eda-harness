@@ -235,3 +235,97 @@ def test_the_quick_card_exists_and_the_codex_seat_picks_it(tmp_path):
     assert _card_name(home, "engineer-quick", "engineer") == "engineer-quick"
     assert _card_name(home, "no-such-card", "engineer") == "engineer"
     assert _card_name(home, None, "engineer") == "engineer"
+
+
+def test_retire_roles_deletes_coordinator_consultant_and_owner_agent_rows_keeps_the_human_owner():
+    """s-ccdafcb229 (owner ruling): the coordinator/consultant roles and the owner-role AGENT are retired;
+    Store._retire_roles_locked deletes their participant rows at open and keeps the human owner."""
+    import json
+
+    store = Store(":memory:")
+    rows = [
+        {"id": "coordinator", "type": "agent", "role": "coordinator", "handle": "coordinator"},
+        {"id": "consultant", "type": "agent", "role": "consultant", "handle": "consultant"},
+        {"id": "owner-bot", "type": "agent", "role": "owner", "handle": "owner-bot"},
+        {"id": "human-owner", "type": "human", "role": "owner", "handle": "human-owner"},
+        {"id": "eng", "type": "agent", "role": "engineer", "handle": "eng"},
+    ]
+    with store._lock, store._conn:
+        for r in rows:
+            store._conn.execute("INSERT INTO participant(id, body, role, handle) VALUES (?,?,?,?)",
+                                (r["id"], json.dumps(r), r["role"], r["handle"]))
+        gone = store._retire_roles_locked()
+    assert sorted(gone) == ["consultant", "coordinator", "owner-bot"]
+    left = {r[0] for r in store._conn.execute("SELECT id FROM participant").fetchall()}
+    assert left == {"human-owner", "eng"}
+    assert store._retire_roles_locked() == []  # idempotent
+    assert store.get("participant", "human-owner").role == Role.owner
+
+
+# ------------------------------------------------------------------ p-788f3934 embedder re-arm
+
+def test_a_low_ram_embedder_fallback_re_arms_once_ram_recovers(monkeypatch):
+    from edp8 import search
+
+    class Fake:
+        name = "fake"
+
+        def embed(self, texts, is_query=False):
+            return [[1.0, 0.0] for _ in texts]
+
+    made = iter([search.NullEmbedder(fallback_reason="low_ram: 0.91GB free < 1.5GB floor"), Fake()])
+    monkeypatch.setattr(search, "make_embedder", lambda *a, **k: next(made))
+    ram = {"gb": 0.9}
+    monkeypatch.setattr(search, "_free_ram_gb", lambda: ram["gb"])
+    idx = search.Index()
+    st = idx.status()
+    assert st["embedder"] == "none" and "re-checked" in st["reason"]  # still low: reason is current
+    ram["gb"] = 4.0
+    assert idx.status()["embedder"] == "none"  # throttled: no re-probe inside the interval
+    monkeypatch.setattr(search, "REARM_INTERVAL_S", 0.0)
+    idx._rearm_at = 0.0
+    assert idx.status()["embedder"] == "fake"
+
+
+def test_an_injected_or_forced_null_embedder_is_never_re_armed(monkeypatch):
+    from edp8 import search
+    monkeypatch.setattr(search, "_free_ram_gb", lambda: 64.0)
+    idx = search.Index(embedder=search.NullEmbedder(fallback_reason="low_ram: x"))
+    assert idx.status()["embedder"] == "none"
+
+
+# ------------------------------------------------------------------ p-73d192bf prompt → board
+
+def test_the_notify_hook_posts_a_blocked_question_for_a_seat_on_a_prompt(tmp_path):
+    import http.server
+    import json as _json
+    import subprocess
+    import sys
+    import threading
+    from pathlib import Path
+    got: list[dict] = []
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            n = int(self.headers.get("Content-Length") or 0)
+            got.append({"path": self.path, "who": self.headers.get("X-Participant"),
+                        "body": _json.loads(self.rfile.read(n))})
+            self.send_response(200); self.end_headers(); self.wfile.write(b"{}")
+
+        def log_message(self, *a):
+            pass
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    hook = Path(__file__).resolve().parents[1] / ".claude" / "hooks" / "notify-user.py"
+    env = {"SYSTEMROOT": __import__("os").environ.get("SYSTEMROOT", ""), "EDP_TOASTS": "0",
+           "EDP_HANDLE": "engineer.s-abc", "EDP8_BOARD_URL": f"http://127.0.0.1:{srv.server_port}"}
+    for ntype in ("idle_prompt", "permission_prompt"):
+        subprocess.run([sys.executable, str(hook)], input=_json.dumps(
+            {"notification_type": ntype, "message": "Dangerous rm operation"}), text=True, env=env,
+            timeout=20, cwd=tmp_path)
+    srv.shutdown()
+    assert len(got) == 1  # idle is the normal wait; only the prompt is a block
+    b = got[0]
+    assert b["path"] == "/v1/messages" and b["who"] == "engineer.s-abc"
+    assert b["body"]["ticket_id"] == "s-abc" and b["body"]["to"] == "owner" and b["body"]["kind"] == "question"
+    assert "[blocked]" in b["body"]["text"] and "Dangerous rm operation" in b["body"]["text"]

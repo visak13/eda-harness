@@ -110,13 +110,11 @@ def test_record_and_lookup_through_tools(raw_client, board):
 def test_full_flow(raw_client, board):
     owner_id = register(raw_client, "owner", "owner1")
     architect_id = register(raw_client, "architect", "arch1")
-    coordinator_id = register(raw_client, "coordinator", "coord1")
     engineer_id = register(raw_client, "engineer", "eng1")
     adversary_id = register(raw_client, "adversary", "adv1")
 
     owner_client = make_client(raw_client, owner_id)
     architect_client = make_client(raw_client, architect_id)
-    coordinator_client = make_client(raw_client, coordinator_id)
     engineer_client = make_client(raw_client, engineer_id)
     adversary_client = make_client(raw_client, adversary_id)
 
@@ -158,8 +156,8 @@ def test_full_flow(raw_client, board):
     assert signed["ok"], signed
     assert signed["value"]["status"] == "signed_off"
 
-    # coordinator: board shows it, then marks it ready
-    use(coordinator_client)
+    # architect: board shows it, then marks it ready (the coordinator role is retired)
+    use(architect_client)
     board_resp = ALL_TOOLS["board"].handler(ALL_TOOLS["board"].args_model(epic_id=epic_id))
     assert board_resp["ok"], board_resp
     assert board_resp["value"]["epic"]["id"] == epic_id
@@ -213,7 +211,7 @@ def test_full_flow(raw_client, board):
     assert done["value"]["status"] == "done"
 
     # close
-    use(coordinator_client)
+    use(owner_client)
     close_resp = ALL_TOOLS["close"].handler(ALL_TOOLS["close"].args_model(epic_id=epic_id))
     assert close_resp["ok"], close_resp
     assert "disarm" in close_resp["value"]
@@ -265,13 +263,15 @@ def test_spawn_with_ticket_id_registers_and_assigns(raw_client, monkeypatch):
 
     monkeypatch.setattr(bundles_mod, "_pool_call", fake_pool_call)
 
-    coordinator_id = register(raw_client, "coordinator", "coord-spawn")
+    owner_id = register(raw_client, "owner", "owner-spawn")
+    engineer_id = register(raw_client, "engineer", "eng-spawn")
     architect_id = register(raw_client, "architect", "arch-spawn")
 
-    coordinator_client = make_client(raw_client, coordinator_id)
+    owner_client = make_client(raw_client, owner_id)
+    engineer_client = make_client(raw_client, engineer_id)
     architect_client = make_client(raw_client, architect_id)
 
-    set_client(coordinator_client)
+    set_client(owner_client)  # epics are created by the owner only
     epic_resp = ALL_TOOLS["ticket_create"].handler(
         ALL_TOOLS["ticket_create"].args_model(kind="epic", work_type="feature", title="Spawn target epic"))
     assert epic_resp["ok"], epic_resp
@@ -284,8 +284,8 @@ def test_spawn_with_ticket_id_registers_and_assigns(raw_client, monkeypatch):
     assert story_resp["ok"], story_resp
     story_id = story_resp["value"]["id"]
 
-    set_client(coordinator_client)  # S-ADV finding 2: the tool binds the caller like REST — a retired
-    refused = ALL_TOOLS["spawn"].handler(  # coordinator (or any engineer) is refused, the epic's architect spawns
+    set_client(engineer_client)  # S-ADV finding 2: the tool binds the caller like REST — an engineer
+    refused = ALL_TOOLS["spawn"].handler(  # (not the epic's architect) is refused, the epic's architect spawns
         ALL_TOOLS["spawn"].args_model(role="engineer", ticket_id=story_id))
     assert not refused["ok"] and "pool control plane" in refused["error"]["message"], refused
     set_client(architect_client)
@@ -295,17 +295,17 @@ def test_spawn_with_ticket_id_registers_and_assigns(raw_client, monkeypatch):
     expected_pid = f"engineer.{story_id}"
     assert spawn_resp["value"]["participant_id"] == expected_pid
 
-    got = coordinator_client.participant_get(expected_pid)
+    got = owner_client.participant_get(expected_pid)
     assert got["ok"], got
 
-    ticket_after = coordinator_client.ticket_read(story_id)
+    ticket_after = owner_client.ticket_read(story_id)
     assert ticket_after["ok"], ticket_after
     assert ticket_after["value"]["assignee"] == expected_pid
 
 
 def test_spawn_without_ticket_or_participant_id_is_schema_error(raw_client):
-    coordinator_id = register(raw_client, "coordinator", "coord-spawn2")
-    set_client(make_client(raw_client, coordinator_id))
+    owner_id = register(raw_client, "owner", "owner-spawn2")
+    set_client(make_client(raw_client, owner_id))
     resp = ALL_TOOLS["spawn"].handler(ALL_TOOLS["spawn"].args_model(role="engineer"))
     assert resp["ok"] is False
     assert resp["error"]["code"] == "schema"
@@ -344,7 +344,7 @@ def test_consult_posts_answer_to_thread(raw_client, monkeypatch):
 def test_owner_bundle_can_kick_off():
     from edp8.bundles import ROLE_BUNDLES
     assert "ticket_create" in ROLE_BUNDLES["owner"], "owner must originate epics (pain 2026-08-24)"
-    assert "spawn" in ROLE_BUNDLES["owner"], "owner must be able to start the coordinator"
+    assert "spawn" in ROLE_BUNDLES["owner"], "owner must be able to spawn seats"
 
 
 def test_consult_refuses_every_model_but_astra(monkeypatch, tmp_path):

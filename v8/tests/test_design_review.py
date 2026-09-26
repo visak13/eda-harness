@@ -168,9 +168,9 @@ def test_callbacks_release_store_before_taking_board_lock(rig, transactional):
 
 def test_unowned_epic_does_not_grant_typed_review_to_any_owner(rig):
     b, owner, _, _, body = rig
-    coordinator = b.participant_create("agent", Role.coordinator, "coordinator")
+    agent = b.participant_create("agent", Role.architect, "legacy-epic-creator")
     ticket = b.ticket(body.ticket_id)
-    ticket.created_by = coordinator.id
+    ticket.created_by = agent.id
     b.store.put("ticket", ticket)
     assert b.epic_owner(ticket.id) is None
     with pytest.raises(BoardError, match="matching human owner"):
