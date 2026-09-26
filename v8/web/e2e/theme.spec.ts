@@ -9,7 +9,7 @@ const themeOf = (page: import("@playwright/test").Page) =>
   page.evaluate(() => document.documentElement.dataset.theme);
 
 test("picking Ember sets data-theme=ember + color-scheme dark, and survives a reload", async ({ page }) => {
-  await page.goto(`${BASE()}/ui/me?as=owner`);
+  await page.goto(`${BASE()}/ui/epics?as=owner`);
 
   await page.getByRole("button", { name: "Account and preferences" }).click();
   await page.getByRole("radio", { name: "Ember" }).check();
@@ -26,7 +26,7 @@ test("picking Ember sets data-theme=ember + color-scheme dark, and survives a re
 test("nothing stored + prefers-color-scheme: dark → Ember", async ({ browser }) => {
   const ctx = await browser.newContext({ colorScheme: "dark" });
   const page = await ctx.newPage();
-  await page.goto(`${BASE()}/ui/me?as=owner`);
+  await page.goto(`${BASE()}/ui/epics?as=owner`);
   expect(await themeOf(page)).toBe("ember");
   await ctx.close();
 });
@@ -35,7 +35,7 @@ test("nothing stored + prefers-contrast: more → Folio HC (beats dark)", async 
   const ctx = await browser.newContext({ colorScheme: "dark" });
   const page = await ctx.newPage();
   await page.emulateMedia({ contrast: "more" }); // set before navigation so pre-paint sees it
-  await page.goto(`${BASE()}/ui/me?as=owner`);
+  await page.goto(`${BASE()}/ui/epics?as=owner`);
   expect(await themeOf(page)).toBe("folio-hc");
   await ctx.close();
 });

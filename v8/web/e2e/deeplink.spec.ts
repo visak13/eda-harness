@@ -9,8 +9,9 @@ test.use({ boardFile: "deeplink" }); // one fresh board per spec file (fixtures.
 // right Folio surface with identity attached, and the legacy query-string filters survive the
 // redirect. The slack bridge (src/edp8/slack_bridge.py:83) builds exactly two shapes —
 // `{base}/ui/ticket/{ticket}?as={handle}` (a message on a ticket) and `{base}/ui/me?as={handle}`
-// (no ticket) — and identity (src/auth/identity.ts) reads ?as → sessionStorage → an X-Participant
-// header on every /v1 request (the feed is fetch, not EventSource, so it too carries the header).
+// (no ticket; S20: /me redirects to the Epics list) — and identity (src/auth/identity.ts) reads
+// ?as → sessionStorage → an X-Participant header on every /v1 request (the feed is fetch, not
+// EventSource, so it too carries the header).
 const ADMIN = () => process.env.EDP8_ADMIN_TOKEN ?? "t";
 
 let fx: G3aFixture;
@@ -57,12 +58,12 @@ test.describe("slack-bridge deep links carry identity", () => {
     await expect.poll(() => first.value()).toBe("alice");
   });
 
-  test("/ui/me?as=alice opens Decisions and the first /v1 call is X-Participant: alice", async ({ page }) => {
+  test("/ui/me?as=alice lands on the Epics list and the first /v1 call is X-Participant: alice", async ({ page }) => {
     const first = captureFirstV1Participant(page);
     await page.goto(`${BASE()}/ui/me?as=alice`);
 
-    await expect(page.getByTestId("decisions")).toBeVisible();
-    expect(new URL(page.url()).pathname).toContain("/me");
+    await expect(page.getByTestId("epic-list")).toBeVisible();
+    expect(new URL(page.url()).pathname).toContain("/epics");
 
     await expect.poll(() => first.value()).toBe("alice");
   });
@@ -106,12 +107,12 @@ test.describe("wrong token + tokens.json → the SPA inline identity panel", () 
     await page.goto(`${BASE()}/ui/me?as=tokuser&token=definitely-the-wrong-token`);
     await expect(page.getByTestId("identity-panel")).toBeVisible();
     // The shell chrome is NOT rendered while identity is unresolved (no silent `as` fallback).
-    await expect(page.getByTestId("decisions")).toHaveCount(0);
+    await expect(page.getByTestId("epic-list")).toHaveCount(0);
   });
 
-  test("the matching token for the same participant loads Decisions normally", async ({ page }) => {
+  test("the matching token for the same participant loads the Epics list normally", async ({ page }) => {
     await page.goto(`${BASE()}/ui/me?as=tokuser&token=${TOKEN()}`);
-    await expect(page.getByTestId("decisions")).toBeVisible();
+    await expect(page.getByTestId("epic-list")).toBeVisible();
     await expect(page.getByTestId("identity-panel")).toHaveCount(0);
   });
 });

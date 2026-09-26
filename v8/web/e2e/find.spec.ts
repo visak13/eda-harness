@@ -13,8 +13,8 @@ test.describe("Find (Ctrl-K)", () => {
   });
 
   test("type an epic word, Enter opens the epic; Esc closes and restores focus", async ({ page }) => {
-    await page.goto(`${BASE()}/ui/me?as=owner`);
-    await expect(page.getByTestId("decisions")).toBeVisible();
+    await page.goto(`${BASE()}/ui/epics?as=owner`);
+    await expect(page.getByTestId("epic-list")).toBeVisible();
 
     await page.keyboard.press("Control+k");
     const input = page.getByTestId("find-input");
@@ -40,8 +40,8 @@ test.describe("Find (Ctrl-K)", () => {
   });
 
   test("a message hit lands on its thread row", async ({ page }) => {
-    await page.goto(`${BASE()}/ui/me?as=owner`);
-    await expect(page.getByTestId("decisions")).toBeVisible(); // the shell's key listener is mounted
+    await page.goto(`${BASE()}/ui/epics?as=owner`);
+    await expect(page.getByTestId("epic-list")).toBeVisible(); // the shell's key listener is mounted
     await page.keyboard.press("Control+k");
     await page.getByTestId("find-input").fill("featured card use");
     const row = page.getByTestId("find-row").filter({ hasText: "featured card" }).first();

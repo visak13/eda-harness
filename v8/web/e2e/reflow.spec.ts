@@ -1,5 +1,6 @@
 import { expect, test, BASE } from "./fixtures";
-import { seedDecisions } from "./g2.seed";
+import { seedDecisions, type G2Fixture } from "./g2.seed";
+import { openRuling } from "./g2-owner-loop.helpers";
 import { seedEpic, type G3aFixture } from "./g3a.seed";
 import { GEOMETRY } from "./geometry";
 
@@ -14,29 +15,30 @@ test.use({ boardFile: "reflow" }); // one fresh board per spec file (fixtures.ts
 //    .header left 56, .main margin-left 96 (1024 ≤ 1279).
 //  • drawer margins (width === vw-40, insets 20) — Drawer.module.css `.panel` has margin:20 +
 //    max-width:calc(100vw - 40px); the inline width:1112 clamps to 984 at 1024 in a flex-end scrim.
-//  • NO horizontal overflow on Decisions / Epic — the two-column content grids (Decisions.module
-//    .css, Epic.module.css, 744+336+64 = 1144) collapse to one column at `@media (max-width:
+//  • NO horizontal overflow on Epics / Epic (S20: Epics replaced the Needs you page) — the
+//    two-column content grids (Epic.module.css, 744+336+64 = 1144) collapse to one column at `@media (max-width:
 //    1024px)`, so at 1024 the main column (~888px) holds a single column and does not overflow.
 //  • ruling body inside the drawer — RulingDrawer.module.css `@media (max-width: 1024px)` stacks the
 //    fixed 650/462 panes to one full-width column (second-opinion 2026-09-08), so the ruling grid no
 //    longer exceeds the ≈984px drawer and is not clipped by the Drawer's overflow:hidden.
 const VW = 1024;
 let epicFx: G3aFixture;
+let fx: G2Fixture;
 
 test.use({ viewport: { width: VW, height: 768 } });
 
 test.beforeAll(async () => {
   epicFx = await seedEpic();
-  await seedDecisions(); // a pending owner sign-off → the ruling drawer opens from it
+  fx = await seedDecisions(); // a pending owner sign-off → the ruling drawer opens from it
 });
 
 const scrollWidth = (page: import("@playwright/test").Page) =>
   page.evaluate(() => document.scrollingElement!.scrollWidth);
 
-test("no horizontal overflow on Decisions and the Epic page", async ({ page }) => {
-  await page.goto(`${BASE()}/ui/me?as=owner`);
-  await expect(page.getByTestId("decisions")).toBeVisible();
-  expect(await scrollWidth(page), "Decisions horizontal overflow").toBe(VW);
+test("no horizontal overflow on the Epics list and the Epic page", async ({ page }) => {
+  await page.goto(`${BASE()}/ui/epics?as=owner`);
+  await expect(page.getByTestId("epic-list")).toBeVisible();
+  expect(await scrollWidth(page), "Epics horizontal overflow").toBe(VW);
 
   await page.goto(`${BASE()}/ui/epic/${epicFx.epic}?as=owner`);
   await expect(page.locator("main h1")).toBeVisible();
@@ -44,8 +46,8 @@ test("no horizontal overflow on Decisions and the Epic page", async ({ page }) =
 });
 
 test("the sidebar collapses to a 56px icon rail, nav still keyboard-reachable", async ({ page }) => {
-  await page.goto(`${BASE()}/ui/me?as=owner`);
-  await expect(page.getByTestId("decisions")).toBeVisible();
+  await page.goto(`${BASE()}/ui/epics?as=owner`);
+  await expect(page.getByTestId("epic-list")).toBeVisible();
 
   const aside = page.getByRole("complementary", { name: "Primary" }); // the Status rail is a second <aside>
   const ab = (await aside.boundingBox())!;
@@ -64,9 +66,7 @@ test("the sidebar collapses to a 56px icon rail, nav still keyboard-reachable", 
 });
 
 test("the ruling drawer spans the viewport minus 20px margins (no horizontal overflow)", async ({ page }) => {
-  await page.goto(`${BASE()}/ui/me?as=owner`);
-  await expect(page.getByTestId("decisions")).toBeVisible();
-  await page.getByTestId("review-evidence").click();
+  await openRuling(page, fx); // S20: the sign-off's own link opens the ruling drawer
   const drawer = page.getByTestId("drawer-panel");
   await expect(drawer).toBeVisible();
 

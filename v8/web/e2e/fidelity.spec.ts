@@ -4,6 +4,7 @@ import { GEOMETRY } from "./geometry";
 import { bandDiffRatio, expectPx, readPng } from "./fidelity-helpers";
 import { seedEpic, type G3aFixture } from "./g3a.seed";
 import { seedDecisions } from "./g2.seed";
+import { openRuling } from "./g2-owner-loop.helpers";
 
 test.use({ boardFile: "fidelity" }); // one fresh board per spec file (fixtures.ts)
 
@@ -27,7 +28,7 @@ test.describe("shell fidelity @ 1440×900", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test("sidebar / header / main geometry, rail token, active nav, h1, focus ring", async ({ page }) => {
-    await page.goto(`${BASE()}/ui/me?as=owner`);
+    await page.goto(`${BASE()}/ui/epics?as=owner`); // S20: the Epics list is the owner home (Needs you is gone)
 
     // Sidebar: x=0, width 192 (revision3-clean rail), background = the rail token.
     const sidebar = page.getByRole("complementary", { name: "Primary" }); // the Status rail is a second <aside>
@@ -47,7 +48,7 @@ test.describe("shell fidelity @ 1440×900", () => {
     expectPx(mb.x, GEOMETRY.main.x, "main x");
     expectPx(mb.width, GEOMETRY.main.w, "main width");
 
-    // Active nav row (Epics on /me): 46px tall per the revision3-clean rail, on the accent wash, icon in ink (inherits the row).
+    // Active nav row (Epics on /epics): 46px tall per the revision3-clean rail, on the accent wash, icon in ink (inherits the row).
     const active = page.locator("a[aria-current='page']");
     const ab = (await active.boundingBox())!;
     expectPx(ab.height, 46, "active nav row height");
@@ -124,7 +125,7 @@ test.describe("shell fidelity — band pixelmatch @ 1440×900", () => {
   }
 
   test("home rail + header bands match folio-home.png", async ({ page }) => {
-    await bandCheck(page, `${BASE()}/ui/me?as=owner`, "folio-home.png", "home");
+    await bandCheck(page, `${BASE()}/ui/epics?as=owner`, "folio-home.png", "home");
   });
 
   // The rail + header are the outer shell chrome — identical bands on the epic page — so the epic
@@ -134,7 +135,7 @@ test.describe("shell fidelity — band pixelmatch @ 1440×900", () => {
   });
 
   // Ruling-drawer band vs folio-ruling.png (finding 2, second-opinion 2026-09-08 — implemented, not
-  // deferred). The drawer opens from a pending owner sign-off's "Review evidence" (design §17). With
+  // deferred). The drawer opens from a pending owner sign-off (S20: its link, /ui/ticket/<story>#<criterion>). With
   // the drawer open the shell chrome behind it is dimmed by the scrim — a deterministic, content-free
   // target (g2-fidelity asserts the sidebar/queue stay visible behind the dim), so the rail + header
   // bands are asserted against the ruling plate exactly as home/epic are; the drawer body is seed-
@@ -147,9 +148,7 @@ test.describe("shell fidelity — band pixelmatch @ 1440×900", () => {
   };
 
   test("ruling drawer rail + header bands match folio-ruling.png (drawer body logged-only)", async ({ page }) => {
-    await seedDecisions(); // a pending owner sign-off → "Review evidence" opens the ruling drawer
-    await page.goto(`${BASE()}/ui/me?as=owner`);
-    await page.getByTestId("review-evidence").click();
+    await openRuling(page, await seedDecisions()); // a pending owner sign-off → its link opens the ruling drawer
     await expect(page.getByTestId("drawer-panel")).toBeVisible();
 
     const shot = readPng(await page.screenshot());

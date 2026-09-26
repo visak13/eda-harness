@@ -34,3 +34,10 @@ export async function openSignoff(page: Page, fx: G2Fixture) {
   await row.getByRole("button").first().click();
   await expect(page.getByTestId("ruling-grid")).toBeVisible();
 }
+
+/** The sign-off's own link (`/ui/ticket/<story>#<criterion>`, the popover's href): the ruling drawer
+ *  alone, no Files drawer under it — the plates (axe, reflow, fidelity, visual) capture this state. */
+export async function openRuling(page: Page, fx: G2Fixture) {
+  await page.goto(`${BASE()}/ui/ticket/${fx.story}?as=owner#${fx.signoffCriterion}`);
+  await expect(page.getByTestId("ruling-grid")).toBeVisible();
+}

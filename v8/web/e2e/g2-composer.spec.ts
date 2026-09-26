@@ -14,10 +14,10 @@ test.use({ boardFile: "g2-composer" }); // one fresh board per spec file (fixtur
 
 test.use({ viewport: { width: 1440, height: 900 } });
 
-async function openNewConversation(page: Page): Promise<void> {
-  await page.goto(`${BASE()}/ui/me?as=owner`);
-  await expect(page.getByTestId("decisions")).toBeVisible();
-  await page.getByTestId("new-conversation").click();
+// S20: the Needs you page (and its "New conversation") is gone; a conversation starts in the epic
+// page's composer.
+async function openNewConversation(page: Page, epic: string): Promise<void> {
+  await page.goto(`${BASE()}/ui/epic/${epic}?as=owner`);
   await expect(page.getByTestId("composer")).toBeVisible();
 }
 
@@ -45,7 +45,7 @@ test.describe("composer — To picker + wake preview", () => {
   });
 
   test("groups the picker and previews one recipient that resolves and one that does not", async ({ page }) => {
-    await openNewConversation(page);
+    await openNewConversation(page, fx.epic);
     const picker = page.getByTestId("to-picker");
     // The three optgroups the board's roster drives.
     for (const g of ["People", "Live seats", "Roles on this epic"]) {
@@ -66,8 +66,8 @@ test.describe("composer — To picker + wake preview", () => {
 
 test.describe("composer — field size (§4.2)", () => {
   test("the textarea is ≥4 rows and a 600-char paragraph does not scroll inside it", async ({ page }) => {
-    await seedDecisions();
-    await openNewConversation(page);
+    const fx = await seedDecisions();
+    await openNewConversation(page, fx.epic);
     const ta = page.getByTestId("composer-text");
     // Min 4 rows at 14/22 → ≈104px (4*22 + 16).
     expect((await ta.boundingBox())!.height).toBeGreaterThanOrEqual(100);
@@ -84,8 +84,8 @@ test.describe("composer — field size (§4.2)", () => {
 
 test.describe("composer — drag-and-drop upload (§18.1)", () => {
   test("a dropped PNG shows the veil and stages an artifact token; a refused type keeps the draft", async ({ page }) => {
-    await seedDecisions();
-    await openNewConversation(page);
+    const fx = await seedDecisions();
+    await openNewConversation(page, fx.epic);
     const ta = page.getByTestId("composer-text");
     await ta.fill("Here is the evidence: ");
 

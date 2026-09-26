@@ -9,14 +9,14 @@ test.use({ boardFile: "spike" }); // one fresh board per spec file (fixtures.ts)
 // (S19: the "N new" pill that held refresh under a draft is retired — drafts never hold it).
 
 test("shell renders identity + whoami and receives a live feed event within 5s", async ({ page }) => {
-  await page.goto(`${BASE()}/ui/me?as=owner`);
+  await page.goto(`${BASE()}/ui/epic/${EPIC()}?as=owner`);
 
   await expect(page.getByTestId("identity")).toHaveText("owner");
   await expect(page.getByTestId("whoami-handle")).toHaveText("owner");
 
   // Seam 3: post a note (architect → owner) while a conversation draft is open and watch it arrive
-  // over the feed within 5 s — the draft does not hold the refresh, and it survives it.
-  await page.getByRole("button", { name: "New conversation" }).click();
+  // over the feed within 5 s — the draft does not hold the refresh, and it survives it. (S20: the
+  // Needs you page and its "New conversation" are gone; the draft is the epic page's composer.)
   await page.getByTestId("composer-text").fill("draft in progress — do not refresh under me");
   const res = await fetch(`${BASE()}/v1/messages`, {
     method: "POST",
