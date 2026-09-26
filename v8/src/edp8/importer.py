@@ -50,6 +50,15 @@ class Item:
     note: str = ""
 
 
+def _long(p: Path) -> Path:
+    """Windows: the extended-length form, so a .data tree deeper than MAX_PATH (a v8 host has one under
+    .data/code/spike) still copies; elsewhere the path itself."""
+    if sys.platform != "win32":
+        return p
+    s = str(p.resolve())
+    return Path(s if s.startswith("\\\\?\\") else ("\\\\?\\UNC\\" + s[2:] if s.startswith("\\\\") else "\\\\?\\" + s))
+
+
 def _digest(p: Path) -> str:
     h = hashlib.sha256()
     with p.open("rb") as f:
@@ -59,7 +68,7 @@ def _digest(p: Path) -> str:
 
 
 def _tree_files(root: Path) -> list[Path]:
-    return [p for p in root.rglob("*") if p.is_file() and not _SKIP.search(p.name)]
+    return [p for p in _long(root).rglob("*") if p.is_file() and not _SKIP.search(p.name)]
 
 
 def _classify(it: Item) -> Item:
@@ -237,9 +246,10 @@ def apply(items: list[Item], env: tuple[dict[str, Any], dict[str, str], list[tup
             _copy_db(it.src, it.dst)
         elif it.kind == "tree":
             for f in _tree_files(it.src):
-                d = it.dst / f.relative_to(it.src)
+                d = it.dst / f.relative_to(_long(it.src))
                 if d.exists() and it.what.startswith("uploads (legacy"):
                     continue  # the .data copy wins over the legacy dir
+                d = _long(d)
                 d.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(f, d)
         elif it.kind == "secret":
