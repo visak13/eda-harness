@@ -1760,9 +1760,13 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     # S5: the process start, so a UI that asked the supervisor to restart the board polls until it changes
     _started_at = datetime.now(UTC).isoformat()
 
+    # home_id + home: the launcher acts only on a board of its own home (t-596660619c)
+    from edp_contracts.identity import home_identity
+    _identity = home_identity()
+
     @app.get("/healthz")
     def healthz():
-        return {"ok": True, "started_at": _started_at}
+        return {"ok": True, "started_at": _started_at, **_identity}
 
     @app.get("/v1/health")
     def v1_health():
@@ -1770,7 +1774,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         shape the pool and broker expose. No auth: it is the liveness probe."""
         from . import run_state
         return {"ok": True, "service": "board", "version": app.version, "git_rev": run_state.git_rev(),
-                "started_at": _started_at}
+                "started_at": _started_at, **_identity}
 
     return app
 

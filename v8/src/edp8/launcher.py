@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from edp_contracts.identity import home_id_of
 from edp_contracts.proc import ProcId, assign_job, detach, job_name, kill_tree, terminate_job
 
 from . import run_state, settings
@@ -165,6 +166,9 @@ def child_env(svc: str) -> dict[str, str]:
     if home is not None:
         env["EDP_HOME"] = env["EDP8_HOME"] = str(home)
     env["EDP8_RUN_DIR"] = str(settings.run_dir())
+    # the data dir is the home's identity: every service resolves the same one, whatever its cwd
+    if settings.env_raw("EDP8_DATA"):
+        env["EDP8_DATA"] = str(settings.data_dir().resolve())
     for other in ("board", "broker", "pool", "mcp"):
         spec = SPECS[other]
         if spec.url_env and not settings.is_set(spec.url_env):
@@ -192,16 +196,79 @@ def child_env(svc: str) -> dict[str, str]:
 
 # ------------------------------------------------------------------------------------------ probing
 
-def healthy(svc: str, *, timeout: float = 2.0) -> bool:
+def my_home_id() -> str:
+    """This home's identity: the id of the data dir its services resolve (t-596660619c)."""
+    return home_id_of(settings.data_dir())
+
+
+def probe(svc: str, *, port_: int | None = None, timeout: float = 2.0) -> dict[str, Any] | None:
+    """The health answer on `svc`'s port: its JSON body ({} when not an object), None when nothing answers
+    the health route. `home_id`/`home` in it name the home that service belongs to."""
+    spec = SPECS[svc]
+    p = port_ or port(svc)
+    if spec.health is None or not p:
+        return None
+    import httpx
+    try:
+        r = httpx.get(f"http://127.0.0.1:{p}{spec.health}", timeout=timeout)
+    except httpx.HTTPError:
+        return None
+    if r.status_code >= 400:
+        return None
+    try:
+        body = r.json()
+    except ValueError:
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
+def _recorded(svc: str, ident: ProcId) -> bool:
+    """`ident` is a process this home's run dir recorded for `svc` (its root or its pid), still the same
+    process. This is how a service started before identity existed stays recognised (the transition)."""
+    rec = run_state.read(svc)
+    for r in (_root(rec), run_state._ident(rec)):
+        if r is not None and r.pid == ident.pid and r.live() is not None:
+            return True
+    return False
+
+
+def owner(svc: str, *, port_: int | None = None) -> tuple[str, dict[str, Any]]:
+    """Who holds `svc`'s port: ("free" | "ours" | "foreign", facts). Ours = it reports this home's id, or it
+    reports none and is a process this home recorded. Everything else is foreign: another home's id, or a
+    listener that cannot prove its identity. A port is only a number; a home is the identity."""
+    p = port_ or port(svc)
+    if not p:
+        return ("ours" if running(svc) else "free"), {}
+    if not run_state._port_listening(p):
+        return "free", {}
+    ans = probe(svc, port_=p)
+    lp = run_state.listener_pid(p)
+    facts: dict[str, Any] = {"port": p, "pid": lp, "answers": ans is not None,
+                             "home_id": (ans or {}).get("home_id"), "home": (ans or {}).get("home")}
+    if facts["home_id"]:
+        return ("ours" if facts["home_id"] == my_home_id() else "foreign"), facts
+    lid = ProcId.try_of(lp) if lp else None
+    return ("ours" if lid is not None and _recorded(svc, lid) else "foreign"), facts
+
+
+def foreign_text(svc: str, facts: dict[str, Any]) -> str:
+    """The one plain line for a port another Heronry (or another program) holds."""
+    p = facts.get("port") or port(svc)
+    if facts.get("home"):
+        return (f"Port {p} is used by another Heronry ({facts['home']}). "
+                "Choose other ports with `heronry init --ports` or stop that one.")
+    who = "another program" if not facts.get("answers") else "a service that does not report its Heronry home"
+    return (f"Port {p} is used by {who} (pid {facts.get('pid')}). "
+            f"Choose other ports with `heronry init --ports` (or set {SPECS[svc].port_env}) or stop that one.")
+
+
+def healthy(svc: str) -> bool:
+    """`svc` answers its health route AND belongs to this home (a foreign service is never "ours healthy")."""
     spec = SPECS[svc]
     if spec.health is None:
         return running(svc)
-    import httpx
-    try:
-        r = httpx.get(f"http://127.0.0.1:{port(svc)}{spec.health}", timeout=timeout)
-        return r.status_code < 400
-    except httpx.HTTPError:
-        return False
+    who, facts = owner(svc)
+    return who == "ours" and bool(facts.get("answers"))
 
 
 def _root(rec: dict[str, Any] | None) -> ProcId | None:
@@ -250,12 +317,15 @@ def start(svc: str, *, wait_s: float = 90.0) -> dict[str, Any]:
     if not enabled(svc):
         return {"service": svc, "state": "skipped", "reason": "no slack map configured", "pid": None, "url": None}
     p = port(svc)
-    if (p and healthy(svc)) or (not p and running(svc)):
-        rec = run_state.adopt(svc, port=p) if p else run_state.read(svc)
-        return {"service": svc, "state": "already_running", "pid": (rec or {}).get("pid"), "url": url(svc)}
+    if not p and running(svc):
+        return {"service": svc, "state": "already_running", "pid": (run_state.read(svc) or {}).get("pid"), "url": None}
     if p and run_state._port_listening(p):
-        raise LaunchError(f"{svc}: port {p} is taken by another program (pid {run_state.listener_pid(p)}); "
-                          f"free it or set another port ({SPECS[svc].port_env}) and re-run")
+        # adopt only a service of THIS home; another home's service on our port is refused, never adopted
+        who, facts = owner(svc)
+        if who == "ours" and facts.get("answers"):
+            rec = run_state.adopt(svc, port=p)
+            return {"service": svc, "state": "already_running", "pid": (rec or {}).get("pid"), "url": url(svc)}
+        raise LaunchError(foreign_text(svc, facts))
     argv = service_argv(svc)
     log = _log_path(svc)
     ident, _ = detach(argv, cwd=str(service_cwd(svc)), env=child_env(svc), log=str(log))
@@ -266,7 +336,7 @@ def start(svc: str, *, wait_s: float = 90.0) -> dict[str, Any]:
         deadline = time.monotonic() + wait_s
         while time.monotonic() < deadline and ident.live():
             lp = run_state.listener_pid(p)
-            if lp and healthy(svc):
+            if lp and _answers_as_spawned(svc, ident):
                 pid = lp
                 break
             time.sleep(0.25)
@@ -274,7 +344,7 @@ def start(svc: str, *, wait_s: float = 90.0) -> dict[str, Any]:
         time.sleep(2.0)  # port-less (the bridge): still alive after 2 s is started
     if not ident.live() and not (p and healthy(svc)):
         raise LaunchError(f"{svc} exited during start; see {log}")
-    if p and not healthy(svc):
+    if p and not _answers_as_spawned(svc, ident):
         rep = kill_tree(ident, job=job)
         raise LaunchError(f"{svc} did not answer {SPECS[svc].health} on :{p} within {int(wait_s)} s "
                           f"(stopped it again{'' if rep.ok else ', survivors ' + str(rep.survivors)}); see {log}")
@@ -283,6 +353,23 @@ def start(svc: str, *, wait_s: float = 90.0) -> dict[str, Any]:
     if svc == "board":
         register_defaults()
     return {"service": svc, "state": "started", "pid": pid, "url": url(svc)}
+
+
+def _answers_as_spawned(svc: str, ident: ProcId) -> bool:
+    """The service this start spawned answers its health route: it reports this home's id, or it reports
+    none and the port's listener is in the spawned process tree. Another home's id is never it."""
+    who, facts = owner(svc)
+    if not facts.get("answers"):
+        return False
+    if who == "ours":
+        return True
+    root, lp = ident.live(), facts.get("pid")
+    if facts.get("home_id") or root is None or not lp:
+        return False
+    try:
+        return lp == root.pid or any(c.pid == lp for c in root.children(recursive=True))
+    except Exception:  # noqa: BLE001 — a vanished child: not provably ours
+        return False
 
 
 def register_defaults() -> None:
@@ -305,39 +392,32 @@ def register_defaults() -> None:
 
 def _targets(svc: str) -> list[ProcId]:
     rec = run_state.read(svc) or {}
-    out: list[ProcId] = []
-    for ident in (_root(rec), run_state._ident(rec)):
-        if ident is not None and ident.live() and all(t.pid != ident.pid for t in out):
-            out.append(ident)
     p = rec.get("port") or port(svc)
     lp = run_state.listener_pid(int(p)) if p else None
     lid = ProcId.try_of(lp) if lp else None
-    if lid is not None and _ours(svc, lid) and all(t.pid != lid.pid for t in out):
+    # a record can name another home's listener (adopted before identity existed): its own answer wins
+    foreign = lid.pid if lid is not None and not _ours(svc, lid, port_=int(p)) else None
+    out: list[ProcId] = []
+    for ident in (_root(rec), run_state._ident(rec)):
+        if ident is not None and ident.live() and ident.pid != foreign and all(t.pid != ident.pid for t in out):
+            out.append(ident)
+    if lid is not None and foreign is None and all(t.pid != lid.pid for t in out):
         out.append(lid)
     return out
 
 
-def _ours(svc: str, ident: ProcId) -> bool:
-    """A port listener counts as this service only when it runs the service's module (a port is only a
-    number: another program, or another checkout's service with another home, is never stopped)."""
-    p = ident.live()
-    if p is None:
+def _ours(svc: str, ident: ProcId, *, port_: int | None = None) -> bool:
+    """The port's listener `ident` is this home's `svc`: it reports this home's id, or it reports none and is
+    a process this home recorded. Never True for an unknown or absent home: a listener that cannot prove
+    its identity is foreign and is never stopped (t-596660619c)."""
+    if ident.live() is None:
         return False
-    try:
-        cmd = p.cmdline()
-        env_home = p.environ().get("EDP_HOME") or p.environ().get("EDP8_HOME")
-    except Exception:  # noqa: BLE001 — unreadable: not provably ours
-        return False
-    if MODULES[svc] not in cmd and SERVICE_FLAG not in cmd and not any(c.endswith(("edp8-board", "edp8-board.exe"))
-                                                                          for c in cmd):
-        return False
-    mine = settings.home()
-    if mine is None or env_home is None:
-        return True
-    try:
-        return Path(env_home).resolve() == mine
-    except OSError:
-        return False
+    if SPECS[svc].health is None:
+        return _recorded(svc, ident)
+    hid = (probe(svc, port_=port_) or {}).get("home_id")
+    if hid:
+        return hid == my_home_id()
+    return _recorded(svc, ident)
 
 
 def _pool_chain(ident: ProcId) -> list[ProcId]:
@@ -357,8 +437,9 @@ def _pool_chain(ident: ProcId) -> list[ProcId]:
 
 
 def live_seats() -> list[str] | None:
-    """Active seats on this pool ("handle (pid N)"), [] when none, None when the pool cannot say."""
-    if not run_state._port_listening(port("pool")):
+    """Active seats on this pool ("handle (pid N)"), [] when none (or the port is another home's pool),
+    None when the pool cannot say."""
+    if owner("pool")[0] != "ours":
         return []
     import httpx
     try:
@@ -407,7 +488,7 @@ def stop(svc: str, *, keep_seats: bool = False, grace: float = 4.0) -> dict[str,
     if p and run_state._port_listening(int(p)):
         lp = run_state.listener_pid(int(p))
         lid = ProcId.try_of(lp) if lp else None
-        if lid is not None and _ours(svc, lid) and all(s.pid != lid.pid for s in survivors):
+        if lid is not None and _ours(svc, lid, port_=int(p)) and all(s.pid != lid.pid for s in survivors):
             survivors.append(lid)
     if not survivors:
         run_state.clear(svc)
@@ -470,6 +551,13 @@ def status_rows() -> list[dict[str, Any]]:
     rows = run_state.snapshot()
     for r in rows:
         r["url"] = url(r["service"]) if r["service"] in SPECS else None
+        # a listener of another home is reported, never claimed as this home's service (t-596660619c)
+        if r["state"] == "up" and SPECS.get(r["service"]) and SPECS[r["service"]].port_env:
+            who, facts = owner(r["service"], port_=r.get("port"))
+            if who == "foreign":
+                r.update(state="foreign", pid=facts.get("pid"), git_rev=None, uptime=None,
+                         note=f"another Heronry ({facts['home']})" if facts.get("home")
+                         else "listener that does not report this home")
     sup = run_state.read(SUPERVISOR)
     rows.append({"service": SUPERVISOR, "state": "up" if supervisor_running() else "down",
                  "pid": (sup or {}).get("pid") if supervisor_running() else None,

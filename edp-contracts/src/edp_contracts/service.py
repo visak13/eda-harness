@@ -99,10 +99,15 @@ def mount(app: "FastAPI", service: Microservice) -> None:
     app.router.on_startup.append(service.startup)
     app.router.on_shutdown.append(service.shutdown)
 
+    from .identity import home_identity
+
+    # home_id + home: the launcher acts only on a service of its own home (t-596660619c)
+    identity = home_identity()
+
     @app.get(HEALTH_PATH)
     async def _health() -> dict:  # noqa: D401 - simple wiring
         status = await service.health()
-        return status.model_dump(mode="json")
+        return {**status.model_dump(mode="json"), **identity}
 
     @app.middleware("http")
     async def _structured_log(request: "Request", call_next):  # noqa: ANN001

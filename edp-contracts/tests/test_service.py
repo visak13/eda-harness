@@ -80,8 +80,8 @@ def test_svc_5_mount_wires_health():
         r = client.get(HEALTH_PATH)
         assert r.status_code == 200
         body = r.json()
-        # extra=forbid honored: exactly the HealthStatus fields
-        assert set(body) == {"status", "version", "detail", "deps"}
+        # extra=forbid honored: exactly the HealthStatus fields, plus the home identity (t-596660619c)
+        assert set(body) == {"status", "version", "detail", "deps", "home_id", "home"}
         assert body["status"] == "ready"
 
 

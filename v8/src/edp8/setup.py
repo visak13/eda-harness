@@ -92,6 +92,73 @@ def write_config(updates: dict[str, Any], remove: tuple[str, ...] | list[str] = 
     return f
 
 
+# ------------------------------------------------------------------------------------------ ports
+
+#: A port block, keyed on the board port: the defaults 9400 / 9402 / 9301 / 9300 are the block at 9400.
+PORT_BLOCK = (("board.port", 0), ("mcp.port", 2), ("pool.port", -99), ("broker.port", -100))
+PORT_ENVS = {"board.port": "EDP8_PORT", "mcp.port": "EDP8_MCP_PORT", "pool.port": "EDP_POOL_PORT",
+             "broker.port": "EDP_BROKER_PORT"}
+#: The next block is 1000 higher, clear of the other defaults (code-server 9410 and friends).
+BLOCK_STEP = 1000
+
+
+def port_block(board: int) -> dict[str, int]:
+    return {key: board + off for key, off in PORT_BLOCK}
+
+
+def _bindable(port: int) -> bool:
+    """Free: nothing answers on it, and it binds on loopback (not in a reserved range: Windows excludedportrange;
+    the connect check also catches a 0.0.0.0 listener, which Windows would let a loopback bind shadow)."""
+    from . import run_state
+    if run_state._port_listening(port):
+        return False
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(("127.0.0.1", port))
+            return True
+        except OSError:
+            return False
+
+
+def next_free_block(start: int, *, step: int = BLOCK_STEP) -> dict[str, int] | None:
+    """The first block at `start`, `start+step`, … whose four ports are all free (None past 65535)."""
+    board = start
+    while board + 2 <= 65535:
+        block = port_block(board)
+        if all(_bindable(p) for p in block.values()):
+            return block
+        board += step
+    return None
+
+
+def choose_ports(opts: dict[str, Any]) -> tuple[dict[str, int], str | None]:
+    """The port settings init writes, and a note when it moved off busy defaults (t-596660619c).
+    `--ports N` asks for the block at N; `--board-port` etc. set one; neither, with this home's ports all
+    defaulted and any of them busy, picks the next free block (another Heronry most likely holds them)."""
+    out: dict[str, int] = {}
+    if opts.get("ports") not in (None, True):
+        out.update(port_block(int(str(opts["ports"]))))
+    for flag, key in (("board-port", "board.port"), ("mcp-port", "mcp.port"), ("pool-port", "pool.port"),
+                      ("broker-port", "broker.port")):
+        if opts.get(flag):
+            out[key] = int(str(opts[flag]))
+    if out or any(settings.is_set(env) for env in PORT_ENVS.values()):
+        return out, None
+    from . import launcher
+    current = {key: int(settings.get(env)) for key, env in PORT_ENVS.items()}
+    # a port this home's own running service holds is not busy (init re-run next to a started home)
+    busy = sorted(p for key, p in current.items()
+                  if not _bindable(p) and launcher.owner(key.split(".")[0], port_=p)[0] != "ours")
+    if not busy:
+        return out, None
+    block = next_free_block(int(current["board.port"]) + BLOCK_STEP)
+    if block is None:
+        return out, f"ports {', '.join(map(str, busy))} are busy and no free block was found; pass --ports"
+    return block, (f"ports {', '.join(map(str, busy))} are busy (another Heronry or program); using the free block "
+                   f"board {block['board.port']}, mcp {block['mcp.port']}, pool {block['pool.port']}, "
+                   f"broker {block['broker.port']}")
+
+
 # ------------------------------------------------------------------------------------------ harnesses
 
 def detect_harnesses() -> dict[str, str | None]:
@@ -210,12 +277,12 @@ def init_cmd(argv: list[str]) -> int:
     updates: dict[str, Any] = {"seats.harnesses": picked}
     if opts.get("owner"):
         updates["identity.owner"] = str(opts["owner"])
-    for flag, key in (("board-port", "board.port"), ("mcp-port", "mcp.port"), ("pool-port", "pool.port"),
-                      ("broker-port", "broker.port")):
-        if opts.get(flag):
-            updates[key] = int(str(opts[flag]))
+    ports, note = choose_ports(opts)
+    updates.update(ports)
     cfg = write_config(updates)
     _say("config", str(cfg))
+    if note:
+        _say("ports", note)
 
     # secrets: generated once, never replaced by a re-run
     tok_file = settings.admin_token_file()
@@ -398,10 +465,12 @@ def _doctor_checks() -> int:
         state = _port_state(p)
         if state == "free":
             r.ok(f"{svc} :{p}", "free")
-        elif launcher.healthy(svc):
-            r.ok(f"{svc} :{p}", f"in use by this {svc} (pid {run_state.listener_pid(p)})")
-        else:
-            r.fail(f"{svc} :{p}", f"taken by another program (pid {run_state.listener_pid(p)}); set {launcher.SPECS[svc].port_env}")
+            continue
+        who, facts = launcher.owner(svc)
+        if who == "ours" and facts.get("answers"):
+            r.ok(f"{svc} :{p}", f"in use by this {svc} (pid {facts.get('pid')})")
+        else:  # another home's service, or another program: named, never claimed (t-596660619c)
+            r.fail(f"{svc} :{p}", launcher.foreign_text(svc, facts))
     cport = settings.get("EDP_CONTROL_PORT")
     if launcher.supervisor_running():
         r.ok("control port", f"127.0.0.1:{(run_state.read('supervisor') or {}).get('control_port')} (supervisor running)")

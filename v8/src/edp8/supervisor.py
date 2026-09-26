@@ -132,9 +132,14 @@ def make_probe(client) -> Callable[[str], bool]:
             return real_alive(svc)
         try:
             r = client.get(f"http://127.0.0.1:{port}{health}", timeout=PROBE_TIMEOUT)
-            return r.status_code < 400  # a 401/404 on the port is not the service answering
+            if r.status_code >= 400:  # a 401/404 on the port is not the service answering
+                return False
+            body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
         except Exception:  # noqa: BLE001
             return False
+        # another home's service on our port is not ours answering (t-596660619c); no id = an older build
+        hid = body.get("home_id") if isinstance(body, dict) else None
+        return not hid or hid == launcher.my_home_id()
     return probe
 
 

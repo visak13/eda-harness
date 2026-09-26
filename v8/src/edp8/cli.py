@@ -103,7 +103,7 @@ def _split(argv: list[str]) -> tuple[list[str], dict[str, str | bool]]:
 
 
 #: flags that take a value (everything else is a switch)
-_VALUED = {"harness", "owner", "admin-token", "from", "board-port", "mcp-port", "pool-port", "broker-port",
+_VALUED = {"harness", "owner", "admin-token", "from", "ports", "board-port", "mcp-port", "pool-port", "broker-port",
            "version", "spec", "db", "by", "timeout", "release-url", "agent-home-source"}
 
 
@@ -385,7 +385,8 @@ def help_cmd(_argv: list[str]) -> int:
     print(f"usage: {CLI_NAME} <command> [args]\n")
     print("commands:")
     for name, text in (
-        ("init", "first-time setup: dirs, config, tokens, agent home, harnesses (--harness claude,codex)"),
+        ("init", "first-time setup: dirs, config, tokens, agent home, harnesses (--harness claude,codex), "
+                 "ports (--ports 10400 = board 10400, mcp 10402, pool 10301, broker 10300)"),
         ("start [svc|all]", "start services (board, broker, pool, mcp, bridge) and the supervisor"),
         ("stop [svc|all]", "stop services and verify nothing is left (--force to take pool seats down)"),
         ("restart [svc|all]", "restart through the supervisor (records service_restarted)"),

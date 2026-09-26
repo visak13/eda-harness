@@ -269,7 +269,7 @@ def test_pool_mode_env_default(client, monkeypatch):
 def test_pool_7_health_conforms(client):
     r = client.get("/v1/health")
     assert r.status_code == 200
-    assert set(r.json()) == {"status", "version", "detail", "deps"}
+    assert set(r.json()) == {"status", "version", "detail", "deps", "home_id", "home"}
 
 
 def test_pool_8_sessions_and_release_http(client):

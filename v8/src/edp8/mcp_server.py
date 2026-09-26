@@ -220,9 +220,13 @@ def build_http_app(roles: list[str] | None = None) -> Starlette:
         managers[role] = mgr
         routes.append(Route(f"/mcp/{role}", endpoint=StreamableHTTPASGIApp(mgr)))
 
+    # home_id + home: the launcher acts only on an mcp server of its own home (t-596660619c)
+    from edp_contracts.identity import home_identity
+    identity = home_identity()
+
     async def healthz(_: Request) -> JSONResponse:
         return JSONResponse({"ok": True, "version": VERSION, "started_at": STARTED_AT,
-                             "roles": roles, "transport": "streamable-http/stateless"})
+                             "roles": roles, "transport": "streamable-http/stateless", **identity})
 
     # S13: a workflow's custom role (not a built-in bundle) is served the kernel bundle on /mcp/<role>;
     # the board still authorises every call by the seat's role
