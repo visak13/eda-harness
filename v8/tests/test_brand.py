@@ -84,7 +84,7 @@ def test_vscode_extension_display_name_and_icon() -> None:
 def test_readme_hero_uses_the_brand() -> None:
     readme = (REPO / "README.md").read_text(encoding="utf-8")
     assert readme.splitlines()[0] == f"# {brand.PRODUCT_NAME}"
-    assert brand.TAGLINE in readme[:600]
-    assert "heronry-logo.png" in readme[:600] or "heronry-splash.png" in readme[:600]
+    assert brand.TAGLINE in readme[:1200]  # below the S18 hero loop
+    assert "storefront/hero.webp" in readme[:600]  # the S18 hero (generated from the brand, S17)
     assert not PRODUCT_EDP.search(readme), PRODUCT_EDP.findall(readme)
     assert "EDA Harness" not in readme

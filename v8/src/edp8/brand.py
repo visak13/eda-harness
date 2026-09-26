@@ -17,6 +17,17 @@ DESKTOP_APP_NAME: str = settings.get("EDP_DESKTOP_APP_NAME")
 TAGLINE: str = settings.get("EDP_TAGLINE")
 ASSET_DIR = "assets/brand/heronry"  # relative to the v8 source root
 
+# Where the product is published (S18, design §4.17). The slug is the registry default of `update.repo`:
+# EDP_UPDATE_REPO moves only the update source (a fork's own build), never these public links. Every URL in
+# the root README derives from these; tests/test_readme_storefront.py holds it there.
+REPO_SLUG: str = settings.setting("EDP_UPDATE_REPO").default_value()
+_OWNER, _REPO = REPO_SLUG.split("/")
+REPO_URL = f"https://github.com/{REPO_SLUG}"
+RELEASES_URL = f"{REPO_URL}/releases/latest"
+DOWNLOAD_URL = f"{RELEASES_URL}/download"  # + an asset name: install.ps1, install.sh, heronry-demo.mp4
+VIDEO_URL = f"{DOWNLOAD_URL}/heronry-demo.mp4"
+SITE_URL = f"https://{_OWNER.lower()}.github.io/{_REPO}/"  # GitHub Pages project site (S15)
+
 BRAND = {
     "product_name": PRODUCT_NAME,
     "cli_name": CLI_NAME,
