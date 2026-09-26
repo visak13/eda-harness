@@ -120,3 +120,73 @@ def test_start_status_idempotent_health_stop_leaves_no_process(inst):
     for p in inst["ports"].values():
         with socket.socket() as s:
             assert s.connect_ex(("127.0.0.1", p)) != 0, f"port {p} still answers"
+
+
+def _fake_v8(root: Path) -> dict:
+    """A small v8 checkout: a real board DB (epic, story, participants), tokens, uploads, UI files, .env."""
+    from edp8.board import Board
+    from edp8.schemas import Role, TicketKind, WorkType
+    from edp8.store import Store
+
+    (root / ".data" / "uploads").mkdir(parents=True)
+    board = Board(Store(root / ".data" / "edp8.db"))
+    owner = board.participant_create("human", Role.owner, "owner", id_="owner")
+    board.participant_create("agent", Role.architect, "arch", id_="arch")
+    epic = board.ticket_create(owner, kind=TicketKind.epic, work_type=WorkType.feature, title="E")
+    board.ticket_create(owner, kind=TicketKind.story, work_type=WorkType.feature, title="S", parent_id=epic.id)
+    board.store._conn.close()
+    secret = "imp-" + uuid.uuid4().hex
+    (root / "tokens.json").write_text(json.dumps({"owner": secret, "agents": {}}), encoding="utf-8")
+    (root / ".data" / "uploads" / "art-1.png").write_bytes(b"\x89PNG fake")
+    (root / ".data" / "board.log").write_text("log line\n", encoding="utf-8")
+    (root / "ui-settings.json").write_text('{"theme": "dark"}', encoding="utf-8")
+    (root / "slack_map.json").write_text("{}", encoding="utf-8")
+    admin = "-adm" + uuid.uuid4().hex
+    env = f"# c\nEDP8_NOT_A_SETTING=1\nEDP8_ADMIN_TOKEN={admin}\nEDP8_DB=C:/elsewhere/x.db\n"
+    (root / ".env").write_text(env, encoding="utf-8")
+    return {"owner_token": secret, "admin": admin}
+
+
+def _tree_hash(root: Path) -> dict[str, str]:
+    import hashlib
+    return {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(root.rglob("*")) if p.is_file()}
+
+
+def test_import_dry_run_then_apply_keeps_counts_tokens_and_the_source(inst, tmp_path):
+    src = tmp_path / "old" / "v8"
+    creds = _fake_v8(src)
+    before = _tree_hash(src)
+    assert cli(inst, "init", "--harness", "claude", "--agent-home-source", str(V8)).returncode == 0
+
+    dry = cli(inst, "import", "--from", str(src))
+    assert dry.returncode == 0, dry.stdout + dry.stderr
+    assert "board DB" in dry.stdout and "'epics': 1, 'tickets': 2, 'participants': 2" in dry.stdout, dry.stdout
+    assert "dry run: nothing was written" in dry.stdout
+    assert "skip     EDP8_NOT_A_SETTING" in dry.stdout and "skip     EDP8_DB" in dry.stdout
+    assert creds["admin"] not in dry.stdout and creds["owner_token"] not in dry.stdout  # secrets never printed
+    assert not (inst["home"] / "data" / "edp8.db").exists() and not list(inst["home"].rglob("edp8.db"))
+
+    real = cli(inst, "import", "--from", str(src), "--apply")
+    assert real.returncode == 0, real.stdout + real.stderr
+    assert "imported: {'epics': 1, 'tickets': 2, 'participants': 2}" in real.stdout, real.stdout
+    assert _tree_hash(src) == before  # the source is byte-unchanged
+    assert not list(inst["home"].rglob("board.log"))  # logs stay behind
+    assert list(inst["home"].rglob("art-1.png"))
+
+    try:
+        r = cli(inst, "start", "board", "--no-supervisor")
+        assert r.returncode == 0, r.stdout + r.stderr
+        base = f"http://127.0.0.1:{inst['ports']['board']}"
+        ps = httpx.get(f"{base}/v1/participants", headers={"X-Participant": "@owner", "X-Token": creds["owner_token"]},
+                       timeout=10)
+        assert ps.status_code == 200, ps.text
+        assert {"owner", "arch"} <= {p["handle"].lstrip("@") for p in ps.json()["value"]}
+        bad = httpx.get(f"{base}/v1/participants", headers={"X-Participant": "@owner", "X-Token": "wrong"}, timeout=10)
+        assert bad.status_code == 401
+        adm = httpx.post(f"{base}/v1/participants", headers={"X-Admin": creds["admin"]}, timeout=10,
+                         json={"type": "agent", "role": "engineer", "handle": "imported-admin-check"})
+        assert adm.status_code == 200, adm.text  # the .env admin token moved to the admin.token file
+    finally:
+        cli(inst, "stop")
+    assert _tree_hash(src) == before
