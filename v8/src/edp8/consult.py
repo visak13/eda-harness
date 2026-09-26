@@ -1223,6 +1223,8 @@ def consult_status(run_id: str | None = None) -> dict[str, Any]:
             answer = ""
     status = manifest.get("status") or ("running" if lane.get("in_flight") == run_id else
                                         ("log_only" if lp.is_file() else "unknown"))
+    if status == "queued" and lane.get("in_flight") == run_id:
+        status = "running"  # holds the lane, still in pre-launch prep (MCP discovery, fence snapshot)
     val = {"run_id": run_id, "status": status, "manifest": manifest or None, "lane": lane,
            "thread_id": manifest.get("thread_id")}
     if answer:

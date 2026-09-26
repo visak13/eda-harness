@@ -860,6 +860,25 @@ def test_run_id_and_queued_manifest_exist_before_the_lane(_logs, monkeypatch):
     assert seen["status"]["ok"] and seen["status"]["value"]["status"] == "queued"
 
 
+def test_status_is_running_once_the_run_holds_the_lane_before_launch(_logs, monkeypatch):
+    """qa s-ccdafcb229: between taking the lane and the `running` manifest (MCP discovery, the fence
+    snapshot) consult_status must not say `queued behind another consult` for the lane holder."""
+    seen = {}
+    real = consult_mod._snapshot_mtimes
+
+    def spy(roots):
+        rid = consult_mod._LANE_STATE["in_flight"]
+        seen.setdefault("status", consult_mod.consult_status(rid))
+        return real(roots)
+
+    monkeypatch.setattr(consult_mod, "_snapshot_mtimes", spy)
+    monkeypatch.setattr(consult_mod, "_run_codex", _fake_codex(answer="hi"))
+    assert consult_mod.consult("second_opinion", "q")["ok"]
+    v = seen["status"]["value"]
+    assert v["manifest"]["status"] == "queued" and v["status"] == "running"
+    assert "queued behind" not in seen["status"]["hint"]
+
+
 def test_status_is_running_while_codex_runs(_logs, monkeypatch):
     seen = {}
     fake = _fake_codex(answer="hi")
