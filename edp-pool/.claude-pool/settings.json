@@ -1,6 +1,8 @@
 ﻿{
     "model":  "claude-opus-4-8",
     "outputStyle":  "edp-terse",
+    "awaySummaryEnabled":  false,
+    "spinnerTipsEnabled":  false,
     "skillOverrides":  {
                            "artifact-design":  "off",
                            "artifact-capabilities":  "off",
