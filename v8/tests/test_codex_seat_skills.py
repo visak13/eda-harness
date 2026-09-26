@@ -118,6 +118,8 @@ def test_the_seats_standing_context_says_monitor_runs_under_bash(tmp_path):
     from edp8.codex_seat import run as run_mod
     ctx = run_mod.standing_context(V8)
     assert ctx.startswith((V8 / "CLAUDE.md").read_text(encoding="utf-8").rstrip()[:200])
-    assert ctx.rstrip().endswith(run_mod.SHELL_NOTE) and "Git bash" in ctx and "&" in run_mod.SHELL_NOTE
+    assert run_mod.SHELL_NOTE in ctx and "Git bash" in ctx and "&" in run_mod.SHELL_NOTE
+    (tmp_path / run_mod.OUTPUT_STYLE).parent.mkdir(parents=True)
+    (tmp_path / run_mod.OUTPUT_STYLE).write_text("---\nname: x\n---\nstyle", encoding="utf-8")
     (tmp_path / "AGENTS.md").write_text("codex reads me itself", encoding="utf-8")
-    assert run_mod.standing_context(tmp_path).strip() == run_mod.SHELL_NOTE
+    assert run_mod.standing_context(tmp_path).startswith(run_mod.SHELL_NOTE)  # no CLAUDE.md when AGENTS.md exists

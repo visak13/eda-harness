@@ -211,24 +211,33 @@ class CodexSeat:
             self.server.stop()
             raise RuntimeError(f"resume requested but {self.state_path} holds no valid threadId")
         if prior and prior.get("threadId"):
-            res = self.server.request("thread/resume", {"threadId": prior["threadId"], "cwd": self.cwd,
-                                                        "sandbox": sandbox_for(self.role, self.env), "model": self.model,
-                                                        "excludeTurns": True}, timeout=120)
+            params = {"threadId": prior["threadId"], "cwd": self.cwd, "sandbox": sandbox_for(self.role, self.env),
+                      "model": self.model, "excludeTurns": True, **self.output_params()}
+            res = self.server.request("thread/resume", params, timeout=120)
             self._log(f"thread/resume {prior['threadId']}")
         else:
-            params: dict = {"model": self.model, "cwd": self.cwd, "sandbox": sandbox_for(self.role, self.env),
-                            "approvalPolicy": "never", "ephemeral": self.ephemeral,
-                            "dynamicTools": self.tools.specs()}
-            if self.developer_instructions:
-                params["developerInstructions"] = self.developer_instructions
-            if self.effort:
-                params["config"] = {"model_reasoning_effort": self.effort}
+            params = {"model": self.model, "cwd": self.cwd, "sandbox": sandbox_for(self.role, self.env),
+                      "approvalPolicy": "never", "ephemeral": self.ephemeral,
+                      "dynamicTools": self.tools.specs(), **self.output_params()}
             res = self.server.request("thread/start", params, timeout=120)
         self.thread_id = res["thread"]["id"]
         self._enforce_allowlist()
         self._write_state()
         self.tools.start()
         return res
+
+    def output_params(self) -> dict:
+        """The output rule on thread/start AND thread/resume (design-e963c656f5 §4.7, codex CLI 0.156.0): the
+        thread param REPLACES the config value, so the whole developer text goes every time (a resumed seat
+        would otherwise keep a stale policy); quiet personality, low verbosity and no reasoning summary are
+        merged with the effort config, never overwriting it."""
+        config: dict = {"model_verbosity": "low", "model_reasoning_summary": "none"}
+        if self.effort:
+            config["model_reasoning_effort"] = self.effort
+        out: dict = {"personality": "none", "config": config}
+        if self.developer_instructions:
+            out["developerInstructions"] = self.developer_instructions
+        return out
 
     def _bind_skills(self) -> None:
         """Owner ruling m-56c204aa9a: the role's skills are visible to the seat. Per-seat extra roots on

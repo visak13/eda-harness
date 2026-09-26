@@ -50,12 +50,42 @@ SHELL_NOTE = ("Monitor and cron commands run under Git bash; never prefix them w
               "(POSIX shell only: /dev/null, forward slashes, $VAR).")
 
 
+#: the ONE output-style file both harnesses read (design-e963c656f5 §4.7): a Claude seat runs with cwd = the
+#: agent home, so the pool's `outputStyle: edp-terse` resolves to this project style; a codex seat gets its body
+OUTPUT_STYLE = Path(".claude") / "output-styles" / "edp-terse.md"
+
+#: §4.7 resident-seat contract: what the edp-terse style means for a codex seat's shell, overriding the codex
+#: base prompt's preambles, progress commentary, periodic updates and final-answer summaries
+RESIDENT_CONTRACT = """## Resident-seat communication contract
+
+This contract supersedes your default preambles, progress commentary, periodic (60-second) updates and
+final-answer summaries. No one reads this shell; the board is the record.
+- Report through the board tools (message_send, record_status, criterion_update, doc_create). Every
+  board report uses the pyramid format above.
+- Do not narrate tool use: no "I'll check…", no plan preambles, no progress notes between tool calls.
+- An unchanged wake (context_delta or reconcile says changed=false, nothing new for you) ends the turn
+  with ZERO assistant text.
+- After a changed wake, end the turn with no text or at most one short receipt line. Never recap,
+  summarise or restate state in the shell."""
+
+
+def output_style_body(agent_home: Path) -> str:
+    """The edp-terse style body with its YAML front matter stripped. Missing file raises: a codex seat
+    never boots without the output rule its Claude peers run under."""
+    text = (agent_home / OUTPUT_STYLE).read_text(encoding="utf-8")
+    m = re.match(r"\A---\r?\n.*?\r?\n---\r?\n", text, re.S)
+    return (text[m.end():] if m else text).strip("\r\n")
+
+
 def standing_context(agent_home: Path) -> str:
-    """The thread's developer instructions: CLAUDE.md when the home has no AGENTS.md (codex reads
-    AGENTS.md itself), then the seat's shell note."""
+    """The thread's developer instructions (sent on thread/start AND thread/resume): CLAUDE.md when the
+    home has no AGENTS.md (codex reads AGENTS.md itself), the seat's shell note, the edp-terse body and
+    the resident-seat contract."""
     p = agent_home / "CLAUDE.md"
     home = p.read_text(encoding="utf-8") if p.is_file() and not (agent_home / "AGENTS.md").is_file() else ""
-    return f"{home.rstrip()}\n\n{SHELL_NOTE}\n" if home else f"{SHELL_NOTE}\n"
+    parts = [home.rstrip()] if home else []
+    parts += [SHELL_NOTE, output_style_body(agent_home), RESIDENT_CONTRACT]
+    return "\n\n".join(parts) + "\n"
 
 
 def resume_prompt(handle: str) -> str:
@@ -90,8 +120,13 @@ def main(argv: list[str] | None = None) -> int:
 
     # monitor mode: the app-server listens on an authenticated loopback websocket (the runner and the TUI
     # are its two clients); its own console output stays off the seat's console
+    try:
+        instructions = standing_context(agent_home)
+    except OSError as e:  # fail-closed: no seat without the shared output rule (§4.7)
+        print(f"{time.strftime('%H:%M:%S')} codex seat {handle} refused to start: {e}", flush=True)
+        return 2
     seat = CodexSeat(cwd=agent_home, role=role, handle=handle, log_dir=log_dir, ws=console_mode,
-                     developer_instructions=standing_context(agent_home),
+                     developer_instructions=instructions,
                      creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if console_mode else 0)
     if console_mode and os.name == "nt":
         os.system(f"title {handle} (codex seat)")
