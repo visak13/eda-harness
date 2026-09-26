@@ -16,6 +16,7 @@ import { readDraft, writeDraft } from "./draftStorage";
 import { Avatar } from "./Avatar";
 import { QuoteChips } from "./QuoteCard";
 import { quoteTray, registerQuoteTarget, useQuoteTray } from "./quoteTray";
+import { useWorkflowRoles } from "../api/workflows";
 const draftStores = new WeakMap<object, Map<string, import("./draftStorage").StoredDraft>>();
 
 // The object-attached composer (design §4.2/§13/§16.1/§18.1). The conversation is IMPLICIT — the
@@ -25,7 +26,8 @@ const draftStores = new WeakMap<object, Map<string, import("./draftStorage").Sto
 // same delivery plan the board uses, so it cannot drift), and after send the board's resolution
 // note is shown verbatim. It never fans out — exactly one `to`.
 
-const ROLES: string[] = ["architect", "engineer", "sme", "qa", "adversary", "owner"];
+// S14 (S13 carry-over m-d6ae00b4b9): the "Roles on this epic" come from the workflow the epic pins
+// (useWorkflowRoles), the built-in list only while it loads.
 // Promise #16: every To/Kind option says WHO IT WAKES in one line (visible in the option label and
 // as its title). Copy is local to the composer on purpose — the shared copy table is not touched.
 const ROLE_GLOSS: Record<string, string> = {
@@ -231,6 +233,7 @@ function ComposerInstance({
   const mentions = useMentions(people.data ?? [], taRef, setText);
   // C24 (s-5d1b171d57): `$` picks a board object (this epic's tree first), the @ menu's twin
   const refs = useBoardRefs(ticketId, taRef, setText);
+  const epicRoles = useWorkflowRoles(ticketId).roles;
   const refreshPickers = () => { mentions.refresh(); refs.refresh(); };
 
   const mentioned = firstMentionedHandle(text, people.data ?? []);
@@ -613,7 +616,7 @@ function ComposerInstance({
           </optgroup>
         ) : null}
         <optgroup label="Roles on this epic">
-          {ROLES.map((r) => (
+          {epicRoles.map((r) => (
             <option key={r} value={r} title={ROLE_GLOSS[r]}>
               {r} · {liveRoles.has(r) ? "seat live" : "no seat yet"}{ROLE_GLOSS[r] ? ` — ${ROLE_GLOSS[r]}` : ""}
 

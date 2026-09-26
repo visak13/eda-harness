@@ -4,6 +4,7 @@ import { AppShell } from "./components/AppShell";
 import { RecordsPage } from "./pages/Records";
 import { SettingsPage } from "./pages/Settings";
 import { AdminPage } from "./pages/admin/Admin";
+import { DesignPage } from "./pages/design/Design";
 import { JoinPage } from "./pages/admin/Join";
 import { SetupPage } from "./pages/admin/Setup";
 import {
@@ -47,6 +48,8 @@ export const appRoutes: RouteObject[] = [
       { path: "settings", element: <SettingsPage /> },
       // S6 (design-e963c656f5 §4.8): the Admin console, admins only (the page says so to anyone else)
       { path: "admin", element: <AdminPage /> },
+      // S14 (design-e963c656f5 §4.14): the Design tab — every workflow version; admins edit drafts
+      { path: "design", element: <DesignPage /> },
       // epic-91fcd3b370 S3: the Code tab (full-bleed; AppShell collapses the rail) and its FAQ
       { path: "code", element: <CodePage /> },
       { path: "code/faq", element: <CodeFaqPage /> },

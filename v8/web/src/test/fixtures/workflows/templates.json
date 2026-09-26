@@ -1,0 +1,523 @@
+{
+ "roles": {
+  "builder": {
+   "label": "Builder",
+   "help": "builds stories and tasks; never checks its own work",
+   "role": {
+    "card_md": "You build one story end to end. Read the story, its criteria and the design it points at, write a short plan, build it, attach evidence to every criterion, then hand the story to review.",
+    "spawnable": true,
+    "capacity_class": "builder",
+    "may_create": [
+     "task"
+    ],
+    "doc_types": [
+     "note",
+     "report"
+    ],
+    "bundle": [
+     "ticket_read",
+     "ticket_update",
+     "ticket_create",
+     "criterion_update",
+     "doc_create",
+     "doc_read",
+     "doc_update",
+     "link_create",
+     "artifact_create"
+    ]
+   }
+  },
+  "checker": {
+   "label": "Checker",
+   "help": "verdicts criteria it did not build",
+   "role": {
+    "card_md": "You check finished work. For each criterion checked by your role, re-run its evidence cold and record a verdict (pass or fail) with a one-line reason. You never build what you check.",
+    "spawnable": true,
+    "capacity_class": "checker",
+    "criterion_checker": true,
+    "doc_types": [
+     "report"
+    ],
+    "bundle": [
+     "ticket_read",
+     "criterion_query",
+     "criterion_update",
+     "doc_create",
+     "doc_read",
+     "link_create"
+    ]
+   }
+  },
+  "reviewer": {
+   "label": "Reviewer",
+   "help": "reads the whole epic and files findings; approves nothing",
+   "role": {
+    "card_md": "You review a whole epic adversarially once its stories are built. Read the design, the diffs and the evidence, and file findings on the thread, most severe first.",
+    "spawnable": true,
+    "capacity_class": "checker",
+    "doc_types": [
+     "report"
+    ],
+    "bundle": [
+     "ticket_read",
+     "doc_read",
+     "doc_create",
+     "criterion_query",
+     "find"
+    ]
+   }
+  }
+ },
+ "hooks": {
+  "epic_auto_advance": {},
+  "release_cascade": {
+   "review_work_type": "review"
+  },
+  "criteria_auto_done": {
+   "epic_checker": "qa"
+  },
+  "signoff_before_start": {},
+  "evidence_before_review": {},
+  "acceptance_pairs_checker": {
+   "role": "qa"
+  },
+  "resident_designer": {
+   "role": "architect"
+  },
+  "review_story_last": {
+   "work_type": "review"
+  },
+  "knowledge_tickets": {
+   "checked_by": "owner"
+  },
+  "one_checker_per_epic": {
+   "role": "qa"
+  },
+  "quick_task": {
+   "tag": "quick",
+   "checked_by": "owner"
+  }
+ },
+ "predicates": [
+  "actor_is_assignee",
+  "assignee_or_claim",
+  "blockers_released",
+  "checker_criteria",
+  "children_released",
+  "criteria_min",
+  "design_ready",
+  "design_ref",
+  "design_signed",
+  "evidence_all",
+  "human_epic_owner",
+  "kind_in",
+  "not_terminal",
+  "role_in",
+  "signoff_lint",
+  "story_cap",
+  "verdicts_passed"
+ ],
+ "kernel_tools": [
+  "whoami",
+  "subscribe",
+  "context",
+  "context_delta",
+  "message_send",
+  "record_status",
+  "inbox"
+ ],
+ "why_fix": {
+  "schema": [
+   "the board cannot load a definition that does not match the workflow schema",
+   "correct the named field (GET /v1/workflows/standard@1 shows a complete definition)"
+  ],
+  "schema_version": [
+   "this app cannot read the definition's format version",
+   "update the app, or re-create the workflow from a preset here"
+  ],
+  "unknown_status": [
+   "the status set is kernel: board columns, guards, feed wake rules and the SPA key on it",
+   "use only the built-in statuses; a workflow chooses the edges between them"
+  ],
+  "unknown_kind": [
+   "the board only stores the built-in ticket kinds",
+   "use epic, story or task"
+  ],
+  "unknown_role": [
+   "a rule naming a role that does not exist can never be satisfied, so tickets stall",
+   "add the role under `roles`, or name an existing one"
+  ],
+  "unreachable_status": [
+   "no ticket can ever enter this status, so work routed through it never arrives",
+   "add a transition into it, or remove it from `statuses`"
+  ],
+  "dead_end_status": [
+   "a ticket that enters this non-terminal status can never leave it, so the epic stalls",
+   "add a transition out of it, or list it under `terminal`"
+  ],
+  "kind_without_checker": [
+   "nobody verdicts this kind's criteria, so it can never reach done",
+   "add a `checkers` rule for the kind naming a role that does not build it"
+  ],
+  "checker_is_doer": [
+   "the role that builds the work would also verdict it, so work approves itself",
+   "check the kind with a role that is not a builder (qa, or the owner)"
+  ],
+  "self_approval": [
+   "the role that opens this gate also answers it, so the gate approves itself",
+   "make a different (human) role the gate's answerer"
+  ],
+  "gate_unanswerable": [
+   "no human can answer this gate: it waits forever, and Needs you never shows it",
+   "add a human role (the owner) to the gate's answerers"
+  ],
+  "role_without_spawner": [
+   "no seat of this role can ever start, so its tickets are never worked",
+   "add the role to some role's `may_spawn`"
+  ],
+  "card_missing": [
+   "a spawned seat boots from its card; without one it has no instructions",
+   "write the role's card (`card_md`) or name a shipped card (`card`)"
+  ],
+  "unknown_capacity": [
+   "the pool caps seats by capacity class or the role's own cap; an uncapped role can exhaust the host",
+   "set capacity_class (builder, planner, checker) or max_concurrent"
+  ],
+  "cap_below_1": [
+   "a cap of 0 does not pause work, it deadlocks it: nothing can be created or spawned",
+   "set it to 1 or more; pausing is its own control"
+  ],
+  "kernel_stripped": [
+   "the kernel preamble and tools carry the boot, feed and close contract every seat relies on",
+   "leave `kernel` true; write only the role-specific card and tools"
+  ],
+  "unknown_hook": [
+   "hooks are a fixed registry, because no user code runs",
+   "pick a hook from the registry"
+  ],
+  "hook_param": [
+   "the hook ignores an unknown parameter, so the setting would silently do nothing",
+   "use one of the hook's named params"
+  ],
+  "unknown_predicate": [
+   "preconditions are a closed vocabulary; an unknown one cannot be evaluated",
+   "pick a predicate from the vocabulary"
+  ],
+  "gate_without_precondition": [
+   "a gate with no precondition can be opened on anything, so its answer means nothing",
+   "declare what must hold before it opens (e.g. not_terminal)"
+  ],
+  "transition_without_precondition": [
+   "anyone may take this edge at any time",
+   "declare who may take it (role_in) or what must hold"
+  ],
+  "bundle_missing": [
+   "a seat with no tools beyond the kernel can boot and report, but never do its work",
+   "tick the tools the role needs in its tool checklist (or start from a role template)"
+  ],
+  "self_check": [
+   "a role that both produces work (authors criteria, attaches evidence or builds) and verdicts criteria approves its own work",
+   "split the doing and the checking into two roles"
+  ],
+  "escalation": [
+   "the role's tools or permissions reach past what its job allows (an agent answering gates, spawning without may_spawn), so it can grant itself what a human should decide",
+   "untick the tool, or give the permission to a human role"
+  ],
+  "unusable_tool": [
+   "the board refuses this tool for the role's permissions, so ticking it does nothing",
+   "untick it, or grant the matching permission"
+  ],
+  "dry_run_stall": [
+   "a synthetic epic walked through the draft cannot reach done, so real epics would stall",
+   "open Dry run to see the step no role can take, then fix that role or transition"
+  ]
+ },
+ "tool_needs": {
+  "gate_answer": [
+   "gate_answerer",
+   "escalation"
+  ],
+  "spawn": [
+   "may_spawn",
+   "escalation"
+  ],
+  "reap": [
+   "may_spawn",
+   "escalation"
+  ],
+  "set_binding": [
+   "binding",
+   "escalation"
+  ],
+  "ticket_create": [
+   "may_create",
+   "unusable_tool"
+  ],
+  "criterion_create": [
+   "criterion_author",
+   "unusable_tool"
+  ]
+ },
+ "tools": [
+  {
+   "name": "artifact_create",
+   "description": "Record a produced thing by uri, optionally linked to a ticket"
+  },
+  {
+   "name": "artifact_read",
+   "description": "Read one artifact"
+  },
+  {
+   "name": "artifact_upload",
+   "description": "Stage a workspace file (25 MB cap) as an artifact"
+  },
+  {
+   "name": "assemble_ruleset",
+   "description": "Compose a ticket's layered ruleset from its strategy/domain docs: enforced lines inlined, each doc one index line"
+  },
+  {
+   "name": "board",
+   "description": "An epic's ticket tree with status counts, ready/in_review lists and open gates"
+  },
+  {
+   "name": "close",
+   "description": "Confirm an epic is closed and get the disarm checklist"
+  },
+  {
+   "name": "close_self",
+   "description": "End your own shell now; refused while inbox is non-empty or no status is recorded"
+  },
+  {
+   "name": "context",
+   "description": "Load your ticket(s): chain, criteria, docs, thread, open asks; byte-capped unless verbose"
+  },
+  {
+   "name": "context_delta",
+   "description": "Read what changed for you since a context cursor"
+  },
+  {
+   "name": "criterion_create",
+   "description": "Add a checkable done-fact"
+  },
+  {
+   "name": "criterion_query",
+   "description": "List a ticket's criteria"
+  },
+  {
+   "name": "criterion_update",
+   "description": "Set a criterion's evidence_ref, then its verdict (checker only)"
+  },
+  {
+   "name": "dense_search",
+   "description": "Diagnostic: dense-only cosine top-k over an epic's live records"
+  },
+  {
+   "name": "describe",
+   "description": "An object type's fields and contract, or an enum's values ('enums' = all, 'enum:<Name>' = one)"
+  },
+  {
+   "name": "describe_objects",
+   "description": "List object/enum names, or one object's schema"
+  },
+  {
+   "name": "doc_create",
+   "description": "Author a versioned markdown doc"
+  },
+  {
+   "name": "doc_edit",
+   "description": "Apply exact, unique, non-overlapping edits to one doc version atomically"
+  },
+  {
+   "name": "doc_query",
+   "description": "List docs by doc_type/scope/owner_role"
+  },
+  {
+   "name": "doc_read",
+   "description": "Read a doc (latest or a version), whole or a bounded range"
+  },
+  {
+   "name": "doc_update",
+   "description": "Replace a doc's body/title as a new version"
+  },
+  {
+   "name": "doctor_dead_mail",
+   "description": "Broker publishes that had no recipient (publish_no_route)"
+  },
+  {
+   "name": "doctor_feed_lag",
+   "description": "Per live seat: unread addressed messages, their age, last request and output"
+  },
+  {
+   "name": "doctor_health",
+   "description": "Service health, the supervisor, package versions and pool reachability"
+  },
+  {
+   "name": "doctor_logs",
+   "description": "A redacted log tail (secrets, user paths, emails and tokens scrubbed)"
+  },
+  {
+   "name": "doctor_pains",
+   "description": "Open pain records (tools or guides found wrong)"
+  },
+  {
+   "name": "doctor_pool",
+   "description": "Pool liveness, sessions, caps and usage, saturated caps and queued spawns"
+  },
+  {
+   "name": "events_query",
+   "description": "Read the event log by subject or since a seq"
+  },
+  {
+   "name": "find",
+   "description": "Search tickets, criteria, docs and messages by words or meaning; hits carry ticket_id and epic_id"
+  },
+  {
+   "name": "gate_answer",
+   "description": "Answer an open human gate (owner only)"
+  },
+  {
+   "name": "gate_open",
+   "description": "Open a human gate on a ticket (one per gate at a time)"
+  },
+  {
+   "name": "gates",
+   "description": "List a ticket's open gates"
+  },
+  {
+   "name": "get_guide",
+   "description": "Fetch one reference guide by name"
+  },
+  {
+   "name": "inbox",
+   "description": "Questions and steers awaiting you, oldest first, each with answer_with"
+  },
+  {
+   "name": "link_create",
+   "description": "Link from_id <relation> to_id (ticket/doc/artifact)"
+  },
+  {
+   "name": "link_delete",
+   "description": "Remove a link"
+  },
+  {
+   "name": "link_query",
+   "description": "List links by from_id/to_id/relation"
+  },
+  {
+   "name": "lookup",
+   "description": "Current decisions, claims and lessons for a question, id or path in one epic (binding ones always)"
+  },
+  {
+   "name": "message_query",
+   "description": "List thread messages oldest first with seq; since_seq returns only newer ones"
+  },
+  {
+   "name": "message_read",
+   "description": "Read one message with its seq, parent and replies"
+  },
+  {
+   "name": "message_send",
+   "description": "Post to a ticket thread: a participant/role/@handle, or a note"
+  },
+  {
+   "name": "participants",
+   "description": "List humans and seats, optionally by role, with @handle and reach"
+  },
+  {
+   "name": "preflight",
+   "description": "Host free RAM and live seats vs pool caps; advisory, never blocks"
+  },
+  {
+   "name": "propose_fix",
+   "description": "Propose ONE fix as an admin approval card showing the exact action; nothing runs until an admin approves, then the result is posted on your thread"
+  },
+  {
+   "name": "reap",
+   "description": "Tear down a seat's shell (dead, or the resident architect at epic close)"
+  },
+  {
+   "name": "record_claim",
+   "description": "Record something stated but not yet shown, with basis and evidence"
+  },
+  {
+   "name": "record_decision",
+   "description": "Record what is in force, why, and which decisions it replaces"
+  },
+  {
+   "name": "record_lesson",
+   "description": "Record a lesson: domain, topic, one sentence, evidence ids"
+  },
+  {
+   "name": "record_status",
+   "description": "Record your outcome with a one-line note to your spawner, architect and owner"
+  },
+  {
+   "name": "resume",
+   "description": "Resume a parked or stalled session"
+  },
+  {
+   "name": "resume_self",
+   "description": "Resume after a park, reap, crash or respawn: re-arm wakes, list open asks and steps"
+  },
+  {
+   "name": "session_query",
+   "description": "List sessions by participant/ticket/state"
+  },
+  {
+   "name": "set_binding",
+   "description": "Promote or demote a live decision's binding flag (architect/owner); audited"
+  },
+  {
+   "name": "spawn",
+   "description": "Start a seat for a role on a ticket"
+  },
+  {
+   "name": "subscribe",
+   "description": "Arm your event feed (once per session)"
+  },
+  {
+   "name": "ticket_create",
+   "description": "Create an epic (owner), story (architect; owner: a quick task, tag quick, no parent) or task"
+  },
+  {
+   "name": "ticket_query",
+   "description": "List tickets matching the filter args"
+  },
+  {
+   "name": "ticket_read",
+   "description": "One read of a ticket: record, chain, criteria, docs, children, blockers, gates, newest thread (thread_seq), links"
+  },
+  {
+   "name": "ticket_update",
+   "description": "Change the args given, per the transition rules"
+  },
+  {
+   "name": "topic_propose",
+   "description": "File a proposed Library doc from a page topic_research fetched; the owner approves it"
+  },
+  {
+   "name": "topic_research",
+   "description": "Search skills.sh or read one page for your Library topic (skills.sh, GitHub, the seed host only)"
+  },
+  {
+   "name": "whoami",
+   "description": "Your identity, role, open tickets, lineage and tool bundles"
+  },
+  {
+   "name": "why_stuck",
+   "description": "Why a ticket does not move: gates nobody can answer, a missing checker or doer seat, blockers, the next edges' missing preconditions, a full cap"
+  },
+  {
+   "name": "withdraw_claim",
+   "description": "Withdraw a claim with no successor; lookup never returns it again"
+  },
+  {
+   "name": "withdraw_decision",
+   "description": "Withdraw a decision with no successor; lookup never returns it again"
+  },
+  {
+   "name": "workflow_check",
+   "description": "Validate a workflow version and walk its status graph (unreachable, dead ends)"
+  }
+ ]
+}

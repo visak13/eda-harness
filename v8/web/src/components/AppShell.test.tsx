@@ -37,10 +37,10 @@ beforeEach(() => {
 
 describe("AppShell", () => {
   // S20 (design-e963c656f5 §4.18): the Needs you page is gone; "Waiting on you" is a rail button opening a popover.
-  it("renders Epics, Seats, Library, Code (one Library destination) and the Waiting on you button", async () => {
+  it("renders Epics, Seats, Library, Code, Design (one Library destination) and the Waiting on you button", async () => {
     renderShell("/epics");
     const links = screen.getAllByRole("link");
-    expect(links.map((l) => l.textContent?.replace(/\d+$/, "").trim())).toEqual(["Epics", "Seats", "Library", "Code"]);
+    expect(links.map((l) => l.textContent?.replace(/\d+$/, "").trim())).toEqual(["Epics", "Seats", "Library", "Code", "Design"]);
     // NavLink marks the active route with aria-current=page.
     expect(screen.getByRole("link", { name: /Epics/ })).toHaveAttribute("aria-current", "page");
     expect(screen.getByTestId("waiting-open")).toHaveTextContent("Waiting on you");

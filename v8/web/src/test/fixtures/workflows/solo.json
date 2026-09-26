@@ -1,0 +1,1172 @@
+{
+ "schema_version": 1,
+ "id": "solo",
+ "version": 1,
+ "name": "Solo",
+ "description": "owner designs, signs off and checks; one engineer builds.",
+ "builtin": true,
+ "published": true,
+ "source": null,
+ "roles": [
+  {
+   "id": "owner",
+   "label": "",
+   "human": true,
+   "card": "",
+   "card_md": "",
+   "model": null,
+   "harness": null,
+   "effort": null,
+   "bundle": [
+    "board",
+    "close",
+    "context",
+    "context_delta",
+    "criterion_create",
+    "criterion_query",
+    "criterion_update",
+    "describe",
+    "describe_objects",
+    "doc_create",
+    "doc_query",
+    "doc_read",
+    "doc_update",
+    "events_query",
+    "find",
+    "gate_answer",
+    "gates",
+    "get_guide",
+    "link_create",
+    "lookup",
+    "message_query",
+    "message_read",
+    "message_send",
+    "participants",
+    "preflight",
+    "reap",
+    "record_claim",
+    "record_decision",
+    "resume",
+    "resume_self",
+    "session_query",
+    "spawn",
+    "subscribe",
+    "ticket_create",
+    "ticket_query",
+    "ticket_read",
+    "ticket_update",
+    "whoami"
+   ],
+   "spawnable": false,
+   "may_spawn": [
+    "engineer"
+   ],
+   "may_create": [
+    "epic",
+    "story",
+    "topic"
+   ],
+   "criterion_author": true,
+   "criterion_checker": true,
+   "gate_answerer": true,
+   "doc_types": [
+    "design",
+    "domain",
+    "note",
+    "strategy_hl",
+    "strategy_ll"
+   ],
+   "capacity_class": null,
+   "max_concurrent": null,
+   "kernel": true
+  },
+  {
+   "id": "engineer",
+   "label": "",
+   "human": false,
+   "card": "engineer",
+   "card_md": "",
+   "model": null,
+   "harness": null,
+   "effort": null,
+   "bundle": [
+    "whoami",
+    "preflight",
+    "subscribe",
+    "resume_self",
+    "context",
+    "context_delta",
+    "describe",
+    "describe_objects",
+    "get_guide",
+    "ticket_create",
+    "ticket_read",
+    "ticket_query",
+    "ticket_update",
+    "criterion_create",
+    "criterion_query",
+    "criterion_update",
+    "doc_create",
+    "doc_read",
+    "doc_query",
+    "doc_update",
+    "doc_edit",
+    "link_create",
+    "link_query",
+    "message_send",
+    "message_query",
+    "message_read",
+    "gate_open",
+    "find",
+    "participants",
+    "assemble_ruleset",
+    "artifact_create",
+    "artifact_read",
+    "artifact_upload",
+    "record_decision",
+    "record_claim",
+    "record_lesson",
+    "lookup",
+    "withdraw_decision",
+    "inbox",
+    "record_status",
+    "close_self"
+   ],
+   "spawnable": true,
+   "may_spawn": [],
+   "may_create": [
+    "task"
+   ],
+   "criterion_author": true,
+   "criterion_checker": false,
+   "gate_answerer": false,
+   "doc_types": [
+    "note",
+    "report"
+   ],
+   "capacity_class": "builder",
+   "max_concurrent": null,
+   "kernel": true
+  }
+ ],
+ "kinds": [
+  "epic",
+  "story",
+  "task"
+ ],
+ "statuses": [
+  "drafted",
+  "designed",
+  "signed_off",
+  "ready",
+  "in_progress",
+  "in_review",
+  "blocked",
+  "done",
+  "partial",
+  "dropped"
+ ],
+ "terminal": [
+  "done",
+  "partial",
+  "dropped"
+ ],
+ "transitions": [
+  {
+   "from": "blocked",
+   "to": "dropped",
+   "requires": [],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "blocked",
+   "to": "in_progress",
+   "requires": [
+    {
+     "check": "design_signed",
+     "params": {
+      "exempt_roles": [
+       "owner"
+      ]
+     },
+     "when": {
+      "kinds": null,
+      "not_kinds": null,
+      "work_types": null,
+      "quick": null,
+      "parentless": null,
+      "from_in": null,
+      "from_not_in": null,
+      "quick_root": true
+     },
+     "code": "transition",
+     "message": "quick task {id} waits for the owner's design sign-off",
+     "hint": "doc_create(note) as the design, ticket_update(design_ref=…), gate_open(design_signoff), then wait for the owner's answer",
+     "hook": "signoff_before_start",
+     "phase": "both"
+    },
+    {
+     "check": "assignee_or_claim",
+     "params": {
+      "roles_from": "claim"
+     },
+     "when": {
+      "kinds": null,
+      "not_kinds": null,
+      "work_types": null,
+      "quick": null,
+      "parentless": null,
+      "from_in": null,
+      "from_not_in": [
+       "in_review"
+      ],
+      "quick_root": null
+     },
+     "code": "transition",
+     "message": "in_progress needs an assignee",
+     "hint": "ticket_update(assignee=...)",
+     "hook": null,
+     "phase": "both"
+    }
+   ],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "blocked",
+   "to": "ready",
+   "requires": [
+    {
+     "check": "role_in",
+     "params": {
+      "roles": [
+       "engineer",
+       "owner"
+      ]
+     },
+     "when": null,
+     "code": "scope",
+     "message": "ready is set by the owner (engineer: its tasks)",
+     "hint": "",
+     "hook": null,
+     "phase": "both"
+    },
+    {
+     "check": "blockers_released",
+     "params": {},
+     "when": null,
+     "code": "transition",
+     "message": "blocked by unfinished tickets",
+     "hint": "open blockers: {open_blockers}",
+     "hook": null,
+     "phase": "both"
+    }
+   ],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "designed",
+   "to": "drafted",
+   "requires": [],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "designed",
+   "to": "dropped",
+   "requires": [],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "designed",
+   "to": "signed_off",
+   "requires": [
+    {
+     "check": "role_in",
+     "params": {
+      "roles": [
+       "owner"
+      ]
+     },
+     "when": null,
+     "code": "scope",
+     "message": "sign-off is recorded by the owner",
+     "hint": "",
+     "hook": null,
+     "phase": "both"
+    }
+   ],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "drafted",
+   "to": "designed",
+   "requires": [
+    {
+     "check": "role_in",
+     "params": {
+      "roles": [
+       "owner"
+      ],
+      "by_kind": {
+       "task": [
+        "engineer"
+       ]
+      }
+     },
+     "when": null,
+     "code": "scope",
+     "message": "only the owner marks a ticket designed (engineer: its tasks)",
+     "hint": "",
+     "hook": null,
+     "phase": "both"
+    },
+    {
+     "check": "design_ref",
+     "params": {},
+     "when": {
+      "kinds": null,
+      "not_kinds": [
+       "task"
+      ],
+      "work_types": null,
+      "quick": false,
+      "parentless": null,
+      "from_in": null,
+      "from_not_in": null,
+      "quick_root": null
+     },
+     "code": "transition",
+     "message": "designed needs a design_ref doc",
+     "hint": "doc_create(doc_type=design) then ticket_update(design_ref=...)",
+     "hook": null,
+     "phase": "both"
+    },
+    {
+     "check": "criteria_min",
+     "params": {
+      "n": 1
+     },
+     "when": null,
+     "code": "transition",
+     "message": "designed needs at least one criterion",
+     "hint": "criterion_create(...) — checkable: command|path|look|verdict",
+     "hook": null,
+     "phase": "both"
+    }
+   ],
+   "auto": true,
+   "auto_when": {
+    "kinds": [
+     "epic"
+    ],
+    "not_kinds": null,
+    "work_types": null,
+    "quick": null,
+    "parentless": null,
+    "from_in": null,
+    "from_not_in": null,
+    "quick_root": null
+   }
+  },
+  {
+   "from": "drafted",
+   "to": "dropped",
+   "requires": [],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "in_progress",
+   "to": "blocked",
+   "requires": [],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "in_progress",
+   "to": "dropped",
+   "requires": [],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "in_progress",
+   "to": "in_review",
+   "requires": [
+    {
+     "check": "actor_is_assignee",
+     "params": {
+      "or_resident": true
+     },
+     "when": null,
+     "code": "scope",
+     "message": "only the assignee hands a ticket to review",
+     "hint": "",
+     "hook": null,
+     "phase": "both"
+    },
+    {
+     "check": "criteria_min",
+     "params": {
+      "n": 1
+     },
+     "when": null,
+     "code": "transition",
+     "message": "in_review needs at least one criterion with evidence",
+     "hint": "criterion_create(...) then criterion_update(evidence_ref=...)",
+     "hook": null,
+     "phase": "both"
+    },
+    {
+     "check": "evidence_all",
+     "params": {},
+     "when": null,
+     "code": "transition",
+     "message": "in_review needs evidence_ref on every criterion",
+     "hint": "criteria without evidence: {missing} — /verify, doc_create(report), criterion_update",
+     "hook": "evidence_before_review",
+     "phase": "both"
+    }
+   ],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "in_progress",
+   "to": "partial",
+   "requires": [
+    {
+     "check": "role_in",
+     "params": {
+      "roles_from": "checkers",
+      "or_resident": true
+     },
+     "when": {
+      "kinds": [
+       "epic"
+      ],
+      "not_kinds": null,
+      "work_types": null,
+      "quick": null,
+      "parentless": null,
+      "from_in": null,
+      "from_not_in": null,
+      "quick_root": null
+     },
+     "code": "scope",
+     "message": "partial on an epic is set by the checker (owner), or by the owner on its epic",
+     "hint": "",
+     "hook": null,
+     "phase": "both"
+    }
+   ],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "in_review",
+   "to": "done",
+   "requires": [
+    {
+     "check": "role_in",
+     "params": {
+      "roles_from": "checkers",
+      "or_resident": true
+     },
+     "when": null,
+     "code": "scope",
+     "message": "done is set by the checker (owner), or by the owner on its epic",
+     "hint": "",
+     "hook": null,
+     "phase": "both"
+    },
+    {
+     "check": "criteria_min",
+     "params": {
+      "n": 1
+     },
+     "when": null,
+     "code": "transition",
+     "message": "done needs criteria",
+     "hint": "a ticket with no criteria cannot be verified",
+     "hook": null,
+     "phase": "both"
+    },
+    {
+     "check": "verdicts_passed",
+     "params": {},
+     "when": null,
+     "code": "transition",
+     "message": "done needs every criterion verdict=pass",
+     "hint": "not passed: {failing}",
+     "hook": null,
+     "phase": "both"
+    },
+    {
+     "check": "checker_criteria",
+     "params": {},
+     "when": {
+      "kinds": [
+       "epic"
+      ],
+      "not_kinds": null,
+      "work_types": null,
+      "quick": null,
+      "parentless": null,
+      "from_in": null,
+      "from_not_in": null,
+      "quick_root": null
+     },
+     "code": "transition",
+     "message": "an epic needs criteria checked_by=owner",
+     "hint": "owner acceptance is the last word",
+     "hook": null,
+     "phase": "both"
+    }
+   ],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "in_review",
+   "to": "in_progress",
+   "requires": [
+    {
+     "check": "design_signed",
+     "params": {
+      "exempt_roles": [
+       "owner"
+      ]
+     },
+     "when": {
+      "kinds": null,
+      "not_kinds": null,
+      "work_types": null,
+      "quick": null,
+      "parentless": null,
+      "from_in": null,
+      "from_not_in": null,
+      "quick_root": true
+     },
+     "code": "transition",
+     "message": "quick task {id} waits for the owner's design sign-off",
+     "hint": "doc_create(note) as the design, ticket_update(design_ref=…), gate_open(design_signoff), then wait for the owner's answer",
+     "hook": "signoff_before_start",
+     "phase": "both"
+    },
+    {
+     "check": "assignee_or_claim",
+     "params": {
+      "roles_from": "claim"
+     },
+     "when": {
+      "kinds": null,
+      "not_kinds": null,
+      "work_types": null,
+      "quick": null,
+      "parentless": null,
+      "from_in": null,
+      "from_not_in": [
+       "in_review"
+      ],
+      "quick_root": null
+     },
+     "code": "transition",
+     "message": "in_progress needs an assignee",
+     "hint": "ticket_update(assignee=...)",
+     "hook": null,
+     "phase": "both"
+    }
+   ],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "in_review",
+   "to": "partial",
+   "requires": [
+    {
+     "check": "role_in",
+     "params": {
+      "roles_from": "checkers",
+      "or_resident": true
+     },
+     "when": {
+      "kinds": [
+       "epic"
+      ],
+      "not_kinds": null,
+      "work_types": null,
+      "quick": null,
+      "parentless": null,
+      "from_in": null,
+      "from_not_in": null,
+      "quick_root": null
+     },
+     "code": "scope",
+     "message": "partial on an epic is set by the checker (owner), or by the owner on its epic",
+     "hint": "",
+     "hook": null,
+     "phase": "both"
+    }
+   ],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "partial",
+   "to": "in_progress",
+   "requires": [
+    {
+     "check": "design_signed",
+     "params": {
+      "exempt_roles": [
+       "owner"
+      ]
+     },
+     "when": {
+      "kinds": null,
+      "not_kinds": null,
+      "work_types": null,
+      "quick": null,
+      "parentless": null,
+      "from_in": null,
+      "from_not_in": null,
+      "quick_root": true
+     },
+     "code": "transition",
+     "message": "quick task {id} waits for the owner's design sign-off",
+     "hint": "doc_create(note) as the design, ticket_update(design_ref=…), gate_open(design_signoff), then wait for the owner's answer",
+     "hook": "signoff_before_start",
+     "phase": "both"
+    },
+    {
+     "check": "assignee_or_claim",
+     "params": {
+      "roles_from": "claim"
+     },
+     "when": {
+      "kinds": null,
+      "not_kinds": null,
+      "work_types": null,
+      "quick": null,
+      "parentless": null,
+      "from_in": null,
+      "from_not_in": [
+       "in_review"
+      ],
+      "quick_root": null
+     },
+     "code": "transition",
+     "message": "in_progress needs an assignee",
+     "hint": "ticket_update(assignee=...)",
+     "hook": null,
+     "phase": "both"
+    }
+   ],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "ready",
+   "to": "blocked",
+   "requires": [],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "ready",
+   "to": "dropped",
+   "requires": [],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "ready",
+   "to": "in_progress",
+   "requires": [
+    {
+     "check": "design_signed",
+     "params": {
+      "exempt_roles": [
+       "owner"
+      ]
+     },
+     "when": {
+      "kinds": null,
+      "not_kinds": null,
+      "work_types": null,
+      "quick": null,
+      "parentless": null,
+      "from_in": null,
+      "from_not_in": null,
+      "quick_root": true
+     },
+     "code": "transition",
+     "message": "quick task {id} waits for the owner's design sign-off",
+     "hint": "doc_create(note) as the design, ticket_update(design_ref=…), gate_open(design_signoff), then wait for the owner's answer",
+     "hook": "signoff_before_start",
+     "phase": "both"
+    },
+    {
+     "check": "assignee_or_claim",
+     "params": {
+      "roles_from": "claim"
+     },
+     "when": {
+      "kinds": null,
+      "not_kinds": null,
+      "work_types": null,
+      "quick": null,
+      "parentless": null,
+      "from_in": null,
+      "from_not_in": [
+       "in_review"
+      ],
+      "quick_root": null
+     },
+     "code": "transition",
+     "message": "in_progress needs an assignee",
+     "hint": "ticket_update(assignee=...)",
+     "hook": null,
+     "phase": "both"
+    }
+   ],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "signed_off",
+   "to": "drafted",
+   "requires": [],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "signed_off",
+   "to": "dropped",
+   "requires": [],
+   "auto": false,
+   "auto_when": null
+  },
+  {
+   "from": "signed_off",
+   "to": "ready",
+   "requires": [
+    {
+     "check": "role_in",
+     "params": {
+      "roles": [
+       "engineer",
+       "owner"
+      ]
+     },
+     "when": null,
+     "code": "scope",
+     "message": "ready is set by the owner (engineer: its tasks)",
+     "hint": "",
+     "hook": null,
+     "phase": "both"
+    },
+    {
+     "check": "blockers_released",
+     "params": {},
+     "when": null,
+     "code": "transition",
+     "message": "blocked by unfinished tickets",
+     "hint": "open blockers: {open_blockers}",
+     "hook": null,
+     "phase": "both"
+    }
+   ],
+   "auto": false,
+   "auto_when": null
+  }
+ ],
+ "checkers": [
+  {
+   "when": {
+    "kinds": [
+     "task"
+    ],
+    "not_kinds": null,
+    "work_types": null,
+    "quick": null,
+    "parentless": null,
+    "from_in": null,
+    "from_not_in": null,
+    "quick_root": null
+   },
+   "role": "engineer"
+  },
+  {
+   "when": null,
+   "role": "owner"
+  }
+ ],
+ "caps": {
+  "stories_per_epic": 8,
+  "tasks_per_story": 5,
+  "criteria_per_story": 6
+ },
+ "gates": [
+  {
+   "id": "design_signoff",
+   "answerers": [
+    "owner"
+   ],
+   "requires": [
+    {
+     "check": "story_cap",
+     "params": {},
+     "when": {
+      "kinds": [
+       "epic"
+      ],
+      "not_kinds": null,
+      "work_types": null,
+      "quick": null,
+      "parentless": null,
+      "from_in": null,
+      "from_not_in": null,
+      "quick_root": null
+     },
+     "code": "scope",
+     "message": "the epic has {n} open stories (> {cap}); design_signoff is refused",
+     "hint": "split the epic, drop/fold stories to {cap} or fewer, or ask the owner to answer a scope gate",
+     "hook": null,
+     "phase": "open"
+    },
+    {
+     "check": "design_ref",
+     "params": {},
+     "when": {
+      "kinds": null,
+      "not_kinds": null,
+      "work_types": null,
+      "quick": null,
+      "parentless": null,
+      "from_in": null,
+      "from_not_in": null,
+      "quick_root": true
+     },
+     "code": "transition",
+     "message": "quick task {id} has no design note to sign off",
+     "hint": "the engineer sets design_ref to its design note first",
+     "hook": null,
+     "phase": "both"
+    },
+    {
+     "check": "kind_in",
+     "params": {
+      "kinds": [
+       "epic"
+      ]
+     },
+     "when": {
+      "kinds": null,
+      "not_kinds": null,
+      "work_types": null,
+      "quick": null,
+      "parentless": null,
+      "from_in": null,
+      "from_not_in": null,
+      "quick_root": false
+     },
+     "code": "scope",
+     "message": "design_signoff is answered on the epic, not {id} ({kind})",
+     "hint": "open and answer the gate on the epic ticket",
+     "hook": null,
+     "phase": "both"
+    },
+    {
+     "check": "design_ready",
+     "params": {
+      "statuses": [
+       "designed",
+       "signed_off",
+       "in_progress",
+       "in_review"
+      ]
+     },
+     "when": {
+      "kinds": null,
+      "not_kinds": null,
+      "work_types": null,
+      "quick": null,
+      "parentless": null,
+      "from_in": null,
+      "from_not_in": null,
+      "quick_root": false
+     },
+     "code": "transition",
+     "message": "epic {id} is not ready for design sign-off: {why}",
+     "hint": "set the epic's design_ref and write its acceptance criteria; the board carries it to `designed` when both are present",
+     "hook": null,
+     "phase": "both"
+    },
+    {
+     "check": "signoff_lint",
+     "params": {},
+     "when": {
+      "kinds": null,
+      "not_kinds": null,
+      "work_types": null,
+      "quick": null,
+      "parentless": null,
+      "from_in": null,
+      "from_not_in": null,
+      "quick_root": false
+     },
+     "code": "transition",
+     "message": "{offence}",
+     "hint": "fix the named criterion or link, then answer the gate again",
+     "hook": null,
+     "phase": "both"
+    }
+   ],
+   "answer_requires": [
+    {
+     "check": "human_epic_owner",
+     "params": {},
+     "when": null,
+     "code": "scope",
+     "message": "this review has no matching human owner",
+     "hint": "",
+     "hook": null,
+     "phase": "both"
+    }
+   ]
+  },
+  {
+   "id": "poc",
+   "answerers": [
+    "owner"
+   ],
+   "requires": [
+    {
+     "check": "not_terminal",
+     "params": {},
+     "when": null,
+     "code": "transition",
+     "message": "{kind} {id} is {status}; a {gate} gate opens only on live work",
+     "hint": "open it on a live ticket",
+     "hook": null,
+     "phase": "open"
+    }
+   ],
+   "answer_requires": []
+  },
+  {
+   "id": "demo",
+   "answerers": [
+    "owner"
+   ],
+   "requires": [
+    {
+     "check": "not_terminal",
+     "params": {},
+     "when": null,
+     "code": "transition",
+     "message": "{kind} {id} is {status}; a {gate} gate opens only on live work",
+     "hint": "open it on a live ticket",
+     "hook": null,
+     "phase": "open"
+    }
+   ],
+   "answer_requires": []
+  },
+  {
+   "id": "adversarial",
+   "answerers": [
+    "owner"
+   ],
+   "requires": [
+    {
+     "check": "not_terminal",
+     "params": {},
+     "when": null,
+     "code": "transition",
+     "message": "{kind} {id} is {status}; a {gate} gate opens only on live work",
+     "hint": "open it on a live ticket",
+     "hook": null,
+     "phase": "open"
+    }
+   ],
+   "answer_requires": []
+  },
+  {
+   "id": "budget",
+   "answerers": [
+    "owner"
+   ],
+   "requires": [
+    {
+     "check": "not_terminal",
+     "params": {},
+     "when": null,
+     "code": "transition",
+     "message": "{kind} {id} is {status}; a {gate} gate opens only on live work",
+     "hint": "open it on a live ticket",
+     "hook": null,
+     "phase": "open"
+    }
+   ],
+   "answer_requires": []
+  },
+  {
+   "id": "acceptance",
+   "answerers": [
+    "owner"
+   ],
+   "requires": [
+    {
+     "check": "not_terminal",
+     "params": {},
+     "when": null,
+     "code": "transition",
+     "message": "{kind} {id} is {status}; a {gate} gate opens only on live work",
+     "hint": "open it on a live ticket",
+     "hook": null,
+     "phase": "open"
+    }
+   ],
+   "answer_requires": []
+  },
+  {
+   "id": "scope",
+   "answerers": [
+    "owner"
+   ],
+   "requires": [
+    {
+     "check": "not_terminal",
+     "params": {},
+     "when": null,
+     "code": "transition",
+     "message": "{kind} {id} is {status}; a {gate} gate opens only on live work",
+     "hint": "open it on a live ticket",
+     "hook": null,
+     "phase": "open"
+    }
+   ],
+   "answer_requires": []
+  }
+ ],
+ "permissions": {
+  "set_title": [
+   "owner"
+  ],
+  "edit_ticket": [
+   "owner"
+  ],
+  "assign": [
+   "engineer",
+   "owner"
+  ],
+  "set_design_ref": [
+   "engineer",
+   "owner"
+  ],
+  "claim": [
+   "engineer",
+   "owner"
+  ],
+  "evidence": [
+   "engineer"
+  ],
+  "task_verdict": [
+   "engineer",
+   "owner"
+  ],
+  "binding": [
+   "owner"
+  ]
+ },
+ "hooks": {
+  "epic_auto_advance": {
+   "on": true,
+   "params": {}
+  },
+  "release_cascade": {
+   "on": true,
+   "params": {
+    "review_work_type": "review"
+   }
+  },
+  "criteria_auto_done": {
+   "on": true,
+   "params": {
+    "epic_checker": "owner"
+   }
+  },
+  "signoff_before_start": {
+   "on": true,
+   "params": {}
+  },
+  "evidence_before_review": {
+   "on": true,
+   "params": {}
+  },
+  "acceptance_pairs_checker": {
+   "on": false,
+   "params": {
+    "role": "qa"
+   }
+  },
+  "resident_designer": {
+   "on": true,
+   "params": {
+    "role": "owner"
+   }
+  },
+  "review_story_last": {
+   "on": true,
+   "params": {
+    "work_type": "review"
+   }
+  },
+  "knowledge_tickets": {
+   "on": true,
+   "params": {
+    "checked_by": "owner"
+   }
+  },
+  "one_checker_per_epic": {
+   "on": false,
+   "params": {
+    "role": "qa"
+   }
+  },
+  "quick_task": {
+   "on": true,
+   "params": {
+    "tag": "quick",
+    "checked_by": "owner"
+   }
+  }
+ },
+ "problems": [
+  {
+   "code": "transition_without_precondition",
+   "message": "transition designed→drafted declares no precondition",
+   "why": "anyone may take this edge at any time",
+   "fix": "declare who may take it (role_in) or what must hold",
+   "severity": "warning",
+   "docs": "/ui/design (the Design tab) and docs/site workflows page"
+  },
+  {
+   "code": "transition_without_precondition",
+   "message": "transition signed_off→drafted declares no precondition",
+   "why": "anyone may take this edge at any time",
+   "fix": "declare who may take it (role_in) or what must hold",
+   "severity": "warning",
+   "docs": "/ui/design (the Design tab) and docs/site workflows page"
+  }
+ ]
+}

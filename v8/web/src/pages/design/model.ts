@@ -1,0 +1,235 @@
+import type { Precondition, Problem, RoleDef, Transition, WorkflowDef } from "../../api/workflows";
+
+// S14: pure helpers the Design tab's panels share — no fetching, so vitest drives them with fixtures.
+
+export const PANELS = [
+  { key: "pipeline", label: "Pipeline" },
+  { key: "roles", label: "Roles" },
+  { key: "hooks", label: "Hooks" },
+  { key: "gates", label: "Gates" },
+  { key: "caps", label: "Caps" },
+  { key: "validate", label: "Validate" },
+  { key: "dryrun", label: "Dry run" },
+  { key: "diff", label: "Diff" },
+] as const;
+export type PanelKey = (typeof PANELS)[number]["key"];
+
+/** The board's main status path, in order; every other status is a side status (blocked, partial, dropped). */
+export const MAIN_PATH = ["drafted", "designed", "signed_off", "ready", "in_progress", "in_review", "done"];
+export const KINDS = ["epic", "story", "task", "topic"];
+export const DOC_TYPES = ["design", "strategy_hl", "strategy_ll", "domain", "report", "note"];
+export const EFFORTS = ["low", "medium", "high"];
+
+/** One line per hook: what the board does when it is on (design §4.14(b); edp8/workflow.py HOOKS). */
+export const HOOK_HELP: Record<string, string> = {
+  epic_auto_advance: "The board moves an epic through in_progress, in_review and signed_off from the facts of its stories.",
+  release_cascade: "When a ticket is released, signed-off tickets waiting on it become ready; a review story waits for the rest.",
+  criteria_auto_done: "A ticket in review becomes done once every criterion passed; an epic also needs its acceptance checker's criteria.",
+  signoff_before_start: "A quick task starts only after the owner signs off its design note.",
+  evidence_before_review: "A ticket reaches in_review only when every criterion has evidence attached.",
+  acceptance_pairs_checker: "When an epic reaches review, the board spawns one checker seat of this role for it.",
+  resident_designer: "The epic's own designer seat (this role) walks its epic and is addressed by its role.",
+  review_story_last: "The adversarial review story waits for its sibling stories and never blocks them.",
+  knowledge_tickets: "Knowledge tickets (craft docs) are checked by this role.",
+  one_checker_per_epic: "A checker seat named <role>.<epic> may verdict only its own epic.",
+  quick_task: "The owner's parentless story tagged quick is a quick task the owner checks.",
+};
+
+/** One line per gate id (the answer a human gives). */
+export const GATE_HELP: Record<string, string> = {
+  design_signoff: "The owner approves the epic's design before any story starts.",
+  poc: "The owner decides whether a proof of concept is good enough to build on.",
+  demo: "The owner looks at a first artifact and says go on or change course.",
+  adversarial: "The owner rules on an adversarial review's findings.",
+  budget: "The owner approves spending past a cost or time budget.",
+  acceptance: "The owner is asked when an epic reaches acceptance; the checker verdicts its criteria.",
+  scope: "The owner raises a story or criteria cap for one epic.",
+};
+
+/** Where a gate sits on the status path (the edge it guards), for the pipeline view. */
+export const GATE_EDGE: Record<string, [string, string]> = {
+  design_signoff: ["designed", "signed_off"],
+  acceptance: ["in_review", "done"],
+};
+
+export const CAP_HELP: Record<string, string> = {
+  stories_per_epic: "Open stories one epic may hold; design sign-off is refused above it until the owner answers a scope gate.",
+  tasks_per_story: "Task tickets one story may split into.",
+  criteria_per_story: "Fresh criteria one story may carry.",
+};
+
+export const FIELD_HELP: Record<string, string> = {
+  id: "Lowercase letters, digits and dashes; seats are named <id>.<ticket>. It cannot change once saved.",
+  label: "The name people see in the Design tab and pickers.",
+  model: "The model a seat of this role runs on unless the epic picks another (from Admin → Seats & models).",
+  effort: "Reasoning effort, capped by the model's catalog entry.",
+  card: "The role's instructions. The kernel preamble (boot, wake, report, close) is always prepended; write only the role's own part.",
+  bundle: "The board tools the seat may call. Kernel tools are always included; a tool its permissions do not allow is dropped.",
+  spawnable: "A seat of this role can be started (some role must list it under may spawn).",
+  may_spawn: "Roles this role may start seats of.",
+  spawned_by: "Roles that may start a seat of this role.",
+  may_create: "Ticket kinds this role may create.",
+  criterion_author: "Writes acceptance criteria.",
+  criterion_checker: "Records pass/fail verdicts on criteria. A role that builds or authors criteria must not also check.",
+  gate_answerer: "Answers gates. Only a human role may.",
+  capacity_class: "How the pool caps concurrent seats: builder and planner have class caps; checker counts only toward the total.",
+  max_concurrent: "This role's own cap on live seats (blank = the class cap).",
+  doc_types: "Active document types this role authors.",
+  permissions: "Workflow-wide permissions this role holds.",
+};
+
+export const PERMISSION_HELP: Record<string, string> = {
+  set_title: "set a ticket's short title",
+  edit_ticket: "edit a ticket's description and tags",
+  assign: "assign a ticket",
+  set_design_ref: "set a ticket's design doc",
+  claim: "take an unassigned ticket to in_progress",
+  evidence: "attach evidence to criteria",
+  task_verdict: "verdict a task's criteria",
+  binding: "record binding decisions",
+};
+
+export function roleLabel(r: RoleDef): string {
+  return r.label || r.id;
+}
+
+/** Roles that may spawn `id`. */
+export function spawnersOf(wf: WorkflowDef, id: string): string[] {
+  return wf.roles.filter((r) => (r.may_spawn ?? []).includes(id)).map((r) => r.id);
+}
+
+/** The kinds each role checks, from the checker map (first matching rule wins, as on the board). */
+export function checksByRole(wf: WorkflowDef): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const k of wf.kinds) {
+    const rule = wf.checkers.find((c) => {
+      const w = c.when ?? {};
+      const kinds = w.kinds as string[] | undefined;
+      const notKinds = w.not_kinds as string[] | undefined;
+      if (kinds && !kinds.includes(k)) return false;
+      if (notKinds && notKinds.includes(k)) return false;
+      return w.quick !== true && w.quick_root !== true;
+    });
+    if (rule) (out[rule.role] ??= []).push(k);
+  }
+  return out;
+}
+
+/** Who may take a transition, in words, from its declared preconditions. */
+export function whoTakes(wf: WorkflowDef, t: Transition): string {
+  const who = new Set<string>();
+  for (const p of t.requires) {
+    const params = p.params ?? {};
+    if (p.check === "role_in") {
+      for (const r of (params.roles as string[] | undefined) ?? []) who.add(r);
+      if (params.roles_from === "checkers") for (const r of Object.keys(checksByRole(wf))) who.add(r);
+    }
+    if (p.check === "assignee_or_claim") for (const r of wf.permissions.claim ?? []) who.add(r);
+    if (p.check === "actor_is_assignee") who.add("assignee");
+  }
+  if (t.auto) who.add("board (auto)");
+  return who.size ? [...who].join(", ") : "anyone";
+}
+
+export function preconditionText(p: Precondition): string {
+  const label = p.message ? p.message.replace(/\{[a-z_]+\}/g, "…") : p.check;
+  return `${p.check}${p.hook ? ` (hook ${p.hook})` : ""}: ${label}`;
+}
+
+/** Roles laid out in spawn layers: humans first, then whom they spawn, and so on; a spawnable role no live
+ *  role can reach is `unreached`. Roles in no relation at all (e.g. expert) are left out and listed. */
+export function roleLayers(wf: WorkflowDef): { layers: string[][]; unreached: string[]; idle: string[] } {
+  const byId = new Map(wf.roles.map((r) => [r.id, r]));
+  const checks = checksByRole(wf);
+  const gateAnswerers = new Set(wf.gates.flatMap((g) => g.answerers));
+  const inFlow = (r: RoleDef) => r.spawnable || (r.may_spawn ?? []).length > 0 || Boolean(checks[r.id]) || gateAnswerers.has(r.id)
+    || wf.roles.some((o) => (o.may_spawn ?? []).includes(r.id));
+  const idle = wf.roles.filter((r) => !inFlow(r)).map((r) => r.id);
+  const layerOf = new Map<string, number>();
+  let frontier = wf.roles.filter((r) => r.human && inFlow(r)).map((r) => r.id);
+  frontier.forEach((id) => layerOf.set(id, 0));
+  let depth = 0;
+  while (frontier.length) {
+    depth += 1;
+    const next: string[] = [];
+    for (const id of frontier) {
+      for (const s of byId.get(id)?.may_spawn ?? []) {
+        if (byId.has(s) && !layerOf.has(s)) { layerOf.set(s, depth); next.push(s); }
+      }
+    }
+    frontier = next;
+  }
+  const layers: string[][] = [];
+  for (const r of wf.roles) {
+    const l = layerOf.get(r.id);
+    if (l === undefined) continue;
+    (layers[l] ??= []).push(r.id);
+  }
+  const unreached = wf.roles.filter((r) => inFlow(r) && !layerOf.has(r.id)).map((r) => r.id);
+  return { layers: layers.filter(Boolean), unreached, idle };
+}
+
+/** The panel (and role) a lint problem belongs to, so Validate can link each issue to where it is fixed. */
+export function panelFor(p: Problem): { panel: PanelKey; role?: string; field?: string } {
+  const role = /role '([^']+)'/.exec(p.message)?.[1];
+  switch (p.code) {
+    case "cap_below_1":
+      return role ? { panel: "roles", role, field: "max_concurrent" } : { panel: "caps", field: /caps\.([a-z_]+)/.exec(p.message)?.[1] };
+    case "schema":
+      return /caps\./.test(p.message) ? { panel: "caps" } : { panel: "pipeline" };
+    case "unknown_hook":
+    case "hook_param":
+      return { panel: "hooks", field: /hook '([^']+)'/.exec(p.message)?.[1] };
+    case "gate_without_precondition":
+    case "gate_unanswerable":
+    case "self_approval":
+      return { panel: "gates", field: /gate '([^']+)'/.exec(p.message)?.[1] };
+    case "dry_run_stall":
+      return { panel: "dryrun" };
+    case "role_without_spawner":
+    case "card_missing":
+    case "unknown_capacity":
+    case "kernel_stripped":
+    case "bundle_missing":
+    case "self_check":
+    case "escalation":
+    case "unusable_tool":
+      return { panel: "roles", role, field: FIELD_OF[p.code] };
+    case "unknown_role":
+      return role ? { panel: "roles", role } : { panel: "pipeline" };
+    default:
+      return { panel: "pipeline" };
+  }
+}
+
+const FIELD_OF: Record<string, string> = {
+  role_without_spawner: "spawned_by",
+  card_missing: "card",
+  unknown_capacity: "capacity_class",
+  kernel_stripped: "bundle",
+  bundle_missing: "bundle",
+  self_check: "criterion_checker",
+  escalation: "bundle",
+  unusable_tool: "bundle",
+};
+
+/** Roles with at least one error-level problem (their chips turn red). */
+export function rolesWithErrors(problems: Problem[]): Set<string> {
+  return new Set(problems.filter((p) => p.severity === "error").map((p) => panelFor(p))
+    .filter((x) => x.panel === "roles" && x.role).map((x) => x.role as string));
+}
+
+/** A definition without the read-only extras the GET adds (problems). */
+export function bodyOf(d: WorkflowDef & { problems?: unknown }): WorkflowDef {
+  const { problems: _p, ...rest } = d;
+  void _p;
+  return rest;
+}
+
+export function short(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  const s = typeof v === "string" ? v : JSON.stringify(v);
+  return s.length > 160 ? `${s.slice(0, 157)}…` : s;
+}
+
+export const ROLE_ID = /^[a-z][a-z0-9-]{0,30}$/;

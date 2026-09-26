@@ -1,0 +1,322 @@
+{
+ "ok": true,
+ "ref": "standard@1",
+ "timeline": [
+  {
+   "kind": "act",
+   "step": "create the epic",
+   "who": "owner",
+   "text": "owner: create the epic"
+  },
+  {
+   "kind": "spawn",
+   "who": "architect",
+   "by": "owner",
+   "step": "design the epic",
+   "text": "owner spawns architect"
+  },
+  {
+   "kind": "act",
+   "step": "write the design",
+   "who": "architect",
+   "text": "architect: write the design"
+  },
+  {
+   "kind": "act",
+   "step": "set the epic's design_ref",
+   "who": "architect",
+   "text": "architect: set the epic's design_ref"
+  },
+  {
+   "kind": "act",
+   "step": "write the epic's acceptance criterion",
+   "who": "architect",
+   "text": "architect: write the epic's acceptance criterion"
+  },
+  {
+   "kind": "wake",
+   "step": "write the epic's acceptance criterion",
+   "event": "status_changed",
+   "subject": "epic-1acd96a71e",
+   "who": "architect (on your ticket)",
+   "text": "status_changed on epic-1acd96a71e wakes architect (on your ticket)"
+  },
+  {
+   "kind": "transition",
+   "step": "epic → designed",
+   "who": "board",
+   "text": "board carries epic-1acd96a71e to designed"
+  },
+  {
+   "kind": "gate",
+   "step": "design sign-off",
+   "who": "architect",
+   "text": "design_signoff gate opens on epic-1acd96a71e; asks owner"
+  },
+  {
+   "kind": "wake",
+   "step": "design sign-off",
+   "event": "gate_opened",
+   "subject": "epic-1acd96a71e",
+   "who": "owner (on your ticket), architect (architect listener)",
+   "text": "gate_opened on epic-1acd96a71e wakes owner (on your ticket), architect (architect listener)"
+  },
+  {
+   "kind": "gate",
+   "step": "answer design_signoff",
+   "who": "owner",
+   "text": "owner: answer design_signoff"
+  },
+  {
+   "kind": "wake",
+   "step": "answer design_signoff",
+   "event": "message_sent",
+   "subject": "epic-1acd96a71e",
+   "who": "architect (on your ticket)",
+   "text": "message_sent on epic-1acd96a71e wakes architect (on your ticket)"
+  },
+  {
+   "kind": "wake",
+   "step": "answer design_signoff",
+   "event": "gate_answered",
+   "subject": "epic-1acd96a71e",
+   "who": "owner (on your ticket), architect (architect listener)",
+   "text": "gate_answered on epic-1acd96a71e wakes owner (on your ticket), architect (architect listener)"
+  },
+  {
+   "kind": "wake",
+   "step": "answer design_signoff",
+   "event": "status_changed",
+   "subject": "epic-1acd96a71e",
+   "who": "architect (on your ticket)",
+   "text": "status_changed on epic-1acd96a71e wakes architect (on your ticket)"
+  },
+  {
+   "kind": "transition",
+   "step": "epic → signed_off",
+   "who": "board",
+   "text": "board carries epic-1acd96a71e to signed_off"
+  },
+  {
+   "kind": "act",
+   "step": "create a story",
+   "who": "architect",
+   "text": "architect: create a story"
+  },
+  {
+   "kind": "act",
+   "step": "write the story's criterion",
+   "who": "architect",
+   "text": "architect: write the story's criterion"
+  },
+  {
+   "kind": "act",
+   "step": "set the story's design_ref",
+   "who": "architect",
+   "text": "architect: set the story's design_ref"
+  },
+  {
+   "kind": "transition",
+   "step": "story → designed",
+   "who": "architect",
+   "text": "architect: story → designed"
+  },
+  {
+   "kind": "transition",
+   "step": "story → signed_off",
+   "who": "architect",
+   "text": "architect: story → signed_off"
+  },
+  {
+   "kind": "wake",
+   "step": "story → signed_off",
+   "event": "status_changed",
+   "subject": "s-7504103f1f",
+   "who": "owner (owner listener), architect (on your ticket)",
+   "text": "status_changed on s-7504103f1f wakes owner (owner listener), architect (on your ticket)"
+  },
+  {
+   "kind": "transition",
+   "step": "story → ready",
+   "who": "board",
+   "text": "board carries s-7504103f1f to ready"
+  },
+  {
+   "kind": "spawn",
+   "who": "engineer",
+   "by": "architect",
+   "step": "assign the story",
+   "text": "architect spawns engineer"
+  },
+  {
+   "kind": "act",
+   "step": "assign the story",
+   "who": "engineer",
+   "text": "engineer: assign the story"
+  },
+  {
+   "kind": "wake",
+   "step": "assign the story",
+   "event": "assigned",
+   "subject": "s-7504103f1f",
+   "who": "engineer (on your ticket)",
+   "text": "assigned on s-7504103f1f wakes engineer (on your ticket)"
+  },
+  {
+   "kind": "transition",
+   "step": "start the story",
+   "who": "engineer",
+   "text": "engineer: start the story"
+  },
+  {
+   "kind": "wake",
+   "step": "start the story",
+   "event": "status_changed",
+   "subject": "s-7504103f1f",
+   "who": "engineer (on your ticket)",
+   "text": "status_changed on s-7504103f1f wakes engineer (on your ticket)"
+  },
+  {
+   "kind": "wake",
+   "step": "start the story",
+   "event": "status_changed",
+   "subject": "epic-1acd96a71e",
+   "who": "architect (on your ticket), engineer (on your ticket)",
+   "text": "status_changed on epic-1acd96a71e wakes architect (on your ticket), engineer (on your ticket)"
+  },
+  {
+   "kind": "act",
+   "step": "write the evidence report",
+   "who": "engineer",
+   "text": "engineer: write the evidence report"
+  },
+  {
+   "kind": "act",
+   "step": "attach evidence",
+   "who": "engineer",
+   "text": "engineer: attach evidence"
+  },
+  {
+   "kind": "wake",
+   "step": "attach evidence",
+   "event": "doc_updated",
+   "subject": "s-7504103f1f",
+   "who": "engineer (on your ticket)",
+   "text": "doc_updated on s-7504103f1f wakes engineer (on your ticket)"
+  },
+  {
+   "kind": "transition",
+   "step": "hand the story to review",
+   "who": "engineer",
+   "text": "engineer: hand the story to review"
+  },
+  {
+   "kind": "wake",
+   "step": "hand the story to review",
+   "event": "status_changed",
+   "subject": "s-7504103f1f",
+   "who": "owner (owner listener), architect (on your ticket), engineer (on your ticket)",
+   "text": "status_changed on s-7504103f1f wakes owner (owner listener), architect (on your ticket), engineer (on your ticket)"
+  },
+  {
+   "kind": "wake",
+   "step": "hand the story to review",
+   "event": "gate_opened",
+   "subject": "epic-1acd96a71e",
+   "who": "owner (on your ticket), architect (architect listener), engineer (on your ticket)",
+   "text": "gate_opened on epic-1acd96a71e wakes owner (on your ticket), architect (architect listener), engineer (on your ticket)"
+  },
+  {
+   "kind": "wake",
+   "step": "hand the story to review",
+   "event": "status_changed",
+   "subject": "epic-1acd96a71e",
+   "who": "owner (owner listener), architect (on your ticket), engineer (on your ticket)",
+   "text": "status_changed on epic-1acd96a71e wakes owner (owner listener), architect (on your ticket), engineer (on your ticket)"
+  },
+  {
+   "kind": "spawn",
+   "who": "qa",
+   "by": "board",
+   "step": "acceptance",
+   "text": "board pairs qa.epic-1acd96a71e at acceptance"
+  },
+  {
+   "kind": "act",
+   "step": "verdict the story's criterion",
+   "who": "qa",
+   "text": "qa: verdict the story's criterion"
+  },
+  {
+   "kind": "wake",
+   "step": "verdict the story's criterion",
+   "event": "criterion_checked",
+   "subject": "s-7504103f1f",
+   "who": "engineer (on your ticket), qa (on your ticket)",
+   "text": "criterion_checked on s-7504103f1f wakes engineer (on your ticket), qa (on your ticket)"
+  },
+  {
+   "kind": "wake",
+   "step": "verdict the story's criterion",
+   "event": "status_changed",
+   "subject": "s-7504103f1f",
+   "who": "owner (owner listener), architect (on your ticket), engineer (on your ticket), qa (on your ticket)",
+   "text": "status_changed on s-7504103f1f wakes owner (owner listener), architect (on your ticket), engineer (on your ticket), qa (on your ticket)"
+  },
+  {
+   "kind": "transition",
+   "step": "story → done",
+   "who": "board",
+   "text": "board carries s-7504103f1f to done"
+  },
+  {
+   "kind": "act",
+   "step": "attach epic evidence",
+   "who": "qa",
+   "text": "qa: attach epic evidence"
+  },
+  {
+   "kind": "wake",
+   "step": "attach epic evidence",
+   "event": "doc_updated",
+   "subject": "epic-1acd96a71e",
+   "who": "architect (on your ticket), engineer (on your ticket), qa (on your ticket)",
+   "text": "doc_updated on epic-1acd96a71e wakes architect (on your ticket), engineer (on your ticket), qa (on your ticket)"
+  },
+  {
+   "kind": "act",
+   "step": "verdict the epic",
+   "who": "qa",
+   "text": "qa: verdict the epic"
+  },
+  {
+   "kind": "wake",
+   "step": "verdict the epic",
+   "event": "criterion_checked",
+   "subject": "epic-1acd96a71e",
+   "who": "owner (owner listener), architect (on your ticket), engineer (on your ticket), qa (on your ticket)",
+   "text": "criterion_checked on epic-1acd96a71e wakes owner (owner listener), architect (on your ticket), engineer (on your ticket), qa (on your ticket)"
+  },
+  {
+   "kind": "wake",
+   "step": "verdict the epic",
+   "event": "status_changed",
+   "subject": "epic-1acd96a71e",
+   "who": "owner (owner listener), architect (on your ticket), engineer (on your ticket), qa (on your ticket)",
+   "text": "status_changed on epic-1acd96a71e wakes owner (owner listener), architect (on your ticket), engineer (on your ticket), qa (on your ticket)"
+  },
+  {
+   "kind": "transition",
+   "step": "epic → done",
+   "who": "board",
+   "text": "board carries epic-1acd96a71e to done"
+  },
+  {
+   "kind": "done",
+   "step": "epic → done",
+   "who": "-",
+   "text": "the epic reached done"
+  }
+ ],
+ "stall": null
+}

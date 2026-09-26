@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createLink, sendMessage } from "../api/endpoints";
 import { BoardApiError } from "../api/client";
-import { ROLES } from "../api/types";
+import { useWorkflowRoles } from "../api/workflows";
 import { label as glossLabel } from "../copy/glossary";
 import styles from "./TicketAsks.module.css";
 
@@ -84,6 +84,7 @@ export function LinkDocControl({ ticketId }: { ticketId: string }): React.JSX.El
 export function AskRoleControl({ ticketId }: { ticketId: string }): React.JSX.Element {
   const qc = useQueryClient();
   const [role, setRole] = useState<string>("architect");
+  const roles = useWorkflowRoles(ticketId).roles; // S14: the pinned workflow's roles
   const [text, setText] = useState("");
   const [asked, setAsked] = useState(false);
 
@@ -119,7 +120,7 @@ export function AskRoleControl({ ticketId }: { ticketId: string }): React.JSX.El
           }}
           data-testid="ask-role-select"
         >
-          {ROLES.map((r) => (
+          {roles.map((r) => (
             <option key={r} value={r}>
               {glossLabel("role", r)}
             </option>

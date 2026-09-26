@@ -7,6 +7,7 @@ export const ICON_PATHS = {
   "library": "M3 4h18v4H3ZM5 8v12h14V8M10 12h4",
   // epic-91fcd3b370 S3: the Code tab rail entry (angle brackets and a slash)
   "code": "m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16",
+  "workflow": "M3 3h6v6H3ZM15 3h6v6h-6ZM9 15h6v6H9ZM9 6h6M6 9v3q0 2 2 2h1M18 9v3q0 2-2 2h-1",
   "find": "M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM15 15l6 6",
   "add": "M12 4v16M4 12h16",
   "close": "M5 5l14 14M19 5 5 19",

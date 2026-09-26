@@ -1,0 +1,132 @@
+/* Design tab (S14): Folio tokens only, so every theme applies. */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1280px;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+.card {
+  composes: card from "../../components/ui.module.css";
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cardTitle {
+  margin: 0;
+  font: 600 17px/24px Georgia, serif;
+  color: var(--ink);
+}
+
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.spread { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.muted { color: var(--muted); font-size: 13px; margin: 0; }
+.help { color: var(--muted); font-size: 12px; line-height: 17px; margin: 2px 0 0; }
+.small { padding: 3px 9px; font-size: 12px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+
+/* workflow list */
+.list { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.group { margin: 10px 0 2px; font-size: 11px; font-weight: 650; letter-spacing: 0.8px; text-transform: uppercase; color: var(--muted); }
+.item {
+  display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left;
+  padding: 8px 10px; border: 1px solid transparent; border-radius: 8px;
+  background: transparent; color: var(--ink); cursor: pointer; font: inherit;
+}
+.item:hover { background: var(--accentwash); }
+.itemActive { border-color: var(--accent); background: var(--accentwash); }
+.itemHead { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; }
+.itemMeta { font-size: 12px; color: var(--muted); }
+
+.badge {
+  display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  border: 1px solid var(--line); color: var(--muted); background: var(--panel);
+}
+.badgeDraft { border-color: var(--warning); color: var(--ink); }
+.badgePub { border-color: var(--success); background: var(--successwash); color: var(--ink); }
+.badgeErr { border-color: var(--danger); color: var(--danger); }
+
+/* toolbar + banners */
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.readonly { padding: 8px 12px; border-radius: 8px; border: 1px dashed var(--strongline); color: var(--muted); font-size: 13px; }
+.upstream { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--warning); background: var(--panel); display: flex; flex-direction: column; gap: 8px; }
+
+/* pipeline */
+.svgWrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.svg { display: block; min-width: 720px; }
+.node rect { fill: var(--panel); stroke: var(--strongline); }
+.nodeHuman rect { fill: var(--accentwash); stroke: var(--accent); }
+.nodeUnreached rect { stroke: var(--danger); stroke-dasharray: 4 3; }
+.nodeLabel { fill: var(--ink); font: 600 13px/1 system-ui, sans-serif; }
+.nodeSub { fill: var(--muted); font: 11px/1 system-ui, sans-serif; }
+.edgeSpawn { stroke: var(--ink); stroke-width: 1.5; fill: none; }
+.edgeCheck { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 4; fill: none; }
+.edgeLabel { fill: var(--muted); font: 11px/1 system-ui, sans-serif; }
+.status rect { fill: var(--panel); stroke: var(--strongline); }
+.statusTerminal rect { fill: var(--successwash); stroke: var(--success); }
+.flowEdge { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.flowEdgeBare { stroke: var(--warning); stroke-width: 2; fill: none; }
+.gateChip rect { fill: var(--bg); stroke: var(--accent); }
+.gateText { fill: var(--accentink); font: 600 10px/1 system-ui, sans-serif; }
+.edgeHit { cursor: pointer; }
+.edgeHit:focus-visible { outline: 2px solid var(--accent); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted); }
+.swatch { display: inline-block; width: 22px; height: 0; border-top: 2px solid var(--ink); vertical-align: middle; margin-right: 4px; }
+.swatchCheck { border-top: 2px dashed var(--accent); }
+.swatchBare { border-top: 2px solid var(--warning); }
+
+.pre { margin: 0; padding: 0 0 0 16px; font-size: 13px; }
+.pre li { margin: 2px 0; }
+
+/* forms */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.fieldLabel { font-size: 12px; font-weight: 600; color: var(--muted); }
+.checks { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink); }
+.toolGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px 14px; max-height: 320px; overflow: auto; padding: 4px; border: 1px solid var(--line); border-radius: 8px; }
+.cardEditor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+@media (max-width: 900px) { .cardEditor { grid-template-columns: minmax(0, 1fr); } }
+.preview { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; max-height: 360px; overflow: auto; background: var(--bg); }
+.kernel { font-size: 12px; color: var(--muted); border-left: 3px solid var(--line); padding-left: 8px; white-space: pre-wrap; }
+.roleChips { display: flex; flex-wrap: wrap; gap: 6px; }
+.roleChip { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; font: inherit; font-size: 13px; }
+.roleChipActive { border-color: var(--accent); background: var(--accentwash); font-weight: 600; }
+.roleChipErr { border-color: var(--danger); }
+.flash { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+
+.hookRow { display: grid; grid-template-columns: minmax(180px, 240px) minmax(0, 1fr); gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.hookRow:first-child { border-top: 0; }
+
+/* validate + dry run + diff */
+.problems { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.problem { border: 1px solid var(--line); border-left: 4px solid var(--danger); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+.problemWarn { border-left-color: var(--warning); }
+.problemCode { font-weight: 650; font-size: 13px; }
+.timeline { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.tl { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 8px; padding: 3px 6px; border-radius: 4px; }
+.tlKind { font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+.tlSpawn { background: var(--accentwash); }
+.tlGate { border-left: 3px solid var(--accent); }
+.tlStall { border: 1px solid var(--danger); color: var(--danger); font-weight: 600; }
+.tlDone { background: var(--successwash); font-weight: 600; }
+.diffTable { width: 100%; border-collapse: collapse; font-size: 12px; }
+.diffTable th, .diffTable td { text-align: left; padding: 5px 8px; border-top: 1px solid var(--line); vertical-align: top; }
+.diffTable td { word-break: break-word; }
+.opAdded { color: var(--success); font-weight: 600; }
+.opRemoved { color: var(--danger); font-weight: 600; }
+.opChanged { color: var(--accentink); font-weight: 600; }

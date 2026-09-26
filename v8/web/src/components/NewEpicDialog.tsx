@@ -6,6 +6,7 @@ import { useNavigate } from "react-router";
 import { createEpic, libraryTags, type EpicSeatChoice } from "../api/endpoints";
 import { parseTags } from "../pages/KnowledgeDetail";
 import { getModels, getPoolCapabilities, spawnSeat } from "../api/seats";
+import { listWorkflows, pinnable } from "../api/workflows";
 import { clampEffort, SeatPickHead, SeatPickRow, type Effort } from "./SeatPicks";
 import type { ModelCatalog, PoolCapabilities } from "../api/types";
 import { BoardApiError } from "../api/client";
@@ -35,6 +36,9 @@ import { useModalDialog } from "./useModalDialog";
 //
 // t-683d0033bb (qa m-35926a1c92): a plain Tags input — words only, sent ahead of the seat tags — so the
 // Library auto-link (edp8/library.autolink) can link a doc sharing a tag at design sign-off.
+//
+// S14 (design-e963c656f5 §4.14(e)): a workflow picker — every published version, Standard first and the
+// default; the epic pins the pick for life (its page shows workflow@version).
 
 export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () => void }): React.JSX.Element | null {
   const [words, setWords] = useState("");
@@ -46,6 +50,10 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
   const [spawn, setSpawn] = useState(false);
   const [picks, setPicks] = useState<Record<string, string>>({});
   const [efforts, setEfforts] = useState<Record<string, Effort>>({});
+  const [workflow, setWorkflow] = useState("");
+  const workflowsQ = useQuery({ queryKey: ["workflows"], queryFn: listWorkflows, retry: false, enabled: open });
+  const pins = pinnable(workflowsQ.data ?? []);
+  const pickedWorkflow = workflow || pins[0]?.ref || "";
   const modelsQ = useQuery({ queryKey: ["models"], queryFn: getModels, retry: false, enabled: open });
   const catalog = modelsQ.data as ModelCatalog | undefined;
   const roles = Object.keys(catalog?.roles ?? {});
@@ -69,7 +77,7 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
     mutationFn: async () => {
       const choice = committed.current?.choice ?? { roleModels, roleEfforts };
       if (!committed.current) {
-        const made = await createEpic(words, choice, title, parseTags(tags));
+        const made = await createEpic(words, choice, title, parseTags(tags), pickedWorkflow || undefined);
         committed.current = { id: made.value.id, hint: made.hint, choice };
       }
       const made = committed.current;
@@ -89,7 +97,7 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
       void qc.invalidateQueries({ queryKey: ["epics", "summary"] });
       void qc.invalidateQueries({ queryKey: ["me", "summary"] });
       void qc.invalidateQueries({ queryKey: ["seats"] });
-      setWords(""); setTitle(""); setTags(""); setSpawn(false); setDone(null); setPicks({}); setEfforts({});
+      setWords(""); setTitle(""); setTags(""); setSpawn(false); setDone(null); setPicks({}); setEfforts({}); setWorkflow("");
       committed.current = null;
       navigate(`/epic/${encodeURIComponent(res.id)}`);
       onClose();
@@ -140,6 +148,17 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
           {plain.length
             ? `Library docs tagged ${plain.join(", ")} link to the epic at design sign-off.`
             : "Plain words, comma-separated; a Library doc sharing a tag links to the epic at design sign-off."}
+        </p>
+        <label className={ui.sectionLabel} htmlFor="new-epic-workflow">Workflow</label>
+        <select id="new-epic-workflow" data-testid="new-epic-workflow" className={ui.select} value={pickedWorkflow}
+          disabled={create.isPending || Boolean(done) || !pins.length} onChange={(e) => setWorkflow(e.target.value)}
+          aria-describedby="new-epic-workflow-help">
+          {pins.length ? null : <option value="">standard@1</option>}
+          {pins.map((w) => <option key={w.ref} value={w.ref}>{w.name || w.id} — {w.ref}{w.builtin ? " (preset)" : ""}</option>)}
+        </select>
+        <p id="new-epic-workflow-help" className={styles.muted} data-testid="new-epic-workflow-help">
+          {workflowsQ.isError ? "Could not load the workflows; the epic pins standard@1."
+            : "The roles, gates and caps the epic runs on, pinned for its life. Published versions only; see Design."}
         </p>
         <fieldset className={styles.roleModels} data-testid="new-epic-role-models">
           <legend className={ui.sectionLabel}>Model and effort per role</legend>

@@ -13,6 +13,7 @@ import { KNOWLEDGE_DIFF, KNOWLEDGE_VIEW, MODEL_CATALOG } from "./handlers";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { appRoutes } from "../routes";
 import { ATTENTION } from "./attentionFixture";
+import { workflowHandlers } from "./fixtures/workflows";
 
 // ------------------------------------------------------------------ the linter
 
@@ -281,6 +282,7 @@ function installBoard(): void {
     // The live feed: an open stream that never emits (the shared default, re-declared so the catch-all
     // below does not shadow it — server.use handlers take precedence over the setup defaults).
     http.get("/v1/feed", () => new HttpResponse(new ReadableStream(), { headers: { "content-type": "text/event-stream" } })),
+    ...workflowHandlers(), // S14: the Design tab
     http.get("/v1/*", catchAll("GET")),
     http.post("/v1/*", catchAll("POST")),
   );
@@ -426,6 +428,21 @@ describe("dead-control lint over the real route table (human #26)", () => {
   it("/code/faq", async () => {
     await walk("/code/faq");
     await screen.findByText("Shared tree");
+    await settle();
+    expectNoDead();
+  });
+
+  // S14: the Design tab (a preset; a draft on its Roles panel). The admin editor is linted in Design.test.tsx
+  it("/design", async () => {
+    await walk("/design");
+    await screen.findByTestId("pipeline-roles");
+    await settle();
+    expectNoDead();
+  });
+
+  it("/design?wf=broken@1&panel=roles", async () => {
+    await walk("/design?wf=broken@1&panel=roles");
+    await screen.findByTestId("design-roles");
     await settle();
     expectNoDead();
   });

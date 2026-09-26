@@ -241,4 +241,28 @@ describe("NewEpicDialog (human #22)", () => {
     expect(tags).not.toContain("model:qa=gpt-6-astra");
     expect(tags).not.toContain("quick");
   });
+
+  it("S14: the workflow picker lists published versions, defaults to Standard and pins the pick", async () => {
+    let ticketBody: Record<string, unknown> | null = null;
+    const row = (id: string, version: number, published: boolean, builtin: boolean) => ({
+      id, version, ref: `${id}@${version}`, name: id, description: "", builtin, published, source: null, pinned_by: [], roles: 3 });
+    server.use(
+      http.get("/v1/workflows", () => HttpResponse.json({ ok: true, value: [
+        row("lean", 1, true, true), row("team", 2, true, false), row("team", 3, false, false), row("standard", 1, true, true)] })),
+      http.post("/v1/tickets", async ({ request }) => {
+        ticketBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ ok: true, value: { id: "epic-wf", kind: "epic", title: "t" }, hint: "" });
+      }),
+    );
+    mount();
+    const picker = await screen.findByTestId("new-epic-workflow");
+    await waitFor(() => expect(picker).toHaveValue("standard@1"));
+    expect([...(picker as HTMLSelectElement).options].map((o) => o.value)).toEqual(["standard@1", "lean@1", "team@2"]);
+    fireEvent.change(picker, { target: { value: "team@2" } });
+    fireEvent.change(screen.getByTestId("new-epic-title"), { target: { value: "Pinned" } });
+    fireEvent.change(screen.getByTestId("new-epic-words"), { target: { value: "Run on my workflow." } });
+    fireEvent.click(screen.getByTestId("new-epic-create"));
+    await waitFor(() => expect(ticketBody).not.toBeNull());
+    expect(ticketBody!.workflow).toBe("team@2");
+  });
 });

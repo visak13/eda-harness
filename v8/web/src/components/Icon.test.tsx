@@ -4,8 +4,8 @@ import { Icon } from "./Icon";
 import { ICON_PATHS, PROVIDER_ICONS, ROLE_ICONS, STATUS_ICONS, harnessGlyph, seatRole, type IconName } from "./iconPaths";
 import { Avatar, ProviderIcon } from "./Avatar";
 import { StatusChip } from "./StatusChip";
-it("all 56 approved glyphs use named currentColor paths, no generic fallback", () => {
-  expect(Object.keys(ICON_PATHS)).toHaveLength(56); // +code (epic-91fcd3b370 S3), +lifebuoy (t-67dad8c6aa), +role-doctor (t-20f0718990)
+it("all 57 approved glyphs use named currentColor paths, no generic fallback", () => {
+  expect(Object.keys(ICON_PATHS)).toHaveLength(57); // +workflow (S14 Design rail), +code (epic-91fcd3b370 S3), +lifebuoy (t-67dad8c6aa), +role-doctor (t-20f0718990)
   const { container } = render(<>{(Object.keys(ICON_PATHS) as IconName[]).map((name) => <Icon key={name} name={name} />)}</>);
   for (const svg of container.querySelectorAll("svg")) {
     expect(svg).toHaveAttribute("stroke", "currentColor"); expect(svg).toHaveAttribute("aria-hidden", "true");

@@ -228,9 +228,11 @@ export const putSettings = (b: UserSettings) => postJson<UserSettings>("/v1/me/s
 export const sendSlackTestPing = () => postJson<{ delivered: boolean }>("/v1/me/settings/slack/test", {});
 
 /** Atomic explicit title + exact raw words. Omitting title preserves legacy caller behavior. */
-export const createEpic = (words: string, choice?: EpicSeatChoice, title?: string, tags: string[] = []) =>
+export const createEpic = (words: string, choice?: EpicSeatChoice, title?: string, tags: string[] = [], workflow?: string) =>
   postJson<TicketRecord>("/v1/tickets", {
     kind: "epic",
+    // S14: the published workflow version the epic pins (the board defaults to standard@1)
+    ...(workflow ? { workflow } : {}),
     work_type: "feature",
     title: title === undefined ? words : title.trim(),
     words,

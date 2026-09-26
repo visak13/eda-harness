@@ -53,10 +53,12 @@ const NAV = [
   { to: "/library/knowledge", label: "Library", icon: "library", count: "topics" as const, copy: "library" },
   // epic-91fcd3b370 S3: the Code tab (code-server embedded full-bleed)
   { to: "/code", label: "Code", icon: "code", count: null, copy: "code" },
+  // S14: the Design tab (workflows); everyone reads it, admins edit
+  { to: "/design", label: "Design", icon: "workflow", count: null, copy: "design" },
 ] as const;
 
 // Human #38 (m-4e303d7b27, 2026-09-11): the sidebar highlight is by ROUTE FAMILY, not by exact path.
-export function navFamily(pathname: string, search = ""): "/epics" | "/seats" | "/library/knowledge" | "/settings" | "/code" | "/admin" | null {
+export function navFamily(pathname: string, search = ""): "/epics" | "/seats" | "/library/knowledge" | "/settings" | "/code" | "/design" | "/admin" | null {
   if (/^\/(epics|epic|ticket|records)(\/|$)/.test(pathname)) return "/epics";
   if (/^\/seats(\/|$)/.test(pathname)) return "/seats";
   // S19 D11: a design opened in its own tab from a review belongs to the source's (Epics) family.
@@ -64,6 +66,7 @@ export function navFamily(pathname: string, search = ""): "/epics" | "/seats" | 
   if (/^\/(library|doc|artifact)(\/|$)/.test(pathname)) return "/library/knowledge";
   if (/^\/settings(\/|$)/.test(pathname)) return "/settings";
   if (/^\/code(\/|$)/.test(pathname)) return "/code";
+  if (/^\/design(\/|$)/.test(pathname)) return "/design";
   if (/^\/admin(\/|$)/.test(pathname)) return "/admin";
   return null;
 }

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { sendMessage, updateDoc } from "../api/endpoints";
 import { BoardApiError } from "../api/client";
-import { ROLES } from "../api/types";
+import { useWorkflowRoles } from "../api/workflows";
 import { label as glossLabel } from "../copy/glossary";
 import styles from "./DocControls.module.css";
 
@@ -42,6 +42,7 @@ function RequestReview({
 }): React.JSX.Element {
   const qc = useQueryClient();
   const [role, setRole] = useState<string>("qa");
+  const roles = useWorkflowRoles(scope).roles; // S14: the pinned workflow's roles
   const [note, setNote] = useState("");
   const [asked, setAsked] = useState(false);
 
@@ -83,7 +84,7 @@ function RequestReview({
           }}
           data-testid="review-role"
         >
-          {ROLES.map((r) => (
+          {roles.map((r) => (
             <option key={r} value={r}>
               {glossLabel("role", r)}
             </option>

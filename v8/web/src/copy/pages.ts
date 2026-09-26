@@ -30,6 +30,7 @@ export const SIDEBAR: PageCopy = {
     { key: "seats", label: "Seats", text: "every agent shell, alive or closed, and what it last said. Source: pool sessions mirrored into the board.", control: true },
     { key: "library", label: "Library", text: "knowledge first — strategies, domains and lessons every epic can link (approve proposals, import from skills.sh) — then every document, artifact and ticket. Source: /v1/knowledge and the board's records.", control: true },
     { key: "code", label: "Code", text: "a full VS Code (code-server) on the board host, embedded full-bleed; tag a code selection to anyone from inside it. Source: /v1/code.", control: true },
+    { key: "design", label: "Design", text: "the workflows epics run on: roles, who spawns and checks whom, the status flow, gates, hooks and caps. Everyone reads every version; an admin duplicates one into a draft, validates it (lint + dry run) and publishes it. Source: /v1/workflows.", control: true },
     { key: "admin", label: "Admin", text: "admins only: run this install — services, settings, teammates, remote access, integrations, seats and models. Source: /v1/admin/*.", control: true },
     { key: "find", label: "Find (Ctrl K)", text: "full-text search across tickets, documents, messages and seats; Enter opens the hit.", control: true },
     { key: "identity", label: "Account (bottom)", text: "who you are on this board; opens the account menu: Settings, What am I looking at?, theme, avatar. Source: /v1/whoami.", control: true },
@@ -128,6 +129,17 @@ export const PAGES: Record<string, PageCopy> = {
       { key: "open", label: "Open the Code tab", text: "back from the FAQ to the editor.", control: true },
     ],
   },
+  design: {
+    key: "design",
+    title: "Design",
+    framing: "The workflows epics run on. Everyone reads every version; only an admin edits, and only a draft: a preset or a published version is immutable.",
+    items: [
+      { key: "list", label: "Workflow list", text: "presets and custom workflows with each version's state, the version it came from and the epics that pin it. Duplicate to edit makes a draft. Source: /v1/workflows.", control: true },
+      { key: "panels", label: "Pipeline · Roles · Hooks · Gates · Caps · Validate · Dry run · Diff", text: "one panel per part of the definition; Validate links every issue to the panel that fixes it. Edits stay in this tab until Save draft.", control: true },
+      { key: "publish", label: "Publish", text: "saves the draft, runs the board's Validate (lint and a dry run of a synthetic epic) and, with no error, publishes an immutable version new epics may pin. Wakes nobody.", control: true },
+      { key: "upstream", label: "Upstream changed", text: "the version this one was copied from has a newer published version: see the three-way diff and merge it into a new draft; a field both changed keeps yours and is listed.", control: true },
+    ],
+  },
   admin: {
     key: "admin",
     title: "Admin",
@@ -177,6 +189,7 @@ export function pageKeyFor(pathname: string): string {
   if (pathname.startsWith("/seats")) return "seats";
   if (pathname.startsWith("/settings")) return "settings";
   if (pathname.startsWith("/admin")) return "admin";
+  if (pathname.startsWith("/design")) return "design";
   if (pathname.startsWith("/join")) return "join";
   if (pathname.startsWith("/setup")) return "setup";
   if (pathname === "/code" || pathname.startsWith("/code/")) return "code";
