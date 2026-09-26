@@ -133,7 +133,7 @@ function VscodeCard(): React.JSX.Element {
       <About testid="about-vscode"
         does="Work the board from VS Code: tickets, chat with seats and the diff of each seat's changes, beside your code."
         needs="VS Code on the teammate's computer, the EDP Code extension, and that teammate's sign-in link below."
-        where={v ? <><a href="https://code.visualstudio.com/download" target="_blank" rel="noreferrer">VS Code</a> · the extension from the <a href={v.vsix_url} target="_blank" rel="noreferrer">latest release (.vsix)</a></> : "…"}
+        where={<><a href="https://code.visualstudio.com/download" target="_blank" rel="noreferrer">VS Code</a> · the extension from {v?.vsix_url ? <a href={v.vsix_url} target="_blank" rel="noreferrer">the latest release (.vsix)</a> : "the latest release (.vsix)"}</>}
         changes="The teammate opens their link once and the extension talks to this board." />
       <StatusLine state={stateOf(Boolean(v), test, v ? `the board answers at ${test.data?.value.board_url ?? v.board_url}` : undefined)} testid="vscode-status" />
       {v ? (
