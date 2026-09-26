@@ -1,0 +1,27 @@
+/* Heronry theme tokens: validated text, button, status and boundary contrast. */
+[data-brand="heronry"][data-theme="dark"] {
+  --background: #211B18;
+  --surface: #302723;
+  --text: #F5EBDD;
+  --muted: #C1AEA1;
+  --accent: #E9A38B;
+  --success: #93C5A3;
+  --warning: #E7BD66;
+  --danger: #F09C96;
+  --button-text: #2C201B;
+  --border: #A18A7D;
+}
+[data-brand="heronry"][data-theme="light"] {
+  --background: #F8F1E8;
+  --surface: #FFF9F2;
+  --text: #30231E;
+  --muted: #735F54;
+  --accent: #9B4734;
+  --success: #386A49;
+  --warning: #825B18;
+  --danger: #A83C3B;
+  --button-text: #FFF8EF;
+  --border: #8C786D;
+}
+.primary-button { background: var(--accent); color: var(--button-text); border: 0; border-radius: 8px; min-height: 44px; padding: 10px 18px; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }

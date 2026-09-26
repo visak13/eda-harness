@@ -1,0 +1,161 @@
+{
+  "method": "sRGB linearization at 0.04045; L = 0.2126R + 0.7152G + 0.0722B; ratio = (Llighter + 0.05)/(Ldarker + 0.05). Tests use unrounded values.",
+  "results": {
+    "heronry": {
+      "dark": {
+        "text/bg": {
+          "ratio": 14.425316488984866,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "muted/bg": {
+          "ratio": 7.967211924782933,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "button-text/accent": {
+          "ratio": 7.578959349290325,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "text/surface": {
+          "ratio": 12.36668461564624,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "muted/surface": {
+          "ratio": 6.830213896176358,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "accent/bg": {
+          "ratio": 8.161494491451483,
+          "minimum": 3,
+          "pass": true
+        },
+        "accent/surface": {
+          "ratio": 6.99677046567297,
+          "minimum": 3,
+          "pass": true
+        },
+        "border/bg": {
+          "ratio": 5.22176033446691,
+          "minimum": 3,
+          "pass": true
+        },
+        "border/surface": {
+          "ratio": 4.476564742558936,
+          "minimum": 3,
+          "pass": true
+        },
+        "success/background": {
+          "ratio": 8.71190881777838,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "success/surface": {
+          "ratio": 7.468635355903681,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "warning/background": {
+          "ratio": 9.61315631409309,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "warning/surface": {
+          "ratio": 8.241266137077561,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "danger/background": {
+          "ratio": 8.019282303466928,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "danger/surface": {
+          "ratio": 6.874853329321132,
+          "minimum": 4.5,
+          "pass": true
+        }
+      },
+      "light": {
+        "text/bg": {
+          "ratio": 13.531314478129483,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "muted/bg": {
+          "ratio": 5.363293579731554,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "button-text/accent": {
+          "ratio": 5.957481540718714,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "text/surface": {
+          "ratio": 14.503114948138778,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "muted/surface": {
+          "ratio": 5.748477977744411,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "accent/bg": {
+          "ratio": 5.602667182051777,
+          "minimum": 3,
+          "pass": true
+        },
+        "accent/surface": {
+          "ratio": 6.005043064278425,
+          "minimum": 3,
+          "pass": true
+        },
+        "border/bg": {
+          "ratio": 3.7309380857018777,
+          "minimum": 3,
+          "pass": true
+        },
+        "border/surface": {
+          "ratio": 3.998888948208317,
+          "minimum": 3,
+          "pass": true
+        },
+        "success/background": {
+          "ratio": 5.634036909390151,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "success/surface": {
+          "ratio": 6.038665722462563,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "warning/background": {
+          "ratio": 5.417690788804944,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "warning/surface": {
+          "ratio": 5.8067819198576816,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "danger/background": {
+          "ratio": 5.5530759717267895,
+          "minimum": 4.5,
+          "pass": true
+        },
+        "danger/surface": {
+          "ratio": 5.951890281160193,
+          "minimum": 4.5,
+          "pass": true
+        }
+      }
+    }
+  }
+}
