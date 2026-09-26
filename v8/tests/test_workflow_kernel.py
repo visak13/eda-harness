@@ -309,7 +309,8 @@ def test_workflows_check_cli_names_a_new_invariant_and_never_writes_the_db(tmp_p
     import json
     import sqlite3
 
-    main = lambda argv: wf.workflows_cmd(argv[1:])  # noqa: E731 - `heronry workflows …` (S3 registers it)
+    from edp8.workflows_cli import main as workflows_main  # S3's cli.py: "workflows" → this main
+    main = lambda argv: workflows_main(argv[1:])  # noqa: E731 - argv here includes the word `workflows`
     monkeypatch.setenv("EDP_AGENT_HOME", str(tmp_path))
     db = tmp_path / "live.db"
     board = Board(Store(str(db)), pool=_Pool(), free_mb=lambda: 10_000)
