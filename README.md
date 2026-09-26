@@ -123,6 +123,20 @@ The first release is unsigned. Windows SmartScreen shows **More info → Run any
 right-click **Open** the first time. You still need [Claude Code](https://claude.com/claude-code) (or Codex CLI)
 on PATH; the app finds it.
 
+**Antivirus.** An unsigned build can be flagged by behaviour-based antivirus, because Heronry starts
+background services and your agent CLIs. If yours quarantines `heronry.exe` or `Heronry Desktop.exe`, restore
+the file and add an exclusion for the install folder
+(`%LOCALAPPDATA%\Programs\Heronry contributors\Heronry Desktop`):
+
+| Antivirus | Where to add the exclusion |
+|---|---|
+| Microsoft Defender | Windows Security → Virus & threat protection → Manage settings → Exclusions → Add or remove exclusions → Folder |
+| Bitdefender | Protection → Antivirus → Settings → Manage exceptions → Add an exception (folder), with Advanced Threat Defense ticked |
+| Norton | Settings → Antivirus → Scans and Risks → Items to Exclude from Scans / Auto-Protect → Configure |
+| Kaspersky | Settings → Security settings → Threats and Exclusions → Manage exclusions → Add |
+| Avast / AVG | Menu → Settings → General → Exceptions → Add exception |
+| ESET | Setup → Advanced setup → Detection engine → Exclusions → Performance exclusions → Edit |
+
 - **First launch** shows the splash while the services start, then opens the setup wizard in the window.
   Later launches open the board already signed in.
 - **Tray / menu-bar icon:** Open board, Status, Start, Stop and Restart services, Check for update,
