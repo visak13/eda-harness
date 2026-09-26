@@ -9,6 +9,7 @@ import { appRoutes } from "../../routes";
 import SETTINGS from "../../test/fixtures/admin-settings.json";
 import type { SettingsView } from "../../api/admin";
 import { AdminPage } from "./Admin";
+import { attentionHandler } from "../../test/attentionFixture";
 
 // S6 (s-e6b4fa59d5) Admin console. c-f27302e7e4: tabs for an admin, none for a non-admin; the Settings tab
 // renders EVERY visible key of a registry fixture (scripts/gen_admin_settings_fixture.py) —
@@ -335,6 +336,19 @@ describe("Teammates", () => {
     mount("teammates", [http.get("/v1/admin/tailnet", () => ok({ ...TAILNET, auth_keys: { configured: false } }))]);
     expect(await screen.findByTestId("tailscale-keys-off")).toHaveTextContent("configure the Tailscale API");
     expect(screen.getByTestId("tailscale-key-mint")).toBeDisabled();
+  });
+
+  it("S20: the Teammates tab carries the access-request dot and the waiting request is marked", async () => {
+    mount("teammates", [attentionHandler(), http.get("/v1/admin/access-requests", () => ok([
+      { id: "ar-1", created_at: "2026-09-27T01:00:00Z", name: "Dana Lee", role_wanted: "engineer", note: "", status: "pending", decided_by: null, decided_at: null, handle: null },
+      { id: "ar-2", created_at: "2026-09-27T01:05:00Z", name: "Eli Park", role_wanted: "engineer", note: "", status: "pending", decided_by: null, decided_at: null, handle: null }]))]);
+    const tab = await screen.findByRole("tab", { name: /Teammates/ });
+    expect(await within(tab).findByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    expect(within(screen.getByRole("tab", { name: /Services/ })).queryByRole("img")).toBeNull();
+    const row = await screen.findByTestId("access-request-ar-1");
+    await waitFor(() => expect(row).toHaveAttribute("data-attention", "true"));
+    expect(within(row).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    expect(screen.getByTestId("access-request-ar-2")).not.toHaveAttribute("data-attention");
   });
 
   it("rotate shows the new token once", async () => {

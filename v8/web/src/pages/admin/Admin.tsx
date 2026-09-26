@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { PageHeader } from "../../components/PageHeader";
 import { Tabs } from "../../components/Tabs";
+import { useAttention } from "../../api/attention";
 import ui from "../../components/ui.module.css";
 import styles from "./Admin.module.css";
 import { AdminError, RestartStatus, useServiceAction } from "./shared";
@@ -68,6 +69,8 @@ export function AdminPage(): React.JSX.Element {
   const [params, setParams] = useSearchParams();
   const tab = ADMIN_TABS.some((t) => t.key === params.get("tab")) ? params.get("tab")! : "services";
   const { admin, loading } = useIsAdmin();
+  const waiting = useAttention().counts.admin; // S20: access requests waiting on this admin sit behind Teammates
+  const tabs = ADMIN_TABS.map((t) => (t.key === "teammates" ? { ...t, attention: waiting } : t));
   const [restart, setRestart] = useState<string[]>([]);
   const needRestart = (svcs: string[]) => setRestart((cur) => [...new Set([...cur, ...svcs.filter((s) => s && s !== "none")])]);
   if (loading) return <p className={ui.empty}>Loading…</p>;
@@ -82,7 +85,7 @@ export function AdminPage(): React.JSX.Element {
   return (
     <div className={styles.page} data-testid="admin-page">
       <PageHeader title="Admin" subtitle={ADMIN_SCOPE} />
-      <Tabs tabs={ADMIN_TABS} active={tab} onChange={(key) => setParams((old) => { const p = new URLSearchParams(old); p.set("tab", key); return p; }, { replace: true })} />
+      <Tabs tabs={tabs} active={tab} onChange={(key) => setParams((old) => { const p = new URLSearchParams(old); p.set("tab", key); return p; }, { replace: true })} />
       <RestartBanner services={restart} onClear={(svc) => setRestart((cur) => cur.filter((s) => s !== svc))} />
       {tab === "services" ? <ServicesTab /> : null}
       {tab === "models" ? <SeatsModelsTab onRestartRequired={needRestart} /> : null}

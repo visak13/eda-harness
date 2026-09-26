@@ -1,9 +1,12 @@
 import styles from "./Tabs.module.css";
+import { AttentionDot } from "./AttentionDot";
 
 export interface Tab {
   key: string;
   label: string;
   count?: number;
+  /** S20: items behind this tab waiting on the viewer — the attention dot on the trail. */
+  attention?: number;
   /** Tooltip + aria-describedby props from copyProps() (defect #31). */
   copy?: { title: string; "aria-describedby": string; "data-copy": string };
 }
@@ -42,6 +45,7 @@ export function Tabs({
         >
           {t.label}
           {typeof t.count === "number" ? <span className={styles.count}> {t.count}</span> : null}
+          {t.attention ? <> <AttentionDot count={t.attention} /></> : null}
         </button>
       ))}
     </div>

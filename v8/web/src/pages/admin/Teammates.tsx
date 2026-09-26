@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link } from "react-router";
+import { useEffect, useState } from "react";
+import { Link, useLocation } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createTeammate, getAgentTokens, getTailnet, getTeammates, mintTailscaleKey, reinviteTeammate, revokeAgentToken,
@@ -10,6 +10,9 @@ import { approveAccess, denyAccess, getAccessRequests, removeTeammate, type Acce
 import ui from "../../components/ui.module.css";
 import styles from "./Admin.module.css";
 import { AdminError, Done, Secret } from "./shared";
+import { useAttention } from "../../api/attention";
+import { AttentionDot, attentionMark } from "../../components/AttentionDot";
+import { highlightMessage } from "../../components/AttentionAsks";
 import own from "./Teammates.module.css";
 
 // Admin → Teammates (design §4.8): invite (the one-time link + the VS Code sign-in link, with copy buttons),
@@ -127,6 +130,12 @@ function AccessRequests({ remoteOn }: { remoteOn: boolean }): React.JSX.Element 
   const deny = useMutation({ mutationFn: (r: AccessRequestRow) => denyAccess(r.id), onSuccess: refresh });
   const rows = q.data ?? [];
   const pending = rows.filter((r) => r.status === "pending");
+  // S20: the trail's last hop — a request waiting on this admin is marked, and its #<id> link highlights it
+  const waiting = new Set(useAttention().items.filter((i) => i.kind === "access_request").map((i) => i.id));
+  const { hash } = useLocation();
+  const target = hash ? decodeURIComponent(hash.slice(1)) : null;
+  const loaded = pending.some((r) => r.id === target);
+  useEffect(() => { if (target && loaded) highlightMessage(target); }, [target, loaded]);
   const decided = rows.filter((r) => r.status !== "pending");
   return (
     <section className={styles.card} data-testid="access-requests">
@@ -138,9 +147,11 @@ function AccessRequests({ remoteOn }: { remoteOn: boolean }): React.JSX.Element 
       <AdminError error={q.error} testid="access-requests-error" />
       {!pending.length && !q.isLoading ? <p className={ui.empty} data-testid="access-requests-empty">No open requests.</p> : null}
       {pending.map((r) => (
-        <div key={r.id} id={r.id} className={own.request} data-testid={`access-request-${r.id}`}>
+        <div key={r.id} id={r.id} className={`${own.request} ${waiting.has(r.id) ? attentionMark : ""}`} data-testid={`access-request-${r.id}`}
+          data-attention={waiting.has(r.id) ? "true" : undefined}>
           <div>
             <strong>{r.name}</strong> asks for access as <strong>{r.role_wanted === "owner" ? "member" : r.role_wanted}</strong>
+            {waiting.has(r.id) ? <> <AttentionDot count={1} /></> : null}
             <div className={styles.usage}>{r.created_at}</div>
             {r.note ? <p className={styles.fieldDoc}>{r.note}</p> : null}
           </div>

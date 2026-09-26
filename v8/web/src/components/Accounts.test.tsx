@@ -8,6 +8,7 @@ import { RequestAccess } from "./RequestAccess";
 import { Conversation } from "./Conversation";
 import { TeammatesTab } from "../pages/admin/Teammates";
 import type { MessageView } from "../api/types";
+import { attentionHandler } from "../test/attentionFixture";
 
 // t-882e4d2eeb: Request access on the sign-in page (c-c0bdff80eb), Admin → Teammates Requests + Remove and
 // retired people greyed in history (c-0785f1b2b1). Pickers drop retired people server-side (/v1/me/people,
@@ -111,6 +112,23 @@ describe("Admin → Teammates: requests and Remove", () => {
     fireEvent.change(within(row).getByTestId("access-request-acc-1-handle"), { target: { value: "dana" } });
     fireEvent.click(within(row).getByTestId("access-request-acc-1-approve"));
     await waitFor(() => expect(approved).toEqual(['acc-1:{"handle":"dana"}']));
+  });
+
+  it("S20: the access request's #<id> link highlights its marked row", async () => {
+    server.use(
+      attentionHandler(),
+      http.get("/v1/admin/teammates", () => ok(TEAM)),
+      http.get("/v1/admin/tailnet", () => ok(TAILNET)),
+      http.get("/v1/admin/tokens/agents", () => ok([])),
+      http.get("/v1/admin/access-requests", () => ok([
+        { id: "ar-1", created_at: "2026-09-27T01:00:00Z", name: "Dana Lee", role_wanted: "engineer", note: "", status: "pending",
+          decided_by: null, decided_at: null, handle: null }])),
+    );
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={["/admin?tab=teammates#ar-1"]}><TeammatesTab /></MemoryRouter></QueryClientProvider>);
+    const row = await screen.findByTestId("access-request-ar-1");
+    await waitFor(() => expect(row).toHaveAttribute("data-highlight", "true"));
+    await waitFor(() => expect(row).toHaveAttribute("data-attention", "true"));
   });
 
   it("hides removed teammates until asked, and Remove needs a confirm step", async () => {
