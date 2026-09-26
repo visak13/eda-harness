@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, Outlet, useLocation } from "react-router";
+import { Link, Outlet, useLocation, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api, BoardApiError } from "../api/client";
-import { getEpicPage } from "../api/endpoints";
+import { askForHelp, getEpicPage } from "../api/endpoints";
 import { useCurrentEpicId } from "./currentEpic";
 import { identity } from "../auth/identity";
 import { IdentityPanel } from "./IdentityPanel";
@@ -100,6 +100,16 @@ function CurrentEpic({ epicId }: { epicId: string }): React.JSX.Element | null {
 
 function AppShellChrome(): React.JSX.Element {
   const location = useLocation();
+  const navigate = useNavigate();
+  // S19: Ask for help opens (or resumes) the viewer's help thread with its Help seat, then shows it
+  const [helpAsk, setHelpAsk] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
+  const askHelp = () => {
+    setHelpAsk({ busy: true, error: null });
+    askForHelp("").then(
+      (r) => { setHelpAsk({ busy: false, error: null }); navigate(`/library/topics/${encodeURIComponent(r.value.topic.id)}`); },
+      (e: unknown) => setHelpAsk({ busy: false, error: e instanceof BoardApiError ? e.hint || e.message : String(e) }),
+    );
+  };
   const as = identity();
   const [menuOpen, setMenuOpen] = useState(false);
   // S17 c-33ffd96baf: the rail collapses to a 64px icon rail and the message list takes the width;
@@ -230,6 +240,14 @@ function AppShellChrome(): React.JSX.Element {
         </nav>
 
         <div className={styles.lower}>
+          {expert ? null : (
+            <button className={styles.railBtn} type="button" aria-label="Ask for help" title="Ask the Help seat: it diagnoses and proposes fixes an admin approves"
+              disabled={helpAsk.busy} onClick={askHelp} data-testid="ask-help">
+              <Icon name="help" size={18} />
+              <span className={styles.navLabel}>Ask for help</span>
+            </button>
+          )}
+          {helpAsk.error ? <p role="alert" className={styles.navLabel} data-testid="ask-help-error">{helpAsk.error}</p> : null}
           <button ref={findBtnRef} className={styles.railBtn} type="button" aria-label="Find (Ctrl-K)"
             {...copyProps("sidebar", "find")} aria-haspopup="dialog" aria-expanded={findOpen}
             onClick={() => setFindOpen(true)} data-testid="find-open">

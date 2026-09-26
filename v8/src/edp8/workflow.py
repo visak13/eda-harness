@@ -663,11 +663,14 @@ def build_standard() -> WorkflowDef:
     from .board import CRITERIA_CAP, HUMAN_GATE_ANSWERERS, STORY_CAP, TASK_CAP
     from .bundles import ROLE_BUNDLES  # lazy: bundles imports the MCP client side
 
-    spawnable = {"architect", "engineer", "qa", "adversary", "sme"}
-    may_spawn = {"owner": ["architect", "engineer", "qa", "adversary"],
+    # S19: doctor is the kernel-provided Help seat, always available: the board spawns it on a help topic
+    # for any human (edp8.help), so its spawner is the owner; it checks nothing and builds nothing (checker
+    # class = exempt from the class caps, counted toward the total only)
+    spawnable = {"architect", "engineer", "qa", "adversary", "sme", "doctor"}
+    may_spawn = {"owner": ["architect", "engineer", "qa", "adversary", "doctor"],
                  "architect": ["engineer", "qa", "adversary", "sme"]}
     capacity = {"engineer": "builder", "sme": "builder", "adversary": "checker", "qa": "checker",
-                "architect": "planner"}
+                "architect": "planner", "doctor": "checker"}
     roles = []
     for r in Role:
         rid = r.value

@@ -284,7 +284,36 @@ def _port_state(port: int) -> str:
     return "listening"
 
 
+def _flag_value(argv: list[str], flag: str) -> tuple[bool, str | None]:
+    """(present, value) for `--flag [value]` / `--flag=value`; a following `--x` is not a value."""
+    for i, a in enumerate(argv):
+        if a == flag:
+            nxt = argv[i + 1] if i + 1 < len(argv) else None
+            return True, (nxt if nxt is not None and not nxt.startswith("--") else None)
+        if a.startswith(flag + "="):
+            return True, a.split("=", 1)[1] or None
+    return False, None
+
+
 def doctor_cmd(argv: list[str]) -> int:
+    """`heronry doctor`: the prereq and port check. `--bundle [PATH]` writes the redacted diagnostics zip
+    instead; `--agent [question…]` opens the Help seat on a help thread (S19, design-e963c656f5 §4.14(e).5)."""
+    bundle, where = _flag_value(argv, "--bundle")
+    if bundle:
+        from .diagnostics import write_bundle
+        out, names = write_bundle(Path(where) if where else None)
+        print(f"wrote {out}")
+        print(f"  {len(names)} files: {', '.join(names)}")
+        print("  secrets, user paths, usernames, emails and tokens are scrubbed; look it over, then attach it "
+              "to your GitHub issue")
+        return 0
+    if "--agent" in argv:
+        from .help import agent_cmd
+        return agent_cmd([a for a in argv if a != "--agent"])
+    return _doctor_checks()
+
+
+def _doctor_checks() -> int:
     from edp_contracts.toolpath import find_tool, probe_version, tool_argv
 
     from . import control, harness, launcher, run_state

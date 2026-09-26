@@ -688,8 +688,13 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     app.include_router(usage_router(actor))
     # S5: the admin console backend (/v1/admin/*), behind its own admin-human gate (edp8.admin.auth)
-    app.include_router(admin_router(AdminContext(board=board, tokens=_tokens, write_tokens=_write_humans,
-                                                 tokens_file=_tokens_file, last_seen=_last_seen)))
+    _admin_ctx = AdminContext(board=board, tokens=_tokens, write_tokens=_write_humans,
+                              tokens_file=_tokens_file, last_seen=_last_seen)
+    app.include_router(admin_router(_admin_ctx))
+    # S19: Ask for help, the Help seat's read-only diagnostics and the admin approval of its fixes
+    from .admin import make_admin_actor
+    from .api_doctor import doctor_router
+    app.include_router(doctor_router(board, actor, make_admin_actor(_admin_ctx), _last_seen))
     # epic-91fcd3b370 S3: where code-server is (port from EDP_CODE_PORT) and whether it is up; the FAQ
     from .api_code import code_router
     from .views import render_markdown

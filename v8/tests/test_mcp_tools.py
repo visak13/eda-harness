@@ -63,10 +63,15 @@ def test_all_role_bundle_names_resolve():
 
 
 def test_knowledge_tools_available_to_every_role():
+    # S19: the read-only Help seat keeps lookup but never gets a knowledge write
+    from edp8.bundles import READ_ONLY_ROLES
     for role in ROLE_BUNDLES:
         names = {t.name for t in tools_for_role(role)}
-        for kt in ("record_decision", "record_claim", "lookup"):
+        writes = ("record_decision", "record_claim")
+        for kt in (writes if role not in READ_ONLY_ROLES else ()) + ("lookup",):
             assert kt in names, f"{role} is missing {kt}"
+        if role in READ_ONLY_ROLES:
+            assert not set(writes) & names, role
 
 
 def test_close_self_stays_last_for_doers():

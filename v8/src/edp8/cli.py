@@ -391,6 +391,8 @@ def help_cmd(_argv: list[str]) -> int:
         ("restart [svc|all]", "restart through the supervisor (records service_restarted)"),
         ("status", "one row per service: state, pid, port, url, rev, uptime, last probe, last restart"),
         ("doctor", "check prerequisites, harnesses, ports, secrets and claude folder trust"),
+        ("doctor --agent [text]", "ask the Help seat (an agent that diagnoses and proposes fixes you approve)"),
+        ("doctor --bundle [PATH]", "write a redacted diagnostics zip to attach to a GitHub issue"),
         ("update", "check for a new release; --apply installs it (backup, stop, upgrade, start)"),
         ("import --from DIR", "copy an existing v8 install's state (dry run first; --apply to copy)"),
         ("gui", "open the desktop app"),

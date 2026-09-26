@@ -44,6 +44,8 @@ _INDEXED: dict[str, list[str]] = {
     "policy": ["status", "parent"],
     "rsi_run": ["verdict", "trigger", "started_at"],
     "rsi_state": [],
+    # S19: the Help seat's proposed fixes (edp8.fixes), decided by an admin
+    "fix": ["topic_id", "status"],
 }
 
 

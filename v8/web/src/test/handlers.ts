@@ -37,6 +37,8 @@ export const handlers = [
     HttpResponse.json({ ok: true, value: { decisions: 0, epics: 0, seats: 0, library: 0 } }),
   ),
   http.get("/v1/epics/summary", () => HttpResponse.json({ ok: true, value: [] })),
+  // S19: no proposed fixes by default (the Help seat's approval cards)
+  http.get("/v1/fixes", () => HttpResponse.json({ ok: true, value: [] })),
   // S-ROLES: the per-role model catalog (models.json role_models)
   http.get("/v1/models", () => HttpResponse.json({ ok: true, value: MODEL_CATALOG, hint: "" })),
   // The live feed: an open stream that never emits (tests that need events override this).

@@ -62,6 +62,22 @@ describe("Library topics", () => {
     await waitFor(() => expect(screen.queryByTestId("topic-open-dialog")).toBeNull()); // no experts: straight to the topic
   });
 
+  it("a help thread (S19) names its Help seat and shows the thread's fix cards", async () => {
+    const asked: string[] = [];
+    server.use(http.get("/v1/fixes", ({ request }) => {
+      asked.push(new URL(request.url).search);
+      return okJson([{ id: "fix-9", topic_id: "topic-1", created_by: "doctor.topic-1", created_at: "2026-09-27",
+        action: { kind: "service.restart", service: "broker" }, effect: "Restart the broker.",
+        request: { method: "POST", path: "/v1/admin/services/broker/restart", body: { force: false, keep_seats: false } },
+        status: "proposed", decided_by: null, decided_at: null, result: null, card: "" }]);
+    }));
+    mountPage({ ...PAGE, topic: { ...PAGE.topic, tags: ["help"] }, seat: { ...PAGE.seat, participant: "doctor.topic-1" } });
+    await screen.findByTestId("topic-page");
+    expect(screen.getByTestId("topic-seat")).toHaveTextContent("Help seat doctor.topic-1");
+    expect(await screen.findByTestId("fix-request")).toHaveTextContent("POST /v1/admin/services/broker/restart");
+    expect(asked[0]).toContain("topic_id=topic-1");
+  });
+
   it("shows docs, thread, experts, seat and who set the tags; the owner edits the tags", async () => {
     let tags: unknown = null;
     server.use(http.patch("/v1/topics/:id/tags", async ({ request }) => { tags = await request.json(); return okJson({}); }));

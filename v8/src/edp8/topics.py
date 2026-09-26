@@ -27,7 +27,7 @@ from urllib.parse import quote, urljoin, urlsplit
 import httpx
 
 from . import seat_choice
-from .board import _TERMINAL, Board, BoardError, is_topic
+from .board import _TERMINAL, Board, BoardError, is_help, is_topic, topic_seat_role
 from .library import MAX_BYTES, TIMEOUT_S, normalize_source
 from .schemas import (
     KNOWLEDGE_DOC_TYPES,
@@ -55,8 +55,13 @@ _RESERVED_HANDLES = frozenset({"agents", "owner"})
 EXPERT_KINDS = (MessageKind.note, MessageKind.question, MessageKind.answer)
 
 
-def seat_id(topic_id: str) -> str:
-    return f"{SEAT_ROLE}.{topic_id}"
+def seat_id(topic_id: str, role: str = SEAT_ROLE) -> str:
+    return f"{role}.{topic_id}"
+
+
+def seat_of(board: Board, topic_id: str) -> str:
+    """The resident seat's participant id: `sme.<topic>`, or `doctor.<topic>` on a help thread (S19)."""
+    return seat_id(topic_id, topic_seat_role(board.store.get("ticket", topic_id)))
 
 
 def topic(board: Board, topic_id: str) -> Ticket:
@@ -167,25 +172,27 @@ def ensure_seat(board: Board, topic_id: str) -> str | None:
     t = topic(board, topic_id)
     if t.status in _TERMINAL:
         return None
-    pid = seat_id(t.id)
+    role = topic_seat_role(t)
+    pid = seat_id(t.id, role)
     with board._lock:
         if board.store.get("participant", pid) is None:
             try:
-                board.participant_create("agent", Role.sme, pid, id_=pid)
+                board.participant_create("agent", Role(role), pid, id_=pid)
             except BoardError:
                 pass
         if t.assignee != pid:
             t.assignee = pid
             board.store.put("ticket", t)
             board._emit(t.id, EventKind.assigned, {"assignee": pid, "by": "board"})
-        board._enqueue_pairing(pid, SEAT_ROLE, t.id)
+        board._enqueue_pairing(pid, role, t.id)
     return pid
 
 
 def close(board: Board, actor: Participant, topic_id: str) -> Ticket:
     """The owner closes the topic: status done (board-authored — topics have no delivery walk), the seat
     released through the pool, the thread read-only. Docs and proposals stay in the Library."""
-    _owner_only(actor, "closes a Library topic")
+    if not (is_help(board.store.get("ticket", topic_id)) and actor.id == board.ticket(topic_id).created_by):
+        _owner_only(actor, "closes a Library topic")  # S19: the person who asked closes their own help thread
     with board._lock:  # adversary 09-23 #4: a tag write that read the open ticket must not put it back open
         t = topic(board, topic_id)
         _open(t)
@@ -194,9 +201,9 @@ def close(board: Board, actor: Participant, topic_id: str) -> Ticket:
         board.store.put("ticket", t)
         board._emit(t.id, EventKind.status_changed, {"from": old.value, "to": "done", "by": actor.id,
                                                      "note": "topic closed by the owner"})
-        board._pending_pairings.pop(seat_id(t.id), None)
+        board._pending_pairings.pop(seat_of(board, t.id), None)
     try:
-        board._pool_adapter().close(seat_id(t.id), f"topic {t.id} closed by the owner")
+        board._pool_adapter().close(seat_of(board, t.id), f"topic {t.id} closed by {actor.id}")
     except Exception:  # noqa: BLE001 — a pool hiccup never keeps a topic open; the owner can reap the seat
         pass
     return t
@@ -329,12 +336,12 @@ def doc_for(board: Board, topic_id: str, doc_id: str) -> Any:
 def seat_view(board: Board, topic_id: str) -> dict[str, Any]:
     """The seat's latest session state (alive|parked|dead|stalled, mirrored from the pool); before the pool
     reports a session: queued (pairing pending), spawned (the pool took it) or not spawned."""
-    pid = seat_id(topic_id)
+    pid = seat_of(board, topic_id)
     state = board.seat_state(pid)
     if state is None:
         state = ("queued" if pid in board._pending_pairings
                  else "spawned" if board.store.get("participant", pid) is not None else "not spawned")
-    choice = board.seat_choice_for(topic_id, role=SEAT_ROLE)
+    choice = board.seat_choice_for(topic_id, role=pid.split(".", 1)[0])
     return {"participant": pid, "state": state, "model": choice.model, "effort": choice.effort}
 
 
@@ -353,7 +360,7 @@ def row(board: Board, t: Ticket) -> dict[str, Any]:
 
 def list_view(board: Board) -> list[dict[str, Any]]:
     ts = board.store.query("ticket", {"kind": TicketKind.topic.value}, limit=-1, newest_first=True)
-    return [row(board, t) for t in ts]  # type: ignore[arg-type]
+    return [row(board, t) for t in ts if not is_help(t)]  # type: ignore[arg-type]  # S19: help is not Library
 
 
 def page(board: Board, topic_id: str, *, thread_limit: int = 200) -> dict[str, Any]:

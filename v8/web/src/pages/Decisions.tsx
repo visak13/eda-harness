@@ -26,6 +26,7 @@ import { Composer } from "../components/Composer";
 import { GateForm, useRetainedGates } from "../components/GateForm";
 import { AgentLine } from "../components/AgentLine";
 import { RulingDrawer } from "../components/RulingDrawer";
+import { FixCards } from "../components/FixCards";
 import { presenceOf } from "./presence";
 import { Avatar } from "../components/Avatar";
 import { identity } from "../auth/identity";
@@ -125,6 +126,9 @@ export function DecisionsPage(): React.JSX.Element {
             </select>
           </label>
         </div>
+
+        {/* S19: the Help seat's proposed fixes, for an admin (a non-admin's /v1/fixes is 403: nothing renders) */}
+        <FixCards />
 
         <NeedsYou questions={liveQuestions} gates={gates} titleFor={titleFor}
           scope={epicFilter === ALL ? "any epic" : titleFor(epicFilter)} />

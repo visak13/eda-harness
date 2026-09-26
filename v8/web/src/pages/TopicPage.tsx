@@ -8,6 +8,7 @@ import { PageHeader } from "../components/PageHeader";
 import { parseTags } from "./KnowledgeDetail";
 import { errText, when } from "./Topics";
 import { TopicExperts, TopicThread } from "./TopicPanels";
+import { FixCards } from "../components/FixCards";
 import styles from "./Topics.module.css";
 
 // S-SME-SURFACE (s-698224fca8): one Library topic — docs, thread, experts, seat and tags. The same page
@@ -29,6 +30,8 @@ export function TopicPage(): React.JSX.Element {
   const p = q.data;
   const owner = p.viewer.role !== "expert";
   const isOpen = p.topic.status === "open";
+  // S19: a help thread (tag `help`) has a resident Help seat, not an sme, and carries its fix cards
+  const help = p.topic.tags.includes("help");
   return (
     <div data-testid="topic-page">
       <PageHeader title="Library" subtitle={owner ? "A topic you keep, with its resident sme." : `You are an expert on this topic (${p.viewer.id}).`} />
@@ -36,7 +39,7 @@ export function TopicPage(): React.JSX.Element {
       <div className={styles.head}>
         <h2 className={styles.headTitle}>{p.topic.title}</h2>
         <span className={ui.tag} data-testid="topic-status">{p.topic.status}</span>
-        <span className={styles.muted} data-testid="topic-seat">sme seat {p.seat.participant} · {p.seat.state}{p.seat.model ? ` · ${p.seat.model}${p.seat.effort ? ` at ${p.seat.effort}` : ""}` : ""}</span>
+        <span className={styles.muted} data-testid="topic-seat">{help ? "Help seat" : "sme seat"} {p.seat.participant} · {p.seat.state}{p.seat.model ? ` · ${p.seat.model}${p.seat.effort ? ` at ${p.seat.effort}` : ""}` : ""}</span>
         {owner && isOpen ? (
           <button type="button" className={ui.button} disabled={close.isPending} data-testid="topic-close"
             onClick={() => { if (window.confirm("Close this topic? Its sme seat is released.")) close.mutate(); }}>
@@ -51,6 +54,7 @@ export function TopicPage(): React.JSX.Element {
         <div className={styles.col}>
           <TopicTags page={p} canEdit={owner && isOpen} />
           <TopicDocs page={p} />
+          {help ? <FixCards topicId={p.topic.id} /> : null}
           <TopicThread page={p} />
         </div>
         <div className={styles.col}>

@@ -158,6 +158,13 @@ class BoardClient:
         return self._request("POST", "/v1/docs", json={**body, **{k: v for k, v in extra.items() if v is not None}})
 
     # S-SME-SURFACE: a Library topic's sme browses (bounded, receipted) and files proposals
+    # ------------------------------------------------------------------ S19 doctor (read-only + propose_fix)
+    def doctor_read(self, what: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self._request("GET", f"/v1/doctor/{what}", params=params)
+
+    def propose_fix(self, topic_id: str, action: dict[str, Any], effect: str) -> dict[str, Any]:
+        return self._request("POST", "/v1/fixes", json={"topic_id": topic_id, "action": action, "effect": effect})
+
     def topic_research(self, topic_id: str, query: str | None = None, url: str | None = None) -> dict[str, Any]:
         return self._request("POST", f"/v1/topics/{topic_id}/research", json={"query": query, "url": url})
 

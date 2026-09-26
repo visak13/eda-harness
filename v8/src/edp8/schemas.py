@@ -35,6 +35,9 @@ class Role(StrEnum):
     # S-SME-SURFACE (owner m-de07c37d0c): a named human from the owner's team linked to ONE Library topic;
     # its token reaches that topic's page, docs and thread and nothing else (service.topic_actor)
     expert = "expert"
+    # S19 (design-e963c656f5 §4.14(e).5): the kernel-provided Help seat. Read-only diagnostics; it proposes
+    # fixes an admin approves (edp8.fixes) and is resident on a `help` topic (edp8.help)
+    doctor = "doctor"
 
 
 class CustomRole(str):
@@ -685,6 +688,20 @@ class RsiState(Obj):
     story_watermarks: dict[str, int] = Field(default_factory=dict)
 
 
+class FixProposal(Obj):
+    """S19 (design-e963c656f5 §4.14(e).5): a fix the Help seat proposed on its help thread. It is inert
+    until an admin approves it; the approval runs `request` (the exact S5 admin/board route call, shown
+    on the card) once, as that admin, and records the result. A decided proposal is never run again."""
+    topic_id: str
+    action: dict[str, Any]
+    effect: str
+    request: dict[str, Any]  # {method, path, body}: exactly what Approve runs
+    status: Literal["proposed", "applied", "failed", "rejected"] = "proposed"
+    decided_by: str | None = None
+    decided_at: datetime | None = None
+    result: dict[str, Any] | None = None
+
+
 OBJECT_TYPES: dict[str, type[Obj]] = {
     "participant": Participant,
     "ticket": Ticket,
@@ -702,6 +719,7 @@ OBJECT_TYPES: dict[str, type[Obj]] = {
     "policy": Policy,
     "rsi_run": RsiRun,
     "rsi_state": RsiState,
+    "fix": FixProposal,
 }
 
 # Every strict-valued enum in the model, keyed by class name.

@@ -114,6 +114,9 @@ def is_quick(t: Ticket) -> bool:
 
 
 QUICK_ENGINEER_CARD = "engineer-quick"
+#: S19: the Help seat diagnoses through its board tools only; its claude shell gets no shell or file writes
+#: (the pool turns this spawn env into `--disallowedTools`; a codex seat of an unlisted role is read-only)
+DOCTOR_DISALLOWED_TOOLS = "Bash,PowerShell,Edit,Write,MultiEdit,NotebookEdit"
 
 
 def seat_card_env(t: Ticket | None, role: str) -> dict[str, str]:
@@ -150,6 +153,20 @@ def materialise_card(name: str, text: str, home: Any = None) -> Any:
 def is_topic(t: Ticket | None) -> bool:
     """A Library topic (S-SME-SURFACE): its own parentless record, opened and closed by the owner."""
     return t is not None and t.kind == TicketKind.topic
+
+
+HELP_TAG = "help"
+
+
+def is_help(t: Ticket | None) -> bool:
+    """A help thread (S19): a topic tagged `help`, opened by any human from Ask for help or
+    `heronry doctor --agent`, with a resident doctor seat instead of an sme; never listed in the Library."""
+    return is_topic(t) and HELP_TAG in (t.tags or [])  # type: ignore[union-attr]
+
+
+def topic_seat_role(t: Ticket | None) -> str:
+    """The resident seat's role on a topic: doctor on a help thread, else the Library's sme."""
+    return Role.doctor.value if is_help(t) else Role.sme.value
 # S22 c-0615088222: every feed queue (wake and view) is bounded. Drop policy: when a queue is full the
 # OLDEST queued event is dropped and the queue is marked `resync`; the SSE stream then sends
 # `: resync <cursor>` and ends, and the client reconnects from its last seq — the replay by seq
@@ -234,6 +251,8 @@ class Board:
             if text is not None:
                 materialise_card(name, text)
                 env = {"EDP_CARD": name}
+        if role == Role.doctor.value:
+            env = {**env, "EDP_SEAT_DISALLOWED_TOOLS": DOCTOR_DISALLOWED_TOOLS}
         return {"env": env, "capacity": wf.capacity(role), "workflow": wf.ref}
 
     def _wf_check(self, wf: wflow.Workflow, pres: list, ctx: wflow.Ctx, *, skip_roles: bool = False,
@@ -350,6 +369,9 @@ class Board:
         if kind in (TicketKind.epic, TicketKind.topic) and parent_id:
             raise BoardError("schema", f"an {kind} has no parent")
         clean_tags = [x.strip() for x in (tags or []) if x.strip()]
+        if HELP_TAG in clean_tags:  # S19: a help thread is opened by POST /v1/help (edp8.help), with its doctor seat
+            raise BoardError("invalid", f"the `{HELP_TAG}` tag marks a help thread",
+                             "ask for help (POST /v1/help, the rail's Ask for help, `heronry doctor --agent`)")
         quick = kind == TicketKind.story and QUICK_TAG in clean_tags
         if quick and actor.role != Role.owner:
             raise BoardError("scope", f"only the owner opens a quick task (tag `{QUICK_TAG}`)",
@@ -683,6 +705,10 @@ class Board:
                     # S-QUICK: the tag decides who checks and whether a design is needed — fixed at create
                     raise BoardError("scope", f"the `{QUICK_TAG}` tag is set when the owner opens a quick task",
                                      "keep or leave out the tag as it was at create")
+                if is_topic(t) and (HELP_TAG in new_tags) != is_help(t):
+                    # S19: the tag decides the resident seat's role (sme vs doctor) — fixed at create
+                    raise BoardError("scope", f"the `{HELP_TAG}` tag marks a help thread and is fixed at create",
+                                     "keep or leave out the tag as it was")
                 self._check_seat_tags(actor, t, new_tags)
                 t.tags = new_tags
                 changed["tags"] = t.tags
@@ -955,7 +981,8 @@ class Board:
                 if checker:
                     self._enqueue_pairing(f"{checker}.{t.id}", checker, t.id)
             elif is_topic(t) and t.status not in _TERMINAL:  # S-SME-SURFACE: resident until the owner closes
-                self._enqueue_pairing(f"{Role.sme.value}.{t.id}", Role.sme.value, t.id)
+                role = topic_seat_role(t)  # S19: a help topic's resident seat is the doctor
+                self._enqueue_pairing(f"{role}.{t.id}", role, t.id)
 
     def _pairing_epic_active(self, ticket_id: str) -> bool:
         """§24.1(a): the pairing's epic is still active. A qa pairing's ticket IS the epic; a reviewer
@@ -2614,10 +2641,10 @@ class Board:
     def topic_of_seat(self, p: Participant) -> Ticket | None:
         """The Library topic this participant is the resident sme seat of (sme.<topic-id>, or the topic's
         assignee), else None (S-SME-SURFACE)."""
-        if p.role != Role.sme:
+        if p.role not in (Role.sme, Role.doctor):
             return None
         t = self.store.get("ticket", p.id.split(".", 1)[1]) if "." in p.id else None
-        if is_topic(t):
+        if is_topic(t) and topic_seat_role(t) == p.role.value:  # type: ignore[arg-type]
             return t  # type: ignore[return-value]
         hits = [x for x in self.store.query("ticket", {"assignee": p.id, "kind": TicketKind.topic.value}, limit=5)]
         return hits[0] if hits else None  # type: ignore[return-value]

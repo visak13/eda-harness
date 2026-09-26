@@ -385,3 +385,37 @@ export const getScopeDecisions = (scope: string) =>
 /** GET /v1/find — exact words ∪ semantic hits; ticket hits carry title+status, doc hits their title. */
 export const findBoard = (q: string, types: string, k = 20) =>
   api<{ type: string; id: string; title?: string; status?: string; snippet?: string }[]>(`/v1/find${qs({ q, types, k })}`);
+
+// ------------------------------------------------------------------ S19 Help seat
+/** A fix the Help seat proposed: inert until an admin approves; Approve runs `request` exactly once. */
+export interface FixProposal {
+  id: string;
+  topic_id: string;
+  created_by: string;
+  created_at: string;
+  action: Record<string, unknown> & { kind: string };
+  effect: string;
+  request: { method: string; path: string; body: unknown };
+  status: "proposed" | "applied" | "failed" | "rejected";
+  decided_by: string | null;
+  decided_at: string | null;
+  result: { http_status?: number; response?: unknown; reason?: string } | null;
+  card: string;
+}
+export interface HelpOpened {
+  topic: { id: string; title: string };
+  seat: TopicSeat;
+  resumed: boolean;
+  message: string | null;
+  url: string;
+}
+
+/** POST /v1/help — open (or resume) the caller's help thread with its Help seat. */
+export const askForHelp = (text = "") => postJson<HelpOpened>("/v1/help", { text });
+/** GET /v1/fixes — proposals an admin decides (a non-admin gets 403). */
+export const getFixes = (f: { status?: string | null; topic_id?: string | null } = {}) =>
+  api<FixProposal[]>(`/v1/fixes${qs(f)}`);
+export const approveFix = (id: string) =>
+  postJson<{ fix: FixProposal; response: unknown }>(`/v1/admin/fixes/${encodeURIComponent(id)}/approve`, {});
+export const rejectFix = (id: string, reason = "") =>
+  postJson<FixProposal>(`/v1/admin/fixes/${encodeURIComponent(id)}/reject`, { reason });

@@ -263,3 +263,53 @@ describe("Code tab route (S3)", () => {
     expect(shell).not.toHaveAttribute("data-bleed");
   });
 });
+
+describe("Ask for help (S19 c-190f5c6276)", () => {
+  function renderWithTopic() {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={qc}>
+        <ThemeProvider>
+          <MemoryRouter initialEntries={["/me"]}>
+            <Routes>
+              <Route element={<AppShell />}>
+                <Route path="me" element={<div>decisions body</div>} />
+                <Route path="library/topics/:id" element={<div data-testid="topic-route">topic page</div>} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </ThemeProvider>
+      </QueryClientProvider>,
+    );
+  }
+
+  it("opens the viewer's help thread with its Help seat and shows it", async () => {
+    const posts: unknown[] = [];
+    server.use(http.post("/v1/help", async ({ request }) => {
+      posts.push(await request.json());
+      return HttpResponse.json({ ok: true, value: {
+        topic: { id: "topic-h1", title: "Help: I need help" }, resumed: false, message: "m-1",
+        seat: { participant: "doctor.topic-h1", state: "queued" }, url: "/ui/library/topics/topic-h1" }, hint: "" });
+    }));
+    renderWithTopic();
+    fireEvent.click(screen.getByTestId("ask-help"));
+    expect(await screen.findByTestId("topic-route")).toBeInTheDocument();
+    expect(posts).toEqual([{ text: "" }]);
+  });
+
+  it("shows the board's refusal and stays put", async () => {
+    server.use(http.post("/v1/help", () =>
+      HttpResponse.json({ ok: false, error: { code: "http", message: "Ask for help is for the people who run this board" }, hint: "" }, { status: 403 })));
+    renderWithTopic();
+    fireEvent.click(screen.getByTestId("ask-help"));
+    expect(await screen.findByTestId("ask-help-error")).toHaveTextContent("Ask for help is for the people");
+    expect(screen.queryByTestId("topic-route")).toBeNull();
+  });
+
+  it("is not offered to an expert", async () => {
+    server.use(http.get("/v1/whoami", () =>
+      HttpResponse.json({ ok: false, error: "expert 'dana' reaches only its Library topic" }, { status: 403 })));
+    renderWithTopic();
+    await waitFor(() => expect(screen.queryByTestId("ask-help")).toBeNull());
+  });
+});

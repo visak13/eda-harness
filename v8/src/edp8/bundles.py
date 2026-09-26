@@ -1821,6 +1821,71 @@ TOPIC_TOOLS = [
             TopicProposeArgs, _topic_propose, "knowledge"),
 ]
 
+# ============================================================================= doctor (S19)
+# The Help seat's tools: reads of the board, pool, supervisor, logs and pain log (edp8.doctor), plus
+# propose_fix, which files an inert proposal an admin approves (edp8.fixes). Nothing here changes state.
+
+
+class NoArgs(BaseModel):
+    pass
+
+
+class WhyStuckArgs(BaseModel):
+    ticket_id: str = Field(description="the ticket the person says is stuck")
+
+
+class WorkflowCheckArgs(BaseModel):
+    ref: str = Field(description="workflow id or id@version, e.g. standard@1")
+
+
+class DoctorLogsArgs(BaseModel):
+    service: str = Field(description="board|broker|pool|mcp|bridge|supervisor|update|update-run, or pool-logs/<name>; a wrong name lists the available logs")
+    lines: int = Field(default=100, ge=1, le=500)
+
+
+class ProposeFixArgs(BaseModel):
+    topic_id: str = Field(description="your help thread (the topic in your context)")
+    action: dict[str, Any] = Field(description="{kind: service.restart|service.start|service.stop|pool.set_limits|"
+                                               "gate.open|gate.answer|teammate.rotate_token|agent_token.revoke, "
+                                               "...its fields}")
+    effect: str = Field(description="what the fix will do, in one or two plain sentences")
+
+
+def _doctor_get(what: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    return get_client().doctor_read(what, params)
+
+
+DOCTOR_TOOLS = [
+    ToolDef("doctor_health", "Service health, the supervisor, package versions and pool reachability",
+            "first, for any 'it is broken' report", "services + causes (named root causes with a fix and a guide)",
+            NoArgs, lambda a: _doctor_get("health"), "doctor"),
+    ToolDef("doctor_pool", "Pool liveness, sessions, caps and usage, saturated caps and queued spawns",
+            "seats not spawning, false deaths, slow spawns", "the pool view + causes",
+            NoArgs, lambda a: _doctor_get("pool"), "doctor"),
+    ToolDef("doctor_feed_lag", "Per live seat: unread addressed messages, their age, last request and output",
+            "a seat that does not answer or wake", "seats + causes", NoArgs, lambda a: _doctor_get("feed-lag"), "doctor"),
+    ToolDef("doctor_dead_mail", "Broker publishes that had no recipient (publish_no_route)",
+            "a message that never arrived", "the dead messages + causes",
+            NoArgs, lambda a: _doctor_get("dead-mail"), "doctor"),
+    ToolDef("why_stuck", "Why a ticket does not move: gates nobody can answer, a missing checker or doer seat, "
+            "blockers, the next edges' missing preconditions, a full cap",
+            "a stuck ticket, epic or gate", "the ticket's facts + causes",
+            WhyStuckArgs, lambda a: _doctor_get(f"why-stuck/{a.ticket_id}"), "doctor"),
+    ToolDef("workflow_check", "Validate a workflow version and walk its status graph (unreachable, dead ends)",
+            "a stuck walk under a custom workflow, or a failed update compat check", "problems, walk + causes",
+            WorkflowCheckArgs, lambda a: _doctor_get(f"workflow/{a.ref}"), "doctor"),
+    ToolDef("doctor_pains", "Open pain records (tools or guides found wrong)",
+            "to see whether a symptom is already known", "the open pains",
+            NoArgs, lambda a: _doctor_get("pains"), "doctor"),
+    ToolDef("doctor_logs", "A redacted log tail (secrets, user paths, emails and tokens scrubbed)",
+            "after a health or pool cause names a service", "the tail, or the available logs",
+            DoctorLogsArgs, lambda a: _doctor_get(f"logs/{a.service}", {"lines": a.lines}), "doctor"),
+    ToolDef("propose_fix", "Propose ONE fix as an admin approval card showing the exact action; nothing runs "
+            "until an admin approves, then the result is posted on your thread",
+            "after the evidence names a root cause a listed action fixes", "the proposal and its card",
+            ProposeFixArgs, lambda a: get_client().propose_fix(a.topic_id, a.action, a.effect), "doctor"),
+]
+
 KNOWLEDGE_TOOLS = [
     ToolDef("record_decision",
             'Record what is in force, why, and which decisions it replaces',
@@ -2047,6 +2112,7 @@ ALL_TOOLS: dict[str, ToolDef] = {
     t.name: t for t in (
         IDENTITY_TOOLS + TICKET_TOOLS + DOC_TOOLS + THREAD_TOOLS + BOARD_TOOLS + POOL_TOOLS
         + SEARCH_TOOLS + KNOWLEDGE_TOOLS + TOPIC_TOOLS + RULESET_TOOLS + ARTIFACT_TOOLS + CLOSE_TOOLS
+        + DOCTOR_TOOLS
     )
 }
 
@@ -2083,7 +2149,16 @@ ROLE_BUNDLES: dict[str, list[str]] = {
         + ["find", "participants", "assemble_ruleset", "artifact_create", "artifact_read"] + _CLOSING,
     Role.qa.value: _IDENTITY + _TICKET_RO + _CHECK + _DOC_RW + _THREAD + _BOARD
         + ["find", "assemble_ruleset", "artifact_create", "artifact_read"] + _CLOSING,
+    # S19: the Help seat is read-only — reads, its thread's messages, propose_fix (an inert proposal an admin
+    # approves) and the kernel's communication tools; no ticket/doc/criterion/decision/gate/spawn write
+    Role.doctor.value: _IDENTITY + ["ticket_read", "ticket_query", "criterion_query", "doc_read", "doc_query",
+                                    "message_send", "message_query", "message_read", "gates", "participants",
+                                    "events_query", "board", "find", "lookup"]
+        + [t.name for t in DOCTOR_TOOLS] + _CLOSING,
 }
+
+#: S19: roles whose bundle is read-only; the loops below never add a write tool to them
+READ_ONLY_ROLES = frozenset({Role.doctor.value})
 
 
 for _role_tools in ROLE_BUNDLES.values():
@@ -2102,7 +2177,9 @@ for _role_tools in ROLE_BUNDLES.values():
 # record_decision/record_claim/lookup are available to EVERY role (design-d2c4f39fc6 §2: the tools
 # any seat calls). Insert before the closing triplet where a doer has one — close_self stays last
 # (test_lifecycle_fixes.py). A role that already has a name (none do) is not duplicated.
-for _role_tools in ROLE_BUNDLES.values():
+for _role, _role_tools in ROLE_BUNDLES.items():
+    if _role in READ_ONLY_ROLES:  # S19: lookup is already there; the record_*/withdraw_*/set_binding writes are not
+        continue
     _at = _role_tools.index("inbox") if "close_self" in _role_tools else len(_role_tools)
     for _kt in ("record_decision", "record_claim", "record_lesson", "lookup", "withdraw_decision", "withdraw_claim",
                 "set_binding", "dense_search"):

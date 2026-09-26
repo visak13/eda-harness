@@ -20,7 +20,7 @@ from pathlib import Path
 from edp8.bundles import ALL_TOOLS, tools_for_role
 
 V8 = Path(__file__).resolve().parents[1]
-SEAT_ROLES = ("owner", "architect", "engineer", "qa", "sme", "adversary")
+SEAT_ROLES = ("owner", "architect", "engineer", "qa", "sme", "adversary", "doctor")
 _ALT = "|".join(sorted(ALL_TOOLS, key=len, reverse=True))
 _CALL = re.compile(r"`(" + _ALT + r")\b[^`]*`|(?<![.\w])(" + _ALT + r")\(")
 _ROLE = "|".join(SEAT_ROLES)
@@ -49,13 +49,24 @@ def _card_skills() -> dict[str, set[str]]:
     return out
 
 
+#: S19: the read-only Help seat reads a skill only when its card lists it, and a guide only when the guide's
+#: roles comment names it; an unscoped file speaks to the working roles
+_READ_ONLY = {"doctor"}
+
+
 def _scoped_files() -> list[tuple[Path, set[str]]]:
     files: list[tuple[Path, set[str]]] = []
     for role, card in _cards():
         files.append((card, {role}))
+    listed = _card_skills()
     for p in sorted((V8 / ".claude" / "skills").glob("*/SKILL.md")) + sorted((V8 / "guides").glob("*.md")):
         m = _FILE_SCOPE.search(p.read_text(encoding="utf-8"))
-        roles = {r.strip() for r in m.group(1).split(",")} if m else set(SEAT_ROLES)
+        if m:
+            roles = {r.strip() for r in m.group(1).split(",")}
+        else:
+            roles = set(SEAT_ROLES) - _READ_ONLY
+            if p.name == "SKILL.md":
+                roles |= _READ_ONLY & listed.get(p.parent.name, set())
         files.append((p, roles))
     return files
 

@@ -248,6 +248,9 @@ class SubprocessSpawner(Spawner):
             env.update({str(k): str(v) for k, v in extra_env.items()})
         # phase 5: snapshot/branch flags (pin id / resume+fork a base).
         sargs = build_session_args(claude_session, resume_session)
+        # S19: a role the board declares tool-restricted (the read-only Help seat) spawns with claude's own
+        # deny list, so its shell has no Bash/Edit/Write even under skip-permissions
+        sargs = [*sargs, *disallowed_tools_args(extra_env)]
 
         # 2026-05-31: VISIBLE shells (operator watches the agents).
         # `monitor` → a real console window; `headless` → drained ConPTY.
@@ -382,3 +385,15 @@ class SubprocessSpawner(Spawner):
             return log_path.stat().st_mtime
         except OSError:
             return None
+
+
+#: spawn env naming the claude tools a seat must not have (comma/space separated), set by the board's
+#: seat spec (edp8 board.seat_spawn_spec: the doctor role)
+DISALLOWED_TOOLS_ENV = "EDP_SEAT_DISALLOWED_TOOLS"
+
+
+def disallowed_tools_args(extra_env: dict | None) -> list[str]:
+    """`--disallowedTools <names>` for a seat whose spawn env lists them, else nothing."""
+    raw = str((extra_env or {}).get(DISALLOWED_TOOLS_ENV) or "")
+    names = [n for n in raw.replace(",", " ").split() if n]
+    return ["--disallowedTools", " ".join(names)] if names else []
