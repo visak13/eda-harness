@@ -103,3 +103,28 @@ def test_whoami_says_who_is_an_admin(tmp_path, monkeypatch):
     env = make_env(tmp_path, monkeypatch)
     assert env.client.get("/v1/whoami", headers=ADMIN_H).json()["value"]["admin"] is True
     assert env.client.get("/v1/whoami", headers=BOB_H).json()["value"]["admin"] is False
+
+
+def test_token_writes_keep_the_tokens_file_private(tmp_path, monkeypatch):
+    """S6 walkthrough finding: an invite/revoke/rotate/agent mint rewrote tokens.json through a plain temp
+    file, which inherited the directory's ACL; an installed board then refused its next start ("the tokens
+    file is not private"). Every writer now keeps it owner-only."""
+    import json
+
+    from edp_contracts.settings import secrets as secret_files
+    env = make_env(tmp_path, monkeypatch)
+    data = env.tokens.read_text(encoding="utf-8")
+    env.tokens.unlink()
+    secret_files.write_secret(env.tokens, data)
+    assert secret_files.problems(env.tokens) == []
+    assert env.client.post("/v1/admin/teammates", headers=ADMIN_H, json={"handle": "carol"}).status_code == 200
+    code = env.client.post("/v1/admin/teammates/carol/invite", headers=ADMIN_H).json()["value"]["code"]
+    assert env.client.post("/v1/join", json={"code": code}).status_code == 200         # human token minted
+    assert secret_files.problems(env.tokens) == []
+    assert env.client.post("/v1/admin/teammates/carol/rotate", headers=ADMIN_H).status_code == 200
+    assert env.client.post("/v1/admin/teammates/carol/revoke", headers=ADMIN_H).status_code == 200
+    assert secret_files.problems(env.tokens) == []
+    env.board._mint_token("eng.y")                                                      # agent mint at spawn
+    assert secret_files.problems(env.tokens) == []
+    assert "eng.y" in json.loads(env.tokens.read_text(encoding="utf-8"))["agents"]
+    assert not list(tmp_path.glob("tokens.json*.tmp"))

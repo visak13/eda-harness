@@ -349,6 +349,17 @@ def tokens_file_path() -> Path:
     return settings.get("EDP8_TOKENS")
 
 
+def _replace_private(f: Path, text: str) -> None:
+    """Rewrite a secret file atomically AND keep it private: the temp file is created owner-only
+    (write_secret) and the rename carries that ACL. A plain write_text temp inherited the directory's ACL,
+    so the first token mint/invite/revoke on an installed copy left tokens.json readable by others and the
+    next board start refused (found by the S6 private-instance walkthrough)."""
+    tmp = f.with_name(f"{f.name}.{os.getpid()}.tmp")
+    tmp.unlink(missing_ok=True)
+    secret_files.write_secret(tmp, text)
+    os.replace(tmp, f)
+
+
 def public_startup_error(admin_token: str | None, tokens_path: Path | None = None) -> str | None:
     """§15/§20 fail-closed gate for public mode. Returns a one-line plain reason to REFUSE
     start (never bind to the network open), or None when it is safe. Trusted mode is the
@@ -551,9 +562,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         secret = secrets.token_urlsafe(24)
         agents[handle.lstrip("@")] = secret
         data["agents"] = agents
-        tmp = f.with_suffix(f.suffix + ".tmp")
-        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        os.replace(tmp, f)
+        _replace_private(f, json.dumps(data, indent=2))
         return secret
 
     def _write_humans(update) -> None:
@@ -564,9 +573,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             if not isinstance(data, dict):
                 raise RuntimeError(f"{f} is not a JSON object; not writing it")
             update(data)
-            tmp = f.with_suffix(f.suffix + ".tmp")
-            tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-            os.replace(tmp, f)
+            _replace_private(f, json.dumps(data, indent=2))
 
     def _mint_human_token(handle: str) -> str | None:
         """S-SME-SURFACE: an expert's token, minted exactly like the owner's — a top-level handle→secret in
