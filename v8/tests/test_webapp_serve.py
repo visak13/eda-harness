@@ -75,6 +75,31 @@ def test_app_assets_are_immutably_cached(folio_client):
     assert a.headers.get("cache-control") == "public, max-age=31536000, immutable"
 
 
+def test_public_files_serve_as_themselves_not_the_index(tmp_path: Path):
+    # Owner m-20ec2c5207: /ui/brand/favicon.ico returned the HTML fallback, so no favicon or rail
+    # logo. Every file Vite copies from web/public is served as itself; a traversal never escapes dist.
+    dist = tmp_path / "dist"
+    (dist / "brand").mkdir(parents=True)
+    (dist / "index.html").write_text('<div id="root"></div>', encoding="utf-8")
+    (dist / "brand" / "favicon-32.png").write_bytes(b"\x89PNG\r\n\x1a\nxx")
+    (tmp_path / "secret.txt").write_text("nope", encoding="utf-8")
+    app = FastAPI()
+    assert mount_spa(app, "/ui", dist=dist)
+    c = TestClient(app)
+    r = c.get("/ui/brand/favicon-32.png")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+    assert r.content.startswith(b"\x89PNG")
+    assert c.get("/ui/ticket/s-1").headers["content-type"].startswith("text/html")
+    assert "nope" not in c.get("/ui/..%2Fsecret.txt").text
+
+
+@needs_build
+def test_built_bundle_ships_brand_icons(folio_client):
+    for p in ("favicon.ico", "favicon-32.png", "apple-touch-icon.png", "heronry-64.png"):
+        r = folio_client.get("/ui/brand/" + p)
+        assert r.status_code == 200 and r.headers["content-type"].startswith("image/"), p
+
+
 def test_legacy_ui_poll_still_returns_json(client):
     r = client.get("/ui/poll", params={"since": 0, "scope": "all"})
     assert r.status_code == 200

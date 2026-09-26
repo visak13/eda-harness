@@ -82,8 +82,15 @@ def mount_spa(app: FastAPI, prefix: str, dist: str | Path | None = None) -> bool
         return FileResponse(dist_dir / "notifications-worker.js", media_type="application/javascript",
                             headers={"Cache-Control": "no-store"})
 
+    root = dist_dir.resolve()
+
     async def spa_index(path: str = "") -> FileResponse:
-        # SPA fallback: any non-asset path under prefix returns index.html (client routes).
+        # A real file Vite copied from web/public (brand icons, …) is served as itself, revalidated;
+        # only a path that names no file under dist falls back to index.html (client routes).
+        if path:
+            f = (root / path).resolve()
+            if f.is_relative_to(root) and f.is_file() and f != index.resolve():
+                return FileResponse(f, headers={"Cache-Control": "no-cache"})
         return FileResponse(index, media_type="text/html", headers={"Cache-Control": "no-store"})
 
     app.add_api_route(prefix, spa_index, methods=["GET"], include_in_schema=False)
