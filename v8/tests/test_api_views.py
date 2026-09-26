@@ -196,7 +196,8 @@ def test_docs_html_sanitised_with_signoff(client):
     client.patch(f"/v1/criteria/{kcrit}", json={"evidence_ref": doc}, headers={"X-Participant": "craft"})
 
     v = client.get(f"/v1/docs/{doc}/html", headers=OWN).json()["value"]
-    assert "<script" not in v["html"] and "onerror" not in v["html"]
+    # raw HTML renders as escaped text (t-f0ec383cff): no live <script>/<img>, the handler is inert text
+    assert "<script" not in v["html"] and "<img" not in v["html"] and "&lt;img src=x onerror" in v["html"]
     assert "<h1>Title</h1>" in v["html"] and "https://ok.test" in v["html"]
     assert v["versions"] and v["signoff_criterion"]["id"] == kcrit
     # Adversary finding #8 (2026-09-10): EVERY checker sees their pending criteria citing the doc —

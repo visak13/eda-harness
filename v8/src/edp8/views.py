@@ -5,7 +5,7 @@ Extracted from ui.py so BOTH the legacy HTML renderer (ui.py) and the JSON API
 (where identity matters) a Participant; it returns JSON-friendly data (enums as their
 `.value`, datetimes as isoformat) — never HTML, except `render_markdown`/`doc_page`
 which return sanitised document HTML the two renderers share, and a thread row's `html`
-(`render_message_markdown`, the same renderer with raw HTML escaped).
+(`render_message_markdown`, the same renderer plus nl2br). Both escape raw HTML.
 
 Strategy Phase 2 (characterise-then-extract): tests/test_views.py pins the legacy HTML
 BEFORE this module existed; ui.py now sources its derivations here with identical output.
@@ -54,12 +54,23 @@ _ALLOWED_ATTRS = {"a": {"href", "title"}, "img": {"src", "alt", "title"},
 _URL_SCHEMES = {"http", "https", "mailto"}
 
 
+def _escaping_markdown(extensions: list[str]) -> _markdown.Markdown:
+    """Python-Markdown with raw HTML ESCAPED (shown as typed, never parsed): the html block and
+    inline processors are removed. A placeholder like `<card>` in prose once made its whole
+    blank-line-free block an HTML block — unparsed markdown that nh3 then truncated (t-f0ec383cff)."""
+    md = _markdown.Markdown(extensions=extensions)
+    md.preprocessors.deregister("html_block")
+    md.inlinePatterns.deregister("html")
+    return md
+
+
 def render_markdown(body: str) -> str:
-    """Render doc markdown to HTML (fenced code + tables), then sanitise with an nh3 allowlist
-    (design §18.1): only safe tags/attributes survive, links only http/https/mailto. Docs are
-    fleet-authored, but the browser gets no excuses — a poisoned doc cannot ship a script,
-    handler, iframe, SVG/MathML payload or javascript:/data: link to a reader."""
-    rendered = _markdown.markdown(body or "", extensions=["fenced_code", "tables", "sane_lists"])
+    """Render doc markdown to HTML (fenced code + tables) with raw HTML escaped, then sanitise with
+    an nh3 allowlist (design §18.1): only safe tags/attributes survive, links only
+    http/https/mailto. Docs are fleet-authored, but the browser gets no excuses — a poisoned doc
+    cannot ship a script, handler, iframe, SVG/MathML payload or javascript:/data: link to a
+    reader. No stored doc relied on raw HTML when escaping landed (t-f0ec383cff report)."""
+    rendered = _escaping_markdown(["fenced_code", "tables", "sane_lists"]).convert(body or "")
     return nh3.clean(rendered, tags=_ALLOWED_TAGS, attributes=_ALLOWED_ATTRS,
                      url_schemes=_URL_SCHEMES, link_rel="noopener noreferrer")
 
@@ -85,9 +96,7 @@ def _render_message_markdown(text: str) -> str:
     chat differences: raw HTML in the text is ESCAPED (shown as typed, never parsed — the html
     block/inline processors are removed), and a single newline is a line break (nl2br), as the
     pre-wrap thread rendered it before. Cached: a thread page re-renders the same 100 rows."""
-    md = _markdown.Markdown(extensions=["fenced_code", "tables", "sane_lists", "nl2br"])
-    md.preprocessors.deregister("html_block")
-    md.inlinePatterns.deregister("html")
+    md = _escaping_markdown(["fenced_code", "tables", "sane_lists", "nl2br"])
     return nh3.clean(md.convert(text or ""), tags=_ALLOWED_TAGS, attributes=_ALLOWED_ATTRS,
                      url_schemes=_URL_SCHEMES, link_rel="noopener noreferrer")
 

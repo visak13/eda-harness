@@ -9,6 +9,7 @@ http/https/mailto links do. Malformed input is tolerated, not crashed.
 from __future__ import annotations
 
 import os
+from html.parser import HTMLParser
 
 os.environ.setdefault("EDP8_EMBEDDER", "none")
 
@@ -19,6 +20,27 @@ from edp8 import views
 
 def _html(md: str) -> str:
     return views.render_markdown(md)
+
+
+class _LiveMarkup(HTMLParser):
+    """The tags and attributes a browser would actually build from the output; escaped text
+    (`&lt;script&gt;`) is data here, as it is to the browser."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.tags: list[str] = []
+        self.attrs: list[tuple[str, str]] = []
+
+    def handle_starttag(self, tag, attrs):
+        self.tags.append(tag)
+        self.attrs += [(k, v or "") for k, v in attrs]
+
+
+def _live(out: str) -> _LiveMarkup:
+    p = _LiveMarkup()
+    p.feed(out)
+    p.close()
+    return p
 
 
 @pytest.mark.parametrize("payload", [
@@ -37,10 +59,31 @@ def _html(md: str) -> str:
     "<style>body{background:url(javascript:alert(1))}</style>",
 ])
 def test_dangerous_markup_is_stripped(payload):
-    out = _html(payload).lower()
-    for bad in ("<script", "onerror", "onload", "<iframe", "<svg", "<math", "javascript:",
-                "data:text/html", "<object", "<style"):
-        assert bad not in out, f"{bad!r} survived: {out!r}"
+    # raw HTML is escaped to inert text (t-f0ec383cff), so check the LIVE markup, not substrings
+    out = _html(payload)
+    live = _live(out)
+    for bad in ("script", "iframe", "svg", "math", "object", "style", "img"):
+        assert bad not in live.tags, f"<{bad}> survived: {out!r}"
+    for k, v in live.attrs:
+        assert not k.lower().startswith("on"), f"handler {k!r} survived: {out!r}"
+        assert not v.strip().lower().startswith(("javascript:", "data:")), f"{k}={v!r} survived: {out!r}"
+
+
+def test_raw_html_placeholders_are_escaped_not_parsed():
+    """t-f0ec383cff: `Needs you → <card> → <button>` in a blank-line-free block became an HTML
+    block, its markdown went unparsed and nh3 dropped the unknown tags and what they swallowed."""
+    # the shape of design-e963c656f5 v24 §4.16: the placeholder sits inside a blank-line-free list
+    md = ("Flow: a <card> b <button> c\n\n"
+          "- **Waits:** click path (\"Needs you → <card> → <button> → Pass/Fail\").\n"
+          "- first bullet\n"
+          "- second bullet\n\n"
+          "## Later heading\n\n"
+          "tail text")
+    out = _html(md)
+    assert "a &lt;card&gt; b &lt;button&gt; c" in out
+    assert "<ul>" in out and "<li>first bullet</li>" in out and "<li>second bullet</li>" in out
+    assert "<h2>Later heading</h2>" in out and "tail text" in out
+    assert "card" not in _live(out).tags and "button" not in _live(out).tags
 
 
 def test_safe_content_survives():
