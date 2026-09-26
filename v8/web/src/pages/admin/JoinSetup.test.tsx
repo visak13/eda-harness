@@ -51,15 +51,18 @@ describe("JoinPage", () => {
 describe("SetupPage wizard", () => {
   const HARN = { harnesses: [{ harness: "claude", selected: true, installed: true, version: "2.1.0", live_seats: [] }, { harness: "codex", selected: false, installed: false, live_seats: [] }],
     selected: ["claude"], fable_ack: null, fable_notice: "Codex is not selected, so the adversary role runs on Fable (claude-fable-5-1)." };
+  const TOOLS = { os: "win32", harness_ok: true, bundled: [], not_needed: [{ name: "docker", why: "not needed" }],
+    rows: [{ name: "git", need: "required", feature: "", purpose: "seats commit", state: "ok", path: "C:/git.exe", version: "git version 2.47.0", min_version: "2.30", fix: "", installable: true, docs: "", job: null }] };
   const TAIL = { tailscale: null, serve: null, serve_proxies: [], public_url: null, tailnet_url: null, public_mode: false, rows: [], blockers: 1, auth_keys: { configured: false } };
 
-  it("walks sign-in → harnesses (Fable notice without codex) → remote → teammate → done, and marks setup done", async () => {
+  it("walks sign-in → your tools → harnesses (Fable notice without codex) → remote → teammate → done, and marks setup done", async () => {
     let selection: unknown = null;
     let done = false;
     let invited: unknown = null;
     server.use(
       http.get("/v1/whoami", () => ok(WHO("owner", true))),
       http.get("/v1/admin/harnesses", () => ok(HARN)),
+      http.get("/v1/admin/setup/prereqs", () => ok(TOOLS)),
       http.put("/v1/admin/harnesses/selection", async ({ request }) => { selection = await request.json(); return ok({ selected: ["claude"], fable_ack: { by: "owner" }, restart_required: [] }, "saved"); }),
       http.get("/v1/admin/tailnet", () => ok(TAIL)),
       http.post("/v1/admin/teammates", async ({ request }) => { invited = await request.json(); return ok({ teammate: {}, invite: { link: "http://b/ui/join?code=q", vscode_link: "vscode://edp.edp-code/signin?code=q", code: "q", expires_at: "" } }); }),
@@ -67,6 +70,8 @@ describe("SetupPage wizard", () => {
     );
     mount("/setup", <SetupPage />);
     expect(await screen.findByTestId("setup-signed-in")).toHaveTextContent("owner");
+    fireEvent.click(screen.getByTestId("setup-next"));
+    expect(await screen.findByTestId("prereq-git-state")).toHaveTextContent("Found git version 2.47.0");
     fireEvent.click(screen.getByTestId("setup-next"));
     expect(await screen.findByTestId("fable-notice")).toHaveTextContent("adversary role runs on Fable");
     expect(screen.getByTestId("harness-selection-save")).toBeDisabled();

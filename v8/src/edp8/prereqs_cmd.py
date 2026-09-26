@@ -85,11 +85,24 @@ def _missing_required(got: list[pq.Status], embed: bool) -> list[str]:
     return bad
 
 
+def login_command(name: str) -> str:
+    """The sign-in command for a harness, as a person types it. claude seats read their own store
+    (EDP_CLAUDE_CONFIG_DIR), so the claude sign-in runs with CLAUDE_CONFIG_DIR pointing there."""
+    p = pq.by_name(name)
+    if name != "claude":
+        return p.login
+    from .setup import claude_store
+    store = claude_store()
+    if sys.platform == "win32":
+        return f'$env:CLAUDE_CONFIG_DIR = "{store}"; claude   (then type /login)'
+    return f'CLAUDE_CONFIG_DIR="{store}" claude   (then type /login)'
+
+
 def _sign_in_hints(got: list[pq.Status]) -> None:
     from .admin.harnesses import signed_in
     for r in got:
         if r.need in ("harness", "optional") and r.login and r.state == "ok" and signed_in(r.name) is False:
-            print(f"  sign in to {r.name}: run `{r.login}`")
+            print(f"  sign in to {r.name}: {login_command(r.name)}")
 
 
 def check(opts: dict[str, Any]) -> int:

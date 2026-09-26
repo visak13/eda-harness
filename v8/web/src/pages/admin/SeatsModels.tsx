@@ -12,8 +12,10 @@ import { ModelsEditor } from "./Models";
 
 const HARNESSES = ["claude", "codex", "pi"] as const;
 
-/** The harness choice (also the setup wizard's step 2). `onSaved` runs after a successful save. */
-export function HarnessSelection({ onSaved, onRestartRequired }: { onSaved?: () => void; onRestartRequired?: (s: string[]) => void }): React.JSX.Element {
+/** The harness choice (also the setup wizard's harness step). `onSaved` runs after a successful save.
+ * `installedOnly` (the wizard, t-08612be1b0): a harness whose CLI is not on this machine cannot be picked; the
+ * row says how to get it instead. */
+export function HarnessSelection({ onSaved, onRestartRequired, installedOnly = false }: { onSaved?: () => void; onRestartRequired?: (s: string[]) => void; installedOnly?: boolean }): React.JSX.Element {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin", "harnesses", "selection"], queryFn: () => getHarnesses(false), retry: false });
   const [picked, setPicked] = useState<string[]>([]);
@@ -36,12 +38,16 @@ export function HarnessSelection({ onSaved, onRestartRequired }: { onSaved?: () 
       <div className={styles.row}>
         {HARNESSES.map((h) => {
           const d = detected.get(h);
+          // the wizard offers only what is installed; one already picked can still be unticked
+          const locked = installedOnly && Boolean(d) && !d?.installed && !picked.includes(h);
           return (
             <label key={h} className={styles.row} data-testid={`pick-${h}`}>
-              <input type="checkbox" checked={picked.includes(h)} data-testid={`pick-${h}-input`}
+              <input type="checkbox" checked={picked.includes(h)} disabled={locked} data-testid={`pick-${h}-input`}
                 onChange={(e) => setPicked((p) => (e.target.checked ? [...p, h] : p.filter((x) => x !== h)))} />
               <strong>{h}</strong>
-              <span className={styles.usage}>{d ? (d.installed ? `installed ${d.version ?? ""}`.trim() : "not found on this machine") : ""}</span>
+              <span className={styles.usage} data-testid={`pick-${h}-state`}>{d ? (d.installed ? `installed ${d.version ?? ""}`.trim()
+                : installedOnly ? `not installed: Install it in Your tools (back one step), or run heronry prereqs install --only ${h}`
+                  : "not found on this machine") : ""}</span>
             </label>
           );
         })}

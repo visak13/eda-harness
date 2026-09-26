@@ -10,12 +10,13 @@ import ui from "../../components/ui.module.css";
 import styles from "./Admin.module.css";
 import { AdminError, Done, Secret } from "./shared";
 import { HarnessSelection } from "./SeatsModels";
+import { ToolsStep } from "./SetupTools";
 
 // /ui/setup (design §4.8 Onboarding, §4.11): the first-run wizard `heronry start` opens — admin sign-in,
-// harness detection (at least one of claude/codex; the Fable notice without codex), optional remote access,
+// your tools (the prerequisites checklist with Install and harness sign-in, t-08612be1b0), harness detection (at least one of claude/codex; the Fable notice without codex), optional remote access,
 // optional first teammate — ending on the board. POST /v1/admin/setup/done stops `start` opening it again.
 
-const STEPS = ["Sign in", "Harnesses", "Remote access", "First teammate", "Done"] as const;
+const STEPS = ["Sign in", "Your tools", "Harnesses", "Remote access", "First teammate", "Done"] as const;
 
 interface WhoAmI { participant: { id: string; handle: string; role: string; admin?: boolean }; admin?: boolean }
 
@@ -106,15 +107,16 @@ export function SetupPage(): React.JSX.Element {
           {STEPS.map((s, i) => <li key={s} className={i === step ? styles.stepActive : styles.step} aria-current={i === step ? "step" : undefined}>{i + 1}. {s}</li>)}
         </ol>
         {step === 0 ? <SignInStep onDone={next} /> : null}
-        {step === 1 ? (
+        {step === 1 ? <ToolsStep onDone={next} /> : null}
+        {step === 2 ? (
           <>
-            <HarnessSelection onSaved={next} />
+            <HarnessSelection onSaved={next} installedOnly />
             <p className={styles.fieldDoc}>Seats run on claude, codex or both; the choice is saved when you press Save harnesses, which moves you on.</p>
           </>
         ) : null}
-        {step === 2 ? <RemoteStep onDone={next} /> : null}
-        {step === 3 ? <TeammateStep onDone={next} /> : null}
-        {step === 4 ? (
+        {step === 3 ? <RemoteStep onDone={next} /> : null}
+        {step === 4 ? <TeammateStep onDone={next} /> : null}
+        {step === 5 ? (
           <section className={styles.card} data-testid="setup-done">
             <h2 className={styles.cardTitle}>Ready</h2>
             <p className={styles.fieldDoc}>Start an epic from the Epics page. Admin in the menu runs services, settings, teammates and integrations.</p>

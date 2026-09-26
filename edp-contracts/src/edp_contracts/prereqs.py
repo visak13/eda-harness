@@ -337,8 +337,8 @@ class Status:
 def detect(
     p: Prereq,
     *,
-    which: Which = _which,
-    probe: Probe = _probe,
+    which: Which | None = None,
+    probe: Probe | None = None,
     os_key: str | None = None,
     embed: bool = True,
 ) -> Status:
@@ -366,10 +366,10 @@ def detect(
         if found is not None:
             st.path, st.version = str(found), embed_model()
     else:
-        st.path = which(p)
+        st.path = (which or _which)(p)
         if st.path and p.probe:
             try:
-                st.version = probe([*tool_argv(st.path), *p.version_args])
+                st.version = (probe or _probe)([*tool_argv(st.path), *p.version_args])
             except FileNotFoundError:  # a .js shim with no node
                 st.version = None
     if st.path:
@@ -400,8 +400,8 @@ def detect(
 
 def detect_all(
     *,
-    which: Which = _which,
-    probe: Probe = _probe,
+    which: Which | None = None,
+    probe: Probe | None = None,
     os_key: str | None = None,
     embed: bool = True,
 ) -> list[Status]:
@@ -418,7 +418,7 @@ def harness_ok(rows: Sequence[Status]) -> bool:
 # ------------------------------------------------------------------------------------------ install plans
 
 
-def _manager_available(manager: str, *, which: Which, os_key: str) -> bool:
+def _manager_available(manager: str, *, which: Which | None, os_key: str) -> bool:
     lookup = {
         "winget": "winget",
         "brew": "brew",
@@ -427,7 +427,7 @@ def _manager_available(manager: str, *, which: Which, os_key: str) -> bool:
         "script": "curl",
     }
     if manager in ("uv-pip",):
-        return which(by_name("uv")) is not None
+        return (which or _which)(by_name("uv")) is not None
     if manager in ("model", "url"):
         return True
     tool = lookup.get(manager)
@@ -446,15 +446,15 @@ def _manager_available(manager: str, *, which: Which, os_key: str) -> bool:
     return _find(which, tool) is not None
 
 
-def _find(which: Which, tool: str) -> str | None:
-    return which(Prereq(tool, "", "optional", command=tool))
+def _find(which: Which | None, tool: str) -> str | None:
+    return (which or _which)(Prereq(tool, "", "optional", command=tool))
 
 
 def _euid() -> int:
     return os.geteuid() if hasattr(os, "geteuid") else 0
 
 
-def pick_recipe(p: Prereq, os_key: str, *, which: Which = _which) -> Recipe | None:
+def pick_recipe(p: Prereq, os_key: str, *, which: Which | None = None) -> Recipe | None:
     """The first recipe for `os_key` whose package manager is on this machine; else the manual page, if any."""
     recipes = p.install.get(os_key, ())
     for r in recipes:
@@ -467,7 +467,7 @@ def pick_recipe(p: Prereq, os_key: str, *, which: Which = _which) -> Recipe | No
 
 
 def recipe_argv(
-    r: Recipe, *, which: Which = _which, os_key: str | None = None
+    r: Recipe, *, which: Which | None = None, os_key: str | None = None
 ) -> list[str] | None:
     """The command a recipe runs, without a shell; None for the in-process and manual recipes."""
     os_key = os_key or this_os()
@@ -539,7 +539,7 @@ def plan(
     rows: Sequence[Status],
     *,
     os_key: str | None = None,
-    which: Which = _which,
+    which: Which | None = None,
     embed: bool = True,
     only: Sequence[str] = (),
     optional: Sequence[str] = (),
@@ -675,7 +675,7 @@ def refresh_path() -> None:
 def run_steps(
     steps: Sequence[Step],
     *,
-    run: Runner = _run,
+    run: Runner | None = None,
     say: Callable[[str], None] = print,
     model: Callable[[], Path | None] | None = None,
 ) -> dict[str, int]:
@@ -699,7 +699,7 @@ def run_steps(
             out[s.name] = 1
             continue
         say(f"installing {s.name}: {' '.join(s.argv)}")
-        out[s.name] = run(s.argv)
+        out[s.name] = (run or _run)(s.argv)
         if out[s.name] != 0:
             say(f"{s.name}: the installer exited {out[s.name]}")
         if s.name == "node":

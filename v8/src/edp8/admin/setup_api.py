@@ -55,7 +55,10 @@ def issue_setup_code() -> str:
 
 
 def router(ctx: AdminContext, admin_actor) -> APIRouter:
+    from . import prereqs_api
+
     r = APIRouter()
+    r.include_router(prereqs_api.router(ctx, admin_actor))  # the wizard's "Your tools" step (t-08612be1b0)
 
     @r.get("/v1/admin/setup")
     def setup_get(a: Participant = Depends(admin_actor)):
