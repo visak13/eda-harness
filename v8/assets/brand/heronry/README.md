@@ -5,7 +5,7 @@ many herons nest together: one home for many specialists.
 
 - Product: **Heronry** · CLI: `heronry` · desktop app: **Heronry Desktop**
 - Tagline: *your agent team, built on decisions, checked before delivery*
-- Single source of these names: `edp_contracts.brand` (the web mirror is `v8/web/src/brand.ts`, kept equal by a test).
+- Single source of these names: `edp8.brand` (S1's settings registry re-exports it) (the web mirror is `v8/web/src/brand.ts`, kept equal by a test).
 
 | File | What it is |
 |---|---|
@@ -21,6 +21,6 @@ many herons nest together: one home for many specialists.
 
 For S8 (installers, desktop): use `icons/heronry.ico` (Windows), `icons/heronry.icns` (macOS),
 `icons/heronry-512.png` (Linux AppImage/deb), and `heronry-splash.png` for the startup splash; the
-app and installer names come from `edp_contracts.brand` (`DESKTOP_APP_NAME`, `PRODUCT_NAME`).
+app and installer names come from `edp8.brand` (`DESKTOP_APP_NAME`, `PRODUCT_NAME`).
 
 The Paperwasp and Tallybone candidates are not shipped.

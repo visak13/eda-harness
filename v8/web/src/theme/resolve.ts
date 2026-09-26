@@ -1,4 +1,4 @@
-import { DEFAULT_THEME, THEME_IDS, type ThemeId } from "./themes";
+import { DEFAULT_DARK_THEME, DEFAULT_THEME, THEME_IDS, type ThemeId } from "./themes";
 
 export const THEME_STORAGE_KEY = "edp8.theme";
 
@@ -16,13 +16,13 @@ function isThemeId(v: string | null): v is ThemeId {
 /**
  * The single source of truth for which theme applies, given a stored value and the OS
  * media queries. Order (design §4.3, criterion c-250f85164e): an explicit stored choice
- * wins; else prefers-contrast:more → folio-hc; else prefers-color-scheme:dark → ember;
- * else folio. The inline pre-paint script in index.html MUST mirror this exactly.
+ * wins; else prefers-contrast:more → folio-hc; else prefers-color-scheme:dark → heronry-dark;
+ * else heronry (the brand default, design-e963c656f5 §4.12). The inline pre-paint script in index.html MUST mirror this exactly.
  */
 export function resolveTheme(stored: string | null, match: MatchFn = defaultMatch): ThemeId {
   if (isThemeId(stored)) return stored;
   if (match("(prefers-contrast: more)")) return "folio-hc";
-  if (match("(prefers-color-scheme: dark)")) return "ember";
+  if (match("(prefers-color-scheme: dark)")) return DEFAULT_DARK_THEME;
   return DEFAULT_THEME;
 }
 

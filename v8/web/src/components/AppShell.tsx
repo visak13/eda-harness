@@ -14,6 +14,7 @@ import { AvatarPicker } from "./AvatarPicker";
 import { AnchoredPanel } from "./AnchoredPanel";
 import { Avatar } from "./Avatar";
 import { Icon } from "./Icon";
+import { LOGO_URL, PRODUCT_NAME } from "../brand";
 import { PageFrameProvider, usePageFrameCtx, defaultFraming } from "./PageFrame";
 import { GlossaryPanel } from "./GlossaryPanel";
 import { CommandPalette } from "./CommandPalette";
@@ -174,7 +175,7 @@ function AppShellChrome(): React.JSX.Element {
           aria-expanded={menuOpen} aria-controls="workspace-navigation" onClick={() => setMenuOpen((open) => !open)}>
           Menu
         </button>
-        <span className={styles.mobileBrand}>Board</span>
+        <span className={styles.mobileBrand}>{PRODUCT_NAME}</span>
       </div>
       <aside id="workspace-navigation" className={styles.sidebar} data-open={menuOpen} aria-label="Primary"
         onKeyDown={(event) => {
@@ -184,8 +185,8 @@ function AppShellChrome(): React.JSX.Element {
           }
         }}>
         <div className={styles.brand}>
-          <span className={styles.brandmark} aria-hidden="true"><Icon name="library" size={24} /></span>
-          <span className={styles.brandText}>Board</span>
+          <img className={styles.brandmark} src={LOGO_URL} alt="" width={28} height={28} data-testid="rail-logo" />
+          <span className={styles.brandText}>{PRODUCT_NAME}</span>
           <button type="button" className={styles.railToggle} data-testid="rail-toggle"
             aria-controls="workspace-navigation" aria-expanded={!railCollapsed}
             aria-label={railCollapsed ? "Expand menu" : "Collapse menu"} title={railCollapsed ? "Expand menu" : "Collapse menu"}

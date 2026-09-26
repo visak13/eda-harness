@@ -22,6 +22,8 @@ const PAIRS: Pair[] = [
     { fg: "muted", bg, kind: "text", what: "metadata and secondary labels" },
     { fg: "accentink", bg, kind: "nontext", what: "focus and functional icons" },
     { fg: "strongline", bg, kind: "nontext", what: "essential control boundary" },
+    { fg: "warning", bg, kind: "text", what: "warning status text" },
+    { fg: "danger", bg, kind: "text", what: "danger/error status text" },
   ]),
   { fg: "ink", bg: "bg", kind: "text", what: "body text on page" },
   { fg: "ink", bg: "panel", kind: "text", what: "body text on panel" },

@@ -21,14 +21,14 @@ describe("resolveTheme — OS media default order", () => {
       resolveTheme(null, match(["(prefers-contrast: more)", "(prefers-color-scheme: dark)"])),
     ).toBe("folio-hc");
   });
-  it("unset + prefers-color-scheme:dark → ember", () => {
-    expect(resolveTheme(null, match(["(prefers-color-scheme: dark)"]))).toBe("ember");
+  it("unset + prefers-color-scheme:dark → heronry-dark", () => {
+    expect(resolveTheme(null, match(["(prefers-color-scheme: dark)"]))).toBe("heronry-dark");
   });
-  it("unset + no preference → folio", () => {
-    expect(resolveTheme(null, match([]))).toBe("folio");
+  it("unset + no preference → heronry (the brand default)", () => {
+    expect(resolveTheme(null, match([]))).toBe("heronry");
   });
   it("an unknown stored value is ignored (falls through to defaults)", () => {
-    expect(resolveTheme("chartreuse", match([]))).toBe("folio");
+    expect(resolveTheme("chartreuse", match([]))).toBe("heronry");
   });
 });
 

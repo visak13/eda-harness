@@ -104,6 +104,14 @@ describe("AppShell", () => {
     expect(screen.queryByTestId("identity-panel")).not.toBeInTheDocument();
   });
 
+  // S7 (design-e963c656f5 §4.12): the rail brand is the Heronry logo + product name from brand.ts.
+  it("brands the rail with the Heronry logo and product name", () => {
+    renderShell("/me");
+    const logo = screen.getByTestId("rail-logo");
+    expect(logo).toHaveAttribute("src", expect.stringMatching(/brand\/heronry-64\.png$/));
+    expect(logo.closest("div")).toHaveTextContent("Heronry");
+  });
+
   it("opens the account menu (Settings, ThemePicker) from the rail's account row and can switch theme", async () => {
     renderShell("/me");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

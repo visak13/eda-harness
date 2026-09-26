@@ -3,28 +3,30 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>edp8 board</title>
-    <!-- No icon file yet: an empty data URL keeps browsers from requesting /favicon.ico (a 404 in every console). -->
-    <link rel="icon" href="data:," />
+    <title>Heronry</title>
+    <!-- Heronry icons (v8/assets/brand/heronry/icons, copied to web/public/brand by make_icons.py; Vite prefixes the base). -->
+    <link rel="icon" href="/brand/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/png" href="/brand/favicon-32.png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png" />
     <!--
       Pre-paint theme: runs before the bundle so <html data-theme> is set before first
       paint (no FOUC). NO imports allowed here. This MUST mirror resolveTheme() in
       src/theme/resolve.ts: stored choice wins; else prefers-contrast:more → folio-hc;
-      else prefers-color-scheme:dark → ember; else folio. Cite: MDN prefers-color-scheme.
+      else prefers-color-scheme:dark → heronry-dark; else heronry. Cite: MDN prefers-color-scheme.
     -->
     <script>
       try {
         var t = localStorage.getItem("edp8.theme");
-        if (!["folio", "dusk", "ember", "folio-hc", "sage", "slate", "midnight", "obsidian"].includes(t)) {
+        if (!["heronry", "heronry-dark", "folio", "dusk", "ember", "folio-hc", "sage", "slate", "midnight", "obsidian"].includes(t)) {
           t = matchMedia("(prefers-contrast: more)").matches
             ? "folio-hc"
             : matchMedia("(prefers-color-scheme: dark)").matches
-              ? "ember"
-              : "folio";
+              ? "heronry-dark"
+              : "heronry";
         }
         document.documentElement.dataset.theme = t;
       } catch (e) {
-        document.documentElement.dataset.theme = "folio";
+        document.documentElement.dataset.theme = "heronry";
       }
     </script>
   </head>
