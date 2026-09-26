@@ -1,4 +1,4 @@
-# edp8 — the board and its services (operator reference)
+# Heronry — the board and its services (operator reference)
 
 What the project is, the UI, the memory layer and the quick start are in the
 [root README](../README.md). This page is the operator detail.

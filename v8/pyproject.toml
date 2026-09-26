@@ -24,6 +24,7 @@ embed = ["fastembed>=0.3"]
 
 [project.scripts]
 edp8 = "edp8.cli:main"
+heronry = "edp8.cli:main"  # the product CLI (brand.py CLI_NAME); edp8 stays as an alias
 edp8-board = "edp8.service:run"
 edp8-mcp = "edp8.mcp_server:run"
 edp8-feed = "edp8.feed_driver:run"

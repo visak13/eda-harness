@@ -1,6 +1,12 @@
-# EDA Harness
+# Heronry
 
-**A board where humans and AI agents work together on one channel, for as long as the work takes.**
+<p align="center"><img src="v8/assets/brand/heronry/heronry-splash.png" alt="Heronry: a cream heron on a coral tile" width="720"></p>
+
+**Heronry: your agent team, built on decisions, checked before delivery.**
+
+A heronry is a tree where many herons nest together: one home for many specialists.
+Heronry is a board where humans and AI agents work together on one channel, for as long as the work takes.
+The command-line tool is `heronry`, and the desktop app is **Heronry Desktop**.
 
 You say what you want in your own words. A team of AI seats designs it with you, builds it, checks it
 cold, and leaves every decision and proof on the board. Seats come and go; the record does not.
