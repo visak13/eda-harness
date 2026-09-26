@@ -277,7 +277,7 @@ def test_two_homes_on_the_same_ports_b_start_refuses_and_names_a(tmp_path, marke
 
 
 def test_a_run_record_that_cannot_be_written_fails_the_start_and_stops_the_service(home, fake, monkeypatch):
-    """S8 (architect m-a0977dd5c8): antivirus refused the installed app's run-record writes; the services ran
+    """S8 (architect m-a0977dd5c8): the installed app's run-record writes failed (Errno 13); the services ran
     untracked, orphans `stop` could not find. A refused record write is a failed start: the process goes."""
     spawned: list[ProcId] = []
 
@@ -294,8 +294,8 @@ def test_a_run_record_that_cannot_be_written_fails_the_start_and_stops_the_servi
     with pytest.raises(launcher.LaunchError) as err:
         launcher.start("board", wait_s=20)
     msg = str(err.value)
-    assert "run record could not be written" in msg and "stopped it again" in msg
-    assert "antivirus may be blocking Heronry's writes" in msg and str(settings.run_dir()) in msg
+    assert f"could not write {run_state._path('board')}" in msg and "stopped it again" in msg
+    assert "antivirus" not in msg.lower() and "heronry doctor" in msg
     assert spawned and spawned[0].live() is None and not _listening(home["port"])
 
 
@@ -308,8 +308,8 @@ def test_doctor_names_a_folder_this_process_cannot_write(home, monkeypatch, caps
         return real(self, *a, **k)
     monkeypatch.setattr(Path, "write_text", guarded)
     assert setup.write_probe(settings.data_dir()) is None
-    assert "Permission denied" in (setup.write_probe(settings.run_dir()) or "")
+    assert "Permission denied (errno 13" in (setup.write_probe(settings.run_dir()) or "")
     setup.doctor_cmd([])
     out = capsys.readouterr().out
-    assert "FAIL   run folder" in out and "antivirus may be blocking" in out
+    assert "FAIL   run folder  could not write " + str(settings.run_dir()) in out and "antivirus" not in out.lower()
     assert "ok     data folder" in out and "ok     logs folder" in out

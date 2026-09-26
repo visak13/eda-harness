@@ -452,8 +452,7 @@ def capture_png(window: Any, timeout_s: float = 20.0) -> bytes:
 
 def capture_dir(path: str | None) -> Path:
     """Where `--capture` writes: `<data dir>/captures` by default; only ever inside the app's own dirs, so the
-    installed app never writes into an arbitrary folder (antivirus controlled-folder protection refuses an
-    unsigned app there anyway: S8 measured Errno 13 in a repo folder)."""
+    installed app never writes into an arbitrary folder."""
     own = [settings.data_dir(), settings.run_dir(), settings.logs_dir()]
     target = Path(path).expanduser().resolve() if path else (settings.data_dir() / "captures").resolve()
     if not any(target == d.resolve() or target.is_relative_to(d.resolve()) for d in own):

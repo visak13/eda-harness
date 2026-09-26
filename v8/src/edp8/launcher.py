@@ -354,7 +354,7 @@ def start(svc: str, *, wait_s: float = 90.0) -> dict[str, Any]:
     except OSError as e:
         # an untracked service is an orphan `stop` cannot find: a record that cannot be written fails the start
         rep = kill_tree(ident, job=job)
-        raise LaunchError(f"{svc} started but its run record could not be written ({e}); stopped it again"
+        raise LaunchError(f"{svc} started but could not write {run_state._path(svc)}: {e}; stopped it again"
                           f"{'' if rep.ok else ', survivors ' + str(rep.survivors)}. {write_blocked_hint(settings.run_dir())}"
                           ) from e
     if svc == "board":
@@ -363,8 +363,7 @@ def start(svc: str, *, wait_s: float = 90.0) -> dict[str, Any]:
 
 
 def write_blocked_hint(d: Path) -> str:
-    return (f"Your antivirus may be blocking Heronry's writes to {d}: allow the Heronry install folder "
-            "(README: Antivirus), then start again.")
+    return f"Heronry could not write to {d}; `heronry doctor` checks its folders."
 
 
 def _answers_as_spawned(svc: str, ident: ProcId) -> bool:
