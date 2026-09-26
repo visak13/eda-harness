@@ -249,13 +249,6 @@ export interface ConversationRow {
   last: { by: string; text: string; at: ISODateString } | null;
 }
 
-export interface Summary {
-  participant: Record<string, unknown>;
-  avatar_id: string | null;
-  counts: { waiting_on_you: number; open_gates: number; conversations: number };
-  last_seq: number;
-}
-
 export interface AvatarState {
   avatar_id: string | null;
   kind: "human" | "role" | "system";
