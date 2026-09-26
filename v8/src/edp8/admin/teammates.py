@@ -9,6 +9,8 @@
 * Revoke drops the token (the next request with it is 401) and any pending invite; rotate replaces it and
   returns the new one once; admin can be granted or removed (the init human is always an admin).
 * Agent tokens stay minted at spawn; the admin lists and revokes them.
+* Remove (t-882e4d2eeb) = revoke + retire: the human leaves every people picker and People list for good;
+  history keeps the name, greyed. :func:`human_active` is the one rule the pickers read.
 """
 
 from __future__ import annotations
@@ -126,6 +128,31 @@ class InviteStore:
                 self._save(keep)
 
 
+_STORES: dict[Path, InviteStore] = {}
+_STORES_LOCK = threading.Lock()
+
+
+def invite_store() -> InviteStore:
+    """The one InviteStore per invites file in this process (Teammates and access requests share its lock)."""
+    path = settings.secrets_dir() / INVITES_FILE
+    with _STORES_LOCK:
+        return _STORES.setdefault(path, InviteStore(path))
+
+
+def human_active(ctx: AdminContext, p: Participant) -> bool:
+    """Whether a person belongs in the people pickers and People lists (t-882e4d2eeb). A removed (retired)
+    human never does. In token mode a human counts only while they hold a token or a live invite (revoked, or
+    an invite that expired unredeemed = out); the init human always counts. Trusted mode: everyone else."""
+    if p.type != "human":
+        return True
+    if getattr(p, "retired", False):
+        return False
+    if not ctx.tokens_file().exists():
+        return True
+    h = p.handle.lstrip("@")
+    return h == owner_handle() or h in ctx.tokens()[0] or h in invite_store().pending()
+
+
 def board_url(request: Request) -> str:
     return ((settings.get("EDP8_PUBLIC_URL") or "").strip() or str(request.base_url)).rstrip("/")
 
@@ -139,37 +166,72 @@ def invite_links(request: Request, handle: str, code: str) -> dict[str, str]:
     }
 
 
+def token_mode(ctx: AdminContext) -> None:
+    if not ctx.tokens_file().exists():
+        raise HTTPException(409, "this board runs without a tokens file (trusted mode): teammates need "
+                                 "tokens; run `heronry init` to create one")
+
+
+def human(ctx: AdminContext, handle: str) -> Participant:
+    try:
+        p = ctx.board.participant(handle)
+    except BoardError as e:
+        raise HTTPException(404, e.message) from None
+    if p.type != "human":
+        raise HTTPException(404, f"{handle!r} is an agent, not a teammate")
+    return p
+
+
+def set_token(ctx: AdminContext, handle: str, secret: str | None) -> None:
+    h = handle.lstrip("@")
+    if secret is None:
+        ctx.write_tokens(lambda d: d.pop(h, None))
+    else:
+        ctx.write_tokens(lambda d: d.__setitem__(h, secret))
+
+
+def redeem_invite(ctx: AdminContext, code: str) -> tuple[str, str]:
+    """Spend a one-time invite code: (handle, token). The one redeem path behind `/v1/join` and an approved
+    access request's claim (t-882e4d2eeb). 401 when the code is unknown, used or expired."""
+    hit = invite_store().redeem_entry(code)
+    if hit is None:
+        raise HTTPException(401, "this invite was already used or has expired; ask an admin for a new one")
+    handle = str(hit["handle"])
+    token_mode(ctx)
+    try:
+        p = human(ctx, handle)
+    except HTTPException:
+        raise HTTPException(401, "this invite's teammate no longer exists") from None
+    if getattr(p, "retired", False):
+        raise HTTPException(401, "this teammate was removed; ask an admin for a new invite")
+    current = ctx.tokens()[0].get(handle)
+    if hit.get("keep_token") and current:
+        return handle, current  # the setup sign-in: the init human's token stays the one in use
+    secret = secrets.token_urlsafe(24)
+    set_token(ctx, handle, secret)
+    return handle, secret
+
+
 def router(ctx: AdminContext, admin_actor) -> APIRouter:
     r = APIRouter()
-    invites = InviteStore(settings.secrets_dir() / INVITES_FILE)
+    invites = invite_store()
     board = ctx.board
 
     def _token_mode() -> None:
-        if not ctx.tokens_file().exists():
-            raise HTTPException(409, "this board runs without a tokens file (trusted mode): teammates need "
-                                     "tokens; run `heronry init` to create one")
+        token_mode(ctx)
 
     def _human(handle: str) -> Participant:
-        try:
-            p = board.participant(handle)
-        except BoardError as e:
-            raise HTTPException(404, e.message) from None
-        if p.type != "human":
-            raise HTTPException(404, f"{handle!r} is an agent, not a teammate")
-        return p
+        return human(ctx, handle)
 
     def _set_token(handle: str, secret: str | None) -> None:
-        h = handle.lstrip("@")
-        if secret is None:
-            ctx.write_tokens(lambda d: d.pop(h, None))
-        else:
-            ctx.write_tokens(lambda d: d.__setitem__(h, secret))
+        set_token(ctx, handle, secret)
 
     def _row(p: Participant, humans: dict[str, str], pending: dict[str, float]) -> dict[str, Any]:
         h = p.handle.lstrip("@")
         return {"id": p.id, "handle": h, "role": p.role.value, "admin": is_admin(p),
                 "init_human": h == owner_handle(), "has_token": h in humans,
-                "last_seen": _iso(ctx.last_seen.get(p.id)), "invite_expires": _iso(pending.get(h))}
+                "last_seen": _iso(ctx.last_seen.get(p.id)), "invite_expires": _iso(pending.get(h)),
+                "retired": bool(getattr(p, "retired", False))}
 
     @r.get("/v1/admin/teammates")
     def teammates_list(a: Participant = Depends(admin_actor)):
@@ -201,6 +263,8 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
     def teammate_reinvite(handle: str, request: Request, a: Participant = Depends(admin_actor)):
         _token_mode()
         p = _human(handle)
+        if getattr(p, "retired", False):  # a fresh invite brings a removed teammate back
+            p = board.store.put("participant", p.model_copy(update={"retired": False}))
         code, exp = invites.issue(p.handle, a.handle)
         return {"ok": True, "value": {**invite_links(request, p.handle, code), "code": code, "expires_at": _iso(exp)},
                 "hint": "any earlier invite for this teammate no longer works"}
@@ -225,6 +289,22 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
         _set_token(p.handle, None)
         return {"ok": True, "value": {"handle": p.handle, "revoked": True},
                 "hint": "their token is refused from now on; a new invite signs them in again"}
+
+    @r.post("/v1/admin/teammates/{handle}/remove")
+    def teammate_remove(handle: str, a: Participant = Depends(admin_actor)):
+        """Revoke + retire (t-882e4d2eeb): the token is refused, any invite dropped, and the person leaves
+        every picker and People list. Their name stays on history (greyed)."""
+        _token_mode()
+        p = _human(handle)
+        if p.id == a.id:
+            raise HTTPException(409, "you cannot remove yourself (another admin can)")
+        if p.handle.lstrip("@") == owner_handle():
+            raise HTTPException(409, "the init human (EDP8_OWNER) cannot be removed")
+        invites.drop(p.handle)
+        _set_token(p.handle, None)
+        p = board.store.put("participant", p.model_copy(update={"retired": True, "admin": False}))
+        return {"ok": True, "value": {"handle": p.handle.lstrip("@"), "removed": True},
+                "hint": "their token is refused and they no longer appear in pickers; history keeps their name"}
 
     @r.post("/v1/admin/teammates/{handle}/rotate")
     def teammate_rotate(handle: str, a: Participant = Depends(admin_actor)):
@@ -266,21 +346,7 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
     @r.post("/v1/join")
     def join(b: JoinIn, request: Request):
         """Redeem a teammate invite: the handle and a fresh token, once. No credential — the code is it."""
-        hit = invites.redeem_entry(b.code)
-        if hit is None:
-            raise HTTPException(401, "this invite was already used or has expired; ask an admin for a new one")
-        handle = str(hit["handle"])
-        _token_mode()
-        try:
-            _human(handle)
-        except HTTPException:
-            raise HTTPException(401, "this invite's teammate no longer exists") from None
-        current = ctx.tokens()[0].get(handle)
-        if hit.get("keep_token") and current:
-            secret = current  # the setup sign-in: the init human's token stays the one in use
-        else:
-            secret = secrets.token_urlsafe(24)
-            _set_token(handle, secret)
+        handle, secret = redeem_invite(ctx, b.code)
         return {"ok": True, "value": {"handle": handle, "token": secret, "board_url": board_url(request)},
                 "hint": "signed in: this invite no longer works"}
 

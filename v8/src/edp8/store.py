@@ -46,6 +46,8 @@ _INDEXED: dict[str, list[str]] = {
     "rsi_state": [],
     # S19: the Help seat's proposed fixes (edp8.fixes), decided by an admin
     "fix": ["topic_id", "status"],
+    # t-882e4d2eeb: sign-in page access requests (edp8.admin.access), decided by an admin
+    "access_request": ["status"],
 }
 
 

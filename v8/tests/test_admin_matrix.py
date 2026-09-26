@@ -78,13 +78,15 @@ def test_the_route_table_is_the_admin_surface(env):
                      "/v1/admin/tailnet", "/v1/admin/integrations/slack", "/v1/admin/harnesses",
                      "/v1/admin/updates"):
         assert expected in paths, expected
-    # the admin package adds exactly one route outside /v1/admin, and it is the public invite redeem
+    # outside /v1/admin the admin package adds only the public routes: the invite redeem, and t-882e4d2eeb's
+    # sign out and request access (their own credential-free guards are tested in test_admin_access.py)
     from fastapi import FastAPI
     solo = FastAPI()
     solo.include_router(admin_router(AdminContext(board=env.board, tokens=lambda: {}, write_tokens=lambda h: None,
                                                   tokens_file=env.tokens, last_seen=None)))
     stray = {p for p in solo.openapi()["paths"] if not p.startswith("/v1/admin")}
-    assert stray == set(PUBLIC_ROUTES) == {"/v1/join"}
+    assert stray == set(PUBLIC_ROUTES) == {"/v1/join", "/v1/signout", "/v1/access-requests",
+                                           "/v1/access-requests/available", "/v1/access-requests/claim"}
 
 
 @pytest.mark.parametrize("who", list(DENIED))

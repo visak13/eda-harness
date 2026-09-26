@@ -692,6 +692,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     _admin_ctx = AdminContext(board=board, tokens=_tokens, write_tokens=_write_humans,
                               tokens_file=_tokens_file, last_seen=_last_seen)
     app.include_router(admin_router(_admin_ctx))
+    # t-882e4d2eeb: the one "who belongs in the people pickers" rule (views.human_active reads it)
+    from .admin.teammates import human_active as _human_active
+    board.human_active = lambda p: _human_active(_admin_ctx, p)  # type: ignore[attr-defined]
     # S19: Ask for help, the Help seat's read-only diagnostics and the admin approval of its fixes
     from .admin import make_admin_actor
     from .api_doctor import doctor_router

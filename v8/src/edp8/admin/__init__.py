@@ -10,16 +10,19 @@ from .context import AdminContext, LastSeen
 
 __all__ = ["AdminContext", "LastSeen", "admin_router", "is_admin", "make_admin_actor", "PUBLIC_ROUTES"]
 
-#: routes under /v1 that the admin panels add but that are NOT admin-gated (the invite redeem: the
-#: one-time code is the credential)
-PUBLIC_ROUTES = ("/v1/join",)
+#: routes under /v1 that the admin panels add but that are NOT admin-gated: the invite redeem (the one-time
+#: code is the credential), and t-882e4d2eeb's sign out and request-access routes (edp8.admin.access)
+PUBLIC_ROUTES = ("/v1/join", "/v1/signout", "/v1/access-requests", "/v1/access-requests/available",
+                 "/v1/access-requests/claim")
 
 
 def admin_router(ctx: AdminContext) -> APIRouter:
-    from . import capacity, harnesses, integrations, models, remote, services, settings_api, setup_api, teammates, updates
+    from . import access, capacity, harnesses, integrations, models, remote, services, settings_api, setup_api, teammates, updates
 
     gate = make_admin_actor(ctx)
     r = APIRouter()
-    for mod in (settings_api, services, capacity, teammates, remote, integrations, harnesses, models, updates, setup_api):
+    for mod in (settings_api, services, capacity, teammates, access, remote, integrations, harnesses, models, updates,
+                setup_api):
         r.include_router(mod.router(ctx, gate))
+    r.include_router(access.public_router(ctx))
     return r

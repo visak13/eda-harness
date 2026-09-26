@@ -313,6 +313,9 @@ class Participant(Obj):
     # S5 admin tier (design-e963c656f5 §4.8): a human an admin granted Admin (the init human is one without
     # the flag: edp8.admin.auth.is_admin); never set on an agent or an expert
     admin: bool = False
+    # t-882e4d2eeb: an admin removed this human (Admin → Teammates → Remove = revoke + retire). A retired
+    # human leaves every people picker and People list; history keeps the name, greyed
+    retired: bool = False
 
 
 class Ticket(Obj):
@@ -702,6 +705,20 @@ class FixProposal(Obj):
     result: dict[str, Any] | None = None
 
 
+class AccessRequest(Obj):
+    """t-882e4d2eeb (design-e963c656f5 §4.18): a person without a token asked for access from the sign-in page
+    of a remote-enabled board. Admins see it as an attention item (S20 reads id, created_at, status, name,
+    role_wanted) and approve or deny it in Admin → Teammates. The one-time claim code and any token never
+    touch this record: they live hashed in the secrets dir (edp8.admin.access)."""
+    name: str
+    role_wanted: str = "owner"
+    note: str = ""
+    status: Literal["pending", "approved", "denied", "claimed"] = "pending"
+    decided_by: str | None = None
+    decided_at: datetime | None = None
+    handle: str | None = None  # the teammate an approval created
+
+
 OBJECT_TYPES: dict[str, type[Obj]] = {
     "participant": Participant,
     "ticket": Ticket,
@@ -720,6 +737,7 @@ OBJECT_TYPES: dict[str, type[Obj]] = {
     "rsi_run": RsiRun,
     "rsi_state": RsiState,
     "fix": FixProposal,
+    "access_request": AccessRequest,
 }
 
 # Every strict-valued enum in the model, keyed by class name.
