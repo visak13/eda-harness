@@ -1003,9 +1003,11 @@ class Board:
     def criterion_update(self, actor: Participant, id_: str, *, evidence_ref: str | None = None,
                          verdict: Verdict | None = None, text: str | None = None,
                          evidence_version: int | None = None, stale_ok: bool = False,
-                         note: str = "") -> Criterion:
+                         note: str = "", warnings: list[str] | None = None) -> Criterion:
         """`note`: the checker's one-line reason with a verdict; the board records it as a claim
-        (S-IMPLICIT, records.claim_from_verdict) — no seat calls record_claim for it."""
+        (S-IMPLICIT, records.claim_from_verdict) — no seat calls record_claim for it.
+        `warnings`: filled with post-commit failures (pain p-334391e9) — once the criterion is
+        stored the call succeeds; a failed event write or follow-on step is reported, never raised."""
         c: Criterion = self._get("criterion", id_, "criterion")
         t = self.ticket(c.ticket_id)
         if text is not None:
@@ -1070,6 +1072,19 @@ class Board:
                     c.evidence_version = cur
             c.verdict = verdict
         self.store.put("criterion", c)
+        # Everything below runs AFTER the criterion is committed: a failure here must not turn a
+        # stored verdict into an error the caller retries (pain p-334391e9).
+        try:
+            self._criterion_after_commit(actor, t, c, verdict, note)
+        except Exception as e:  # noqa: BLE001
+            _log.exception("criterion %s stored; post-commit step failed", c.id)
+            if warnings is not None:
+                warnings.append(f"criterion stored, but a follow-on step failed ({type(e).__name__}: {e}); "
+                                "re-read the ticket before retrying")
+        return c
+
+    def _criterion_after_commit(self, actor: Participant, t: Ticket, c: Criterion,
+                                verdict: Verdict | None, note: str) -> None:
         pending = [x.id for x in self.criteria(t.id) if x.verdict != Verdict.passed]
         if verdict is not None:  # a verdict is a first-class WHO/WHAT event, not a doc edit
             self._emit(t.id, EventKind.criterion_checked,
@@ -1084,7 +1099,6 @@ class Board:
             records.safely(records.claim_from_verdict, self, actor, c, note)
         self._reopen_quick_on_fail(self.ticket(t.id), c, actor)
         self._auto_advance(self.ticket(t.id))
-        return c
 
     def _reopen_quick_on_fail(self, t: Ticket, c: Criterion, actor: Participant) -> None:
         """S-QUICK: the owner's `fail` on a handed-off quick task sends it straight back to its engineer
@@ -1618,13 +1632,14 @@ class Board:
     def gate_open(self, ticket_id: str, gate: Gate, *, by: str = "board", note: str = "") -> Event:
         t = self.ticket(ticket_id)
         # §24.1 cap: design_signoff is refused while the epic carries more than STORY_CAP open
-        # stories (a scope gate can raise creation past the cap, but the epic must be split back
-        # under the cap before its design is signed off — the cap is a design-time ceiling too).
+        # stories — unless the owner answered a scope gate on this epic: that answer lifts the cap
+        # for creation AND for sign-off (owner m-b0a7f9cda9, pain p-b618055b; it replaced the old
+        # "split the epic back under the cap before sign-off" rule).
         if gate == Gate.design_signoff and t.kind == TicketKind.epic:
             n = len(self._open_stories(t.id))
-            if n > STORY_CAP:
+            if n > STORY_CAP and not self._scope_cap_raised(t.id):
                 raise BoardError("scope", f"the epic has {n} open stories (> {STORY_CAP}); design_signoff is refused",
-                                 f"split the epic, or drop/fold stories to {STORY_CAP} or fewer")
+                                 f"split the epic, drop/fold stories to {STORY_CAP} or fewer, or ask the owner to answer a scope gate")
         if self.open_gates(ticket_id, gate):
             return self.open_gates(ticket_id, gate)[0]
         ev = self._emit(t.id, EventKind.gate_opened, {"gate": gate, "by": by, "note": note})
@@ -1719,7 +1734,11 @@ class Board:
                 raise BoardError("scope",
                                  f"design_signoff is answered on the epic, not {ticket_id} ({epic.kind.value})",
                                  "open and answer the gate on the epic ticket")
-            if not (epic.design_ref and self.criteria(epic.id) and epic.status == TicketStatus.designed):
+            # pain p-3fd57a36: a child story started before the owner answered carries the epic to
+            # in_progress (_after_status); the open gate stays answerable there — the answer never
+            # moves the epic backward (_advance_epic_phase is forward-only).
+            answerable = (TicketStatus.designed, TicketStatus.signed_off, TicketStatus.in_progress)
+            if not (epic.design_ref and self.criteria(epic.id) and epic.status in answerable):
                 raise BoardError("transition",
                                  f"epic {epic.id} is {epic.status.value} with no signed-off-ready design — set "
                                  f"its design_ref and acceptance criteria (→ designed) before sign-off",

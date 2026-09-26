@@ -790,11 +790,14 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.patch("/v1/criteria/{id_}")
     def criterion_update(id_: str, b: CriterionPatch, a: Participant = Depends(actor)):
+        warnings: list[str] = []
         c = board.criterion_update(a, id_, evidence_ref=b.evidence_ref, verdict=b.verdict, text=b.text,
-                                   evidence_version=b.evidence_version, stale_ok=b.stale_ok, note=b.note)
+                                   evidence_version=b.evidence_version, stale_ok=b.stale_ok, note=b.note,
+                                   warnings=warnings)
         pending = [x.id for x in board.criteria(c.ticket_id) if x.verdict != Verdict.passed]
-        return ok(_dump(c), f"{len(pending)} criteria not yet passed on {c.ticket_id}" if pending else
-                  "all criteria passed; the ticket can be marked done by its checker")
+        hint = (f"{len(pending)} criteria not yet passed on {c.ticket_id}" if pending else
+                "all criteria passed; the ticket can be marked done by its checker")
+        return ok(_dump(c), "; ".join([hint, *warnings]))
 
     # docs / links / artifacts ---------------------------------------------------
     @app.post("/v1/docs")

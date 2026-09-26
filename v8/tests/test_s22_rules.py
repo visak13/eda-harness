@@ -315,7 +315,9 @@ def test_criteria_cap_seventh_refused_on_unfolded_story_folded_exempt(board, rig
     assert ei.value.code == "scope" and "at most 12" in ei.value.message
 
 
-def test_design_signoff_refused_when_epic_over_story_cap(board, rig):
+def test_design_signoff_allowed_over_the_cap_once_the_owner_answered_scope(board, rig):
+    """Owner m-b0a7f9cda9 (pain p-b618055b) reversed the old rule: an answered scope gate lifts the
+    story cap for design_signoff too — the epic is no longer split back under the cap first."""
     epic = make_epic(board, rig)
     for _ in range(8):
         make_story(board, rig, epic)
@@ -323,6 +325,16 @@ def test_design_signoff_refused_when_epic_over_story_cap(board, rig):
     board.gate_answer(rig["owner"], epic.id, Gate.scope, "raise the cap")
     make_story(board, rig, epic)  # 9th now allowed by the scope raise
     assert len(board._open_stories(epic.id)) == 9
+    board.gate_open(epic.id, Gate.design_signoff, by="architect")
+    assert board.open_gates(epic.id, Gate.design_signoff)
+
+
+def test_design_signoff_refused_over_the_cap_without_a_scope_answer(board, rig, monkeypatch):
+    epic = make_epic(board, rig)
+    for _ in range(8):
+        make_story(board, rig, epic)
+    monkeypatch.setattr(board, "_enforce_story_cap", lambda _e: None)  # e.g. stories re-parented in
+    make_story(board, rig, epic)
     with pytest.raises(BoardError) as ei:
         board.gate_open(epic.id, Gate.design_signoff, by="architect")
     assert ei.value.code == "scope" and "9 open stories" in ei.value.message
