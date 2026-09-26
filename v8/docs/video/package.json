@@ -1,0 +1,31 @@
+{
+  "name": "heronry-video",
+  "private": true,
+  "version": "0.1.0",
+  "description": "The Heronry product video: a Remotion composition that renders to MP4 and plays live in @remotion/player.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts Main out/heronry-demo.mp4 --codec=h264 --concurrency=1",
+    "render:hero": "remotion render src/index.ts Hero out/hero.mp4 --codec=h264 --concurrency=1",
+    "render:stills": "node scripts/stills.mjs",
+    "render:all": "node scripts/render-all.mjs",
+    "storyboard": "node scripts/stills.mjs --storyboard",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource-variable/nunito-sans": "5.3.0",
+    "@fontsource/jetbrains-mono": "5.3.0",
+    "@remotion/bundler": "4.0.529",
+    "@remotion/cli": "4.0.529",
+    "@remotion/player": "4.0.529",
+    "@remotion/renderer": "4.0.529",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "remotion": "4.0.529"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "typescript": "5.9.3"
+  }
+}
