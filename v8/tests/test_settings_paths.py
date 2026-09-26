@@ -21,11 +21,18 @@ FLEET = {
 }
 
 
-@pytest.fixture
-def dev_only(monkeypatch: pytest.MonkeyPatch) -> None:
+def _clear_app_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unset the app's own settings only: since S2 the registry also declares OS names (SystemRoot,
+    COMSPEC, LOCALAPPDATA, ProgramFiles*), and without SystemRoot OpenSSL fails on Windows (m-3df6deb7ee)."""
     for s in settings.REGISTRY.values():
         for n in (s.env, *s.aliases):
-            monkeypatch.delenv(n, raising=False)
+            if n.upper().startswith(("EDP", "HERONRY")):
+                monkeypatch.delenv(n, raising=False)
+
+
+@pytest.fixture
+def dev_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_app_env(monkeypatch)
     monkeypatch.setenv("EDP8_HOME", str(V8))
 
 
@@ -67,9 +74,7 @@ def test_installed_mode_refuses_a_loose_tokens_file_and_the_dev_admin_token(
     from edp8.service import create_app
     from edp_contracts.settings import secrets
 
-    for s in settings.REGISTRY.values():
-        for n in (s.env, *s.aliases):
-            monkeypatch.delenv(n, raising=False)
+    _clear_app_env(monkeypatch)
     monkeypatch.setenv("EDP_HOME", str(tmp_path))
     monkeypatch.setenv("EDP8_UI", "legacy")
 
