@@ -28,7 +28,7 @@ export const Ch5Memory: React.FC = () => {
   const next = useAppear(290);
   return (
     <Chapter
-      num={5}
+      num={6}
       title="Memory that improves itself"
       art="ch5-memory.png"
       captions={[

@@ -3,23 +3,21 @@ import { AbsoluteFill, Audio, Sequence, staticFile, interpolate, useVideoConfig 
 import { C } from "./theme";
 import { Ch1Pool } from "./chapters/Ch1Pool";
 import { Ch2Broker } from "./chapters/Ch2Broker";
+import { Ch2bTeam } from "./chapters/Ch2bTeam";
 import { Ch3Wake } from "./chapters/Ch3Wake";
 import { Ch4Context } from "./chapters/Ch4Context";
 import { Ch5Memory } from "./chapters/Ch5Memory";
 import { Ch6Board } from "./chapters/Ch6Board";
 import { Ch7Close } from "./chapters/Ch7Close";
 import { MUSIC } from "./music";
+import TABLE from "./chapters.json";
 
-/** The seven chapters, in the owner's order (design §4.17), with their lengths in frames at 30 fps. */
-export const CHAPTERS = [
-  { id: "ch1", C: Ch1Pool, frames: 360 },
-  { id: "ch2", C: Ch2Broker, frames: 330 },
-  { id: "ch3", C: Ch3Wake, frames: 345 },
-  { id: "ch4", C: Ch4Context, frames: 375 },
-  { id: "ch5", C: Ch5Memory, frames: 360 },
-  { id: "ch6", C: Ch6Board, frames: 405 },
-  { id: "ch7", C: Ch7Close, frames: 210 },
-] as const;
+const COMPONENTS: Record<string, React.FC> = {
+  ch1: Ch1Pool, ch2: Ch2Broker, ch2b: Ch2bTeam, ch3: Ch3Wake, ch4: Ch4Context, ch5: Ch5Memory, ch6: Ch6Board, ch7: Ch7Close,
+};
+
+/** The chapters in the owner's order (design §4.17, 2b per m-b42de746e3); lengths in src/chapters.json. */
+export const CHAPTERS = TABLE.map((c) => ({ ...c, C: COMPONENTS[c.id] }));
 
 export const MAIN_FRAMES = CHAPTERS.reduce((n, c) => n + c.frames, 0);
 

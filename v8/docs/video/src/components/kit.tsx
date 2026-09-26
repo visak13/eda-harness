@@ -9,7 +9,7 @@ import {
   useVideoConfig,
   Easing,
 } from "remotion";
-import { C, FONT, MONO, ROLE } from "../theme";
+import { C, FONT, H, MONO, ROLE } from "../theme";
 import { ART_READY } from "../art";
 
 export type Role = keyof typeof ROLE;
@@ -150,15 +150,20 @@ export const Chapter: React.FC<{
     extrapolateLeft: "clamp", extrapolateRight: "clamp",
   });
   const head = useAppear(4);
-  const artIn = useProgress(10, 40);
+  const hasArt = Boolean(art && ART_READY);
+  // with art: the illustration opens the chapter at full strength (an establishing shot), then
+  // dims behind the diagram as it fades in; without art the diagram shows at once
+  const artO = interpolate(frame, [0, 10, 40, 64], [0, 1, 1, 0.14], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const zoom = interpolate(frame, [0, 64], [1.06, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const diagram = hasArt ? interpolate(frame, [44, 66], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }) : 1;
   return (
     <AbsoluteFill style={{ background: C.bg, opacity: fade, fontFamily: FONT, color: C.text }}>
-      {art && ART_READY && (
+      {hasArt && (
         <Img
           src={staticFile(`art/${art}`)}
           style={{
-            position: "absolute", right: 0, bottom: 0, width: 1080, opacity: 0.34 * artIn,
-            transform: `scale(${1.04 - 0.04 * artIn})`, transformOrigin: "bottom right",
+            position: "absolute", right: 0, bottom: 0, height: H, opacity: artO,
+            transform: `scale(${zoom})`, transformOrigin: "bottom right",
           }}
         />
       )}
@@ -186,7 +191,7 @@ export const Chapter: React.FC<{
           ))}
         </div>
       </div>
-      <div style={{ position: "absolute", left: 800, top: 0, right: 0, bottom: 0 }}>{children}</div>
+      <div style={{ position: "absolute", left: 800, top: 0, right: 0, bottom: 0, opacity: diagram }}>{children}</div>
       <div style={{ position: "absolute", left: 110, bottom: 70, display: "flex", alignItems: "center", gap: 16, opacity: 0.8 }}>
         <Logo size={44} />
         <span style={{ fontWeight: 800, fontSize: 26 }}>Heronry</span>

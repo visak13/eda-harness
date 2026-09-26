@@ -1,0 +1,10 @@
+[
+  {"id": "ch1", "title": "The pool spawns seats", "frames": 360, "key": 300, "art": true},
+  {"id": "ch2", "title": "The broker carries the mail", "frames": 330, "key": 290, "art": true},
+  {"id": "ch2b", "title": "People and agents, one thread", "frames": 285, "key": 262, "art": false},
+  {"id": "ch3", "title": "Seats sleep until it matters", "frames": 345, "key": 250, "art": true},
+  {"id": "ch4", "title": "Context, engineered", "frames": 375, "key": 330, "art": true},
+  {"id": "ch5", "title": "Memory that improves itself", "frames": 360, "key": 300, "art": true},
+  {"id": "ch6", "title": "The board walks the epic", "frames": 405, "key": 330, "art": true},
+  {"id": "ch7", "title": "Heronry", "frames": 210, "key": 150, "art": false}
+]

@@ -24,7 +24,7 @@ export const Ch3Wake: React.FC = () => {
   const feed = useAppear(10);
   return (
     <Chapter
-      num={3}
+      num={4}
       title="Seats sleep until it matters"
       art="ch3-wake.png"
       captions={[

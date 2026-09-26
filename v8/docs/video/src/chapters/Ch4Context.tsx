@@ -30,7 +30,7 @@ export const Ch4Context: React.FC = () => {
   const cursor = Math.min(3, Math.max(0, Math.floor((frame - 175) / 18)));
   return (
     <Chapter
-      num={4}
+      num={5}
       title="Context, engineered"
       art="ch4-context.png"
       captions={[

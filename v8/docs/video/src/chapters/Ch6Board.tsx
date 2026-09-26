@@ -28,7 +28,7 @@ export const Ch6Board: React.FC = () => {
   const gate = frame >= 95 && frame < 150;
   return (
     <Chapter
-      num={6}
+      num={7}
       title="The board walks the epic"
       art="ch6-board.png"
       captions={[
