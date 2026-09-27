@@ -54,6 +54,13 @@ ver_ge() {  # ver_ge A B: A >= B for X.Y.Z
   [ "$(printf '%s\n%s\n' "$2" "$1" | sort -t. -k1,1n -k2,2n -k3,3n | head -n1)" = "$2" ]
 }
 ver_of() { echo "$1" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -n1; }
+src_of() {  # src_of <name>: its url-or-path from $WORK/files, whole (a --release-url folder may hold spaces)
+  awk -v n="$1" '$1==n { sub(/^[^ ]+ /, ""); print; exit }' "$WORK/files"
+}
+file_url() {  # file_url <abs path>: a file:// URL, with %, space and # percent-encoded (PEP 508 needs a valid URL)
+  u="$(printf '%s' "$1" | sed -e 's/%/%25/g' -e 's/ /%20/g' -e 's/#/%23/g')"
+  case "$u" in /*) echo "file://$u" ;; *) echo "file:///$u" ;; esac
+}
 
 WORK="$(mktemp -d 2>/dev/null || mktemp -d -t heronry)"
 trap 'rm -rf "$WORK"' EXIT INT TERM
@@ -106,19 +113,22 @@ else
   curl -fsSL -H "Accept: application/vnd.github+json" "$API" -o "$WORK/release.json"
   grep -o '"browser_download_url": *"[^"]*"' "$WORK/release.json" | sed 's/.*"\(http[^"]*\)"/\1/' |
     while read -r u; do echo "${u##*/} $u"; done > "$WORK/files"
-  SUMS_URL="$(awk '$1=="SHA256SUMS" {print $2}' "$WORK/files")"
+  SUMS_URL="$(src_of SHA256SUMS)"
   [ -n "$SUMS_URL" ] || die "the release has no SHA256SUMS; refusing an unverifiable install"
   fetch "$SUMS_URL" "$WORK/SHA256SUMS"
 fi
-WITH=""; EDP8=""
+# The sibling wheels go to uv as the positional list ("$@": --with <path> pairs), one argument per path:
+# POSIX sh has no arrays, and a string of paths word-splits on a TMPDIR with spaces (S11 F8).
+set --
+EDP8=""
 for W in edp8 edp_contracts edp_pool edp_broker; do
   NAME="$(awk -v w="$W" 'index($1, w "-")==1 && $1 ~ /\.whl$/ {print $1}' "$WORK/files" | sort | tail -n1)"
   [ -n "$NAME" ] || die "the release has no $W wheel"
   WANT="$(awk -v n="$NAME" '{ f=$2; sub(/^\*/, "", f) } f==n && length($1)==64 {print tolower($1)}' "$WORK/SHA256SUMS")"
   [ -n "$WANT" ] || die "$NAME is not listed in SHA256SUMS; refusing it"
-  fetch "$(awk -v n="$NAME" '$1==n {print $2}' "$WORK/files")" "$WORK/$NAME"
+  fetch "$(src_of "$NAME")" "$WORK/$NAME"
   [ "$(sha256 "$WORK/$NAME")" = "$WANT" ] || die "SHA-256 mismatch for $NAME; nothing installed"
-  if [ "$W" = edp8 ]; then EDP8="$WORK/$NAME"; else WITH="$WITH --with $WORK/$NAME"; fi
+  if [ "$W" = edp8 ]; then EDP8="$WORK/$NAME"; else set -- "$@" --with "$WORK/$NAME"; fi
 done
 TARGET="$(basename "$EDP8" | cut -d- -f2)"
 say "verified 4 wheels of heronry $TARGET against SHA256SUMS"
@@ -134,11 +144,10 @@ else
   SPEC="$EDP8"
   if [ "$EMBED" = 1 ]; then  # the embed extra needs a PEP 508 URL: "edp8[embed] @ file:///abs/path.whl"
     ABS="$(cd "$(dirname "$EDP8")" && { pwd -W 2>/dev/null || pwd; })/$(basename "$EDP8")"
-    case "$ABS" in /*) SPEC="edp8[embed] @ file://$ABS" ;; *) SPEC="edp8[embed] @ file:///$ABS" ;; esac
+    SPEC="edp8[embed] @ $(file_url "$ABS")"
   fi
-  say "uv tool install --force --python $PYTHON $SPEC$WITH"
-  # shellcheck disable=SC2086  # WITH is a list of --with <path> pairs (temp paths without spaces)
-  "$UV" tool install --force --python "$PYTHON" "$SPEC" $WITH ||
+  say "uv tool install --force --python $PYTHON $SPEC $*"
+  "$UV" tool install --force --python "$PYTHON" "$SPEC" "$@" ||
     die "uv tool install failed. If heronry is running, stop it first: heronry stop"
   EXE="$BIN/heronry"; [ -x "$EXE" ] || EXE="$BIN/heronry.exe"
 fi
@@ -148,10 +157,9 @@ fi
 "$EXE" version || die "heronry version failed after the install"
 
 # -- 5. prerequisites (the one manifest: edp_contracts.prereqs) ----------------------------------------------
-PA="prereqs install"; [ "$YES" = 1 ] && PA="$PA --yes"; [ "$EMBED" = 0 ] && PA="$PA --no-embed"
-say "heronry $PA"
+set -- prereqs install; [ "$YES" = 1 ] && set -- "$@" --yes; [ "$EMBED" = 0 ] && set -- "$@" --no-embed
+say "heronry $*"
 # under `curl | sh` stdin is the script: the one question goes to the terminal instead
-# shellcheck disable=SC2086
-if [ "$YES" = 0 ] && [ -r /dev/tty ] && [ ! -t 0 ]; then "$EXE" $PA </dev/tty; else "$EXE" $PA; fi ||
+if [ "$YES" = 0 ] && [ -r /dev/tty ] && [ ! -t 0 ]; then "$EXE" "$@" </dev/tty; else "$EXE" "$@"; fi ||
   say "some prerequisites are still missing (above); Heronry is installed: run 'heronry prereqs install' again after fixing them"
 say "next: heronry init   (then heronry start; open a new shell if 'heronry' is not found)"
