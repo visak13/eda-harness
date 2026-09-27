@@ -43,7 +43,7 @@ def tailscale_configured() -> bool:
 
 def _seat_handles() -> list[str] | None:
     try:
-        rows = launcher.live_seats() if launcher.running("pool") else []
+        rows = launcher.live_seats()
     except Exception:  # noqa: BLE001
         return None
     return None if rows is None else [r.split(" (pid", 1)[0] for r in rows]

@@ -62,7 +62,7 @@ def refusal(force: bool) -> str | None:
     if not updater._uv_tool_env() and not settings.env_raw("EDP_UPDATE_INSTALL_CMD"):
         return "this install was not made by `uv tool install`; re-run the install script instead"
     if not force:
-        return launcher.seat_block(launcher.live_seats() if launcher.running("pool") else [],
+        return launcher.seat_block(launcher.live_seats(),
                                    "apply with force to take them offline")
     return None
 

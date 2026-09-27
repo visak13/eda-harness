@@ -99,23 +99,36 @@ def update_argv(h: str, path: str | None) -> list[str]:
     return [*tool_argv(npm), "install", "-g", f"{NPM_PACKAGES[h]}@latest"]
 
 
+def seat_harness(row: dict[str, Any], models: dict[str, Any], seats: dict[str, Any]) -> str | None:
+    """The harness a seat was launched with: the row's recorded harness, then its spawn_settings', and only
+    for a row that recorded none (an older pool) the catalog. R2-B: a catalog edit must not re-route a live
+    seat, so the recorded value wins even when the catalog now says otherwise."""
+    for h in (row.get("harness"), (row.get("spawn_settings") or {}).get("harness")
+              if isinstance(row.get("spawn_settings"), dict) else None):
+        if h in harness.HARNESSES:
+            return str(h)
+    return harness.harness_of(row.get("model"), models) or harness.harness_of(row.get("model"), seats)
+
+
 def live_seats_by_harness() -> dict[str, list[str]] | None:
-    """{harness: [handle]} of the pool's active seats; None when the pool cannot say."""
+    """{harness: [handle]} of the pool's live seats; None when the pool cannot say: an error, an answer that
+    is not the sessions schema, or a live seat whose harness cannot be resolved (it could be any harness)."""
     got = pool_adapter.sessions()
     if not got.get("ok"):
         return None
-    rows = got.get("value")
-    if isinstance(rows, dict):
-        rows = rows.get("sessions") or rows.get("value") or []
+    rows = launcher.parse_sessions(got.get("value"))
+    if rows is None:
+        return None
     reg = seat_choice._registry(seat_choice.agent_home())
     models = reg.get("models") if isinstance(reg.get("models"), dict) else {}
     seats = reg.get("seats") if isinstance(reg.get("seats"), dict) else {}
     out: dict[str, list[str]] = {h: [] for h in harness.HARNESSES}
-    for r in rows or []:
-        if isinstance(r, dict) and r.get("state") == "active":
-            routed = harness.harness_of(r.get("model"), models) or harness.harness_of(r.get("model"), seats)
-            if routed in out:
-                out[routed].append(str(r.get("handle")))
+    for r in rows:
+        if launcher.seat_is_live(r):
+            routed = seat_harness(r, models, seats)
+            if routed is None:
+                return None
+            out[routed].append(str(r.get("handle")))
     return out
 
 

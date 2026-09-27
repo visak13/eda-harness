@@ -399,7 +399,7 @@ def apply(opts: dict[str, Any]) -> int:
         print(f"compat check passed ({len(rows)} workflow(s))")
 
     if not opts.get("force"):
-        block = launcher.seat_block(launcher.live_seats() if launcher.running("pool") else [])
+        block = launcher.seat_block(launcher.live_seats())
         if block:
             raise UpdateError(f"{block}; nothing changed")
     prev_url = opts.get("previous-url") if isinstance(opts.get("previous-url"), str) else None

@@ -244,6 +244,9 @@ def make_dispatch(sup: Supervisor, emit: Callable[..., None]) -> Callable[[str, 
             return 404, {"ok": False, "error": f"unknown service {svc!r}"}
         if svc == "pool" and verb in ("stop", "restart") and not body.get("force") and not body.get("keep_seats"):
             seats = launcher.live_seats()
+            if seats is None:  # the pool cannot say which seats are live: not "none" (t-326566ee13)
+                return 409, {"ok": False, "error": f"pool {verb}: couldn't confirm no seats are live (the pool "
+                             "cannot say); repeat with force", "seats": None}
             if seats:
                 return 409, {"ok": False, "error": f"pool {verb} takes {len(seats)} live seat(s) offline; "
                              "repeat with force", "seats": seats}

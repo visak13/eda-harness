@@ -401,14 +401,16 @@ def _preflight(_: PreflightArgs) -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001
         out["host"] = {"note": f"memory unreadable: {type(e).__name__}"}
     try:
-        from . import pool_adapter
+        from . import launcher, pool_adapter
         got = pool_adapter.sessions()
-        rows = (got["value"] if isinstance(got.get("value"), list) else (got.get("value") or {}).get("sessions", [])) \
-            if got.get("ok") else []
-        live = [s for s in rows if s.get("state") in ("active", "starting", "resuming", "parked")]
-        out["seats"] = {"live": len(live), "handles": sorted(s.get("handle") or "" for s in live)}
+        rows = launcher.parse_sessions(got.get("value")) if got.get("ok") else None
+        if rows is None:  # the pool cannot say: unknown, never "0 live" (t-326566ee13)
+            out["seats"] = {"live": None, "note": "the pool cannot say which seats are live"}
+        else:
+            live = [s for s in rows if launcher.seat_is_live(s) or s.get("state") == "parked"]  # parked = a process
+            out["seats"] = {"live": len(live), "handles": sorted(s.get("handle") or "" for s in live)}
         cap = pool_adapter.capacity()
-        if cap.get("ok"):
+        if cap.get("ok") and rows is not None:
             out["seats"]["caps"] = cap["value"]
     except Exception as e:  # noqa: BLE001
         out["seats"] = {"note": f"pool unreachable: {type(e).__name__}"}

@@ -453,20 +453,43 @@ def _pool_chain(ident: ProcId) -> list[ProcId]:
     return chain
 
 
+# Pool row states in which no seat is working: terminal ones, and parked (S5: a parked seat is not live for
+# an update; it resumes on the new code). active, starting, resuming, and any other state or none, count as
+# live: an unknown is never idle (t-326566ee13).
+IDLE_SEAT_STATES = ("done", "released", "reaped", "dead", "parked")
+
+
+def parse_sessions(payload: Any) -> list[dict[str, Any]] | None:
+    """The pool's GET /v1/sessions rows, or None when the payload does not match that schema (a list of
+    row objects, or {sessions: [...]}) — an error body such as {"detail": ...} is NOT an empty list."""
+    rows = payload.get("sessions") if isinstance(payload, dict) else payload
+    if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+        return None
+    return rows
+
+
+def seat_is_live(row: dict[str, Any]) -> bool:
+    """A pool row holds a live shell unless its state is a known terminal one."""
+    return row.get("state") not in IDLE_SEAT_STATES
+
+
 def live_seats() -> list[str] | None:
-    """Active seats on this pool ("handle (pid N)"), [] when none (or the port is another home's pool),
-    None when the pool cannot say."""
+    """Live seats on this pool ("handle (pid N)"), [] when none (or the port is another home's pool),
+    None when the pool cannot say: unreachable, a non-2xx status, or an answer that is not the sessions
+    schema (R2-A: a 503 {"detail": ...} read as "no seats" and let an unforced update run)."""
     if owner("pool")[0] != "ours":
         return []
     import httpx
     try:
-        rows = httpx.get(f"http://127.0.0.1:{port('pool')}/v1/sessions", timeout=10).json()
+        r = httpx.get(f"http://127.0.0.1:{port('pool')}/v1/sessions", timeout=10)
+        if not 200 <= r.status_code < 300:
+            return None
+        rows = parse_sessions(r.json())
     except (httpx.HTTPError, ValueError):
         return None
-    if isinstance(rows, dict):
-        rows = rows.get("sessions") or rows.get("value") or []
-    return [f"{r.get('handle')} (pid {(r.get('proc') or {}).get('pid')})" for r in rows
-            if isinstance(r, dict) and r.get("state") == "active"]
+    if rows is None:
+        return None
+    return [f"{r.get('handle')} (pid {(r.get('proc') or {}).get('pid')})" for r in rows if seat_is_live(r)]
 
 
 def seat_block(seats: list[str] | None, alt: str = "use --force to take them offline") -> str | None:

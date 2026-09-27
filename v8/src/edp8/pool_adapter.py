@@ -54,7 +54,11 @@ def _get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         r = httpx.get(f"{_env('EDP_POOL_URL', POOL_URL)}{path}", params=params, timeout=20.0)
     except httpx.HTTPError as e:
         return _envelope(False, error=f"pool unreachable: {e}", code="unavailable")
-    return _envelope(r.status_code < 400, value=r.json() if r.content else None, error=r.text)
+    try:
+        value = r.json() if r.content else None
+    except ValueError:  # a non-JSON body is an error the caller can see, never an exception out of a guard
+        return _envelope(False, error=f"pool answered {r.status_code} with a non-JSON body", code="bad_response")
+    return _envelope(r.status_code < 400, value=value, error=r.text)
 
 
 def reachable(timeout: float = 2.0) -> bool:
