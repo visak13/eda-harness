@@ -393,7 +393,8 @@ def test_context_asks_for_me_shows_unanswered_hides_answered(board, rig):
                              text="ship as pip package?")
     q2 = board.message_send(rig["engineer"], ticket_id=epic.id, to="owner", kind=MessageKind.question,
                              text="what license?")
-    board.message_send(rig["owner"], ticket_id=epic.id, to="engineer", kind=MessageKind.answer,
+    # a thread reply (no addressee): v34 rule 2 would clear EVERY earlier ask of the engineer on a reply addressed to it
+    board.message_send(rig["owner"], ticket_id=epic.id, to=None, kind=MessageKind.answer,
                         text="yes", reply_to=q1.id)
 
     ctx = board.context(rig["owner"], epic.id)
