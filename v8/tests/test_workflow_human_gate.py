@@ -8,7 +8,7 @@ import pytest
 
 from edp8 import workflow as wf
 from edp8.board import Board, BoardError
-from edp8.schemas import Gate, Role, TicketKind, WorkType
+from edp8.schemas import Gate, Participant, Role, TicketKind, WorkType, role_id
 from edp8.store import Store
 
 
@@ -70,6 +70,16 @@ def _published_without_lint(b: Board) -> str:
     return saved.ref
 
 
+def _legacy_agent_robot(b: Board):
+    """The registry refuses an agent in a human role (a596308, owner m-da9a2ae62f); a row that predates it is
+    put straight into the store, so the runtime checks below still face one."""
+    with pytest.raises(BoardError) as e:
+        b.participant_create('agent', 'robot', 'robot', id_='robot')
+    assert e.value.code == 'scope'
+    return b.store.put('participant', Participant(id='robot', type='agent', role=role_id('robot'), handle='robot',
+                                                  created_by='registry'))
+
+
 def test_agent_cannot_answer_a_gate_on_a_definition_that_skipped_lint():
     b = Board(Store(':memory:'))
     ref = _published_without_lint(b)
@@ -77,7 +87,7 @@ def test_agent_cannot_answer_a_gate_on_a_definition_that_skipped_lint():
     arch = b.participant_create('agent', Role.architect, 'arch', id_='arch')
     epic = b.ticket_create(owner, kind=TicketKind.epic, work_type=WorkType.feature,
                            title='F2 probe', workflow=ref)
-    robot = b.participant_create('agent', 'robot', 'robot', id_='robot')
+    robot = _legacy_agent_robot(b)
     b.gate_open(epic.id, Gate.adversarial, by=arch.id)
     with pytest.raises(BoardError) as e:
         b.gate_answer(robot, epic.id, Gate.adversarial, 'approved by agent')
@@ -95,7 +105,7 @@ def test_agent_in_custom_human_role_never_passes_a_role_check():
     epic = b.ticket_create(owner, kind=TicketKind.epic, work_type=WorkType.feature,
                            title='F2 role probe', workflow=ref)
     w = b.workflow_of(epic.id)
-    robot = b.participant_create('agent', 'robot', 'robot', id_='robot')
+    robot = _legacy_agent_robot(b)
     person = b.participant_create('human', 'robot', 'rhuman', id_='rhuman')
     assert wf.agent_in_human_role(w, robot) and not wf.agent_in_human_role(w, person)
     params = {'roles': ['robot']}
