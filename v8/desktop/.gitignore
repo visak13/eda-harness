@@ -4,3 +4,5 @@ build/
 dist/
 logs/
 logs_*.txt
+# the linux deb job copies the repo root CHANGELOG.md here for briefcase (installers.yml)
+CHANGELOG.md

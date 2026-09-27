@@ -147,6 +147,9 @@ jobs:
           /usr/bin/python3 -m venv .bvenv
           .bvenv/bin/python -m pip install "briefcase==0.4.5"
           .bvenv/bin/briefcase create linux system --no-input
+          # briefcase's native build gzips a CHANGELOG from beside pyproject.toml into the deb's docs; the one
+          # changelog is the repo root's, copied here per build (git-ignored), never committed twice
+          cp ../../CHANGELOG.md CHANGELOG.md
           .bvenv/bin/briefcase build linux system --no-input
           .bvenv/bin/briefcase package linux system -p deb --adhoc-sign --no-input
           ls -l dist
