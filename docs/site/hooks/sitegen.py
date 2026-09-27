@@ -340,7 +340,7 @@ def load_release(fixture: str | None = None, timeout: float = 15.0) -> dict[str,
 #: the native installers the release ships (no AppImage: design §4.9):
 #: key, OS name on the card, systems it runs on, file suffix, file type, the command-line script for that OS
 INSTALLERS = (("windows", "Windows", "Windows 10/11", ".msi", "MSI installer", "install.ps1"),
-              ("macos", "macOS", "Apple Silicon and Intel", ".dmg", "Disk image (DMG)", "install.sh"),
+              ("macos", "macOS", "Apple Silicon (Intel: install.sh)", ".dmg", "Disk image (DMG)", "install.sh"),
               ("linux", "Linux", "Ubuntu 24.04+ / Debian 13", ".deb", "Debian package (deb)", "install.sh"))
 
 

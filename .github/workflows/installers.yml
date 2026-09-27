@@ -2,7 +2,7 @@ name: installers
 
 # S8 (s-6dcf78f803, design §4.9, strategyhl-5af811e7bd §3): Heronry Desktop native installers with Briefcase.
 # Builds the four wheels of one release (like install.yml), then per OS: briefcase create/build/package
-# (Windows .msi per-user, macOS universal2 .dmg, Linux .deb for ubuntu:noble), unsigned (--adhoc-sign, R10),
+# (Windows .msi per-user, macOS arm64 .dmg, Linux .deb built natively on ubuntu-24.04 = noble), unsigned (--adhoc-sign, R10),
 # and the service re-entry drill on the built bundle (v8/desktop/scripts/drill_bundle_{windows.ps1,posix.sh}):
 # init -> start -> every service is the bundle re-entered with --heronry-service <svc> -> /v1/health + /ui ->
 # stop, nothing left. The installers are uploaded as run artifacts; release.yml calls this workflow on a `v*`
@@ -94,7 +94,7 @@ jobs:
         with:
           name: wheels
           path: v8/desktop/wheels
-      - name: Build the universal2 DMG
+      - name: Build the arm64 DMG
         working-directory: v8/desktop
         run: |
           python -m pip install "briefcase==0.4.5"
@@ -102,11 +102,13 @@ jobs:
           briefcase build macOS --no-input
           briefcase package macOS --adhoc-sign --no-input
           ls -l dist
-      - name: universal2 check (lipo)
+      - name: arm64 check (lipo)
         working-directory: v8/desktop
         run: |
           APP="build/heronry/macos/app/Heronry Desktop.app"
-          lipo -archs "$APP/Contents/MacOS/Heronry Desktop"
+          # arm64 only (desktop/pyproject.toml: cryptography has no x86_64 macOS wheel since 49.0.0)
+          ARCHS="$(lipo -archs "$APP/Contents/MacOS/Heronry Desktop")"; echo "$ARCHS"
+          case " $ARCHS " in *" arm64 "*) ;; *) echo "the app binary has no arm64 slice"; exit 1 ;; esac
           find "$APP" -name '*.so' | head -n 20 | while read -r so; do echo "$(lipo -archs "$so") $so"; done
       - name: Service re-entry drill on the built bundle
         run: bash v8/desktop/scripts/drill_bundle_posix.sh "$PWD/v8/desktop/build/heronry/macos/app/Heronry Desktop.app/Contents/MacOS/Heronry Desktop"
@@ -131,13 +133,18 @@ jobs:
         with:
           name: wheels
           path: v8/desktop/wheels
-      - name: Build the ubuntu:noble deb
+      - name: Build the ubuntu:noble deb (natively)
         working-directory: v8/desktop
+        # native, not --target ubuntu:noble: briefcase's Docker build mounts only the bundle dir, so the host
+        # ./wheels find-links was "a non-existing path" in the container (release run 36332234433). The runner
+        # IS noble, so the native deb targets the same system; its build packages come from apt here.
         run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3-dev libgirepository1.0-dev libcairo2-dev pkg-config
           python -m pip install "briefcase==0.4.5"
-          briefcase create linux system --target ubuntu:noble --no-input
-          briefcase build linux system --target ubuntu:noble --no-input
-          briefcase package linux system --target ubuntu:noble -p deb --adhoc-sign --no-input
+          briefcase create linux system --no-input
+          briefcase build linux system --no-input
+          briefcase package linux system -p deb --adhoc-sign --no-input
           ls -l dist
       - name: Install the deb, then the service re-entry drill
         run: |

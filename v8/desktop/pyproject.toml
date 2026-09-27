@@ -2,10 +2,10 @@
 #
 # BeeWare Briefcase bundles a Python runtime plus the four packages (edp8, edp-contracts, edp-pool,
 # edp-broker) as wheels from ./wheels (built from the same tag; the SPA is prebuilt into the edp8 wheel).
-# Windows .msi, macOS .dmg, Linux .deb (ubuntu:noble). No AppImage and no Flatpak (strategyhl-5af811e7bd §3).
+# Windows .msi, macOS .dmg (Apple Silicon), Linux .deb (ubuntu:noble). No AppImage and no Flatpak (strategyhl-5af811e7bd §3).
 #
 #   build the wheels into ./wheels (see .github/workflows/installers.yml), then:
-#   briefcase create && briefcase build && briefcase package --adhoc-sign   (or: -p deb --target ubuntu:noble)
+#   briefcase create && briefcase build && briefcase package --adhoc-sign   (Linux: -p deb, natively on Ubuntu 24.04)
 #
 # The bundle's one entry point is heronry/__main__.py: `--heronry-service <svc>` re-enters a service
 # before any GUI import (launcher.service_argv), a CLI verb runs the `heronry` CLI, nothing opens the GUI.
@@ -44,7 +44,9 @@ system_installer = false
 requires = ["pythonnet>=3.0"]
 
 [tool.briefcase.app.heronry.macOS]
-universal_build = true
+# arm64 only: cryptography ships no x86_64 macOS wheel since 49.0.0 (PyPI: 48.0.1 is the last universal2),
+# so a universal2 build cannot resolve a current cryptography (release run 36332234433). Intel Macs use install.sh.
+universal_build = false
 requires = ["pyobjc-framework-WebKit", "pyobjc-framework-Quartz"]
 
 [tool.briefcase.app.heronry.linux]

@@ -1,6 +1,7 @@
 # Download
 
 {{ brand.product_name }} runs on Windows 10/11, macOS (Apple Silicon and Intel) and Ubuntu 24.04+ / Debian 13.
+The macOS disk image is for Apple Silicon; on an Intel Mac, install with `install.sh` (cmd).
 Pick the desktop app (GUI) or the command line (cmd): both install the same services and keep your board data in
 your user profile, so a reinstall or an update never touches it.
 

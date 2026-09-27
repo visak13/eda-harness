@@ -4,7 +4,7 @@ name: release
 # one commit and stops at a DRAFT GitHub Release. Only the owner publishes; no seat pushes a tag (R3: GitHub
 # Releases only, no PyPI).
 #   python-dist   SPA, then sdist + wheel of edp-contracts, edp-pool, edp-broker, edp8; manifest guard + PII gate
-#   installers    installers.yml: MSI (Windows), universal2 DMG (macOS, lipo in the log), deb (ubuntu:noble), vsix
+#   installers    installers.yml: MSI (Windows), arm64 DMG (macOS, lipo in the log), deb (ubuntu:noble), vsix
 #   assets        merge, add install.ps1/install.sh pinned to the tag, require the full set, SHA256SUMS +
 #                 `sha256sum -c`, PII gate over everything
 #   attest        build-provenance attestation for every asset (id-token + attestations write, nothing else)

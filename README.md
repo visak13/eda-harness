@@ -56,6 +56,8 @@ download, run `sha256sum -c SHA256SUMS --ignore-missing` next to the release's `
 
 ### macOS (Apple Silicon and Intel)
 
+The DMG is for Apple Silicon. On an Intel Mac, use **cmd** below.
+
 **GUI**
 1. Download `Heronry Desktop-<ver>.dmg` from the [latest release](https://github.com/visak13/eda-harness/releases/latest).
 2. Open the DMG and drag **Heronry Desktop** to Applications.
