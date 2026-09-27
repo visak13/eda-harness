@@ -50,11 +50,17 @@ def scan_text(path: str, text: str) -> list[str]:
 
 
 def _decode(data: bytes) -> str | None:
-    if b"\0" in data[:8192]:
-        # binary (SQLite, images, executables): search the raw bytes, then again with the NULs dropped so
-        # UTF-16LE strings (Windows resources, some DBs) read as plain ASCII
-        return data.decode("latin-1") + "\n" + data.replace(b"\0", b"").decode("latin-1")
-    return data.decode("utf-8", errors="replace")
+    # The raw stream always. Whenever the stream holds a NUL ANYWHERE (not only in a prefix: adversary R2-D,
+    # a UTF-16 string after 8 KiB of text was missed), the WHOLE stream again: with the NULs dropped, and
+    # decoded as UTF-16LE and UTF-16BE at both byte alignments. The decodes keep a UTF-16 needle's neighbours
+    # as the characters they really are (NUL-dropping alone glues ASCII bytes onto it and defeats the
+    # username rule's boundary).
+    if b"\0" not in data:
+        return data.decode("utf-8", errors="replace")
+    views = [data.decode("latin-1"), data.replace(b"\0", b"").decode("latin-1")]
+    for enc in ("utf-16-le", "utf-16-be"):
+        views += [data[i:].decode(enc, errors="replace") for i in (0, 1)]
+    return "\n".join(views)
 
 
 def scan_bytes(path: str, data: bytes) -> list[str]:

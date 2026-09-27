@@ -69,6 +69,20 @@ def test_binary_files_are_scanned_as_bytes(tmp_path):
     assert [h for h in g.scan_bytes("app.exe", utf16) if ": owner username:" in h]
 
 
+@pytest.mark.parametrize("enc", ["utf-16-le", "utf-16-be"])
+@pytest.mark.parametrize("lead", [0, 8192, 1 << 20])
+def test_utf16_needles_are_found_anywhere_in_the_stream(enc, lead):
+    # adversary R2-D: the NUL-drop pass ran only when a NUL sat in the first 8 KiB
+    data = b"A" * lead + ("C:\\Users\\" + USER + "\\x").encode(enc) + b"B" * 64
+    assert [h for h in _gate().scan_bytes("late.bin", data) if ": owner username:" in h], (enc, lead)
+
+
+@pytest.mark.parametrize("enc", ["utf-16-le", "utf-16-be"])
+def test_a_bare_utf16_needle_after_ascii_padding_is_found(enc):
+    # the adversary's shape (.data/s11-r2/probes.py): 8 KiB of b"A", then only the needle
+    assert _gate().scan_bytes("late.bin", b"A" * 8192 + USER.encode(enc))
+
+
 def test_cli_exits_1_on_a_planted_file_and_0_when_clean(tmp_path):
     (tmp_path / "clean.txt").write_text("nothing here")
     def run():
