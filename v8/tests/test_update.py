@@ -54,9 +54,11 @@ FAIL_NEW = ("import json,sys,pathlib; w=sys.argv[2]; pathlib.Path(sys.argv[1]).w
 
 
 def _prev(tmp_path: Path) -> list[str]:
-    """`--previous-url` of a fake release of the installed version: the N-1 wheels a rollback needs (S11 F7)."""
-    from importlib.metadata import version
-    return ["--previous-url", str(_release(tmp_path / "prev", version("edp8")))]
+    """`--previous-url` of a fake release of the installed version: the N-1 wheels a rollback needs (S11 F7).
+    The version is the product's single source (`edp8.__version__`, what the updater reports), never the
+    distribution metadata, which lags in an editable dev venv (0.8.0 vs 0.9.0, qa m-e633397a42)."""
+    from edp8 import __version__
+    return ["--previous-url", str(_release(tmp_path / "prev", __version__))]
 
 
 def _status(inst) -> dict:

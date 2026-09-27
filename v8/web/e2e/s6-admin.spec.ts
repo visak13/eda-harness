@@ -26,10 +26,17 @@ test("an admin sees Admin in the rail and six tabs; Settings renders every regis
   await expect(page.getByTestId("capacity")).toBeVisible();
 
   const listing = await (await fetch(`${BASE()}/v1/admin/settings`, { headers: ownerH })).json();
-  const keys = (listing.value.groups as { settings: unknown[] }[]).reduce((n, g) => n + g.settings.length, 0);
+  const rows = (listing.value.groups as { settings: { tier?: string }[] }[]).flatMap((g) => g.settings);
+  const basic = rows.filter((s) => s.tier === "basic").length;
   await page.getByRole("tab", { name: "Settings" }).click();
-  await expect(page.getByTestId("setting-field")).toHaveCount(keys);
-  expect(keys).toBeGreaterThan(100);
+  // t-5dd0cc18ea: the basic tier shows by default; "Show advanced" adds the rest of the registry
+  await expect(page.getByTestId("setting-field")).toHaveCount(basic);
+  expect(basic).toBeGreaterThan(0);
+  expect(basic).toBeLessThan(rows.length);
+  await page.locator("label", { has: page.getByTestId("settings-show-advanced") }).click();
+  await expect(page.getByTestId("settings-show-advanced")).toBeChecked();
+  await expect(page.getByTestId("setting-field")).toHaveCount(rows.length);
+  expect(rows.length).toBeGreaterThan(50); // internal registry keys never reach the listing (97 at 0.9.0)
   // env-set keys are read-only on this board too (EDP8_PORT is set by the harness)
   await expect(page.getByTestId("setting-board.port-input")).toBeDisabled();
 });
@@ -42,7 +49,22 @@ test("a non-admin human gets no rail entry and a refusal on /ui/admin", async ({
 });
 
 test("invite → /ui/join in another browser context lands signed in; revoke → 401", async ({ page, browser }) => {
+  // This board is not in public mode, so Invite is off: the link would only work over the tailnet.
   await page.goto(`${BASE()}/ui/admin?tab=teammates&as=owner&token=${OWNER_TOKEN}`);
+  await page.getByTestId("invite-handle").fill("carol");
+  await expect(page.getByTestId("invite-submit")).toBeDisabled();
+  await expect(page.getByTestId("invite-off-reason")).toBeVisible();
+  await expect(page.getByTestId("how-inviting-remote-off")).toBeVisible();
+
+  // Remote access on (public_mode is the SPA's gate; the invite route itself does not need a tailnet), then invite.
+  await page.route("**/v1/admin/tailnet", async (route) => {
+    const res = await route.fetch();
+    const body = await res.json();
+    body.value.public_mode = true;
+    await route.fulfill({ response: res, json: body });
+  });
+  await page.reload();
+  await expect(page.getByTestId("invite-off-reason")).toHaveCount(0);
   await page.getByTestId("invite-handle").fill("carol");
   await page.getByTestId("invite-submit").click();
   const link = (await page.getByTestId("invite-link").innerText()).match(/https?:\/\/\S+/)![0];
@@ -68,9 +90,12 @@ test("invite → /ui/join in another browser context lands signed in; revoke →
   await other.close();
 });
 
-test("/ui/setup: a signed-in admin walks from sign-in to the harness step", async ({ page }) => {
+test("/ui/setup: a signed-in admin walks from sign-in through tools to the harness step", async ({ page }) => {
   await page.goto(`${BASE()}/ui/setup?as=owner&token=${OWNER_TOKEN}`);
   await expect(page.getByTestId("setup-signed-in")).toContainText("owner");
+  await page.getByTestId("setup-next").click();
+  // the tools (prerequisites) step sits between sign-in and harnesses
+  await expect(page.getByTestId("setup-tools")).toBeVisible();
   await page.getByTestId("setup-next").click();
   await expect(page.getByTestId("harness-selection")).toBeVisible();
 });
