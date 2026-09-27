@@ -1,0 +1,16 @@
+# drill7 (-OnlyResume -Keep): the resumed seat's own transcript ca91ae21-bfe1-4fce-abb3-701ffc41d12b.jsonl (87 lines),
+# fork of the imported base 38698f8a (written by the old store's `claude -p`, copied by heronry import).
+# User turns, tool calls in order, and the board results that show the seat's identity.
+USER   reply with the single word ok
+USER   You were resumed. Call resume_self() now and follow its steps in order (get_guide('resume') is the contract). Your transcript is history: re-arm, answer the open asks, then continue your plan.
+CALL   ToolSearch
+CALL   mcp__edp8__resume_self
+  ->   ok=True as engineer.t-e5fe207e39
+CALL   ToolSearch
+CALL   Monitor
+CALL   CronCreate
+CALL   mcp__edp8__context
+  ->   ok=True as engineer.t-e5fe207e39
+CALL   mcp__edp8__record_status
+  ->   ok=True as engineer.t-e5fe207e39: [done] Resumed and re-armed; t-e5fe207e39 is already done (c-e2c4fae4ec pass, installers run 36334913273 green), no open asks, nothing pending.
+CALL   ToolSearch

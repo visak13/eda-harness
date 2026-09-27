@@ -32,7 +32,7 @@ function SeedStore($dir) {
   Copy-Item "$devStore\.credentials.json" "$dir\.credentials.json"
   Copy-Item "$devStore\.claude.json" "$dir\.claude.json"
 }
-# Seat check: a transcript in $proj written after $since whose whoami() tool call got a participant back.
+# Seat check: a transcript in $proj written after $since whose whoami() (fresh) or resume_self() (resumed) call got its participant back.
 function WaitWhoami($proj, $since, $handle) {
   $deadline = (Get-Date).AddSeconds($SeatWait)
   while ((Get-Date) -lt $deadline) {
@@ -56,13 +56,14 @@ for f in sorted(os.listdir(proj)):
         except ValueError: continue
         for c in (o.get('message') or {}).get('content') or []:
             if not isinstance(c, dict): continue
-            if c.get('type') == 'tool_use' and c.get('name', '').endswith('__whoami'): ids[c['id']] = c['name']
+            if c.get('type') == 'tool_use' and c.get('name', '').endswith(('__whoami', '__resume_self')): ids[c['id']] = c['name']
             if c.get('type') == 'tool_result' and c.get('tool_use_id') in ids:
                 body = c.get('content')
                 text = body if isinstance(body, str) else ''.join(x.get('text', '') for x in body or [] if isinstance(x, dict))
                 try: env = json.loads(text)
                 except ValueError: continue
-                who = ((env.get('value') or {}).get('participant') or {}).get('id') if env.get('ok') else None
+                v = env.get('value') or {} if env.get('ok') else {}
+                who = (v.get('participant') or (v.get('identity') or {}).get('participant') or {}).get('id')
                 if who == handle:  # the seat under test, not a sibling still writing
                     print(f'{f}|{ids[c["tool_use_id"]]} -> ok, participant {who}|{len(lines)} transcript lines'); sys.exit(0)
 '@
@@ -198,7 +199,7 @@ print(row['session_id'])
   Check ($out.ok -and $out.value.via -in @("resume-from-closed", "started-fresh")) "the imported closed seat resumed ($($out.value.via))"
   $hit = WaitWhoami $proj $since $ResumeHandle
   "   resumed seat transcript: $hit"
-  Check ([bool]$hit) "the resumed claude seat called whoami() and got its participant back"
+  Check ([bool]$hit) "the resumed claude seat called resume_self() and got its participant back"
   Start-Sleep -Seconds 15
   $live = $null; try { $live = Invoke-RestMethod "http://127.0.0.1:$env:EDP_POOL_PORT/v1/liveness/$ResumeHandle" -TimeoutSec 10 } catch { }
   "   resumed liveness 15 s later: $($live | ConvertTo-Json -Compress)"
