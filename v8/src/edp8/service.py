@@ -1900,6 +1900,13 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         app.include_router(webhook_router(board))
         start_mirror_thread(board)
 
+    # S11 F6: a pinned version's inline card whose file is missing (renamed by the collision fix, or a fresh
+    # agent home) is written again, so a resumed seat still boots its card.
+    try:
+        board.materialise_pinned_cards()
+    except Exception as e:  # noqa: BLE001 — card migration must never block startup
+        logging.getLogger("edp8.service").warning("pinned-card materialise failed: %s", e)
+
     # §18.1: reap staged uploads nobody finalised — once at startup, then hourly.
     try:
         swept = board.sweep_staged_artifacts()

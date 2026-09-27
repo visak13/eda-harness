@@ -133,9 +133,9 @@ def seat_card_env(t: Ticket | None, role: str) -> dict[str, str]:
 
 def materialise_card(name: str, text: str, home: Any = None) -> Any:
     """S13 (§4.14(d)): write a workflow version's card into the agent home's command dir as
-    `<name>.md` (name = wf-<id>-<version>-<role>), so the seat boots `/<name>`. A published version is
-    immutable, so a file is written once and never changes under a running seat; rewritten only when
-    missing or different (a crash mid-write)."""
+    `<name>.md` (name = workflow.card_name: wf-<id>-<version>-<role> + a hash), so the seat boots
+    `/<name>`. A published version is immutable, so a file is written once and never changes under a
+    running seat; rewritten only when missing or different (a crash mid-write)."""
     import os
     from pathlib import Path as _P
     base = _P(home) if home is not None else _P(seat_choice.agent_home())
@@ -256,6 +256,26 @@ class Board:
         if role == Role.doctor.value:
             env = {**env, "EDP_SEAT_DISALLOWED_TOOLS": DOCTOR_DISALLOWED_TOOLS}
         return {"env": env, "capacity": wf.capacity(role), "workflow": wf.ref}
+
+    def materialise_pinned_cards(self, home: Any = None) -> list[str]:
+        """S11 F6 migration (board start): write the inline card of every role of every pinned version whose
+        file is missing, so a resumed seat or a fresh agent home finds the card its EDP_CARD names. A file
+        already there is never touched (materialise_card writes only a missing or torn one). Returns the
+        names written."""
+        from pathlib import Path as _P
+        base = _P(home) if home is not None else _P(seat_choice.agent_home())
+        written = []
+        for ref_ in sorted(self.workflows.pinned_refs()):
+            try:
+                wf = self.workflows.resolve(ref_)
+            except wflow.WorkflowError:
+                continue
+            for rid in wf.roles:
+                name, text = wf.card(rid)
+                if text is not None and not (base / ".claude" / "commands" / f"{name}.md").is_file():
+                    materialise_card(name, text, base)
+                    written.append(name)
+        return written
 
     def _wf_check(self, wf: wflow.Workflow, pres: list, ctx: wflow.Ctx, *, skip_roles: bool = False,
                   phase: str = "both") -> None:

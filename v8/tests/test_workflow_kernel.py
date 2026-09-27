@@ -99,7 +99,8 @@ def test_the_pairing_spawn_passes_the_pinned_capacity_and_card(board, owner):
     assert board._spawn_seat("designer", f"designer.{epic.id}", epic.id) is True
     role, pid, kw = board._pool_adapter().spawned[-1]
     assert (role, kw["capacity_class"], kw["max_concurrent"]) == ("designer", "planner", 2)
-    assert kw["env"]["EDP_CARD"] == "wf-crew-1-designer"
+    assert kw["env"]["EDP_CARD"] == wf.card_name("crew", 1, "designer")  # S11 F6: prefix + hash
+    assert kw["env"]["EDP_CARD"].startswith("wf-crew-1-designer-")
     std = _epic(board, owner)
     assert board._spawn_seat("qa", f"qa.{std.id}", std.id) is True
     _, _, kw = board._pool_adapter().spawned[-1]
@@ -115,7 +116,7 @@ def test_a_card_edit_in_a_new_version_reaches_only_new_epics(board, owner, home)
     fresh = _epic(board, owner, v2)
     old = board.seat_spawn_spec(running.id, "designer")["env"]["EDP_CARD"]
     new = board.seat_spawn_spec(fresh.id, "designer")["env"]["EDP_CARD"]
-    assert (old, new) == ("wf-crew-1-designer", "wf-crew-2-designer")
+    assert (old, new) == (wf.card_name("crew", 1, "designer"), wf.card_name("crew", 2, "designer"))
     cmd = home / ".claude" / "commands"
     assert "Card v1" in (cmd / f"{old}.md").read_text(encoding="utf-8")
     assert "Card v2" in (cmd / f"{new}.md").read_text(encoding="utf-8")

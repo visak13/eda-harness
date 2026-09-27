@@ -68,9 +68,17 @@ def ref(wf_id: str, version: int) -> str:
 
 
 def card_name(wf_id: str, version: int, role: str) -> str:
-    """A materialised card's command name (the pool's EDP_CARD pattern: [a-z][a-z0-9-]{0,40})."""
+    """A materialised card's command name (the pool's EDP_CARD pattern: [a-z][a-z0-9-]{0,40}).
+
+    S11 F6: a readable prefix `wf-<id>-<version>-<role>` (sanitised, cut to 30) plus 10 hex of a sha256
+    over the exact triple. A bare truncation made two versions of a long id share one file, so publishing
+    v2 overwrote the card v1's epics were pinned to; the hash also separates ids that sanitise alike."""
+    import hashlib
+    import json
     import re
-    return re.sub(r"[^a-z0-9-]", "-", f"wf-{wf_id}-{version}-{role}".lower())[:41]
+    digest = hashlib.sha256(json.dumps([wf_id, int(version), role]).encode("utf-8")).hexdigest()[:10]
+    prefix = re.sub(r"[^a-z0-9-]", "-", f"wf-{wf_id}-{version}-{role}".lower())[:30].rstrip("-")
+    return f"{prefix}-{digest}"
 
 
 def parse_ref(s: str) -> tuple[str, int]:
@@ -485,7 +493,7 @@ class Workflow:
 
     def card(self, role: str) -> tuple[str, str | None]:
         """(card name, text to materialise). A card written in the workflow (card_md) is materialised per
-        version as `wf-<id>-<version>-<role>` = KERNEL_PREAMBLE + its text, so an edit in a new version
+        version as card_name(id, version, role) = KERNEL_PREAMBLE + its text, so an edit in a new version
         reaches only epics pinned to it; a shipped agent-home card (Standard) is used as is (None)."""
         r = self.roles.get(str(role))
         if r is None:
