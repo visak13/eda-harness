@@ -33,6 +33,12 @@ from edp8 import tool_idem  # noqa: E402
 from edp8.client import BoardClient  # noqa: E402
 from edp8.tool_contracts import IDEMPOTENT_CREATES  # noqa: E402
 from edp_contracts.settings.secrets import write_secret  # noqa: E402
+from edp8 import settings  # noqa: E402
+
+# The per-call page cap of the six standards. context() is bounded by its own registry setting, read from the
+# registry default (not a literal) so it follows the owner ruling (16 KB pack, dec-7581ebda87; qa m-866f9f2d26)
+PAGE_CAP_B = 8192
+CALL_CAP_B = {"context": max(PAGE_CAP_B, int(settings.setting("EDP8_CONTEXT_BUDGET_B").default))}
 
 ROLES = ("owner", "architect", "engineer", "qa", "adversary", "sme", "doctor")
 SOURCE_DB = ROOT / ".data" / "edp8.db"
@@ -115,6 +121,31 @@ def transcripts(root: Path, claude_seat: str, codex_seat: str) -> tuple[Path, Pa
 
 def encoded(obj: object) -> bytes:
     return json.dumps(obj, ensure_ascii=False, default=str, separators=(",", ":")).encode("utf-8")
+
+
+def _path_forms(path: str) -> list[str]:
+    """One path as a ledger may spell it: native, forward-slashed, or repr-escaped (doubled backslashes)."""
+    return list(dict.fromkeys((path, path.replace("\\", "/"), path.replace("\\", "\\\\"))))
+
+
+# S23-T6 (qa m-866f9f2d26): every path the audit records goes through redact(), so no run leaks the host
+# user's profile (a temp home lives under C:\Users\<name>\AppData\Local\Temp); temp before home, longest first
+_REDACT = [(re.compile(re.escape(form), re.I), label)
+           for root, label in ((tempfile.gettempdir(), "<TEMP>"), (str(Path.home()), "<HOME>"))
+           for form in sorted(_path_forms(str(Path(root).resolve())) + _path_forms(root), key=len, reverse=True)]
+
+
+def redact(obj: object) -> object:
+    """A copy of a ledger row with the temp dir and the user's home replaced by <TEMP>/<HOME> in every string."""
+    if isinstance(obj, str):
+        for pattern, label in _REDACT:
+            obj = pattern.sub(label, obj)
+        return obj
+    if isinstance(obj, dict):
+        return {k: redact(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [redact(v) for v in obj]
+    return obj
 
 
 def _image(result: dict) -> dict | None:
@@ -224,7 +255,13 @@ class Audit:
                      encoded({"audit.owner": self.owner_token, "agents": {}}).decode("utf-8"))
         self.pool = ThreadingHTTPServer(("127.0.0.1", self.pool_port), FakePool)
         threading.Thread(target=self.pool.serve_forever, daemon=True).start()
-        os.environ.update(EDP_POOL_URL=f"http://127.0.0.1:{self.pool_port}", EDP8_HOME=str(self.home),
+        # S23-T6 (qa m-866f9f2d26): hermetic in-process env. Run from a seat shell, its EDP_AGENT_HOME, EDP_HOME,
+        # EDP8_RUN_DIR and pool/broker/MCP URLs leaked in (spawn -> foreign_board, a false spawn_reap regression),
+        # so every EDP_/EDP8_ variable is dropped and only the private board's own are set
+        for name in [n for n in os.environ if n.upper().startswith(("EDP_", "EDP8_"))]:
+            os.environ.pop(name, None)
+        os.environ.update(EDP_POOL_URL=f"http://127.0.0.1:{self.pool_port}", EDP_HOME=str(self.home),
+                          EDP8_HOME=str(self.home), EDP8_RUN_DIR=str(self.home / ".run"),
                           EDP8_TOKENS=str(self.home / "tokens.json"), EDP8_BOARD_URL=self.base,
                           EDP8_ADMIN_TOKEN=self.admin, EDP8_EMBEDDER="none")
         self.start_board()
@@ -235,7 +272,7 @@ class Audit:
 
     def start_board(self) -> None:
         safe = {k: v for k, v in os.environ.items() if k.upper() in ENV_ALLOW}
-        safe.update(EDP8_HOME=str(self.home), EDP8_RUN_DIR=str(self.home / ".run"),
+        safe.update(EDP_HOME=str(self.home), EDP8_HOME=str(self.home), EDP8_RUN_DIR=str(self.home / ".run"),
                     EDP8_DB=str(self.home / "edp8.db"), EDP8_TOKENS=str(self.home / "tokens.json"),
                     EDP8_HOST="127.0.0.1", EDP8_PORT=str(self.board_port),
                     EDP8_ADMIN_TOKEN=self.admin, EDP8_EMBEDDER="none", EDP8_LOG="warning",
@@ -333,14 +370,14 @@ class Audit:
         error = result.get("error") or {}
         ledger_args = {key: (str(value).replace(str(ROOT), "<workspace>") if key == "path" else value)
                        for key, value in (args or {}).items()}
-        self.calls.append({"task": task, "role": role, "tool": name, "args": ledger_args,
+        self.calls.append(redact({"task": task, "role": role, "tool": name, "args": ledger_args,
                            "ok": bool(result.get("ok")), "error_code": error.get("code"),
                            "result_id": (result.get("value") or {}).get("id") if isinstance(result.get("value"), dict) else None,
                            "error": str(error.get("message") or "")[:400],
                            "hint": str(result.get("hint") or "")[:400],
                            "bytes_out": len(raw) + image_bytes(result),
                            "max_line_bytes": max(map(len, raw.splitlines()), default=0),
-                           "duration_ms": round((time.monotonic() - t0) * 1000)})
+                           "duration_ms": round((time.monotonic() - t0) * 1000)}))
         return result
 
     def task(self, name: str, fn) -> None:
@@ -352,12 +389,12 @@ class Audit:
         except Exception as exc:
             passed, note, workarounds = False, repr(exc), []
         calls = self.calls[start:]
-        row = {"type": "task", "task": name, "calls": len(calls),
+        row = redact({"type": "task", "task": name, "calls": len(calls),
                "arg_misses": sum(c["error_code"] == "schema" for c in calls),
                "bytes_out": sum(c["bytes_out"] for c in calls),
                "max_line_bytes": max((c["max_line_bytes"] for c in calls), default=0),
                "workarounds_needed": workarounds, "pass": bool(passed) and not workarounds,
-               "note": note}
+               "note": note})
         self.tasks.append(row)
         print(json.dumps(row, ensure_ascii=True), flush=True)
 
@@ -366,11 +403,11 @@ class Audit:
         pid, token = self.roles[role]
         response = httpx.get(f"{self.base}/v1/artifacts/{artifact_id}/content",
                              headers={"X-Participant": pid, "X-Token": token}, timeout=15)
-        self.calls.append({"task": task, "role": role, "tool": "artifact_content_http", "args": {"id": artifact_id},
+        self.calls.append(redact({"task": task, "role": role, "tool": "artifact_content_http", "args": {"id": artifact_id},
                            "ok": response.status_code == 200, "error_code": None if response.status_code == 200 else "http",
                            "result_id": artifact_id, "error": "" if response.status_code == 200 else str(response.status_code),
                            "hint": "", "bytes_out": len(response.content), "max_line_bytes": len(response.content),
-                           "duration_ms": 0})
+                           "duration_ms": 0}))
         return response.content if response.status_code == 200 else b""
 
     def value(self, result: dict, what: str) -> dict:
@@ -766,7 +803,8 @@ def scores(a: Audit) -> dict:
                             ("artifact_", "demo")) if name.startswith(prefix)), None)
         advertises_skill = skill is None or skill in desc
         # S23: an opt-in full/verbose read may exceed the page; the standard is the DEFAULT call
-        large = [c for c in calls if c["bytes_out"] > 8192
+        cap = CALL_CAP_B.get(name, PAGE_CAP_B)
+        large = [c for c in calls if c["bytes_out"] > cap
                  and not (c["args"].get("verbose") or c["args"].get("full"))]
         misses = [c for c in calls if c["error_code"] == "schema"]
         guidance = all((c["error"].split("'")[1] if "'" in c["error"] else "") in c["hint"] + c["error"]
@@ -799,7 +837,7 @@ def scores(a: Audit) -> dict:
         rows[name] = {"roles": [r for r in ROLES if name in ROLE_BUNDLES[r]], "calls": len(calls),
                       "bytes_out": sum(c["bytes_out"] for c in calls),
                       "max_bytes_out": max((c["bytes_out"] for c in calls), default=0),
-                      "over_8kb": len(large), "arg_misses": len(misses), "error_names_fix": guidance,
+                      "over_8kb": len(large), "cap_b": cap, "arg_misses": len(misses), "error_names_fix": guidance,
                       "ok_calls": ok_calls,
                       "standards": {"1_advertisement": "pass" if advertises_object and advertises_enums and advertises_skill else "fail",
                                     "2_idempotent": idempotent,
@@ -929,12 +967,12 @@ def main() -> int:
         delta = compare(json.loads(args.baseline.read_text(encoding="utf-8")),
                         {"tasks": audit.tasks, "calls": audit.calls}) if args.baseline else None
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_bytes(encoded({"source_db": ".data/edp8.db", "private_home": "<temporary-private-home>",
+        args.out.write_bytes(encoded(redact({"source_db": ".data/edp8.db", "private_home": "<temporary-private-home>",
                                       "board_port": audit.board_port, "pool_port": audit.pool_port,
                                       "tasks": audit.tasks, "calls": audit.calls, "tools": tools,
                                       "matrix": matrix, "workaround_hits": workaround_hits,
                                       "completeness_exempt": COMPLETENESS_EXEMPT,
-                                      **({"baseline": delta} if delta else {})}))
+                                      **({"baseline": delta} if delta else {})})))
         print(json.dumps({"type": "matrix", **matrix, "completeness_exempt": COMPLETENESS_EXEMPT},
                          ensure_ascii=True), flush=True)
         if delta:
