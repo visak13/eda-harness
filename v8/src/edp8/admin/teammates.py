@@ -68,11 +68,21 @@ def _hash(code: str) -> str:
 
 
 class InviteStore:
-    """sha256(code) -> {handle, expires, by}, in an owner-only file in the secrets dir."""
+    """sha256(code) -> {handle, expires, by}, in an owner-only file in the secrets dir.
+
+    `lock` is the ONE lock for a teammate's access (t-501e39f939): spending a code, writing the token it
+    mints, and revoke/remove/rotate all run under it. `drop` bumps the handle's revocation epoch; a
+    redemption commits its token only if the epoch it spent the code under is still current, so a revoke
+    that lands between the spend and the token write makes the redemption fail instead of restoring access."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
+        self._epochs: dict[str, int] = {}
+
+    def epoch(self, handle: str) -> int:
+        with self.lock:
+            return self._epochs.get(handle.lstrip("@"), 0)
 
     def _load(self) -> dict[str, dict[str, Any]]:
         try:
@@ -104,7 +114,8 @@ class InviteStore:
         return None if hit is None else str(hit["handle"])
 
     def redeem_entry(self, code: str) -> dict[str, Any] | None:
-        """The stored entry for a live code, spending it; None when unknown, used or expired."""
+        """The stored entry for a live code, spending it; None when unknown, used or expired. The entry carries
+        `epoch`: the handle's revocation epoch at the spend (see :meth:`epoch`)."""
         key, now = _hash(code), time.time()
         with self.lock:
             data = self._load()
@@ -112,6 +123,8 @@ class InviteStore:
             live = {k: v for k, v in data.items() if v.get("expires", 0) > now}
             if hit is not None or len(live) != len(data):
                 self._save(live)
+            if hit is not None:
+                hit = {**hit, "epoch": self._epochs.get(str(hit.get("handle", "")).lstrip("@"), 0)}
         if hit is None or hit.get("expires", 0) <= now:
             return None
         return hit
@@ -121,7 +134,10 @@ class InviteStore:
         return {v["handle"]: v["expires"] for v in self._load().values() if v.get("expires", 0) > now}
 
     def drop(self, handle: str) -> None:
+        """Drop every invite for `handle` and bump its revocation epoch (an in-flight redemption then fails)."""
         with self.lock:
+            h = handle.lstrip("@")
+            self._epochs[h] = self._epochs.get(h, 0) + 1
             data = self._load()
             keep = {k: v for k, v in data.items() if v.get("handle") != handle}
             if len(keep) != len(data):
@@ -198,17 +214,21 @@ def redeem_invite(ctx: AdminContext, code: str) -> tuple[str, str]:
         raise HTTPException(401, "this invite was already used or has expired; ask an admin for a new one")
     handle = str(hit["handle"])
     token_mode(ctx)
-    try:
-        p = human(ctx, handle)
-    except HTTPException:
-        raise HTTPException(401, "this invite's teammate no longer exists") from None
-    if getattr(p, "retired", False):
-        raise HTTPException(401, "this teammate was removed; ask an admin for a new invite")
-    current = ctx.tokens()[0].get(handle)
-    if hit.get("keep_token") and current:
-        return handle, current  # the setup sign-in: the init human's token stays the one in use
-    secret = secrets.token_urlsafe(24)
-    set_token(ctx, handle, secret)
+    store = invite_store()
+    with store.lock:  # t-501e39f939: the checks and the token write are one step against revoke/remove
+        try:
+            p = human(ctx, handle)
+        except HTTPException:
+            raise HTTPException(401, "this invite's teammate no longer exists") from None
+        if getattr(p, "retired", False):
+            raise HTTPException(401, "this teammate was removed; ask an admin for a new invite")
+        if store.epoch(handle) != hit.get("epoch", 0):
+            raise HTTPException(401, "this teammate's access was revoked; ask an admin for a new invite")
+        current = ctx.tokens()[0].get(handle)
+        if hit.get("keep_token") and current:
+            return handle, current  # the setup sign-in: the init human's token stays the one in use
+        secret = secrets.token_urlsafe(24)
+        set_token(ctx, handle, secret)
     return handle, secret
 
 
@@ -262,10 +282,11 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
     @r.post("/v1/admin/teammates/{handle}/invite")
     def teammate_reinvite(handle: str, request: Request, a: Participant = Depends(admin_actor)):
         _token_mode()
-        p = _human(handle)
-        if getattr(p, "retired", False):  # a fresh invite brings a removed teammate back
-            p = board.store.put("participant", p.model_copy(update={"retired": False}))
-        code, exp = invites.issue(p.handle, a.handle)
+        with invites.lock:
+            p = _human(handle)
+            if getattr(p, "retired", False):  # a fresh invite brings a removed teammate back
+                p = board.store.put("participant", p.model_copy(update={"retired": False}))
+            code, exp = invites.issue(p.handle, a.handle)
         return {"ok": True, "value": {**invite_links(request, p.handle, code), "code": code, "expires_at": _iso(exp)},
                 "hint": "any earlier invite for this teammate no longer works"}
 
@@ -285,8 +306,9 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
         p = _human(handle)
         if p.id == a.id:
             raise HTTPException(409, "you cannot revoke your own token here (another admin can)")
-        invites.drop(p.handle)
-        _set_token(p.handle, None)
+        with invites.lock:  # an in-flight redemption either finished (its token goes now) or fails
+            invites.drop(p.handle)
+            _set_token(p.handle, None)
         return {"ok": True, "value": {"handle": p.handle, "revoked": True},
                 "hint": "their token is refused from now on; a new invite signs them in again"}
 
@@ -300,18 +322,22 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
             raise HTTPException(409, "you cannot remove yourself (another admin can)")
         if p.handle.lstrip("@") == owner_handle():
             raise HTTPException(409, "the init human (EDP8_OWNER) cannot be removed")
-        invites.drop(p.handle)
-        _set_token(p.handle, None)
-        p = board.store.put("participant", p.model_copy(update={"retired": True, "admin": False}))
+        with invites.lock:  # same lock as the redemption: a racing join cannot bring the token back
+            invites.drop(p.handle)
+            _set_token(p.handle, None)
+            p = board.store.put("participant", _human(handle).model_copy(update={"retired": True, "admin": False}))
         return {"ok": True, "value": {"handle": p.handle.lstrip("@"), "removed": True},
                 "hint": "their token is refused and they no longer appear in pickers; history keeps their name"}
 
     @r.post("/v1/admin/teammates/{handle}/rotate")
     def teammate_rotate(handle: str, a: Participant = Depends(admin_actor)):
         _token_mode()
-        p = _human(handle)
-        secret = secrets.token_urlsafe(24)
-        _set_token(p.handle, secret)
+        with invites.lock:
+            p = _human(handle)
+            if getattr(p, "retired", False):
+                raise HTTPException(409, f"{p.handle.lstrip('@')} was removed; send a new invite to bring them back")
+            secret = secrets.token_urlsafe(24)
+            _set_token(p.handle, secret)
         return {"ok": True, "value": {"handle": p.handle, "token": secret},
                 "hint": "shown once: the old token is refused from now on"}
 

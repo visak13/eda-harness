@@ -41,6 +41,8 @@ def make_admin_actor(ctx: AdminContext) -> Callable[..., Participant]:
             raise HTTPException(403, "admin routes need an admin human's X-Participant and X-Token") from None
         if p.type != "human":
             raise HTTPException(403, f"{p.handle!r} is an agent; only an admin human reaches /v1/admin")
+        if getattr(p, "retired", False):  # t-501e39f939: a removed human never signs an admin call
+            raise HTTPException(403, f"{p.handle!r} was removed")
         secret = ctx.tokens()[0].get(p.handle.lstrip("@"))
         if not secret or not hmac.compare_digest(secret.encode(), x_token.encode()):
             raise HTTPException(403, f"X-Token invalid for {p.handle!r}")

@@ -494,6 +494,15 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         map. Trusted mode: a participant with no configured secret is header-only. Public mode
         (S17): a participant with no credential is REFUSED — no host acts header-only over the net."""
         humans, agents = _tokens()
+        if getattr(p, "retired", False):
+            # t-501e39f939: a removed participant is refused even with a matching token (a join that raced
+            # the Remove, a token file restored from backup); its leftover human entry is dropped on sight.
+            if p.type == "human" and p.handle.lstrip("@") in humans:
+                try:
+                    _revoke_human_token(p.handle)
+                except (OSError, ValueError, RuntimeError):
+                    logging.getLogger("edp8.service").warning("could not drop the removed %s's token", p.handle)
+            return f"{p.handle.lstrip('@')!r} was removed; ask an admin for a new invite"
         secret = (humans if p.type == "human" else agents).get(p.handle.lstrip("@"))
         if secret is None:
             if p.role == Role.expert:  # S-SME-SURFACE: an expert is never header-only, in any mode
