@@ -1876,6 +1876,13 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     from .webapp.serve import CollapseLeadingSlashes
 
     app.add_middleware(CollapseLeadingSlashes)  # t-67dad8c6aa: `//ui/…` redirects to `/ui/…`, never a bare 404
+    # S22: nothing was compressed — an epic page is ~220 KB of JSON refetched on every feed event, the SPA entry
+    # ~290 KB; over the tailnet that was the lag. GZip skips text/event-stream (the feed), images and video.
+    from starlette.middleware.gzip import GZipMiddleware
+    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
+    from . import timing
+    if timing.enabled():  # S22: per-request route/ms/bytes to <logs>/timing.jsonl (off by default)
+        app.add_middleware(timing.TimingMiddleware)
 
     # Cutover switch (design §4.1 Transition, S12; rollback contract narrowed by ruling on
     # report-0e7081b562's second opinion — c-a8c1be7137). EDP8_UI selects which renderer owns /ui:
@@ -1893,13 +1900,6 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         app.include_router(ui_router(board, verify=human_verify, public=public, prefix="/ui-legacy"))
         # t-b2f8859d30: an e2e board serves its private build (EDP8_WEB_DIST); unset = the packaged dist
         mount_spa(app, "/ui", settings.get("EDP8_WEB_DIST") or None)
-    # S22: nothing was compressed — an epic page is ~220 KB of JSON refetched on every feed event, the SPA entry
-    # ~290 KB; over the tailnet that was the lag. GZip skips text/event-stream (the feed), images and video.
-    from starlette.middleware.gzip import GZipMiddleware
-    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
-    from . import timing
-    if timing.enabled():  # S22: per-request route/ms/bytes to <logs>/timing.jsonl (off by default)
-        app.add_middleware(timing.TimingMiddleware)
 
     if settings.get("EDP8_PLANE_URL"):
         from .plane_adapter import start_mirror_thread, webhook_router
@@ -1936,6 +1936,18 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
         threading.Thread(target=_sweep_loop, name="edp8-upload-sweep", daemon=True).start()
 
+    def _optimize_loop() -> None:  # S22: keep planner statistics current on the long-lived connection
+        import time
+        while True:
+            time.sleep(3600)
+            try:
+                board.store.optimize()
+            except Exception as e:  # noqa: BLE001
+                logging.getLogger("edp8.service").warning("hourly PRAGMA optimize failed: %s", e)
+
+    import threading as _threading
+    _threading.Thread(target=_optimize_loop, name="edp8-db-optimize", daemon=True).start()
+
     # S18: the RSI regression tripwire, OFF unless EDP8_RSI=1; the flag is re-read every loop and
     # app.state.rsi_stop ends it at once.
     app.state.rsi_stop = None
@@ -1952,18 +1964,6 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     @app.get("/healthz")
     def healthz():
         return {"ok": True, "started_at": _started_at, **_identity}
-
-    def _optimize_loop() -> None:  # S22: keep planner statistics current on the long-lived connection
-        import time
-        while True:
-            time.sleep(3600)
-            try:
-                board.store.optimize()
-            except Exception as e:  # noqa: BLE001
-                logging.getLogger("edp8.service").warning("hourly PRAGMA optimize failed: %s", e)
-
-    import threading as _threading
-    _threading.Thread(target=_optimize_loop, name="edp8-db-optimize", daemon=True).start()
 
     @app.get("/v1/health")
     def v1_health():
