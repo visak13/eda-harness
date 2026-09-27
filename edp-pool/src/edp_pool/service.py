@@ -4,6 +4,7 @@ import asyncio
 import ipaddress
 import json
 import os
+import sys
 import tempfile
 import threading
 import time
@@ -2403,11 +2404,22 @@ def _safe_brief_path(recipe_id: str, name: str) -> Path:
     return target
 
 
+def _agent_home_script_argv(claude_dir: Path, script: str, *args: str) -> list[str]:
+    """argv that runs `scripts/<script>` of the agent home. A source checkout runs it through
+    `uv run --project <home>` (the dev env); an installed app never launches uv at runtime (owner AV
+    ruling m-631a9ad2a7: unsigned exe -> uv -> python is what behaviour-based AV flags), so it runs on
+    the pool's own interpreter, which carries the installed packages."""
+    path = str(claude_dir / "scripts" / script)
+    if edp_settings.dev_mode():
+        return ["uv", "run", "--project", str(claude_dir), "python", path, *args]
+    return [sys.executable, path, *args]
+
+
 def spawn_neuron_driver(recipe_id: str, cmd: str, heartbeat_secs: float,
                         broker_url: str | None) -> int | None:
     """Launch scripts/neuron_heartbeat.py as a DETACHED child driving one
     external neuron (timer + SSE wake -> `cmd` per turn). Returns the pid or
-    None. Module-level seam so tests patch it instead of spawning uv.
+    None. Module-level seam so tests patch it instead of spawning the driver.
     Output goes to .pool-logs/neuron-driver-<recipe>.log — visible, per the
     no-invisible-shells ruling (the driver itself is tiny; the neuron turns
     it fires run in whatever window the cmd opens)."""
@@ -2421,11 +2433,11 @@ def spawn_neuron_driver(recipe_id: str, cmd: str, heartbeat_secs: float,
     log = open(log_dir / f"neuron-driver-{safe}.log", "a", encoding="utf-8")
     try:
         proc = subprocess.Popen(
-            ["uv", "run", "--project", str(claude_dir), "python",
-             str(claude_dir / "scripts" / "neuron_heartbeat.py"),
-             "--recipe", recipe_id, "--cmd", cmd,
-             "--heartbeat-secs", str(heartbeat_secs),
-             *(["--broker-url", broker_url] if broker_url else [])],
+            _agent_home_script_argv(
+                claude_dir, "neuron_heartbeat.py",
+                "--recipe", recipe_id, "--cmd", cmd,
+                "--heartbeat-secs", str(heartbeat_secs),
+                *(["--broker-url", broker_url] if broker_url else [])),
             stdout=log, stderr=subprocess.STDOUT,
             # CREATE_NO_WINDOW is CONSOLE-DETACHMENT (2026-07-20, live
             # finding): without it the driver inherits the pool's console
@@ -2437,7 +2449,7 @@ def spawn_neuron_driver(recipe_id: str, cmd: str, heartbeat_secs: float,
                 | getattr(subprocess, "CREATE_NO_WINDOW", 0)),
             cwd=str(claude_dir))
         return proc.pid
-    except Exception as e:  # noqa: BLE001 — uv missing etc.
+    except Exception as e:  # noqa: BLE001 — interpreter/uv missing etc.
         _log.warning("neuron_driver_spawn_failed", str(e),
                      recipe_id=recipe_id)
         return None
@@ -2445,7 +2457,7 @@ def spawn_neuron_driver(recipe_id: str, cmd: str, heartbeat_secs: float,
 
 def run_recipe_ctl(verb: str, recipe_id: str, timeout_s: float = 300) -> dict:
     """Run scripts/recipe_ctl.py in the claude project and return its JSON
-    envelope. Module-level so tests patch it instead of spawning uv.
+    envelope. Module-level so tests patch it instead of spawning the ctl.
     Bounded: suspend steers live planners to close (can take minutes);
     anything past `timeout_s` returns an honest error, never a hang."""
     import subprocess
@@ -2454,8 +2466,7 @@ def run_recipe_ctl(verb: str, recipe_id: str, timeout_s: float = 300) -> dict:
         or edp_settings.get("EDP_POOL_CLAUDE_HOME"))
     try:
         proc = subprocess.run(
-            ["uv", "run", "--project", str(claude_dir), "python",
-             str(claude_dir / "scripts" / "recipe_ctl.py"), verb, recipe_id],
+            _agent_home_script_argv(claude_dir, "recipe_ctl.py", verb, recipe_id),
             capture_output=True, text=True, encoding="utf-8",
             timeout=timeout_s,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))

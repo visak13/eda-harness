@@ -7,7 +7,9 @@ opt-out ``HERONRY_NO_UPDATE_CHECK=1``); ``start`` runs the same check quietly. `
 1. fetch the release (GitHub latest, or ``--release-url <dir|http base>``) into ``<data>/updates/<ver>``
    and verify every wheel against ``SHA256SUMS``; a downgrade is refused;
 2. **compat check** (S13, architect m-3ab493d55b): the NEW release's ``heronry workflows check --db <live
-   db> --json`` through ``uv tool run``. Exit 1 aborts with a per-workflow report; exit 2 (usage error or
+   db> --json`` through ``uv tool run``, run by the detached helper outside this process tree (owner AV ruling
+   m-631a9ad2a7: the installed app never launches uv itself; unsigned exe -> uv -> python is what
+   behaviour-based AV flags), which writes ``<run>/update-compat.json`` for this process to read. Exit 1 aborts with a per-workflow report; exit 2 (usage error or
    no DB) refuses unless ``--skip-compat``. Nothing has changed at this point;
 3. refuse while seats are live, or when the pool cannot say (unless ``--force``: the pool stop takes them
    offline); secure the installed version's wheels for a rollback (the cache, else its release, or
@@ -28,7 +30,6 @@ import json
 import os
 import shutil
 import sqlite3
-import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -246,16 +247,48 @@ def compat_argv(wheels: dict[str, Path], db: Path) -> list[str]:
     return [*argv, "heronry", "workflows", "check", "--db", str(db), "--json"]
 
 
+COMPAT_TIMEOUT_S = 600.0
+
+
+def _stage_helper(run: Path) -> Path:
+    """The helper copied into the private run dir, so it runs outside the tool venv (see update_helper)."""
+    run.mkdir(parents=True, exist_ok=True)
+    helper = run / "update-helper.py"
+    shutil.copyfile(Path(__file__).with_name("update_helper.py"), helper)
+    return helper
+
+
 def compat_check(wheels: dict[str, Path], db: Path) -> tuple[int, list[dict[str, Any]], str]:
-    """THE seam (architect m-3ab493d55b): (exit code, rows, stderr) of the new release's workflow check."""
-    r = subprocess.run(compat_argv(wheels, db), capture_output=True, text=True, encoding="utf-8",
-                       errors="replace", timeout=600, stdin=subprocess.DEVNULL)
+    """THE seam (architect m-3ab493d55b): (exit code, rows, stderr) of the new release's workflow check.
+
+    The check itself is `uv tool run`, so it runs in the detached helper (`--compat`), never as a child of
+    this process (owner AV ruling m-631a9ad2a7); this waits for the helper's result file."""
+    run = settings.run_dir()
+    helper = _stage_helper(run)
+    out = run / "update-compat.json"
+    out.unlink(missing_ok=True)
+    plan_f = run / "update-compat-plan.json"
+    plan_f.write_text(json.dumps({"compat_argv": compat_argv(wheels, db), "compat_out": str(out),
+                                  "timeout": COMPAT_TIMEOUT_S}, indent=1), encoding="utf-8")
+    from edp_contracts.proc import detach
+    py = getattr(sys, "_base_executable", None) or sys.executable
+    detach([py, str(helper), "--compat", str(plan_f)], cwd=str(run), env=settings.environ_copy(),
+           log=str(run / "update-compat.out"))
+    deadline = time.monotonic() + COMPAT_TIMEOUT_S + 30.0
+    while not out.is_file():
+        if time.monotonic() > deadline:
+            return 2, [], f"the detached compatibility check did not report within {COMPAT_TIMEOUT_S + 30:.0f}s"
+        time.sleep(0.25)
     try:
-        rows = json.loads(r.stdout or "[]")
+        got = json.loads(out.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return 2, [], f"the compatibility check's result could not be read ({e})"
+    try:
+        rows = json.loads(got.get("stdout") or "[]")
         rows = rows if isinstance(rows, list) else []
     except ValueError:
         rows = []
-    return r.returncode, rows, r.stderr.strip()
+    return int(got.get("rc", 2)), rows, str(got.get("stderr") or "").strip()
 
 
 def backup_db(db: Path, version: str) -> Path:
@@ -428,8 +461,7 @@ def apply(opts: dict[str, Any]) -> int:
     result.unlink(missing_ok=True)
     log = settings.logs_dir() / "update.log"
     log.parent.mkdir(parents=True, exist_ok=True)
-    helper = run / "update-helper.py"
-    shutil.copyfile(Path(__file__).with_name("update_helper.py"), helper)
+    helper = _stage_helper(run)
     me = [sys.executable, "-m", "edp8.cli"]
     plan = {"caller_pid": os.getpid(), "from_version": cur, "to_version": rel.version,
             "install_argv": install_argv(wheels), "rollback_install_argv": install_argv(prev) if prev else None,

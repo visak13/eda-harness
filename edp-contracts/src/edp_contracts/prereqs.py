@@ -48,8 +48,9 @@ class Recipe:
 
     manager: ``winget`` (arg = package id) · ``brew`` (arg = formula, or ``--cask <name>``) · ``apt`` (arg =
     space-separated packages) · ``npm`` (arg = package, installed ``-g``) · ``script`` (arg = the vendor's
-    official install script URL, run as ``curl -fsSL <url> | sh``) · ``uv-pip`` (arg = a requirement installed
-    into this Python) · ``model`` (the embedding model download, in process) · ``url`` (manual: arg is the page).
+    official install script URL, run as ``curl -fsSL <url> | sh``) · ``pip`` (arg = a requirement installed
+    into this Python by its own pip, bootstrapped by ensurepip when the env has none; never through uv, owner AV
+    ruling m-631a9ad2a7) · ``model`` (the embedding model download, in process) · ``url`` (manual: arg is the page).
     """
 
     manager: str
@@ -194,8 +195,7 @@ MANIFEST: tuple[Prereq, ...] = (
         kind="python",
         command="fastembed",
         min_version="0.3",
-        install=_same(Recipe("uv-pip", "fastembed>=0.3")),
-        needs=("uv",),
+        install=_same(Recipe("pip", "fastembed>=0.3")),
         docs="https://github.com/qdrant/fastembed",
     ),
     Prereq(
@@ -440,9 +440,10 @@ def _manager_available(manager: str, *, which: Which | None, os_key: str) -> boo
         "npm": "npm",
         "script": "curl",
     }
-    if manager in ("uv-pip",):
-        # never into a bundle: its Python is the app itself, and it ships the embedder
-        return not in_bundle() and (which or _which)(by_name("uv")) is not None
+    if manager == "pip":
+        # never into a bundle: its Python is the app itself, and it ships the embedder. A `uv tool install`
+        # env has no pip, but its Python has ensurepip (measured), which _PIP_BOOT bootstraps it from
+        return not in_bundle()
     if manager in ("model", "url"):
         return True
     tool = lookup.get(manager)
@@ -508,16 +509,22 @@ def recipe_argv(
         return [*tool_argv(_find(which, "npm") or "npm"), "install", "-g", r.arg]
     if r.manager == "script":
         return ["sh", "-c", f"curl -fsSL {r.arg} | sh"]
-    if r.manager == "uv-pip":
-        return [
-            *tool_argv(_find(which, "uv") or "uv"),
-            "pip",
-            "install",
-            "--python",
-            sys.executable,
-            r.arg,
-        ]
+    if r.manager == "pip":
+        return [sys.executable, "-c", _PIP_BOOT, r.arg]
     return None
+
+
+#: `python -c` body for the ``pip`` recipe: this interpreter's own pip, bootstrapped by ensurepip when the env
+#: has none, so the installed app starts no uv child (owner AV ruling m-631a9ad2a7)
+_PIP_BOOT = (
+    "import importlib, importlib.util, runpy, sys\n"
+    "if importlib.util.find_spec('pip') is None:\n"
+    "    import ensurepip\n"
+    "    ensurepip.bootstrap(upgrade=False)\n"
+    "    importlib.invalidate_caches()\n"
+    "sys.argv = ['pip', 'install', '--disable-pip-version-check', sys.argv[1]]\n"
+    "runpy.run_module('pip', run_name='__main__', alter_sys=True)\n"
+)
 
 
 def describe_recipe(p: Prereq, r: Recipe | None) -> str:
@@ -540,7 +547,7 @@ def describe_recipe(p: Prereq, r: Recipe | None) -> str:
         "apt": f"sudo apt-get install -y {r.arg}",
         "npm": f"npm install -g {r.arg}",
         "script": f"curl -fsSL {r.arg} | sh",
-        "uv-pip": f'uv pip install --python "{sys.executable}" "{r.arg}"',
+        "pip": f'"{sys.executable}" -m pip install "{r.arg}"',
     }.get(r.manager, r.arg)
 
 
@@ -743,7 +750,7 @@ _MANAGER_WORDS = {
     "apt": "apt",
     "npm": "npm -g",
     "script": "official script",
-    "uv-pip": "into Heronry's Python",
+    "pip": "into Heronry's Python",
     "model": "downloaded on install",
     "url": "download page",
 }

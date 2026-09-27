@@ -193,7 +193,8 @@ def test_plan_embed_default_installs_extra_and_model():
     got, which = rows({"uv", "git", "node", "claude", "winget"})
     steps, _ = plan(got, os_key="win32", which=which, embed=True)
     assert [s.name for s in steps] == ["embedder", "embedding model"]
-    assert steps[0].argv[1:5] == ["pip", "install", "--python", prereqs.sys.executable]
+    # the app's own Python, never a uv child (owner AV ruling m-631a9ad2a7)
+    assert steps[0].argv[:2] == [prereqs.sys.executable, "-c"] and steps[0].argv[3] == "fastembed>=0.3"
     assert steps[1].recipe.manager == "model" and steps[1].argv is None
 
 

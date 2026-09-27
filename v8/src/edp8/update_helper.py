@@ -11,6 +11,10 @@ health; any failure → stop, reinstall the previous artefacts when cached, rest
 backup (when one was taken), start. The outcome is written to ``result`` on every path, a crash included:
 ``ok``, ``rolled_back`` (only when the previous code was reinstalled and came up) or ``failed`` (with
 ``recover_hint``). Every step goes to ``log``.
+
+``--compat <plan>`` runs the release's compatibility check (``compat_argv``, a ``uv tool run``) before anything
+stops and writes ``{rc, stdout, stderr}`` to ``compat_out``, on every path: the installed app never launches uv
+as its own child (owner AV ruling m-631a9ad2a7), so this helper is the only runtime uv caller.
 """
 
 from __future__ import annotations
@@ -150,5 +154,22 @@ def _steps(plan: dict, finish) -> int:
     return finish("failed", f"{reason}{note}; {hint}")
 
 
+def compat(plan_path: str) -> int:
+    plan = json.loads(Path(plan_path).read_text(encoding="utf-8"))
+    res = {"rc": 2, "stdout": "", "stderr": "the compatibility check did not run"}
+    try:
+        r = subprocess.run(plan["compat_argv"], capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           timeout=float(plan.get("timeout", 600)), stdin=subprocess.DEVNULL)
+        res = {"rc": r.returncode, "stdout": r.stdout, "stderr": r.stderr}
+    except (OSError, subprocess.TimeoutExpired) as e:
+        res["stderr"] = f"the compatibility check could not run ({type(e).__name__}: {e})"
+    finally:  # the waiting `heronry update` reads this file, so it is written on every path
+        out = Path(plan["compat_out"])
+        tmp = out.with_name(out.name + ".tmp")
+        tmp.write_text(json.dumps(res), encoding="utf-8")
+        os.replace(tmp, out)
+    return 0
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1]))
+    sys.exit(compat(sys.argv[2]) if sys.argv[1] == "--compat" else main(sys.argv[1]))
