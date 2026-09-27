@@ -1400,7 +1400,7 @@ class MessageReadArgs(Args):
 class GateOpenArgs(Args):
     ticket_id: str = Field(description='ticket id')
     gate: Gate = Field(description='gate kind')
-    note: str = Field("", description="the answerer's question, plain words; blank is refused "
+    note: str = Field("", description="the answerer's question, plain words; blank note refused "
                                       "unless the workflow gate declares one")
 
 
