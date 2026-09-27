@@ -1,0 +1,1607 @@
+[
+ {
+  "seat": "architect.epic-7f3d64e6de",
+  "qid": "Q1",
+  "want": [
+   "c-aa16fab6d3",
+   "c-7f77c6c523",
+   "c-8093e35929",
+   "c-14348c35e8",
+   "c-7b1702f845",
+   "c-fc3b301a80",
+   "c-f8f4c89758"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 16,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 3,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "architect.epic-7f3d64e6de",
+  "qid": "Q2",
+  "want": [
+   "m-e633397a42"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 9,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 12,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 3,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "architect.epic-7f3d64e6de",
+  "qid": "Q3",
+  "want": [
+   "m-20ec2c5207",
+   "m-bf83c16da7"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 7,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 15,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 3,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "qa.epic-7f3d64e6de",
+  "qid": "Q1",
+  "want": [
+   "c-7f77c6c523",
+   "c-8093e35929",
+   "c-14348c35e8",
+   "c-7b1702f845",
+   "c-fc3b301a80",
+   "c-f8f4c89758",
+   "c-c19f9c4936",
+   "c-3722df2267",
+   "c-0dd1b51f61",
+   "c-6d8e6fe660",
+   "c-d7bd67f704",
+   "c-ac06d82a6e",
+   "c-85355907fe",
+   "c-5fb36ba3db",
+   "c-3753f0a63a",
+   "c-2d2dfd8976",
+   "c-9a2a84d019",
+   "c-54afa8a81b",
+   "c-e7cba464fc",
+   "c-0e2611c3f2",
+   "c-5c7afde0e8",
+   "c-2c02d34d7f",
+   "c-328185ac06",
+   "c-d1efb29e94",
+   "c-9bf2b47192",
+   "c-0f247caf7d",
+   "c-eb6dc6172f",
+   "c-dc617c014b",
+   "c-cbbe11fb55",
+   "c-50778c655b",
+   "c-0b7b0506e6",
+   "c-b73a4537db"
+  ],
+  "verbatim": {
+   "got": [
+    "c-0f247caf7d"
+   ],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [
+    "c-0f247caf7d"
+   ],
+   "n_records": 16,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": [
+    "c-e7cba464fc"
+   ]
+  },
+  "id_seed": {
+   "got": [
+    "c-0f247caf7d"
+   ],
+   "n_records": 7,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "qa.epic-7f3d64e6de",
+  "qid": "Q2",
+  "want": [
+   "m-078c3f13c3"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 9,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 15,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 7,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "qa.epic-7f3d64e6de",
+  "qid": "Q3",
+  "want": [
+   "m-1f39866c96",
+   "m-26ffec400f",
+   "m-30023429f7",
+   "m-3ab3753664",
+   "m-6b6060dd38",
+   "m-767dd93f62",
+   "m-81bb4cca5e",
+   "m-b42de746e3",
+   "m-f2ce5f4f14"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 7,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 15,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 7,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "qa.s-da61d38c5e",
+  "qid": "Q1",
+  "want": [
+   "c-de4fa3e6e6",
+   "c-2c16f5ebf0"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 16,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [
+    "c-de4fa3e6e6",
+    "c-2c16f5ebf0"
+   ],
+   "n_records": 6,
+   "types": [
+    "claim",
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "qa.s-da61d38c5e",
+  "qid": "Q2",
+  "want": [
+   "m-6cc4b4e352"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 9,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 15,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 6,
+   "types": [
+    "claim",
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "qa.s-da61d38c5e",
+  "qid": "Q3",
+  "want": [
+   "m-538d9896ab",
+   "m-79f8b9a5dc",
+   "m-891b9f42bd"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 7,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 15,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 6,
+   "types": [
+    "claim",
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "sme.s-1dccea48b5",
+  "qid": "Q1",
+  "want": [],
+  "verbatim": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 16,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 2,
+   "types": [
+    "decision",
+    "lesson"
+   ]
+  }
+ },
+ {
+  "seat": "sme.s-1dccea48b5",
+  "qid": "Q2",
+  "want": [],
+  "verbatim": {
+   "got": [],
+   "n_records": 9,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 9,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 2,
+   "types": [
+    "decision",
+    "lesson"
+   ]
+  }
+ },
+ {
+  "seat": "sme.s-1dccea48b5",
+  "qid": "Q3",
+  "want": [],
+  "verbatim": {
+   "got": [],
+   "n_records": 7,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 15,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 2,
+   "types": [
+    "decision",
+    "lesson"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.t-8e1ac0c445",
+  "qid": "Q1",
+  "want": [],
+  "verbatim": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 16,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 3,
+   "types": [
+    "claim",
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.t-8e1ac0c445",
+  "qid": "Q2",
+  "want": [
+   "m-4ff3d73691"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 9,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 3,
+   "types": [
+    "claim",
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.t-8e1ac0c445",
+  "qid": "Q3",
+  "want": [
+   "m-8fe09cecd4"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 7,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 15,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 3,
+   "types": [
+    "claim",
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.t-cd4712c855",
+  "qid": "Q1",
+  "want": [
+   "c-c7976fb9c1"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 16,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 1,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.t-cd4712c855",
+  "qid": "Q2",
+  "want": [
+   "m-a3a8943c39"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 9,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 1,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.t-cd4712c855",
+  "qid": "Q3",
+  "want": [
+   "m-da9a2ae62f"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 7,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 15,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 1,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.t-d606b5d93f",
+  "qid": "Q1",
+  "want": [
+   "c-03438d22fe"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 16,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 1,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.t-d606b5d93f",
+  "qid": "Q2",
+  "want": [
+   "m-c9abfa3828"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 9,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 1,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.t-d606b5d93f",
+  "qid": "Q3",
+  "want": [],
+  "verbatim": {
+   "got": [],
+   "n_records": 7,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 15,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 1,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.t-852e7add63",
+  "qid": "Q1",
+  "want": [],
+  "verbatim": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 16,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 2,
+   "types": [
+    "claim",
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.t-852e7add63",
+  "qid": "Q2",
+  "want": [
+   "m-6f35504905"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 9,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 2,
+   "types": [
+    "claim",
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.t-852e7add63",
+  "qid": "Q3",
+  "want": [
+   "m-8aa6439a77",
+   "m-f5f30e92bb"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 7,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 15,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": [
+    "m-8aa6439a77"
+   ]
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 2,
+   "types": [
+    "claim",
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.t-20f0718990",
+  "qid": "Q1",
+  "want": [],
+  "verbatim": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 16,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 2,
+   "types": [
+    "claim",
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.t-20f0718990",
+  "qid": "Q2",
+  "want": [],
+  "verbatim": {
+   "got": [],
+   "n_records": 9,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 2,
+   "types": [
+    "claim",
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.t-20f0718990",
+  "qid": "Q3",
+  "want": [
+   "m-3136ceca05"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 7,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 15,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": [
+    "m-3136ceca05"
+   ]
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 2,
+   "types": [
+    "claim",
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.s-32035a77da",
+  "qid": "Q1",
+  "want": [
+   "c-c0b35be596"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 16,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 1,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.s-32035a77da",
+  "qid": "Q2",
+  "want": [
+   "m-114e668531"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 9,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 1,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.s-32035a77da",
+  "qid": "Q3",
+  "want": [
+   "m-30023429f7",
+   "m-549b8adc3a"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 7,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 15,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 1,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.s-9648fded35",
+  "qid": "Q1",
+  "want": [
+   "c-d1efb29e94",
+   "c-9bf2b47192",
+   "c-0f247caf7d",
+   "c-eb6dc6172f",
+   "c-c7d47d4f26"
+  ],
+  "verbatim": {
+   "got": [
+    "c-0f247caf7d"
+   ],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [
+    "c-0f247caf7d"
+   ],
+   "n_records": 16,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 1,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.s-9648fded35",
+  "qid": "Q2",
+  "want": [
+   "m-7f1c5a58a2"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 9,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 1,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.s-9648fded35",
+  "qid": "Q3",
+  "want": [
+   "m-3818ff2a47"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 7,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 15,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": [
+    "m-3818ff2a47"
+   ]
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 1,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.s-54a03afc5a",
+  "qid": "Q1",
+  "want": [
+   "c-50778c655b"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 16,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": [
+    "c-50778c655b"
+   ]
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 3,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.s-54a03afc5a",
+  "qid": "Q2",
+  "want": [
+   "m-bf83c16da7"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 9,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 12,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": [
+    "m-bf83c16da7"
+   ]
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 3,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.s-54a03afc5a",
+  "qid": "Q3",
+  "want": [
+   "m-26ffec400f",
+   "m-767dd93f62",
+   "m-81bb4cca5e",
+   "m-b42de746e3",
+   "m-f2ce5f4f14"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 7,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 15,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 3,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.s-461403ebd1",
+  "qid": "Q1",
+  "want": [
+   "c-54afa8a81b",
+   "c-e7cba464fc",
+   "c-0e2611c3f2",
+   "c-5c7afde0e8",
+   "c-2c02d34d7f",
+   "c-328185ac06"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 16,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": [
+    "c-e7cba464fc"
+   ]
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 1,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.s-461403ebd1",
+  "qid": "Q2",
+  "want": [
+   "m-08a12a71e5"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 9,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 1,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.s-461403ebd1",
+  "qid": "Q3",
+  "want": [
+   "m-30023429f7",
+   "m-6b6060dd38"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 7,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 15,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": [
+    "m-30023429f7"
+   ]
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 1,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.t-77c3a55b75",
+  "qid": "Q1",
+  "want": [
+   "c-e7b96160a1"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 16,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": [
+    "c-e7b96160a1"
+   ]
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 1,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.t-77c3a55b75",
+  "qid": "Q2",
+  "want": [],
+  "verbatim": {
+   "got": [],
+   "n_records": 9,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 10,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 1,
+   "types": [
+    "decision"
+   ]
+  }
+ },
+ {
+  "seat": "engineer.t-77c3a55b75",
+  "qid": "Q3",
+  "want": [
+   "m-0e6940fe2c"
+  ],
+  "verbatim": {
+   "got": [],
+   "n_records": 7,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "seat_words": {
+   "got": [],
+   "n_records": 15,
+   "types": [
+    "claim",
+    "decision",
+    "lesson"
+   ],
+   "excerpts": 0,
+   "find_got": []
+  },
+  "id_seed": {
+   "got": [],
+   "n_records": 1,
+   "types": [
+    "decision"
+   ]
+  }
+ }
+]
