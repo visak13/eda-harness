@@ -824,7 +824,8 @@ def _card_exists(name: str) -> bool:
 
 
 def card_path(name: str) -> Any:
-    """The shipped card file for `name` (agent home, then the wheel's packaged home, then a dev checkout)."""
+    """The shipped card file for `name` (agent home, then the wheel's packaged home or, in dev mode, the
+    source checkout: materialise.source_root)."""
     from pathlib import Path
     try:
         from . import settings
@@ -832,8 +833,11 @@ def card_path(name: str) -> Any:
     except Exception:  # noqa: BLE001 - no agent home resolvable: fall back to the packaged tree
         home = None
     roots = [Path(home)] if home else []
-    roots.append(Path(__file__).resolve().parent / "agent_home")  # the wheel's packaged agent home
-    roots.append(Path(__file__).resolve().parents[2])  # a dev checkout: v8/
+    from .materialise import source_root
+    try:
+        roots.append(source_root())
+    except FileNotFoundError:
+        pass
     return next((f for r in roots if (f := r / ".claude" / "commands" / f"{name}.md").is_file()), None)
 
 

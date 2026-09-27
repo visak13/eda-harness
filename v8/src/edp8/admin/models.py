@@ -74,16 +74,24 @@ def _view(raw: dict[str, Any]) -> dict[str, Any]:
             "selected": list(harness.selected(raw)), "warnings": _warnings(models)}
 
 
+def _catalog() -> dict:
+    try:
+        return model_catalog.read()
+    except FileNotFoundError:
+        # a plain refusal, never a 500: this home has no catalog and the build ships none
+        raise HTTPException(404, "no model catalog on this home: run `heronry init` to create one") from None
+
+
 def router(ctx: AdminContext, admin_actor) -> APIRouter:
     r = APIRouter()
 
     @r.get("/v1/admin/models")
     def get_models(a: Participant = Depends(admin_actor)):
-        return {"ok": True, "value": _view(model_catalog.read()), "hint": ""}
+        return {"ok": True, "value": _view(_catalog()), "hint": ""}
 
     @r.put("/v1/admin/models")
     def put_models(body: CatalogIn, a: Participant = Depends(admin_actor)):
-        raw = model_catalog.read()
+        raw = _catalog()
         default = body.default_model if body.default_model is not None else raw.get(model_catalog.DEFAULT_KEY)
         errors = model_catalog.validate(body.models, body.role_models, default)
         for mid, row in body.models.items():
@@ -101,7 +109,7 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
 
     @r.post("/v1/admin/models/test-spawn")
     def test_spawn(body: TestSpawnIn, a: Participant = Depends(admin_actor)):
-        raw = model_catalog.read()
+        raw = _catalog()
         row = (raw.get("models") or {}).get(body.model)
         if not isinstance(row, dict) or body.model not in (raw.get("role_models") or {}).get(body.role, []):
             raise HTTPException(422, "model is not in this role's catalog")

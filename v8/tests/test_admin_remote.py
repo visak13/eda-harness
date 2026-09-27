@@ -235,6 +235,14 @@ def test_guide_renders_the_same_steps(env, tmp_path, monkeypatch):
     assert "<script>" not in v["html"]
     assert "<img" not in v["html"]  # repo-relative diagrams would render broken; each step shows its own
     (home / "guides" / "remote-access.md").unlink()
+    # t-bdd34121ee: a home never materialised serves the copy this build ships; 404 only when it ships none
+    r = env.client.get("/v1/admin/tailnet/guide", headers=ADMIN_H)
+    assert r.status_code == 200 and "Install Tailscale" in r.json()["value"]["html"], r.text
+
+    def no_source():
+        raise FileNotFoundError("no source")
+    from edp8 import materialise
+    monkeypatch.setattr(materialise, "source_root", no_source)
     assert env.client.get("/v1/admin/tailnet/guide", headers=ADMIN_H).status_code == 404
 
 

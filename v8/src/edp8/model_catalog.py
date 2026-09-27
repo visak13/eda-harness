@@ -83,24 +83,22 @@ def migrate(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def read(agent_home: Path | None = None) -> dict[str, Any]:
+    """The data-dir copy (or the home's own catalog), else the shipped catalog. FileNotFoundError only
+    when this build ships none either."""
     source = config_path(agent_home or settings.agent_home())
+    if not source.is_file():
+        source = shipped_path()
     return json.loads(source.read_text(encoding="utf-8"))
 
 
 def shipped_path() -> Path:
-    """The catalog this version ships: the agent home's copy, else the package's (wheel data, or the source
-    checkout the running code is imported from — a dev board on a private EDP_HOME, t-96df382440)."""
+    """The catalog this version ships: the agent home's copy, else the package's (wheel data, or in dev
+    mode the source checkout: EDP_HOME, or the editable install's tree on a private EDP_HOME, t-96df382440)."""
     source = settings.agent_home() / "models.json"
     if source.is_file():
         return source
     from .materialise import source_root
-    try:
-        return source_root() / "models.json"
-    except FileNotFoundError:
-        checkout = Path(__file__).resolve().parents[2] / "models.json"  # <v8>/src/edp8/model_catalog.py
-        if checkout.is_file():
-            return checkout
-        raise
+    return source_root() / "models.json"
 
 
 def snapshot(shipped: dict[str, Any]) -> dict[str, Any]:

@@ -133,8 +133,9 @@ def _asset(name: str) -> Path:
     if packaged.is_file():
         return packaged
     from .brand import ASSET_DIR
-    # a source checkout: the package lives at <v8>/src/edp8 (read-only brand art, never state)
-    roots = [r for r in (settings.home(), Path(__file__).resolve().parent.parent.parent) if r is not None]
+    from .materialise import checkout_root
+    # a source checkout (read-only brand art, never state)
+    roots = [r for r in (settings.home(), checkout_root()) if r is not None]
     for root in roots:
         for rel in (name, f"icons/{name}"):
             if (root / ASSET_DIR / rel).is_file():

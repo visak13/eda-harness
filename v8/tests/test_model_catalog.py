@@ -231,3 +231,29 @@ def test_codex_windows_reads_codex_debug_models(monkeypatch):
     got = model_catalog.codex_windows(refresh=True)
     assert calls == [["codex", "debug", "models"]]
     assert got == {"gpt-6-sol": {"context_window": 272000, "max_context_window": 872000, "auto_compact": 244800}}
+
+
+def test_read_falls_back_to_the_shipped_catalog_and_admin_never_500s(tmp_path, monkeypatch):
+    # t-bdd34121ee: a home with no catalog reads the shipped one; a build shipping none is a plain 404
+    from edp8 import materialise
+    monkeypatch.setattr(settings, "agent_home", lambda: tmp_path / "empty-home")
+    assert not (settings.data_dir() / "models.json").exists()
+    assert model_catalog.read()["models"]
+    env = make_env(tmp_path, monkeypatch)
+    assert env.client.get("/v1/admin/models", headers=ADMIN_H).status_code == 200
+
+    def no_source():
+        raise FileNotFoundError("no source")
+    monkeypatch.setattr(materialise, "source_root", no_source)
+    r = env.client.get("/v1/admin/models", headers=ADMIN_H)
+    assert r.status_code == 404 and "heronry init" in r.json()["error"]["message"], r.text
+
+
+def test_no_checkout_outside_dev_mode(monkeypatch):
+    # the editable-install record is a dev-mode lookup only; an installed board never looks for a checkout
+    from edp8 import materialise
+    monkeypatch.delenv("EDP_DEV", raising=False)
+    assert materialise.checkout_root() is None
+    monkeypatch.setenv("EDP_DEV", "1")
+    root = materialise.checkout_root()
+    assert root is not None and (root / "models.json").is_file()

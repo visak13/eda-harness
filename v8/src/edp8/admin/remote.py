@@ -101,8 +101,14 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
     def tailnet_guide(a: Participant = Depends(admin_actor)):
         # t-20f0718990: the Remote access tab links the same steps as a guide (guides/remote-access.md),
         # rendered by the board's sanitised markdown path like the Code tab FAQ
+        from ..materialise import source_root
         from ..views import render_markdown
         p = settings.agent_home().resolve() / "guides" / "remote-access.md"
+        if not p.is_file():  # a home never materialised: the copy this build ships
+            try:
+                p = source_root() / "guides" / "remote-access.md"
+            except FileNotFoundError:
+                pass
         try:
             body = p.read_text(encoding="utf-8")
         except OSError:

@@ -807,8 +807,7 @@ def _main(argv: list[str]) -> int:
         sys.stdout.write(markdown_table() + "\n")
         return 0
     if argv[:1] == ["--readme"]:
-        root = Path(__file__).resolve().parents[3]
-        target = Path(argv[1]) if len(argv) > 1 else root / "README.md"
+        target = Path(argv[1]) if len(argv) > 1 else Path.cwd() / "README.md"
         changed = sync_readme(target)
         sys.stdout.write(f"{target}: {'updated' if changed else 'already current'}\n")
         return 0

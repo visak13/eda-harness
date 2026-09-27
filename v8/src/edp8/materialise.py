@@ -41,15 +41,49 @@ class Report:
     dry_run: bool = False
 
 
+def _is_checkout(p: Path) -> bool:
+    return (p / ".claude" / "commands").is_dir() and (p / "src" / "edp8").is_dir()
+
+
+def _editable_checkout() -> Path | None:
+    """The source tree edp8 is installed editable from (its PEP 610 direct_url.json), else None."""
+    from importlib import metadata
+    from urllib.parse import urlparse
+    from urllib.request import url2pathname
+    try:
+        raw = metadata.distribution("edp8").read_text("direct_url.json")
+    except metadata.PackageNotFoundError:
+        return None
+    try:
+        rec = json.loads(raw or "{}")
+    except ValueError:
+        return None
+    url = str(rec.get("url") or "")
+    if not (rec.get("dir_info") or {}).get("editable") or not url.startswith("file:"):
+        return None
+    return Path(url2pathname(urlparse(url).path)).resolve()
+
+
+def checkout_root() -> Path | None:
+    """Dev mode only: the source checkout's v8/ root. EDP_HOME when it is one, else the checkout edp8 is
+    installed editable from (a dev board on a private EDP_HOME, t-96df382440). Never a `__file__` walk."""
+    if not settings.dev_mode():
+        return None
+    for root in (settings.home(), _editable_checkout()):
+        if root is not None and _is_checkout(root):
+            return root
+    return None
+
+
 def source_root() -> Path:
     """The packaged agent home, or the source checkout's root in dev mode."""
     packaged = Path(str(resources.files("edp8").joinpath("agent_home")))
     if packaged.is_dir():
         return packaged
-    home = settings.home()
-    if home is not None and settings.dev_mode() and (home / ".claude" / "commands").is_dir():
-        return home
-    raise FileNotFoundError("no packaged agent home (edp8/agent_home) and EDP_HOME is not a source checkout")
+    root = checkout_root()
+    if root is not None:
+        return root
+    raise FileNotFoundError("no packaged agent home (edp8/agent_home) and no source checkout in dev mode")
 
 
 def _sha(p: Path) -> str:
