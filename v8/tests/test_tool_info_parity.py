@@ -87,6 +87,7 @@ def fleet(tmp_path_factory):
     mp.setattr(broker_adapter, "publish", lambda *a, **k: True)
     mp.setenv("EDP8_UPLOAD_SWEEP", "0")
     mp.setenv("EDP8_EMBEDDER", "none")
+    mp.setenv("EDP_DEV", "1")  # module scope runs before conftest's per-test EDP_DEV: else installed-mode ACL check
     mp.delenv("EDP_POOL_URL", raising=False)
     mp.delenv("EDP8_PUBLIC_URL", raising=False)  # a seat shell carries the fleet's; this board is local
     tokens = copy.parent / "tokens.json"  # private: the fleet token file is never read or written
