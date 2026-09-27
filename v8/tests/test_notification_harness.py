@@ -8,7 +8,14 @@ import sys
 import time
 from urllib.request import urlopen
 
+import pytest
 
+DIST = Path(__file__).resolve().parents[1] / 'src' / 'edp8' / 'webapp' / 'dist'
+
+
+# the fixture serves the built SPA; dist is gitignored and the pytest job builds no web bundle, so the
+# board answers 503 for every /ui path there (CI 36326185339)
+@pytest.mark.skipif(not (DIST / 'notifications-worker.js').is_file(), reason='no built SPA (webapp/dist) on this host')
 def test_native_harness_serves_integrated_ui_and_emits_requests(tmp_path):
     script = Path(__file__).resolve().parents[1] / 'docs/s5-notifications/native_harness.py'
     with socket.socket() as sock:

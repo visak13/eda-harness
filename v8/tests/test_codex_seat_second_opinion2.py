@@ -12,7 +12,10 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import sys
 from pathlib import Path
+
+import pytest
 
 from edp8.codex_seat import run as run_mod
 from edp8.codex_seat.rpc import AppServer
@@ -98,6 +101,8 @@ def test_c_late_witness_never_withdraws_a_newer_identical_event():
 
 
 # ------------------------------------------------------------------ D · the kill job is fail-closed
+@pytest.mark.skipif(sys.platform != "win32", reason="the kill-on-close job is Windows-only; spoofing os.name "
+                    "on POSIX makes pathlib build WindowsPath objects (CI 36326185339)")
 def test_d_failed_kill_job_bind_refuses_to_start(tmp_path, monkeypatch):
     monkeypatch.setenv("EDP_ROLE", "qa")
     monkeypatch.setenv("EDP_HANDLE", "qa.jobfail")

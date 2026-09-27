@@ -147,7 +147,8 @@ def test_start_guards_strips_env_is_idempotent_and_stops_by_recorded_pid(home):
     lp = run_state.listener_pid(p)
     assert code_service._in_tree(guard, lp)
     assert code_service._in_tree(server, run_state.listener_pid(rec["inner_port"]))
-    for c in psutil.net_connections(kind="inet"):
+    # our own processes' sockets: the host-wide scan needs root on macOS (CI 36326185339)
+    for c, _pid in run_state._own_process_sockets(psutil):
         if c.status == psutil.CONN_LISTEN and c.laddr and c.laddr.port in (p, rec["inner_port"]):
             assert c.laddr.ip == "127.0.0.1"
     # the guard: this home's id, 401 without its cookie, 421 for a rebinding Host, workbench after login

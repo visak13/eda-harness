@@ -177,7 +177,9 @@ def test_outbox_is_serial():
 # ------------------------------------------------------------------ monitor behaviour
 def test_monitor_lines_batching_and_terminal_envelopes(tmp_path):
     h, t = make_tools(tmp_path)
-    text, ok = t.call("Monitor", {"command": "echo one; sleep 1; echo two; echo three; exit 3",
+    # the first line waits out the start grace: lines inside it attach to the tool result by design, and a
+    # POSIX bash starts in a few ms where Git's bash took the whole window (CI 36326185339 macOS)
+    text, ok = t.call("Monitor", {"command": "sleep 0.5; echo one; sleep 1; echo two; echo three; exit 3",
                                   "description": "probe", "persistent": False, "timeout_ms": 60000}, "toolu_x")
     assert ok
     tid = text.split("task ")[1][:9]
@@ -222,7 +224,8 @@ def test_monitor_timeout_notice(tmp_path):
 def test_monitor_rate_gate_suppresses_and_accounts(tmp_path):
     h, t = make_tools(tmp_path)
     h.d.turn_started("t1")
-    t.call("Monitor", {"command": "for i in $(seq 1 60); do echo L$i; done", "description": "flood",
+    # past the start grace, as above: on POSIX the whole flood otherwise attaches to the tool result
+    t.call("Monitor", {"command": "sleep 0.5; for i in $(seq 1 60); do echo L$i; done", "description": "flood",
                        "persistent": False, "timeout_ms": 60000}, "c")
     assert wait_for(lambda: any("events dropped" in n for n in h.d.pending), 5)
     lines = sum(n.count("\nL") + n.count(">L") for n in h.d.pending)

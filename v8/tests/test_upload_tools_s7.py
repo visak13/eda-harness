@@ -99,6 +99,12 @@ def test_real_stdio_mcp_lifecycle(board, client, rig, tmp_path, monkeypatch):
 
 def test_real_pi_local_adapter(board, client, rig, tmp_path, monkeypatch):
     import subprocess
+    # the extension imports typebox, which ships inside the Pi harness install, not in this repo: a host
+    # without Pi (CI 36326185339 ubuntu/macOS: ERR_MODULE_NOT_FOUND) cannot load the real extension
+    probe = subprocess.run(['node', '--input-type=module', '-e', "await import('typebox')"],
+                           cwd=Path(__file__).resolve().parents[1] / '.pi' / 'extensions', capture_output=True)
+    if probe.returncode != 0:
+        pytest.skip('the Pi harness (which ships typebox) is not installed on this host')
     home = tmp_path / 'home'; home.mkdir()
     root = tmp_path / 'workspace'; root.mkdir()
     (root / 'proof.txt').write_text('Pi proof')
