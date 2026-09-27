@@ -13,13 +13,23 @@ function healthWord(r: ServiceRow): string {
   return r.health ?? r.state;
 }
 
-/** Start when down, Stop/Restart when up. Nothing to start without a code-server installed (S21), and a port
- *  another program holds is never ours to stop. */
-function canRun(r: ServiceRow, verb: "start" | "stop" | "restart"): boolean {
-  if (r.state === "not_installed" || r.state === "foreign") return false;
-  if (verb === "start") return r.state !== "up";
-  if (verb === "stop") return r.state === "up";
-  return true;
+type Verb = "start" | "stop" | "restart";
+
+/** The actions that apply now (S21 steer m-9bdc981a53): Stop and Restart when up, Start otherwise. Nothing without a
+ *  code-server installed, and a port another program holds is never ours to stop. */
+export function actionsFor(r: ServiceRow): Verb[] {
+  if (r.state === "not_installed" || r.state === "foreign") return [];
+  return r.state === "up" ? ["stop", "restart"] : ["start"];
+}
+
+function shortRev(rev: string | null | undefined): string | null {
+  return rev ? String(rev).slice(0, 7) : null;
+}
+
+/** A service running older code than the board: a restart picks up the board's revision. */
+function olderThanBoard(r: ServiceRow, boardRev: string | null): boolean {
+  const rev = shortRev(r.rev);
+  return Boolean(rev && boardRev && r.service !== "board" && rev !== boardRev);
 }
 
 function UpdatesBanner(): React.JSX.Element | null {
@@ -65,6 +75,7 @@ function ServicesTable(): React.JSX.Element {
   const [force, setForce] = useState(false);
   const rows = q.data?.services ?? [];
   const sup = q.data?.supervisor;
+  const boardRev = shortRev(rows.find((r) => r.service === "board")?.rev);
   return (
     <section className={styles.card} data-testid="services">
       <div className={styles.cardHead}>
@@ -81,32 +92,40 @@ function ServicesTable(): React.JSX.Element {
       ) : null}
       <AdminError error={q.error} testid="services-error" />
       <div className={styles.tableWrap}>
-        <table className={styles.table}>
-          <thead><tr><th>Service</th><th>Health</th><th>Pid</th><th>Port</th><th>Uptime</th><th>Revision</th><th>Actions</th></tr></thead>
+        <table className={`${styles.table} ${styles.svcTable}`}>
+          <thead><tr><th>Service</th><th>Status</th><th>PID</th><th>Port</th><th>Uptime</th><th>Version</th><th className={styles.svcFill}>Actions</th></tr></thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.service} data-testid={`service-${r.service}`}>
-                <td><strong>{r.service}</strong>{r.note ? <div className={styles.usage}>{r.note}</div> : null}</td>
-                <td><span className={`${ui.chip} ${r.state === "up" && healthWord(r) === "up" ? ui.done : ui.blocked}`}><span className={ui.chipDot} />{healthWord(r)}</span></td>
-                <td className={ui.idMono}>{r.pid ?? "—"}</td>
-                <td className={ui.idMono}>{r.port ?? "—"}</td>
-                <td>{r.uptime ?? "—"}</td>
-                <td className={ui.idMono}>{r.rev ? String(r.rev).slice(0, 8) : "—"}</td>
-                <td>
-                  {r.managed === false ? <span className={styles.usage}>not managed here</span> : (
-                    <div className={styles.actions}>
-                      {(["start", "stop", "restart"] as const).map((verb) => (
-                        <button key={verb} type="button" className={`${ui.button} ${styles.small}`} data-testid={`service-${r.service}-${verb}`}
-                          disabled={act.pending || !canRun(r, verb)}
-                          onClick={() => act.run({ svc: r.service, verb, force })}>
-                          {verb[0].toUpperCase() + verb.slice(1)}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {rows.map((r) => {
+              const verbs = actionsFor(r);
+              const stale = olderThanBoard(r, boardRev);
+              return (
+                <tr key={r.service} data-testid={`service-${r.service}`}>
+                  <td className={styles.svcName}><strong>{r.service}</strong>{r.note ? <div className={`${styles.usage} ${styles.svcNote}`}>{r.note}</div> : null}</td>
+                  <td data-label="Status"><span className={`${ui.chip} ${r.state === "up" && healthWord(r) === "up" ? ui.done : ui.blocked}`}><span className={ui.chipDot} />{healthWord(r)}</span></td>
+                  <td data-label="PID" className={`${ui.idMono} ${styles.svcNum}`}>{r.pid ?? "—"}</td>
+                  <td data-label="Port" className={`${ui.idMono} ${styles.svcNum}`}>{r.port ?? "—"}</td>
+                  <td data-label="Uptime" className={styles.svcNum}>{r.uptime ?? "—"}</td>
+                  <td data-label="Version" className={styles.svcNum}>
+                    <span className={ui.idMono}>{shortRev(r.rev) ?? "—"}</span>
+                    {stale ? <span className={styles.staleBadge} data-testid={`service-${r.service}-stale`}
+                      title={`The board runs ${boardRev}; restart ${r.service} to pick up the new code.`}>older than the board</span> : null}
+                  </td>
+                  <td data-label="Actions" className={styles.svcFill}>
+                    {r.managed === false ? <span className={styles.usage}>not managed here</span> : verbs.length === 0 ? <span className={styles.usage}>—</span> : (
+                      <div className={styles.svcActions}>
+                        {verbs.map((verb) => (
+                          <button key={verb} type="button" className={`${ui.button} ${styles.xsmall}`} data-testid={`service-${r.service}-${verb}`}
+                            disabled={act.pending}
+                            onClick={() => act.run({ svc: r.service, verb, force })}>
+                            {verb[0].toUpperCase() + verb.slice(1)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

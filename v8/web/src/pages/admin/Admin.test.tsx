@@ -7,8 +7,9 @@ import { server } from "../../test/setup";
 import { ThemeProvider } from "../../theme/ThemeProvider";
 import { appRoutes } from "../../routes";
 import SETTINGS from "../../test/fixtures/admin-settings.json";
-import type { SettingsView } from "../../api/admin";
+import type { ServiceRow, SettingsView } from "../../api/admin";
 import { AdminPage } from "./Admin";
+import { actionsFor } from "./Services";
 import { attentionHandler } from "../../test/attentionFixture";
 
 // S6 (s-e6b4fa59d5) Admin console. c-f27302e7e4: tabs for an admin, none for a non-admin; the Settings tab
@@ -290,7 +291,7 @@ describe("Services", () => {
     mount("services", [http.get("/v1/admin/services", () => ok({ ...SERVICES, supervisor: { running: false, control: false } }))]);
     const row = await screen.findByTestId("service-code-server");
     expect(within(row).getByTestId("service-code-server-start")).toBeEnabled();
-    expect(within(row).getByTestId("service-code-server-stop")).toBeDisabled();
+    expect(within(row).queryByTestId("service-code-server-stop")).toBeNull();
     expect(within(row).queryByText("not managed here")).toBeNull();
     expect(screen.getByTestId("supervisor-down")).toHaveTextContent("not running");
   });
@@ -303,7 +304,39 @@ describe("Services", () => {
     const row = await screen.findByTestId("service-code-server");
     expect(row).toHaveTextContent("npm install -g code-server");
     expect(row).toHaveTextContent("not installed");
-    for (const verb of ["start", "stop", "restart"]) expect(within(row).getByTestId(`service-code-server-${verb}`)).toBeDisabled();
+    expect(within(row).queryByRole("button")).toBeNull();
+  });
+
+  it("S21 steer: each row shows only the actions that apply (up: Stop + Restart, down: Start) on one line", async () => {
+    const rows = [
+      ...SERVICES.services,
+      { service: "broker", state: "down", health: "down", pid: null, port: 9300, managed: true },
+      { service: "bridge", state: "foreign", health: "foreign", pid: 7, port: 9555, managed: true },
+    ];
+    mount("services", [http.get("/v1/admin/services", () => ok({ ...SERVICES, services: rows }))]);
+    const names = async (svc: string) =>
+      within(await screen.findByTestId(`service-${svc}`)).queryAllByRole("button").map((b) => b.textContent);
+    expect(await names("board")).toEqual(["Stop", "Restart"]);
+    expect(await names("pool")).toEqual(["Stop", "Restart"]);
+    expect(await names("broker")).toEqual(["Start"]);
+    expect(await names("code-server")).toEqual(["Start"]);
+    expect(await names("bridge")).toEqual([]);
+    expect(actionsFor({ service: "x", state: "not_installed" } as ServiceRow)).toEqual([]);
+    const head = [...screen.getByTestId("services").querySelectorAll("th")].map((th) => th.textContent);
+    expect(head).toEqual(["Service", "Status", "PID", "Port", "Uptime", "Version", "Actions"]);
+  });
+
+  it("S21 steer: a service on an older revision than the board says so; the board and a matching one do not", async () => {
+    const rows = [
+      SERVICES.services[0],
+      { ...SERVICES.services[1], rev: "abcdef1" },
+      { service: "broker", state: "up", health: "up", pid: 13, port: 9300, rev: "0e5ebb2", managed: true },
+    ];
+    mount("services", [http.get("/v1/admin/services", () => ok({ ...SERVICES, services: rows }))]);
+    expect(await screen.findByTestId("service-broker-stale")).toHaveTextContent("older than the board");
+    expect(screen.getByTestId("service-broker")).toHaveTextContent("0e5ebb2");
+    expect(screen.queryByTestId("service-board-stale")).toBeNull();
+    expect(screen.queryByTestId("service-pool-stale")).toBeNull();
   });
 });
 

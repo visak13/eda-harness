@@ -420,3 +420,86 @@
   .about { grid-template-columns: 1fr; }
   .about dd { margin-bottom: 6px; }
 }
+
+/* Admin → Services (S21 steer m-9bdc981a53): compact columns that read left to right, one line of actions. */
+.svcTable td {
+  overflow-wrap: normal;
+}
+.svcName,
+.svcNote {
+  white-space: nowrap;
+}
+.svcNum {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  min-width: 6ch;
+}
+.svcFill {
+  width: 100%;
+}
+.svcActions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+.xsmall {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+.staleBadge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+/* A phone: each service is a small card of labelled cells, no horizontal scroll. */
+@media (max-width: 640px) {
+  .svcTable thead {
+    display: none;
+  }
+  .svcTable,
+  .svcTable tbody {
+    display: block;
+  }
+  .svcTable tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .svcTable tr:last-child {
+    border-bottom: 0;
+  }
+  .svcTable td {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    border-bottom: 0;
+  }
+  .svcTable td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .svcTable .svcName,
+  .svcTable .svcFill {
+    grid-column: 1 / -1;
+    width: auto;
+  }
+  .svcTable .svcName,
+  .svcTable .svcNote {
+    white-space: normal;
+  }
+  .svcTable .svcFill::before {
+    display: none;
+  }
+}
