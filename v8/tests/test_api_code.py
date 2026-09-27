@@ -252,9 +252,12 @@ def mint_env(tmp_path, monkeypatch):
     with TestClient(app, base_url="http://127.0.0.1:9400", client=("127.0.0.1", 1234)) as client:
         for p in ({"id": "alice", "handle": "alice", "role": "owner", "type": "human"},
                   {"id": "bob", "handle": "bob", "role": "architect", "type": "human"},
-                  {"id": "engineer.x", "handle": "engineer.x", "role": "engineer", "type": "agent"},
-                  {"id": "owner.agent", "handle": "owner.agent", "role": "owner", "type": "agent"}):
+                  {"id": "engineer.x", "handle": "engineer.x", "role": "engineer", "type": "agent"}):
             assert client.post("/v1/participants", json=p, headers={"X-Admin": "t"}).status_code == 200
+        # an agent in the owner role can no longer exist (t-cd4712c855): its registration is refused
+        r = client.post("/v1/participants", json={"id": "owner.agent", "handle": "owner.agent", "role": "owner",
+                                                  "type": "agent"}, headers={"X-Admin": "t"})
+        assert not r.json().get("ok") and "is a person" in r.text
         yield client, tmp_path
 
 
@@ -273,7 +276,7 @@ def test_session_minted_for_the_human_owner(mint_env):
     ({}, 401),                                                   # no credential
     ({"X-Participant": "alice", "X-Token": "wrong"}, 401),       # a forged owner header
     ({"X-Participant": "engineer.x", "X-Token": "e"}, 403),      # an agent seat's token
-    ({"X-Participant": "owner.agent"}, 403),                     # an agent in the owner role
+    ({"X-Participant": "owner.agent"}, 401),                     # an owner-role agent (unregistrable since t-cd4712c855)
     ({"X-Participant": "bob", "X-Token": "b"}, 403),             # a human who is not the owner
 ])
 def test_session_refused_for_everyone_else(mint_env, headers, status):
@@ -337,7 +340,7 @@ def test_reset_layout_defaults_to_the_data_dir_user(mint_env):
 @pytest.mark.parametrize("headers,status", [
     ({}, 401),
     ({"X-Participant": "engineer.x", "X-Token": "e"}, 403),
-    ({"X-Participant": "owner.agent"}, 403),
+    ({"X-Participant": "owner.agent"}, 401),  # an owner-role agent cannot be registered (t-cd4712c855)
     ({"X-Participant": "bob", "X-Token": "b"}, 403),
 ])
 def test_reset_layout_refused_for_everyone_else(mint_env, headers, status):

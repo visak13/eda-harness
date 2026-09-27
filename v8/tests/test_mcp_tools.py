@@ -4,6 +4,7 @@ the tool handlers (not through the MCP transport — the handlers are the unit).
 from __future__ import annotations
 
 import pytest
+from edp_contracts.roles import is_non_agent
 from fastapi.testclient import TestClient
 
 from edp8.board import Board
@@ -33,9 +34,10 @@ def make_client(raw_client, participant: str | None = None) -> BoardClient:
 
 
 def register(raw_client, role: str, handle: str) -> str:
+    # a person's role (owner) is never an agent seat (t-cd4712c855): register it as a human
     admin = make_client(raw_client)
     resp = admin._request("POST", "/v1/participants", admin=True,
-                          json={"type": "agent", "role": role, "handle": handle})
+                          json={"type": "human" if is_non_agent(role) else "agent", "role": role, "handle": handle})
     assert resp["ok"], resp
     return resp["value"]["id"]
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import time
 
 import pytest
+from edp_contracts.roles import is_non_agent
 from fastapi.testclient import TestClient
 
 from edp8.board import Board
@@ -24,9 +25,10 @@ def raw_client():
 
 
 def _register(raw, role, handle):
+    # a person's role (owner) is never an agent seat (t-cd4712c855): register it as a human
     admin = BoardClient(participant=None, admin_token="t", client=raw)
     r = admin._request("POST", "/v1/participants", admin=True,
-                       json={"type": "agent", "role": role, "handle": handle})
+                       json={"type": "human" if is_non_agent(role) else "agent", "role": role, "handle": handle})
     assert r["ok"], r
     return r["value"]["id"]
 
