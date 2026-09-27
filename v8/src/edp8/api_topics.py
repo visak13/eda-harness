@@ -48,6 +48,7 @@ class TopicMessageIn(BaseModel):
 class ResearchIn(BaseModel):
     query: str | None = None
     url: str | None = None
+    offset: int | None = Field(default=None, ge=0)
 
 
 class ProposeIn(BaseModel):
@@ -161,7 +162,7 @@ def topics_router(board: Board, actor: Callable[..., Participant], topic_actor: 
     @r.post("/v1/topics/{topic_id}/research")
     def topic_research(topic_id: str, b: ResearchIn, a: Participant = Depends(actor)):
         _scoped(topic_id, a)
-        return _ok(topics.research(board, a, topic_id, query=b.query, url=b.url))
+        return _ok(topics.research(board, a, topic_id, query=b.query, url=b.url, offset=b.offset))
 
     @r.post("/v1/topics/{topic_id}/proposals")
     def topic_propose(topic_id: str, b: ProposeIn, a: Participant = Depends(actor)):
@@ -169,6 +170,7 @@ def topics_router(board: Board, actor: Callable[..., Participant], topic_actor: 
         out = topics.propose(board, a, topic_id, title=b.title, body_md=b.body_md, source_url=b.source_url,
                              doc_type=b.doc_type, tags=b.tags, proposes=b.proposes)
         return _ok({"doc": out["doc"].model_dump(mode="json"), "receipt": out["receipt"]},
-                   "proposed: the owner approves or rejects it in the Library")
+                   "proposed: the owner approves or rejects it in the Library. Library doc approval is human "
+                   "UI-only by design (owner uses the browser UI only, m-0213457e52): no tool approves it")
 
     return r

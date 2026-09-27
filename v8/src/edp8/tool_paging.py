@@ -73,11 +73,14 @@ def cursor_error(tool: str, e: CursorError) -> dict[str, Any]:
             "hint": "pass next_cursor from the previous page with the same filters; omit cursor for page 1"}
 
 
-def _fit(rows: list[Any], cap: int, overhead: int) -> list[Any]:
-    """The longest prefix of rows that fits the cap (at least one row, whatever its size)."""
+def _fit(rows: list[Any], cap: int, overhead: int, enrich: Callable[[Any], Any] | None = None) -> list[Any]:
+    """The longest prefix of rows that fits the cap (at least one row, whatever its size). `enrich` finishes each
+    row BEFORE it is measured (T6 N3: participants appended reach strings after fitting and overshot the cap), and
+    only for rows that may still be shown."""
     out: list[Any] = []
     used = overhead
     for r in rows:
+        r = enrich(r) if enrich else r
         b = nbytes(r) + 1
         if out and used + b > cap:
             break
@@ -107,15 +110,20 @@ def _receipt(tool: str, cap: int, next_cursor: str | None, lossy: bool, full: st
 
 
 def offset_page(tool: str, rows: list[Any], *, filters: dict[str, Any], limit: int | None, cursor: str | None,
-                verbose: bool, project: Callable[[dict[str, Any]], dict[str, Any]], full: str) -> dict[str, Any]:
-    """Page a whole filtered list by offset. Returns the tool envelope's `value`."""
+                verbose: bool, project: Callable[[dict[str, Any]], dict[str, Any]], full: str,
+                enrich: Callable[[Any], Any] | None = None) -> dict[str, Any]:
+    """Page a whole filtered list by offset. Returns the tool envelope's `value`. `enrich` adds per-row facts
+    (participants' reach) inside the fit, so the cap and next_cursor count the rows as finally shown."""
     pos = decode_cursor(cursor, filters)
     off = int(pos.get("o") or 0)
     lim = max(1, min(limit or DEFAULT_LIMIT, MAX_LIMIT))
     cap = page_cap()
     window = rows[off:off + lim]
     items = [r if verbose or not isinstance(r, dict) else project(r) for r in window]
-    items = items if verbose else _fit(items, cap, 400)
+    if not verbose:
+        items = _fit(items, cap, 400, enrich)
+    elif enrich:
+        items = [enrich(r) for r in items]
     nxt = off + len(items)
     next_cursor = encode_cursor(filters, o=nxt) if nxt < len(rows) else None
     lossy = not verbose and _lossy(window, items)

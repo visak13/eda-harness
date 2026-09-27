@@ -185,8 +185,10 @@ class BoardClient:
     def propose_fix(self, topic_id: str, action: dict[str, Any], effect: str) -> dict[str, Any]:
         return self._request("POST", "/v1/fixes", json={"topic_id": topic_id, "action": action, "effect": effect})
 
-    def topic_research(self, topic_id: str, query: str | None = None, url: str | None = None) -> dict[str, Any]:
-        return self._request("POST", f"/v1/topics/{topic_id}/research", json={"query": query, "url": url})
+    def topic_research(self, topic_id: str, query: str | None = None, url: str | None = None,
+                       offset: int | None = None) -> dict[str, Any]:
+        return self._request("POST", f"/v1/topics/{topic_id}/research",
+                             json={"query": query, "url": url, "offset": offset})
 
     def topic_propose(self, topic_id: str, title: str, body_md: str, source_url: str, doc_type: str = "strategy_hl",
                       tags: list[str] | None = None, proposes: str | None = None) -> dict[str, Any]:

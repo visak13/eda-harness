@@ -41,6 +41,78 @@ ENV_ALLOW = {"PATH", "PATHEXT", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC"
              "USERNAME", "USER", "LOCALAPPDATA", "APPDATA", "PROGRAMDATA", "OS", "LANG", "TZ"}
 
 
+# T6 N5: topic_research's successful path runs on a LOCAL page (no network): the private board is started through
+# this wrapper, which swaps topics.FETCH/RESOLVE for the fixture before edp8.service runs as __main__.
+RESEARCH_URL = "https://github.com/edp-audit/fixture/blob/main/SKILL.md"
+RESEARCH_TAIL = "AUDIT_TAIL_FACT_7391"
+BOARD_BOOT = """
+import os, runpy
+from pathlib import Path
+from edp8 import topics
+page = Path(os.environ["EDP8_AUDIT_RESEARCH_PAGE"]).read_bytes()
+url = os.environ["EDP8_AUDIT_RESEARCH_URL"]
+topics.RESOLVE = lambda host: ["140.82.112.3"]
+topics.FETCH = lambda u: (200, page, None) if u == url else (404, b"", None)
+runpy.run_module("edp8.service", run_name="__main__", alter_sys=True)
+"""
+
+# T6 N6: lifecycle goals the audit deliberately gives no tool, each with its written ruling (report-36481f7a4e N6)
+COMPLETENESS_EXEMPT = {
+    "library_doc_approval": "Library doc approval is human UI-only by design (owner uses the browser UI only, "
+                            "m-0213457e52); ruled m-089e487351. topic_propose's reply says so; no tool is added.",
+}
+
+
+def research_page() -> bytes:
+    """An ordinary-prose page longer than one topic_research slice, its last fact after every early cut."""
+    words = " ".join(f"Fixture sentence {i} on arrange-act-assert and fixtures." for i in range(320))
+    return (f"<html><body><h1>Audit fixture skill</h1><p>{words}</p>"
+            f"<p>{RESEARCH_TAIL} closes the page.</p></body></html>").encode()
+
+
+def transcripts(root: Path, claude_seat: str, codex_seat: str) -> tuple[Path, Path]:
+    """T6 N4: hermetic seat logs, one Claude transcript and one codex app-server mirror, each with a harvest
+    window (trigger -> record -> close_self) and token usage, so harvest_cost passes from any kind of seat."""
+    t0 = time.time() - 600
+
+    def iso(s: float) -> str:
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t0 + s))
+
+    def turn(s: float, mid: str, usage: dict, name: str, args: dict) -> dict:
+        return {"type": "assistant", "timestamp": iso(s), "message": {"id": mid, "usage": usage, "content": [
+            {"type": "tool_use", "name": name, "input": args}]}}
+
+    claude = root / "claude" / "audit-project" / "audit-session.jsonl"
+    claude.parent.mkdir(parents=True, exist_ok=True)
+    who = json.dumps({"participant": {"id": claude_seat}})
+    rows = [{"type": "user", "timestamp": iso(0), "message": {"role": "user", "content": [
+                {"type": "tool_result", "content": who}]}},
+            turn(10, "msg-1", {"input_tokens": 100, "output_tokens": 20}, "Skill", {"skill": "harvest"}),
+            turn(20, "msg-2", {"input_tokens": 300, "cache_read_input_tokens": 50, "output_tokens": 40},
+                 "mcp__edp8__record_lesson", {"text": "x"}),
+            turn(30, "msg-3", {"input_tokens": 10, "output_tokens": 5}, "mcp__edp8__close_self", {})]
+    claude.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+
+    def usage(s: float, n: int) -> dict:
+        return {"ts": t0 + s, "msg": {"method": "thread/tokenUsage/updated", "params": {
+            "threadId": "th-1", "tokenUsage": {"total": {"inputTokens": n, "outputTokens": n // 10,
+                                                         "totalTokens": n}}}}}
+
+    def item(s: float, it: dict) -> dict:
+        return {"ts": t0 + s, "msg": {"method": "item/started", "params": {"item": it}}}
+
+    codex = root / "codex" / "seat-logs" / f"codex-seat.{codex_seat}.jsonl"
+    codex.parent.mkdir(parents=True, exist_ok=True)
+    rows = [usage(5, 1000),
+            item(10, {"type": "commandExecution", "command": "cat .agents/skills/harvest/SKILL.md"}),
+            usage(15, 1600),
+            item(20, {"type": "mcpToolCall", "tool": "record_lesson", "arguments": {"text": "x"}}),
+            usage(25, 2400),
+            item(30, {"type": "mcpToolCall", "tool": "close_self", "arguments": {}})]
+    codex.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    return root / "claude", root / "codex"
+
+
 def encoded(obj: object) -> bytes:
     return json.dumps(obj, ensure_ascii=False, default=str, separators=(",", ":")).encode("utf-8")
 
@@ -113,9 +185,14 @@ class Audit:
         self.ids: dict[str, str] = {}
         self.board_proc: subprocess.Popen | None = None
         self.pool: ThreadingHTTPServer | None = None
+        self.seats: dict[str, tuple[str, str]] = {}  # extra credentials (the topic's own sme seat) by label
+        self.claude_seat, self.codex_seat = "qa.audit-claude-transcript", "qa.audit-codex-transcript"
+        self.log_roots: tuple[Path, Path] = (home / "transcripts" / "claude", home / "transcripts" / "codex")
 
     def start(self) -> None:
         self.home.mkdir(parents=True, exist_ok=True)
+        self.log_roots = transcripts(self.home / "transcripts", self.claude_seat, self.codex_seat)
+        (self.home / "research-page.html").write_bytes(research_page())
         source = sqlite3.connect(f"file:{SOURCE_DB.as_posix()}?mode=ro", uri=True)
         copy = sqlite3.connect(self.home / "edp8.db")
         source.backup(copy)
@@ -142,12 +219,15 @@ class Audit:
                     EDP8_HOST="127.0.0.1", EDP8_PORT=str(self.board_port),
                     EDP8_ADMIN_TOKEN=self.admin, EDP8_EMBEDDER="none", EDP8_LOG="warning",
                     EDP8_RSI="0", EDP8_OWNER="audit.owner", EDP8_PAIN_FILE=str(self.home / "pain.jsonl"),
-                    EDP8_HARVEST_LOG_ROOTS=str(ROOT.parent / "edp-pool" / ".claude-pool" / "projects"),
+                    # T6 N4: hermetic Claude AND codex roots, never the host's seat logs
+                    EDP8_HARVEST_LOG_ROOTS=os.pathsep.join(str(r) for r in self.log_roots),
+                    EDP8_AUDIT_RESEARCH_PAGE=str(self.home / "research-page.html"),
+                    EDP8_AUDIT_RESEARCH_URL=RESEARCH_URL,
                     EDP_POOL_URL=f"http://127.0.0.1:{self.pool_port}",
                     PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
         flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         log = (self.home / "board.log").open("ab")
-        self.board_proc = subprocess.Popen([sys.executable, "-m", "edp8.service"], cwd=ROOT, env=safe,
+        self.board_proc = subprocess.Popen([sys.executable, "-c", BOARD_BOOT], cwd=ROOT, env=safe,
                                            stdout=log, stderr=subprocess.STDOUT,
                                            creationflags=flags, start_new_session=os.name != "nt")
         log.close()
@@ -200,8 +280,25 @@ class Audit:
             raise RuntimeError(f"private board did not mint {role} token")
         self.roles[role] = (pid, token)
 
-    def call(self, role: str, name: str, args: dict | None = None, *, task: str = "coverage") -> dict:
-        pid, token = self.roles[role]
+    def topic_seat(self, topic_id: str) -> None:
+        """The Library topic's resident sme (`sme.<topic>`, its assignee): the seat topic_research and
+        topic_propose act as. Its token is re-read (get-or-mint) before each call: the board's pairing spawn
+        mints the seat its own token on a later pool tick."""
+        self.seats["sme"] = (f"sme.{topic_id}", topic_id)
+
+    def seat_credential(self, seat: str) -> tuple[str, str]:
+        pid, ticket_id = self.seats[seat]
+        owner = BoardClient(self.base, participant="audit.owner", token=self.owner_token, admin_token=self.admin)
+        minted = owner.seat_token(pid, ticket_id)
+        token = ((minted.get("value") or {}).get("env") or {}).get("EDP8_TOKEN")
+        if not token:
+            raise RuntimeError(f"private board did not mint the {pid} token: {minted}")
+        return pid, token
+
+    def call(self, role: str, name: str, args: dict | None = None, *, task: str = "coverage",
+             seat: str | None = None) -> dict:
+        """`seat` borrows another credential of the same role (the topic's own sme) for this call."""
+        pid, token = self.seat_credential(seat) if seat else self.roles[role]
         client = BoardClient(self.base, participant=pid, token=token,
                              admin_token=self.admin if role == "owner" else None,
                              workspace_root=ROOT)
@@ -272,6 +369,11 @@ def workflow(a: Audit) -> None:
         a.ids["story"] = story["id"]
         for role in ("engineer", "qa", "adversary", "sme", "doctor"):
             a.register(role, story["id"])
+        owner = BoardClient(a.base, participant="audit.owner", token=a.owner_token, admin_token=a.admin)
+        topic = owner._request("POST", "/v1/topics", json={"title": "Audit research topic", "tags": ["audit"]})
+        if topic.get("ok"):  # T6 N5: a real topic for topic_research's successful path (coverage)
+            a.ids["topic"] = topic["value"]["topic"]["id"]
+            a.topic_seat(a.ids["topic"])
         crit = a.value(a.call("architect", "criterion_create", {"ticket_id": story["id"],
             "text": "A private task produces evidence", "check": "command"}, task="file_story"), "criterion")
         a.ids["criterion"] = crit["id"]
@@ -389,14 +491,18 @@ def workflow(a: Audit) -> None:
     a.task("file_pain", file_pain)
 
     def harvest_cost():
-        # a private seat has no transcript, so cost this audit's own seat over the last hour (bounded totals)
-        seat = os.environ.get("EDP_HANDLE") or a.roles["qa"][0]
-        since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 3600))
-        got = a.call("qa", "harvest_cost", {"participant_id": seat, "since": since}, task="harvest_cost")
+        # T6 N4: hermetic Claude and codex transcripts (the private home's own roots), so the task passes from
+        # either kind of seat; a seat with no log gets an error naming the roots, with no `since` advice
+        claude = a.call("qa", "harvest_cost", {"participant_id": a.claude_seat}, task="harvest_cost")
+        codex = a.call("qa", "harvest_cost", {"participant_id": a.codex_seat}, task="harvest_cost")
         missing = a.call("qa", "harvest_cost", {"participant_id": a.roles["qa"][0]}, task="harvest_cost")
-        named = (missing.get("error") or {}).get("code") == "not_found"
-        return bool(got.get("ok") and named), \
-            f"totals={(got.get('value') or {}).get('tokens')}; no-log seat -> {(missing.get('error') or {}).get('code')}"
+        err = missing.get("error") or {}
+        named = err.get("code") == "not_found" and all(str(r) in str(err.get("message")) for r in a.log_roots) \
+            and "since" not in str(missing.get("hint") or "") + str(err.get("hint") or "")
+        kinds = [(x.get("value") or {}).get("seat") for x in (claude, codex)]
+        return bool(claude.get("ok") and codex.get("ok") and kinds == ["claude", "codex"] and named), \
+            f"claude={(claude.get('value') or {}).get('tokens')}; codex={(codex.get('value') or {}).get('tokens')}; " \
+            f"no-log seat -> {err.get('code')} naming both roots={named}"
     a.task("harvest_cost", harvest_cost)
 
     def teammate_access():
@@ -443,7 +549,8 @@ def sample_args(a: Audit, role: str, name: str) -> dict:
               "body_md": "# Audit probe\n", "doc_type": "note", "kind": "task", "work_type": "chore",
               "check": "path", "status": "reviewed", "relation": "produced", "form": "repo_ref",
               "uri": "repo://scripts/tool_audit.py", "gate": "demo", "answer": "approved",
-              "decision_id": ids.get("decision"), "topic_id": "audit-topic", "source_url": "https://example.invalid/audit",
+              "decision_id": ids.get("decision"), "topic_id": ids.get("topic") or "audit-topic",
+              "source_url": RESEARCH_URL, "url": RESEARCH_URL,
               "effect": "Audit-only proposal", "action": {"kind": "noop"}, "domain": "tool-layer",
               "topic": "audit", "ref": "standard@1", "service": "board", "lines": 5,
               "path": str(ROOT / "web" / "public" / "brand" / "favicon-32.png"),
@@ -459,7 +566,11 @@ def sample_args(a: Audit, role: str, name: str) -> dict:
                "artifact_read": {"id": ids.get("artifact")},
                # S23 action-enum tools: a read-only action for the coverage probe
                "pain": {"action": "query"}, "workflow": {"action": "list"}, "teammate": {"action": "list"},
-               "link_delete": {"id": "lk-audit-missing"}, "message_send": {"ticket_id": ids.get("story"), "kind": "note"},
+               "link_delete": {"id": "lk-audit-missing"},
+               # T6 N5: the real topic's successful paths (a local page), not a nonexistent-topic error
+               "topic_research": {"url": RESEARCH_URL},
+               "topic_propose": {"body_md": "- [expected] tests follow arrange-act-assert (audit fixture)"},
+               "propose_fix": {"topic_id": "audit-topic"}, "message_send": {"ticket_id": ids.get("story"), "kind": "note"},
                "gate_open": {"ticket_id": ids.get("story"), "gate": "demo"},
                "gate_answer": {"ticket_id": ids.get("story"), "gate": "demo", "answer": "approved"},
                "doc_create": {"scope": ids.get("epic"), "doc_type": "note"},
@@ -494,14 +605,27 @@ def coverage(a: Audit) -> None:
             for name in ROLE_BUNDLES[role]:
                 if (role, name) in seen or name == "close_self":
                     continue
-                a.call(role, name, sample_args(a, role, name), task="coverage")
+                a.call(role, name, sample_args(a, role, name), task="coverage",
+                       seat="sme" if name.startswith("topic_") and "sme" in a.seats else None)
         # close_self can release its private stub session; always run it last.
         for role in ROLES:
             if "close_self" in ROLE_BUNDLES[role] and (role, "close_self") not in seen:
                 a.call(role, "close_self", {}, task="coverage")
         actual = {(c["role"], c["tool"]) for c in a.calls if c["tool"] in ALL_TOOLS}
         missing = [(r, n) for r in ROLES for n in ROLE_BUNDLES[r] if (r, n) not in actual]
-        return not missing, f"{len(actual)} role/tool pairs; missing={missing[:6]}"
+        # T6 N1/N5: the research probe succeeded, and its named continuation reads the page to its last fact
+        text, offset = "", None
+        first = next((c for c in a.calls if c["tool"] == "topic_research" and c["ok"]), None)
+        while first is not None:
+            args = {"topic_id": a.ids.get("topic"), "url": RESEARCH_URL, "offset": offset or 0}
+            got = a.call("sme", "topic_research", args, task="coverage", seat="sme")
+            v = got.get("value") or {}
+            text += v.get("text") or ""
+            offset = v.get("next_offset")
+            if not got.get("ok") or offset is None:
+                break
+        tail = RESEARCH_TAIL in text
+        return not missing and tail, f"{len(actual)} role/tool pairs; missing={missing[:6]}; research tail read={tail}"
     a.task("coverage", scan)
 
     def arg_guidance():
@@ -561,7 +685,9 @@ def coverage(a: Audit) -> None:
                    "check": "command"}),
                  ("architect", "record_decision", {"scope": a.ids["epic"], "text": "Repeated decision"}),
                  ("engineer", "record_claim", {"scope": a.ids["epic"], "text": "Repeated claim"}),
-                 ("engineer", "record_lesson", {"domain": "tool-layer", "topic": "idem", "text": "Repeated lesson"})]
+                 ("engineer", "record_lesson", {"domain": "tool-layer", "topic": "idem", "text": "Repeated lesson"}),
+                 ("sme", "topic_propose", {"topic_id": a.ids.get("topic"), "title": "Repeated proposal",
+                   "body_md": "- [expected] repeated", "source_url": RESEARCH_URL})]
         same = 0
         for role, name, args in probes:
             first = a.call(role, name, args, task="idempotency")
@@ -570,9 +696,10 @@ def coverage(a: Audit) -> None:
                          (first.get("value") or {}).get("id") == (second.get("value") or {}).get("id"))
         for role, name, args in keyed:
             args = {**args, "idempotency_key": f"audit-{name}"}
-            first = a.call(role, name, args, task="idempotency")
+            seat = "sme" if name == "topic_propose" else None
+            first = a.call(role, name, args, task="idempotency", seat=seat)
             tool_idem.reset()
-            second = a.call(role, name, args, task="idempotency")
+            second = a.call(role, name, args, task="idempotency", seat=seat)
             same += bool(first.get("ok") and second.get("ok") and (second.get("value") or {}).get("replay") and
                          (first.get("value") or {}).get("id") == (second.get("value") or {}).get("id"))
         total = len(probes) + len(keyed)
@@ -631,18 +758,32 @@ def scores(a: Audit) -> dict:
                                        for field in tool.args_model.model_fields.values()) else "fail"
         # Some errors are deliberately explored; a clear schema error names the field or enum.
         output_status = "pass" if not large and guidance else "fail"
+        efficient = "pass" if not large else "fail"  # S23: per call, not harness sweep count
+        ok_calls = sum(c["ok"] for c in calls)
+        # T6 N5 (report-36481f7a4e): output and efficiency pass only on a SUCCESSFUL representative call; a tool
+        # whose every call failed is not_measured with the reason, never a pass read off an error envelope
+        unmeasured = None
+        if not ok_calls and output_status == efficient == "pass":
+            codes = sorted({str(c["error_code"]) for c in calls})
+            unmeasured = (f"0 of {len(calls)} calls succeeded ({', '.join(codes)}): its successful reply was never "
+                          "produced here, so clear output and token efficiency are unmeasured" if calls else
+                          "no role bundle serves it, so the audit never called it: clear output and token "
+                          "efficiency are unmeasured")
+            output_status = efficient = "not_measured"
         rows[name] = {"roles": [r for r in ROLES if name in ROLE_BUNDLES[r]], "calls": len(calls),
                       "bytes_out": sum(c["bytes_out"] for c in calls),
                       "max_bytes_out": max((c["bytes_out"] for c in calls), default=0),
                       "over_8kb": len(large), "arg_misses": len(misses), "error_names_fix": guidance,
-                      "ok_calls": sum(c["ok"] for c in calls),
+                      "ok_calls": ok_calls,
                       "standards": {"1_advertisement": "pass" if advertises_object and advertises_enums and advertises_skill else "fail",
                                     "2_idempotent": idempotent,
                                     **({"2_idempotent_reason": reason} if reason else {}),
                                     "3_clear_output": output_status,
+                                    **({"3_clear_output_reason": unmeasured} if unmeasured else {}),
                                     "4_clear_schema": schema_status,
                                     "5_describe": described_status,
-                                    "6_token_efficient": "pass" if not large else "fail"},  # S23: per call, not harness sweep count
+                                    "6_token_efficient": efficient,
+                                    **({"6_token_efficient_reason": unmeasured} if unmeasured else {})},
                       "advertises": {"object": advertises_object, "enums": advertises_enums,
                                      "linked_skill": advertises_skill, "skill": skill}}
     return rows
@@ -651,8 +792,6 @@ def scores(a: Audit) -> dict:
 # T3 F2: a create the audit cannot repeat on its private board, with where it IS measured. Any other
 # not_measured create is unexplained and fails the ledger (scores' caller checks).
 IDEM_NOT_MEASURED = {
-    "topic_propose": "needs a Library page topic_research fetched (network); measured by tests/test_tool_contract.py::"
-                     "test_every_idempotent_create_replays_by_key_across_restarts[topic_propose]",
     "propose_fix": "needs a help thread and its doctor seat (a /v1/help spawn); measured by tests/test_tool_contract.py::"
                    "test_every_idempotent_create_replays_by_key_across_restarts[propose_fix]",
 }
@@ -763,8 +902,10 @@ def main() -> int:
         args.out.write_bytes(encoded({"source_db": ".data/edp8.db", "private_home": "<temporary-private-home>",
                                       "board_port": audit.board_port, "pool_port": audit.pool_port,
                                       "tasks": audit.tasks, "calls": audit.calls, "tools": tools,
-                                      "matrix": matrix, "workaround_hits": workaround_hits}))
-        print(json.dumps({"type": "matrix", **matrix}, ensure_ascii=True), flush=True)
+                                      "matrix": matrix, "workaround_hits": workaround_hits,
+                                      "completeness_exempt": COMPLETENESS_EXEMPT}))
+        print(json.dumps({"type": "matrix", **matrix, "completeness_exempt": COMPLETENESS_EXEMPT},
+                         ensure_ascii=True), flush=True)
     return 0 if all(t["pass"] for t in audit.tasks) and not matrix["failing"] and not matrix["unexplained"] else 1
 
 
@@ -772,7 +913,7 @@ def matrix_summary(tools: dict) -> dict:
     """The six-standard matrix in counts. A `not_measured` cell without a written reason is `unexplained`
     (T3 F2: 7 such cells hid behind "0 failing tools")."""
     counts: dict[str, int] = defaultdict(int)
-    failing, unexplained = [], []
+    failing, unexplained, not_measured = [], [], {}
     for name, row in tools.items():
         for std, cell in row["standards"].items():
             if std.endswith("_reason"):
@@ -782,7 +923,10 @@ def matrix_summary(tools: dict) -> dict:
                 failing.append(f"{name}.{std}")
             if cell == "not_measured" and f"{std}_reason" not in row["standards"]:
                 unexplained.append(f"{name}.{std}")
-    return {"tools": len(tools), "cells": dict(counts), "failing": failing, "unexplained": unexplained}
+            elif cell == "not_measured":  # T6 N5: surfaced with its reason, never hidden in a count
+                not_measured[f"{name}.{std}"] = row["standards"][f"{std}_reason"]
+    return {"tools": len(tools), "cells": dict(counts), "failing": failing, "unexplained": unexplained,
+            "not_measured": not_measured}
 
 
 if __name__ == "__main__":

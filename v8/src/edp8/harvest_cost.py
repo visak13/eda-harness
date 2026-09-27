@@ -37,6 +37,20 @@ def _roots() -> tuple[tuple[Path, ...], tuple[Path, ...]]:
     return (tuple(extra), tuple(extra)) if extra else (CLAUDE_ROOTS, CODEX_ROOTS)
 
 
+class NoLog(LookupError):
+    """No session log for the seat under any searched root (T6 N4: the error names the roots, and `since`
+    cannot help, so the hint never suggests it)."""
+
+    def __init__(self, participant: str, roots: tuple[Path, ...]):
+        self.roots = roots
+        super().__init__(f"no session log found for {participant} under "
+                         f"{', '.join(str(r) for r in roots) or 'no configured root'}")
+
+
+class NoWindow(LookupError):
+    """The log exists but holds no harvest trigger and no `since` was given."""
+
+
 def _ts(value: str | float | int | None) -> float | None:
     """ISO-8601 (Z or offset) or epoch seconds -> epoch seconds; None stays None."""
     if value is None or value == "":
@@ -218,9 +232,10 @@ def compute(participant: str, *, since: str | None = None, until: str | None = N
             knowledge: dict | None = None, log: Path | None = None) -> dict:
     """Bounded totals for one seat: window, token totals, and record counts (ids only, capped at 20).
     Raises LookupError when no log or no harvest window is found."""
-    hit = (("codex" if log.name.startswith("codex-seat.") else "claude"), log) if log else find_log(participant, *_roots())
+    claude_roots, codex_roots = _roots()
+    hit = (("codex" if log.name.startswith("codex-seat.") else "claude"), log) if log else         find_log(participant, claude_roots, codex_roots)
     if hit is None or not hit[1].is_file():
-        raise LookupError(f"no session log found for {participant}")
+        raise NoLog(participant, (log,) if log else tuple(dict.fromkeys((*claude_roots, *codex_roots))))
     kind, path = hit
     rows = _rows(path)
     start, end = (claude_window if kind == "claude" else codex_window)(rows)
@@ -228,7 +243,7 @@ def compute(participant: str, *, since: str | None = None, until: str | None = N
     start = s if s is not None else start
     end = u if u is not None else end
     if start is None:
-        raise LookupError(f"no harvest found in {participant}'s log (pass since)")
+        raise NoWindow(f"no harvest found in {participant}'s log (pass since)")
     tokens = (claude_tokens if kind == "claude" else codex_tokens)(rows, start, end)
     out = {"participant": participant, "seat": kind, "log": path.name,
            "window": {"start": _iso(start), "end": _iso(end)}, "tokens": tokens}

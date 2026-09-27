@@ -7,7 +7,9 @@ lists fixed domains. IDs, scope names, tags, models and free text stay dynamic.
 For documents: doc_create → link_create → doc_read → doc_edit(id, expected_version, edits) (architect/engineer/qa/adversary only).
 Every old_text is matched uniquely against the ORIGINAL current body; overlaps or missing /
 ambiguous matches and stale versions write nothing. One success creates one version and a
-compact receipt. Existing doc_update keeps full output unless compact=true. Request
+compact receipt. doc_update returns a receipt too (compact=false: the doc). Every write tool
+(doc_create, message_send, ticket_create/update, criterion_create, record_*, topic_propose) echoes a
+body over 240 chars clipped, with `echo.bytes` and `echo.read`, the exact call that returns it whole. Request
 `doc_read(limit=8192)` for bounded character ranges; follow the returned continuation exactly,
 including version. Section is a unique exact Markdown heading line, offsets section-relative.
 Without range arguments doc_read keeps the old full-body default. Related skills: methodology,

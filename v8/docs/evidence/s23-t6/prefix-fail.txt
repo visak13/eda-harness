@@ -1,0 +1,21 @@
+# tests/test_s23_t6_findings.py run against HEAD a150e28+ae39785 source (git worktree, PYTHONPATH=<worktree>/v8/src) — pre-fix proof
+# result: 19 failed, 15 passed
+FAILED tests/test_s23_t6_findings.py::test_research_tail_is_readable_through_the_named_continuation - AssertionError: 12397
+FAILED tests/test_s23_t6_findings.py::test_research_offset_needs_a_kept_page - assert (not True)
+FAILED tests/test_s23_t6_findings.py::test_research_tool_advertises_offset - AssertionError: assert 'offset' in {'topic_id': {'description': 'Library to...
+FAILED tests/test_s23_t6_findings.py::test_topic_propose_reply_records_the_ui_only_exemption - AssertionError: assert 'human UI-only by design (owner uses the browser UI ...
+FAILED tests/test_s23_t6_findings.py::test_write_tools_reply_with_a_compact_receipt[doc_create] - AssertionError: ('doc_create', 14718)
+FAILED tests/test_s23_t6_findings.py::test_write_tools_reply_with_a_compact_receipt[message_send] - AssertionError: ('message_send', 14676)
+FAILED tests/test_s23_t6_findings.py::test_write_tools_reply_with_a_compact_receipt[ticket_create] - AssertionError: ('ticket_create', 14728)
+FAILED tests/test_s23_t6_findings.py::test_write_tools_reply_with_a_compact_receipt[ticket_update] - AssertionError: ('ticket_update', 14625)
+FAILED tests/test_s23_t6_findings.py::test_write_tools_reply_with_a_compact_receipt[criterion_create] - AssertionError: ('criterion_create', 14546)
+FAILED tests/test_s23_t6_findings.py::test_write_tools_reply_with_a_compact_receipt[record_decision] - KeyError: 'echo'
+FAILED tests/test_s23_t6_findings.py::test_write_tools_reply_with_a_compact_receipt[record_claim] - KeyError: 'echo'
+FAILED tests/test_s23_t6_findings.py::test_write_tools_reply_with_a_compact_receipt[record_lesson] - KeyError: 'echo'
+FAILED tests/test_s23_t6_findings.py::test_receipt_read_call_returns_the_whole_body - KeyError: 'echo'
+FAILED tests/test_s23_t6_findings.py::test_doc_update_defaults_to_a_receipt_and_has_no_flag - AssertionError: {'ok': True, 'value': {'id': 'note-ff8e62a0d1', 'created_at...
+FAILED tests/test_s23_t6_findings.py::test_no_bounded_tool_reply_exceeds_its_cap[participants-100] - AssertionError: ('participants', 100, 10744, 8000)
+FAILED tests/test_s23_t6_findings.py::test_participants_cursor_resumes_after_the_rows_shown - assert 10744 <= 8000
+FAILED tests/test_s23_t6_findings.py::test_harvest_no_log_names_the_roots_and_not_since - AttributeError: module 'edp8.harvest_cost' has no attribute 'NoLog'
+FAILED tests/test_s23_t6_findings.py::test_harvest_route_hint_for_a_missing_log_never_says_since - AssertionError: assert ('C:\\Users\\aksou\\AppData\\Local\\Temp\\pytest-of-...
+FAILED tests/test_s23_t6_findings.py::test_zero_ok_calls_is_not_measured - AssertionError: {'1_advertisement': 'pass', '2_idempotent': 'not_applicable...

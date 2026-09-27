@@ -1037,14 +1037,51 @@ class CriterionUpdateArgs(Args):
 
 
 def _once(tool: str, a: CreateArgs, create: Callable[[], dict[str, Any]]) -> dict[str, Any]:
-    return tool_idem.once(tool, get_client().participant, a.model_dump(mode="json", exclude={"idempotency_key"}),
-                          a.idempotency_key, create)
+    return tool_idem.once(tool, get_client().participant,
+                          a.model_dump(mode="json", exclude={"idempotency_key"}), a.idempotency_key, create)
+
+
+ECHO_CLIP = 240  # chars of a write's own body echoed back; past it the reply names the read call
+
+
+def _receipt(resp: dict[str, Any], fields: tuple[str, ...], read: Callable[[dict[str, Any]], str], *,
+             key: str | None = None) -> dict[str, Any]:
+    """S23-T6 N2 (report-36481f7a4e; architect ruling m-44ae9118d1): a write replies with what it made, not what
+    it was sent. Each body field over ECHO_CLIP chars is clipped ("… (+N chars)") and `echo` names its byte
+    count and the read call that returns it whole: the named read is the opt-in, never an arg. `key` picks a
+    nested record (topic_propose: value.doc)."""
+    v = resp.get("value") if resp.get("ok") else None
+    rec = (v.get(key) if key else v) if isinstance(v, dict) else None
+    if not isinstance(rec, dict):
+        return resp
+    long = {f: rec[f] for f in fields if isinstance(rec.get(f), str) and len(rec[f]) > ECHO_CLIP}
+    if not long:
+        return resp
+    rec = {**rec, **{f: tool_paging.clip(s, ECHO_CLIP) for f, s in long.items()},
+           "echo": {"bytes": {f: len(s.encode("utf-8")) for f, s in long.items()}, "read": read(rec)}}
+    return {**resp, "value": {**v, key: rec} if key else rec}
+
+
+def _doc_ref(d: dict[str, Any]) -> str:
+    return f"doc_read(id='{d.get('id')}')"
+
+
+def _msg_ref(m: dict[str, Any]) -> str:
+    return f"message_read(id='{m.get('id')}')"
+
+
+def _ticket_ref(t: dict[str, Any]) -> str:
+    return f"ticket_read(ticket_id='{t.get('id')}', include='')"
+
+
+def _record_ref(r: dict[str, Any]) -> str:
+    return f"lookup(scope='{r.get('scope') or r.get('domain') or '<scope>'}', id='{r.get('id')}')"
 
 
 def _ticket_create(a: TicketCreateArgs) -> dict[str, Any]:
-    return _once("ticket_create", a, lambda: get_client().ticket_create(
+    return _receipt(_once("ticket_create", a, lambda: get_client().ticket_create(
         kind=a.kind, work_type=a.work_type, title=a.title, parent_id=a.parent_id, assignee=a.assignee,
-        description=a.description, tags=a.tags, words=a.words))
+        description=a.description, tags=a.tags, words=a.words)), ("description", "words"), _ticket_ref)
 
 
 def _ticket_read(a: TicketReadArgs) -> dict[str, Any]:
@@ -1056,14 +1093,15 @@ def _filters(a: PageArgs) -> dict[str, Any]:
 
 
 def _paged(tool: str, resp: dict[str, Any], a: PageArgs, project: Callable[[dict[str, Any]], dict[str, Any]],
-           full: str, rows_of: Callable[[Any], list[Any]] | None = None) -> dict[str, Any]:
+           full: str, rows_of: Callable[[Any], list[Any]] | None = None,
+           enrich: Callable[[Any], Any] | None = None) -> dict[str, Any]:
     """Offset-page a board list reply (S23): count, compact items, next_cursor and the `page` receipt."""
     if not resp.get("ok"):
         return resp
     rows = rows_of(resp.get("value")) if rows_of else (resp.get("value") or [])
     try:
         value = tool_paging.offset_page(tool, list(rows), filters=_filters(a), limit=a.limit, cursor=a.cursor,
-                                        verbose=a.verbose, project=project, full=full)
+                                        verbose=a.verbose, project=project, full=full, enrich=enrich)
     except tool_paging.CursorError as e:
         return tool_paging.cursor_error(tool, e)
     return {**resp, "value": value}
@@ -1082,14 +1120,16 @@ def _ticket_query(a: TicketQueryArgs) -> dict[str, Any]:
 
 
 def _ticket_update(a: TicketUpdateArgs) -> dict[str, Any]:
-    return get_client().ticket_update(a.ticket_id, status=a.status, assignee=a.assignee, design_ref=a.design_ref,
-                                      description=a.description, tags=a.tags, title=a.title)
+    return _receipt(get_client().ticket_update(a.ticket_id, status=a.status, assignee=a.assignee,
+                                               design_ref=a.design_ref, description=a.description, tags=a.tags,
+                                               title=a.title), ("description", "words"), _ticket_ref)
 
 
 def _criterion_create(a: CriterionCreateArgs) -> dict[str, Any]:
-    return _once("criterion_create", a, lambda: get_client().criterion_create(
+    return _receipt(_once("criterion_create", a, lambda: get_client().criterion_create(
         ticket_id=a.ticket_id, text=a.text, check=a.check, checked_by=a.checked_by,
-        override_reason=a.override_reason))
+        override_reason=a.override_reason)), ("text",),
+        lambda c: f"criterion_query(ticket_id='{c.get('ticket_id')}')")
 
 
 def _criterion_query(a: CriterionQueryArgs) -> dict[str, Any]:
@@ -1180,7 +1220,7 @@ class DocUpdateArgs(Args):
     body_md: str | None = None
     title: str | None = None
     tags: list[str] | None = Field(default=None, description='replaces the tag list')
-    compact: bool = Field(default=False, description='return only a receipt')
+    compact: bool = True  # T6 N2 (m-44ae9118d1): a receipt by default; false returns the doc (doc_read does too)
 
 
 class LinkCreateArgs(Args):
@@ -1200,9 +1240,9 @@ class LinkDeleteArgs(Args):
 
 
 def _doc_create(a: DocCreateArgs) -> dict[str, Any]:
-    return _once("doc_create", a, lambda: get_client().doc_create(
+    return _receipt(_once("doc_create", a, lambda: get_client().doc_create(
         doc_type=a.doc_type, title=a.title, body_md=a.body_md, scope=a.scope, tags=a.tags, status=a.status,
-        proposes=a.proposes, ticket_id=a.ticket_id))
+        proposes=a.proposes, ticket_id=a.ticket_id)), ("body_md",), _doc_ref)
 
 
 def _doc_read(a: DocReadArgs) -> dict[str, Any]:
@@ -1265,7 +1305,7 @@ DOC_TOOLS = [
     ToolDef("doc_update",
             "Replace a doc's body/title as a new version",
             'to amend a doc you own',
-            'the doc (compact=true: a receipt)',
+            'a receipt; compact=false: the doc',
             DocUpdateArgs, _doc_update, "doc"),
     ToolDef("link_create",
             'Link from_id <relation> to_id (ticket/doc/artifact)',
@@ -1329,9 +1369,9 @@ class GatesArgs(Args):
 
 
 def _message_send(a: MessageSendArgs) -> dict[str, Any]:
-    return _once("message_send", a, lambda: get_client().message_send(
+    return _receipt(_once("message_send", a, lambda: get_client().message_send(
         ticket_id=a.ticket_id, kind=a.kind, text=a.text, to=a.to, reply_to=a.reply_to, artifacts=a.artifacts,
-        code_context=a.code_context, quotes=a.quotes))
+        code_context=a.code_context, quotes=a.quotes)), ("text",), _msg_ref)
 
 
 def _message_row(r: dict[str, Any]) -> dict[str, Any]:
@@ -1454,23 +1494,24 @@ def _events_query(a: EventsQueryArgs) -> dict[str, Any]:
 
 
 def _participants(a: ParticipantsArgs) -> dict[str, Any]:
-    resp = _paged("participants", get_client().participants(role=a.role, type=a.type and a.type.value), a,
-                  lambda r: tool_paging.pick(r, ("id", "type", "role", "handle", "admin", "retired")), "verbose=true")
-    if not resp.get("ok"):
-        return resp
     c = get_client()
-    rows = resp["value"]["items"]
-    for row in rows:  # reach for this page only: one session read per row shown, never the whole roster
+
+    def reach(row: dict[str, Any]) -> dict[str, Any]:
+        """One session read per row that may be shown, never the whole roster; inside the fit (T6 N3)."""
         if row.get("handle", "").startswith(("__", "wt-")):
-            row["reach"] = "test fixture"
-            continue
+            return {**row, "reach": "test fixture"}
         if row.get("type") == "human":
-            row["reach"] = "person — message_send(to='@'+handle) reaches their inbox + Slack doorbell"
-            continue
+            return {**row, "reach": "person — message_send(to='@'+handle) reaches their inbox + Slack doorbell"}
         sq = c.session_query(participant_id=row.get("id"))
         states = [s.get("state") for s in (sq.get("value") or [])] if sq.get("ok") else []
-        row["reach"] = ("live seat — a message wakes it now" if any(s in ("alive", "parked") for s in states)
-                        else "closed seat — post on its ticket thread; the next shell reads it at boot")
+        return {**row, "reach": ("live seat — a message wakes it now" if any(s in ("alive", "parked") for s in states)
+                                 else "closed seat — post on its ticket thread; the next shell reads it at boot")}
+
+    resp = _paged("participants", c.participants(role=a.role, type=a.type and a.type.value), a,
+                  lambda r: tool_paging.pick(r, ("id", "type", "role", "handle", "admin", "retired")), "verbose=true",
+                  enrich=reach)
+    if not resp.get("ok"):
+        return resp
     resp["hint"] = ("need a HUMAN review? pick the closest role match among type=human rows and "
                     "message_send(to='@'+handle, kind=question) — their Slack fires with a deep link. "
                     "A named person works the same: to='@name'")
@@ -1979,19 +2020,20 @@ class LookupArgs(Args):
 
 
 def _record_decision(a: RecordDecisionArgs) -> dict[str, Any]:
-    return _once("record_decision", a, lambda: get_client().record_decision(
+    return _receipt(_once("record_decision", a, lambda: get_client().record_decision(
         a.scope, a.text, detail=a.detail, replaces=a.replaces, binding=a.binding, source=a.source,
-        domains=a.domains))
+        domains=a.domains)), ("text", "detail"), _record_ref)
 
 
 def _record_lesson(a: RecordLessonArgs) -> dict[str, Any]:
-    return _once("record_lesson", a, lambda: get_client().record_lesson(a.domain, a.topic, a.text,
-                                                                      evidence=a.evidence))
+    return _receipt(_once("record_lesson", a, lambda: get_client().record_lesson(a.domain, a.topic, a.text,
+                                                                               evidence=a.evidence)),
+                    ("text",), _record_ref)
 
 
 def _record_claim(a: RecordClaimArgs) -> dict[str, Any]:
-    return _once("record_claim", a, lambda: get_client().record_claim(a.scope, a.text, basis=a.basis.value,
-                                                                    evidence=a.evidence, source=a.source))
+    return _receipt(_once("record_claim", a, lambda: get_client().record_claim(
+        a.scope, a.text, basis=a.basis.value, evidence=a.evidence, source=a.source)), ("text",), _record_ref)
 
 
 class WithdrawDecisionArgs(Args):
@@ -2039,7 +2081,8 @@ def _withdraw_claim(a: WithdrawClaimArgs) -> dict[str, Any]:
 class TopicResearchArgs(Args):
     topic_id: str = Field(description='Library topic id')
     query: str | None = Field(default=None, description="search skills.sh")
-    url: str | None = Field(default=None, description="read one page (hosts above)")
+    url: str | None = None  # one page to read; the description names its hosts (T6: bytes for `offset`, S20)
+    offset: int | None = None  # with url: reads on from the kept page text (the reply's `next` names it)
 
 
 class TopicProposeArgs(CreateArgs):
@@ -2053,12 +2096,13 @@ class TopicProposeArgs(CreateArgs):
 
 
 def _topic_research(a: TopicResearchArgs) -> dict[str, Any]:
-    return get_client().topic_research(a.topic_id, query=a.query, url=a.url)
+    return get_client().topic_research(a.topic_id, query=a.query, url=a.url, offset=a.offset)
 
 
 def _topic_propose(a: TopicProposeArgs) -> dict[str, Any]:
-    return _once("topic_propose", a, lambda: get_client().topic_propose(
-        a.topic_id, a.title, a.body_md, a.source_url, doc_type=a.doc_type.value, tags=a.tags, proposes=a.proposes))
+    return _receipt(_once("topic_propose", a, lambda: get_client().topic_propose(
+        a.topic_id, a.title, a.body_md, a.source_url, doc_type=a.doc_type.value, tags=a.tags, proposes=a.proposes)),
+        ("body_md",), _doc_ref, key="doc")
 
 
 # S-SME-SURFACE: the resident sme of a Library topic browses through the board (bounded hosts, receipts)
@@ -2066,7 +2110,7 @@ TOPIC_TOOLS = [
     ToolDef("topic_research",
             "Search skills.sh or read one page for your Library topic (skills.sh, GitHub, the seed host only)",
             "a topic seat's research step, before proposing a doc",
-            "search results or the page text, plus the fetch receipt",
+            "search results, or ≤8 KB of page text plus the fetch receipt",
             TopicResearchArgs, _topic_research, "knowledge"),
     ToolDef("topic_propose",
             "File a proposed Library doc from a page topic_research fetched; the owner approves it",

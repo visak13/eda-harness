@@ -19,14 +19,16 @@ import ipaddress
 import json
 import re
 import socket
+import hashlib
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urljoin, urlsplit
 
 import httpx
 
-from . import seat_choice
+from . import seat_choice, settings, tool_paging
 from .board import _TERMINAL, Board, BoardError, is_help, is_topic, topic_seat_role
 from .library import MAX_BYTES, TIMEOUT_S, normalize_source
 from .schemas import (
@@ -457,7 +459,7 @@ def post(board: Board, actor: Participant, topic_id: str, *, text: str, kind: Me
 SKILLS_HOSTS = ("skills.sh", "www.skills.sh")
 BASE_HOSTS = (*SKILLS_HOSTS, "github.com", "raw.githubusercontent.com")
 SEARCH_URL = "https://www.skills.sh/api/search?q="
-TEXT_CAP = 12_000  # characters of page text handed back to the seat; the receipt keeps the byte count
+PAGE_CHARS = 6_000  # page text per topic_research reply; the whole text is kept and `offset` reads on (T6 N1)
 MAX_REDIRECTS = 3
 
 
@@ -539,16 +541,52 @@ def _receipt(board: Board, actor: Participant, t: Ticket, *, requested: str, fin
     return data
 
 
+def _kept(topic_id: str, url: str) -> Path:
+    """Where a fetched page's text is kept for its continuation reads: one file per (topic, normalized url)."""
+    key = hashlib.sha256(normalize_source(url.strip()).encode("utf-8")).hexdigest()[:24]
+    return settings.data_dir() / "topic_pages" / topic_id / f"{key}.txt"
+
+
+def _page(t: Ticket, url: str, text: str, offset: int, head: dict[str, Any]) -> dict[str, Any]:
+    """One bounded slice of a page's text from `offset` (T6 N1, report-36481f7a4e: a 15 KB page used to end at
+    12,000 chars with no way to read the tail). The slice shrinks until the reply fits the page cap; `next`
+    names the exact continuation call and says to read the rest before distilling."""
+    total, cap = len(text), tool_paging.page_cap()
+    offset = max(0, min(offset, total))
+    n = PAGE_CHARS
+    while True:
+        end = min(total, offset + n)
+        more = end < total
+        nxt = (f"topic_research(topic_id='{t.id}', url='{url}', offset={end}) reads on ({total - end} of "
+               f"{total} chars left); read to the end before you distil, then topic_propose(source_url=<this url>)"
+               if more else "the whole page is read: distil what applies to this topic, then "
+                            "topic_propose(source_url=<this url>)")
+        out = {**head, "text": text[offset:end], "offset": offset, "next_offset": end if more else None,
+               "total_chars": total, "truncated": more, "next": nxt}
+        if n <= 500 or tool_paging.nbytes({"ok": True, "value": out, "hint": ""}) <= cap:
+            return out
+        n = n * 4 // 5
+
+
 def research(board: Board, actor: Participant, topic_id: str, *, query: str | None = None,
-             url: str | None = None) -> dict[str, Any]:
+             url: str | None = None, offset: int | None = None) -> dict[str, Any]:
     """The topic seat's browsing: `query` searches skills.sh; `url` reads one page (a skills.sh skill page,
-    a GitHub SKILL.md, or a page on the seed host). Every fetch leaves a receipt on the topic."""
+    a GitHub SKILL.md, or a page on the seed host). Every fetch leaves a receipt on the topic and keeps the
+    page's text; `url` + `offset` reads on from the kept text without fetching again."""
     t = topic(board, topic_id)
     _open(t)
     if actor.role != Role.owner and actor.id != t.assignee:
         raise BoardError("forbidden", "the topic's sme researches it")
     if bool(query) == bool(url):
         raise BoardError("invalid", "give exactly one of query or url")
+    if offset is not None:
+        if not url:
+            raise BoardError("invalid", "offset continues a page: pass it with url")
+        kept = _kept(t.id, url)
+        if not kept.is_file():
+            raise BoardError("not_found", f"{url} has no kept text for {t.id}",
+                             f"topic_research(topic_id='{t.id}', url='{url}') fetches it first")
+        return _page(t, url.strip(), kept.read_text(encoding="utf-8"), offset, {})
     hosts = allowed_hosts(board, t.id)
     if query:
         req = SEARCH_URL + quote(query.strip())
@@ -568,8 +606,12 @@ def research(board: Board, actor: Participant, topic_id: str, *, query: str | No
     rec = _receipt(board, actor, t, requested=(url or "").strip(), final=final, status=status, size=len(body),
                    kind="page")
     text = html_text(body.decode("utf-8", errors="replace")) if status == 200 else ""
-    return {"receipt": rec, "text": text[:TEXT_CAP], "truncated": len(text) > TEXT_CAP,
-            "next": "distil what applies to this topic, then topic_propose(source_url=<this url>)"}
+    if status == 200:
+        for key in {(url or "").strip(), final}:
+            kept = _kept(t.id, key)
+            kept.parent.mkdir(parents=True, exist_ok=True)
+            kept.write_text(text, encoding="utf-8")
+    return _page(t, (url or "").strip(), text, 0, {"receipt": rec})
 
 
 def _receipt_for(board: Board, topic_id: str, source_url: str) -> dict[str, Any] | None:

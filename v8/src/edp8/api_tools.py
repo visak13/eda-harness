@@ -103,8 +103,12 @@ def tools_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
         from .library import knowledge_view
         try:
             out = hc.compute(participant_id, since=since, until=until, knowledge=knowledge_view(board))
+        except hc.NoLog as e:
+            raise BoardError("not_found", str(e), "check the participant id (a seat with no transcript has no cost); "
+                                                  "the board searches EDP8_HARVEST_LOG_ROOTS, else the Claude and "
+                                                  "codex log roots named here") from e
         except LookupError as e:
-            raise BoardError("not_found", str(e), "pass since (ISO) when the harvest trigger is not in the log")
+            raise BoardError("not_found", str(e), "pass since (ISO) when the harvest trigger is not in the log") from e
         return _ok(out)
 
     return r
