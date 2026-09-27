@@ -259,14 +259,24 @@ def check_config_parity() -> dict:
     settings themselves is not required (the dirs legitimately differ on
     tui/credentials); the HOOKS are the behavior-bearing part."""
     start = _now()
+    import json as _json
+    from pathlib import Path
+    pool_settings = claude_pool_config_dir() / "settings.json"
+    # missing or unreadable is an error whatever the agent home (the dir is gitignored; the pool seeds it)
+    if not pool_settings.is_file():
+        return _result("config_parity", "error",
+                       f"pool settings missing: {pool_settings} (the pool seeds it "
+                       "from its template at start; heronry init too)", start)
+    try:
+        _json.loads(pool_settings.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError) as e:
+        return _result("config_parity", "error",
+                       f".claude-pool/settings.json unreadable: {e}", start)
     home = (edp_settings.env_raw("EDP_AGENT_HOME") or "").strip()
     if not home:
         return _result("config_parity", "warn",
                        "EDP_AGENT_HOME unset — parity not checked", start)
-    import json as _json
-    from pathlib import Path
     problems: list[str] = []
-    pool_settings = claude_pool_config_dir() / "settings.json"
     project_hooks_dir = Path(home) / ".claude" / "hooks"
     if not project_hooks_dir.is_dir():
         problems.append(f"project hooks dir missing: {project_hooks_dir}")

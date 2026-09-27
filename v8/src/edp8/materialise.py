@@ -23,7 +23,8 @@ from pathlib import Path
 from edp8 import settings
 
 #: What the agent home ships, relative to its root (files, or dirs taken recursively).
-PAYLOAD = (".claude/commands", ".claude/skills", ".claude/output-styles", "guides", ".mcp.json",
+#: .claude/hooks: the pool settings.json hooks run ${CLAUDE_PROJECT_DIR}/.claude/hooks/*.py from the agent home.
+PAYLOAD = (".claude/commands", ".claude/skills", ".claude/output-styles", ".claude/hooks", "guides", ".mcp.json",
            "models.json", "CLAUDE.md")
 MANIFEST = ".manifest.json"
 NEW_SUFFIX = ".new"

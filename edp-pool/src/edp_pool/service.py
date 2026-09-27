@@ -720,6 +720,7 @@ class PoolService(Microservice):
         # constructor — unit tests that build a PoolService directly get no
         # background thread polling a broker that isn't there.
         self._start_resume_watchdog()
+        self._seed_claude_settings()
         # v7: external-neuron drivers are standing operator intent — put
         # them back after a pool restart (their processes died with us).
         try:
@@ -748,6 +749,19 @@ class PoolService(Microservice):
             except Exception:  # noqa: BLE001 — already dead is fine
                 pass
         return None
+
+    def _seed_claude_settings(self) -> None:
+        """Seed the pool config dir's settings.json from the shipped template when it is missing (the dir is
+        gitignored, so a clone or an install has none): hooks, outputStyle, effort. Never over an edit."""
+        from .pool_config import seed_settings
+        from .pty_launcher import claude_pool_config_dir
+        try:
+            cfg = claude_pool_config_dir()
+            home = self._spawner_agent_home() or str(edp_settings.agent_home())
+            if seed_settings(cfg, Path(home)):
+                _log.info("claude_settings_seeded", str(cfg))
+        except Exception as e:  # noqa: BLE001 — doctor reports a missing file; a spawn still runs
+            _log.warning("claude_settings_seed_failed", str(e))
 
     def _start_resume_watchdog(self) -> None:
         """Start the parked-handle resume watchdog (daemon thread). Gated by

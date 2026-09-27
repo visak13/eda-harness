@@ -255,6 +255,30 @@ def claude_signed_in(store: Path | None = None) -> bool:
         return False
 
 
+def seed_pool_settings(agent_home: Path, store: Path | None = None) -> str:
+    """Seed the pool store's settings.json (hooks, outputStyle) from edp_pool's shipped template when it is
+    missing; an existing file is kept. Returns the line init prints."""
+    store = store or claude_store()
+    try:
+        from edp_pool.pool_config import seed_settings
+    except ImportError:  # a board-only env: the pool seeds it at its own start
+        return f"settings {store / 'settings.json'}: edp_pool not installed here, the pool seeds it at start"
+    written = seed_settings(store, agent_home)
+    return f"settings {store / 'settings.json'} ({'written' if written else 'kept'})"
+
+
+def pool_settings_problem(store: Path | None = None) -> str | None:
+    """None when the pool store's settings.json exists and parses as a JSON object, else what is wrong."""
+    f = (store or claude_store()) / "settings.json"
+    try:
+        data = json.loads(f.read_text(encoding="utf-8-sig"))
+    except FileNotFoundError:
+        return f"{f} is missing: seats run without hooks or outputStyle; run heronry init (or start the pool)"
+    except (OSError, ValueError) as e:
+        return f"{f} is unreadable: {e}"
+    return None if isinstance(data, dict) else f"{f} is not a JSON object"
+
+
 # ------------------------------------------------------------------------------------------ init
 
 def _say(tag: str, text: str) -> None:
@@ -329,6 +353,7 @@ def init_cmd(argv: list[str]) -> int:
     _say("models", str(model_catalog.materialise()))
     trust = write_trust(home)
     _say("trust", f"{home} trusted for claude seats ({trust})")
+    _say("claude", seed_pool_settings(home))
 
     _say("harness", ", ".join(f"{h}{'' if detected[h] else ' (not found)'}" for h in picked))
     missing = [h for h in picked if not detected[h]]
@@ -491,6 +516,11 @@ def _doctor_checks() -> int:
         else:
             r.fail("claude trust", f"{home} is not trusted in {claude_store()}: seats stop at claude's folder-trust "
                    "dialog; run heronry init to write the trust entry")
+        problem = pool_settings_problem()
+        if problem:
+            r.fail("claude settings", problem)
+        else:
+            r.ok("claude settings", str(claude_store() / "settings.json"))
         if claude_signed_in():
             r.ok("claude sign-in", str(claude_store()))
         else:

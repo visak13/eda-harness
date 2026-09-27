@@ -260,6 +260,11 @@ def test_c4_real_doctor_subprocess_under_10s_and_phoenix_down_graceful():
             "W14 acceptance criterion 4 requires the live stack (broker "
             ":9300 + pool :9301). Bring the stack up, then re-run.")
 
+    # the child resolves the same pool config dir (conftest pins the data dir under tmp): seed it as the
+    # pool's startup does, so config_parity reads a settings.json (never writes over the live one)
+    from edp_pool.pool_config import seed_settings
+    from edp_pool.pty_launcher import claude_pool_config_dir
+    seed_settings(claude_pool_config_dir())
     env = {
         **_child_env(),
         "EDP_BROKER_URL": _LIVE_BROKER,

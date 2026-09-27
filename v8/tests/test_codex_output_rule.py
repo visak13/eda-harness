@@ -4,6 +4,9 @@ One file feeds both harnesses: the agent home's `.claude/output-styles/edp-terse
 cwd = the agent home, so the pool's `outputStyle: edp-terse` resolves to that project style (the pool config
 dir carries no copy that could shadow it); a codex seat's developerInstructions carry its body verbatim (front
 matter stripped) plus the resident-seat contract, on thread/start AND thread/resume.
+
+The pool config dir is gitignored, so the shipped source of its settings.json is edp_pool's tracked template
+(seeded into the dir at pool start and at init); the test reads the template, never the live ignored file.
 """
 import json
 from pathlib import Path
@@ -14,7 +17,7 @@ from edp8.codex_seat import run as run_mod
 from edp8.codex_seat.seat import CodexSeat, idle_waiter
 
 V8 = Path(__file__).resolve().parents[1]
-POOL_CFG = V8.parent / "edp-pool" / ".claude-pool"
+POOL_TEMPLATE = V8.parent / "edp-pool" / "src" / "edp_pool" / "claude_pool_template"
 FAKE = V8 / "tests" / "codex_seat" / "fake_app_server.py"
 STYLE = V8 / run_mod.OUTPUT_STYLE
 
@@ -27,12 +30,12 @@ def _body() -> str:
 
 
 def test_the_single_source_is_the_agent_home_style_and_the_claude_pool_resolves_to_it():
-    settings = json.loads((POOL_CFG / "settings.json").read_text(encoding="utf-8-sig"))
+    settings = json.loads((POOL_TEMPLATE / "settings.json").read_text(encoding="utf-8"))
     assert settings["outputStyle"] == "edp-terse"
     front = STYLE.read_text(encoding="utf-8").split("\n---\n", 1)[0]
     assert "name: edp-terse" in front  # the name the pool's settings select
-    # no user-level copy in the pool config dir: the project style under the seat's cwd is the one resolved
-    assert not (POOL_CFG / "output-styles" / "edp-terse.md").exists()
+    # no user-level copy shipped for the pool config dir: the project style under the seat's cwd is the one resolved
+    assert sorted(p.name for p in POOL_TEMPLATE.iterdir()) == ["settings.json"]
 
 
 def test_standing_context_carries_the_style_body_byte_identical_plus_the_contract():

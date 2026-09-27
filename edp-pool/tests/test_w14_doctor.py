@@ -142,11 +142,19 @@ def test_stale_locks_empty_is_ok():
     assert r["status"] == "ok"
 
 
+def _seed_pool_settings():
+    """Seed the pool config dir (conftest pins it under tmp in installed mode) as the pool's startup does."""
+    from edp_pool.pool_config import seed_settings
+    from edp_pool.pty_launcher import claude_pool_config_dir
+    seed_settings(claude_pool_config_dir())
+
+
 # ── full run: every check runs + healthy-stack budget ──────────────────────
 def test_run_doctor_all_checks_run_and_healthy(tmp_path, monkeypatch):
     """All five checks run in order, a healthy stack is ok=True, and the run
     fits the <10s acceptance budget (mocked pings make it near-instant)."""
     monkeypatch.delenv("EDP_AGENT_HOME", raising=False)  # hermetic: a seat shell carries one
+    _seed_pool_settings()  # the pool seeds it at start; a missing file is a config_parity error
     monkeypatch.setattr(
         doctor, "_http_get",
         _fake_http({"9300": _UP, "9301": _UP, "6006": _UP}))
@@ -176,6 +184,7 @@ def test_run_doctor_phoenix_down_stays_healthy(tmp_path, monkeypatch):
     """Phoenix down (warn) does NOT fail the doctor — ok stays True; broker
     down (error) DOES."""
     monkeypatch.delenv("EDP_AGENT_HOME", raising=False)  # hermetic: a seat shell carries one
+    _seed_pool_settings()  # the pool seeds it at start; a missing file is a config_parity error
     monkeypatch.setattr(
         doctor, "_http_get",
         _fake_http({"9300": _UP, "9301": _UP, "6006": _DOWN}))
