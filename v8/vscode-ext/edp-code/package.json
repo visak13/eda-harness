@@ -4,11 +4,11 @@
   "icon": "media/heronry.png",
   "description": "Chat on Heronry tickets and epics beside the editor, tag a code selection to anyone on the board; live-seats badge, guarded git and an external terminal for the fleet's shared tree.",
   "publisher": "edp",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "private": true,
   "license": "Apache-2.0",
   "heronry": {
-    "release": "0.9.0"
+    "release": "0.9.1"
   },
   "engines": {
     "vscode": "^1.138.0"

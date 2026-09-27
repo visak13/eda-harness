@@ -3,7 +3,7 @@
 # design-e963c656f5 4.4 / 4.10.
 #
 #   curl -LsSf https://github.com/visak13/eda-harness/releases/latest/download/install.sh | sh
-#   sh install.sh [--version v0.9.0] [--release-url <dir or https base>] [--force] [--no-modify-path] [--yes]
+#   sh install.sh [--version v0.9.1] [--release-url <dir or https base>] [--force] [--no-modify-path] [--yes]
 #                 [--no-embed]
 #
 # 1. uv: uses the uv on PATH when it is at least $UV_VERSION, else installs exactly $UV_VERSION into

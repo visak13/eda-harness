@@ -1,12 +1,12 @@
 [project]
 name = "edp-pool"
-version = "0.9.0"
+version = "0.9.1"
 description = "Spawn-on-demand shell pool for eda-base. Lock-by-spawn-lifetime; env-capped capacity (EDP_MAX_WORKERS/PLANNERS/TOTAL_SHELLS); park/fork-resume; registers relative-ref aliases into the broker."
 requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 dependencies = [
-    "edp-contracts==0.9.0",
+    "edp-contracts==0.9.1",
     "fastapi>=0.110",
     "uvicorn>=0.27",
     "httpx>=0.27",

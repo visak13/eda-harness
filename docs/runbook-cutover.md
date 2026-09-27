@@ -2,7 +2,7 @@
 
 The dogfood cutover (design-e963c656f5 §4.13, story S9). Until now the fleet has run from the source checkout:
 `EDP_HOME=<repo>/v8`, services through `edp.ps1`, and state in `v8/.data`. After the cutover the fleet runs the
-installed release (`heronry`, 0.9.0 or later) on the same board state. The source checkout stays untouched, and
+installed release (`heronry`, 0.9.1 or later) on the same board state. The source checkout stays untouched, and
 rolling back means starting it again.
 
 **Rehearse it first on a copy** (step 0). The rehearsal is `v8/scripts/drill_cutover_copy.ps1`. It passed on
@@ -30,7 +30,7 @@ The drill touches neither the live fleet nor the checkout's state:
    with `--apply`, `heronry start`, and `heronry stop`. It checks:
    - the row counts match the copy;
    - every service is up;
-   - `/v1/health` reports 0.9.0 and `/ui` serves the SPA;
+   - `/v1/health` reports 0.9.1 and `/ui` serves the SPA;
    - an imported owner token signs in;
    - nothing is left running and every port is free;
    - the copy is unchanged (file manifest compared before and after).
@@ -42,7 +42,7 @@ checkout's own venvs (`v8/scripts/repack_wheelhouse.py`).
 
 | Check | How |
 |---|---|
-| The release is available | a published GitHub release `v0.9.0` (install.ps1 fetches it), or a local folder with the four wheels and `SHA256SUMS` for `-ReleaseUrl` |
+| The release is available | a published GitHub release `v0.9.1` (install.ps1 fetches it), or a local folder with the four wheels and `SHA256SUMS` for `-ReleaseUrl` |
 | Disk | free space of at least twice `v8/.data` (the import copies it; this host: about 3.5 GB) |
 | Nobody is mid-story | every seat has handed off. Close or reap the seats (Seats page, or the architect). The pool state then holds no live or parked rows for the new install to resume |
 | The owner is present | the cutover stops the board for a few minutes, and the owner signs in again afterwards |
@@ -63,11 +63,11 @@ Never kill services by image name (`taskkill /IM`), because other processes shar
 ## 3. Install the release
 
 ```powershell
-irm https://github.com/visak13/eda-harness/releases/download/v0.9.0/install.ps1 | iex
+irm https://github.com/visak13/eda-harness/releases/download/v0.9.1/install.ps1 | iex
 # or, offline:  .\install.ps1 -ReleaseUrl <folder with the wheels and SHA256SUMS>
 ```
 
-Open a new terminal, then run `heronry version`. It should print `Heronry 0.9.0`.
+Open a new terminal, then run `heronry version`. It should print `Heronry 0.9.1`.
 
 Run `heronry` from a terminal that does **not** set `EDP_HOME` (the checkout's `start.ps1` sets it). With
 `EDP_HOME` pointing at the checkout, `heronry` runs in dev mode, and `import` refuses.
@@ -104,7 +104,7 @@ It ends with `imported: {epics, tickets, participants}` and `The source was not 
 
 ```powershell
 heronry start
-heronry status          # board, broker, pool and mcp up, rev v0.9.0 (bridge up only with a Slack map)
+heronry status          # board, broker, pool and mcp up, rev v0.9.1 (bridge up only with a Slack map)
 heronry doctor          # harnesses, ports, secrets, claude folder trust for the new agent home
 ```
 
@@ -135,7 +135,7 @@ heronry doctor          # harnesses, ports, secrets, claude folder trust for the
     log (`heronry status` names the log folder).
   - Installed seats read their role cards from the installed agent home, not from `v8/.claude`.
   - `heronry doctor` reports whether claude trusts that folder.
-- **VS Code:** the extension's version prompt offers `edp-code-0.9.0.vsix` from the release.
+- **VS Code:** the extension's version prompt offers `edp-code-0.9.1.vsix` from the release.
 
 ## 6. Roll back (if anything above fails)
 

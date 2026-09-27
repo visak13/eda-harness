@@ -1,6 +1,6 @@
 [project]
 name = "edp-contracts"
-version = "0.9.0"
+version = "0.9.1"
 description = "Shared base contracts for the eda-base system: Microservice/Tool ABCs, envelopes, broker message, skill validator, structured logging. Dependency-light (pydantic + stdlib only)."
 readme = "README.md"
 requires-python = ">=3.12"

@@ -13,7 +13,7 @@
 [tool.briefcase]
 project_name = "Heronry"
 bundle = "io.github.visak13"
-version = "0.9.0"
+version = "0.9.1"
 url = "https://github.com/visak13/eda-harness"
 license = "Apache-2.0"
 license-files = ["../../LICENSE"]
@@ -27,10 +27,10 @@ long_description = "The Heronry board, pool, broker and MCP services with a desk
 sources = ["src/heronry"]
 icon = "../assets/brand/heronry/icons/heronry"
 requires = [
-    "edp8==0.9.0",
-    "edp-contracts==0.9.0",
-    "edp-pool==0.9.0",
-    "edp-broker==0.9.0",
+    "edp8==0.9.1",
+    "edp-contracts==0.9.1",
+    "edp-pool==0.9.1",
+    "edp-broker==0.9.1",
     # the embed extra, bundled: a bundle cannot pip-install into itself later (prereqs.in_bundle)
     "fastembed>=0.3",
     "pywebview>=6.0",

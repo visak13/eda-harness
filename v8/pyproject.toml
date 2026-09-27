@@ -1,6 +1,6 @@
 [project]
 name = "edp8"
-version = "0.9.0"
+version = "0.9.1"
 description = "v8 orchestration board: ten objects, guards, feed, role-scoped MCP bundles."
 requires-python = ">=3.12"
 license = "Apache-2.0"
@@ -18,7 +18,7 @@ dependencies = [
     "pillow>=10.0",
     "psutil>=5.9",
     "python-multipart>=0.0.9",
-    "edp-contracts==0.9.0",
+    "edp-contracts==0.9.1",
     "platformdirs>=4.0",
 ]
 

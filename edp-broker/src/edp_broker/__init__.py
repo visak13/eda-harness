@@ -1,4 +1,4 @@
-__version__ = "0.9.0"  # first: service.py imports it (one version across the packages, S9)
+__version__ = "0.9.1"  # first: service.py imports it (one version across the packages, S9)
 from .service import BrokerService, create_app
 from .store import AliasStore, BadRecipient, InboxStore
 

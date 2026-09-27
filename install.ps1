@@ -1,7 +1,7 @@
 # Heronry installer for Windows (S3 s-870e401942, design-e963c656f5 4.4 / 4.10).
 #
 #   irm https://github.com/visak13/eda-harness/releases/latest/download/install.ps1 | iex
-#   .\install.ps1 [-Version v0.9.0] [-ReleaseUrl <folder or https base>] [-Force] [-NoModifyPath] [-Yes] [-NoEmbed]
+#   .\install.ps1 [-Version v0.9.1] [-ReleaseUrl <folder or https base>] [-Force] [-NoModifyPath] [-Yes] [-NoEmbed]
 #
 # 1. uv: uses the uv on PATH when it is at least $UvVersion, else installs exactly $UvVersion into
 #    ~\.local\bin after checking the archive against uv's published SHA-256.
