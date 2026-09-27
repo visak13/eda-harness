@@ -26,6 +26,7 @@ import io
 import json
 import sys
 import threading
+import time
 from importlib import resources
 from pathlib import Path
 from typing import Any, Callable
@@ -227,6 +228,7 @@ class Desktop:
         self._notify = notify
         self.capture_dir: Path | None = None  # `heronry gui --capture <dir>`: the app shoots its own page, then quits
         self.settle_s = 6.0
+        self._code_state: tuple[float, bool] = (0.0, False)  # (checked at, up): the tray asks on every open
 
     # ---- actions (tray menu, window menu) ------------------------------------------------------
     def show(self, message: str, title: str | None = None) -> None:
@@ -264,6 +266,38 @@ class Desktop:
 
     def status(self) -> None:
         self.show(status_text(), f"{self.product}: status")
+
+    # ---- the optional code server (S21): `heronry start|stop code`, the same command the terminal runs
+    def code_up(self, max_age_s: float = 5.0) -> bool:
+        """Whether this home's code server is up (cached briefly: the tray re-asks every time its menu opens)."""
+        at, up = self._code_state
+        if time.monotonic() - at > max_age_s:
+            from . import code_service
+            try:
+                up = code_service.status()["state"] == "up"
+            except Exception:  # noqa: BLE001 — unknown: offer Start; the command says what is wrong
+                up = False
+            self._code_state = (time.monotonic(), up)
+        return up
+
+    def start_code(self) -> None:
+        self._verb("start", "code")
+        self._code_state = (0.0, False)
+
+    def stop_code(self) -> None:
+        self._verb("stop", "code")
+        self._code_state = (0.0, False)
+
+    def open_code(self) -> None:
+        """The board's Code tab (it embeds the code server, or says how to start it)."""
+        target = f"{board_url()}/ui/code"
+        if self.window is None:
+            import webbrowser
+            webbrowser.open(target)
+            return
+        self.window.load_url(target)
+        self.window.show()
+        self.window.restore()
 
     def update(self) -> None:
         """Check GitHub Releases; on a newer release ask, then `heronry update` (the §4.10 apply)."""
@@ -322,7 +356,17 @@ class Desktop:
 
     def actions(self) -> list[tuple[str, Callable[[], None]]]:
         return [("Open board", self.open_board), ("Status", self.status), ("Start services", self.start),
-                ("Stop services", self.stop), ("Restart services", self.restart), ("Check for update", self.update)]
+                ("Stop services", self.stop), ("Restart services", self.restart), ("Check for update", self.update),
+                ("Start code server", self.start_code), ("Stop code server", self.stop_code),
+                ("Open Code tab", self.open_code)]
+
+    def enabled(self, label: str) -> bool:
+        """Start/Stop code server are offered by state (S21); every other action always is."""
+        if label == "Start code server":
+            return not self.code_up()
+        if label == "Stop code server":
+            return self.code_up()
+        return True
 
     # ---- window --------------------------------------------------------------------------------
     def on_closing(self) -> bool:
@@ -417,7 +461,8 @@ class Desktop:
 
         def item(label: str, fn: Callable[[], None], **kw: Any) -> Any:
             return pystray.MenuItem(label, lambda _icon, _item: threading.Thread(target=fn, daemon=True).start(), **kw)
-        entries = [item(label, fn, default=(label == "Open board")) for label, fn in self.actions()]
+        entries = [item(label, fn, default=(label == "Open board"), enabled=lambda _i, lb=label: self.enabled(lb))
+                   for label, fn in self.actions()]
         entries += [pystray.Menu.SEPARATOR,
                     pystray.MenuItem("Stop services on quit", lambda _i, _t: self.toggle_stop_on_quit(),
                                      checked=lambda _t: self.stop_on_quit),

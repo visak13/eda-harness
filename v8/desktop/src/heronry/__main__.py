@@ -59,7 +59,7 @@ def main() -> int:
     argv = sys.argv[1:]
     if len(argv) >= 2 and argv[0] == SERVICE_FLAG:
         from edp8.cli import _run_service  # no GUI import on this path
-        return _run_service(argv[1])
+        return _run_service(argv[1], argv[2:])
     if argv and (argv[0] in ("-m", "-c") or argv[0].endswith(".py")):
         return _as_interpreter(argv)
     if argv:

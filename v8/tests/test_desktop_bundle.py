@@ -81,11 +81,15 @@ def test_entry_dispatches_the_service_flag_before_any_gui_import(monkeypatch):
     entry = _entry()
     seen = {}
     import edp8.cli as cli
-    monkeypatch.setattr(cli, "_run_service", lambda name: seen.setdefault("svc", name) and 0)
+    monkeypatch.setattr(cli, "_run_service", lambda name, args=None: seen.update(svc=name, args=args) or 0)
     monkeypatch.setattr(sys, "argv", ["heronry.exe", "--heronry-service", "broker"])
     before = set(sys.modules)
     assert entry.main() == 0
-    assert seen["svc"] == "broker"
+    assert seen["svc"] == "broker" and seen["args"] == []
+    # S21: the code guard re-enters with its own arguments (--port, --upstream ...)
+    monkeypatch.setattr(sys, "argv", ["heronry.exe", "--heronry-service", "code-guard", "--port", "19410"])
+    assert entry.main() == 0
+    assert seen == {"svc": "code-guard", "args": ["--port", "19410"]}
     assert not {m for m in set(sys.modules) - before if m.startswith(("webview", "pystray", "edp8.desktop"))}
 
 

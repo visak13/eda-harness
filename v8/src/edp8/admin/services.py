@@ -22,8 +22,8 @@ from ..schemas import Participant
 from .context import AdminContext
 
 VERBS = ("start", "stop", "restart")
-#: code-server is started by its own scripts (never the supervisor); Admin shows it read-only
-UNMANAGED = ("code-server",)
+#: the optional code server's row (S21): Admin names it code-server; the launcher, CLI and supervisor say `code`
+CODE_ROW = "code-server"
 
 
 class ServiceActionIn(BaseModel):
@@ -31,12 +31,18 @@ class ServiceActionIn(BaseModel):
     keep_seats: bool = False   # pool: restart the pool process only, seats are re-adopted
 
 
-def _code_server_row() -> dict[str, Any]:
-    from ..api_code import code_status
-    st = code_status()
-    return {"service": "code-server", "state": "up" if st["running"] else "down", "port": st["port"],
-            "url": st["url"], "managed": False, "version": st.get("version"),
-            "note": "started by its own scripts, not the supervisor"}
+def _code_server_row(r: dict[str, Any]) -> dict[str, Any]:
+    """launcher.code_row() as Admin shows it: managed through the supervisor like the others (S21); a missing
+    code-server says how to install it on this OS, and a port someone else holds is never ours to stop."""
+    r = {**r, "service": CODE_ROW, "managed": True, "health": r["state"]}
+    if r["state"] == "not_installed":
+        r["health"] = "not installed"
+        r["note"] = f"code-server is not installed. Install it: {r.get('install_hint')}"
+    elif r["state"] == "foreign":
+        r["note"] = r.get("reason")
+    elif not r.get("autostart"):
+        r["note"] = "optional: starts only when you start it (or turn on Start VS Code in the browser with Heronry)"
+    return r
 
 
 def status() -> dict[str, Any]:
@@ -52,8 +58,11 @@ def status() -> dict[str, Any]:
                 paused, failed = list(out.get("paused") or []), list(out.get("failed") or [])
         except control.ControlUnavailable as e:
             supervisor["error"] = str(e)
+    rows = [_code_server_row(r) if r["service"] == launcher.CODE else r for r in rows]
     for r in rows:
         svc = r["service"]
+        if svc == CODE_ROW:
+            continue
         rec = run_state.read(svc) or {}
         r["started_at"] = rec.get("started_at")
         r["rev"] = r.get("git_rev") or rec.get("git_rev")
@@ -64,7 +73,6 @@ def status() -> dict[str, Any]:
         elif svc in paused:
             health = "stopped by admin"
         r["health"] = health
-    rows.append(_code_server_row())
     return {"services": rows, "supervisor": supervisor}
 
 
@@ -86,10 +94,10 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
         b = b or ServiceActionIn()
         if verb not in VERBS:
             raise HTTPException(404, f"no action {verb!r} (one of {', '.join(VERBS)})")
-        if svc in UNMANAGED:
-            raise HTTPException(409, f"{svc} is started by its own scripts, not the supervisor")
-        if svc not in launcher.ORDER:
-            raise HTTPException(404, f"unknown service {svc!r} (one of {', '.join(launcher.ORDER)})")
+        if svc in (CODE_ROW, launcher.CODE):
+            svc = launcher.CODE
+        elif svc not in launcher.ORDER:
+            raise HTTPException(404, f"unknown service {svc!r} (one of {', '.join((*launcher.ORDER, CODE_ROW))})")
         try:
             control.endpoint()
         except control.ControlUnavailable as e:

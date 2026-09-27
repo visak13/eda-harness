@@ -223,6 +223,22 @@ def start_update(body: dict, who: str) -> tuple[int, dict]:
     return 202, {"ok": True, "state": "updating", **req}
 
 
+def _code_action(verb: str, who: str, emit: Callable[..., None]) -> tuple[int, dict]:
+    """The optional code server (S21): edp8.code_service, the module every channel uses. It is not supervised
+    (never restarted behind the admin's back), so there is no pause state to keep; each action is recorded."""
+    from . import code_service
+    try:
+        out = {"start": code_service.start, "stop": code_service.stop, "restart": code_service.restart}[verb]()
+    except code_service.CodeError as e:
+        return 409, {"ok": False, "error": str(e)}
+    if out.get("state") == "not_installed":
+        return 409, {"ok": False, "error": out["reason"], "state": "not_installed", "install_hint": out["install_hint"]}
+    if out.get("survivors"):
+        return 500, {"ok": False, **out}
+    emit(launcher.CODE, f"{verb} via the control port by {who}", who)
+    return 200, {"ok": True, **out}
+
+
 def make_dispatch(sup: Supervisor, emit: Callable[..., None]) -> Callable[[str, dict], tuple[int, dict]]:
     """Route one control request: /services/<svc>/{start,stop,restart}, /status, /update, /shutdown."""
 
@@ -240,6 +256,8 @@ def make_dispatch(sup: Supervisor, emit: Callable[..., None]) -> Callable[[str, 
         if len(parts) != 3 or parts[0] != "services" or parts[2] not in ("start", "stop", "restart"):
             return 404, {"ok": False, "error": f"no route {path}"}
         svc, verb = parts[1], parts[2]
+        if svc == launcher.CODE:
+            return _code_action(verb, who, emit)
         if svc not in launcher.ORDER:
             return 404, {"ok": False, "error": f"unknown service {svc!r}"}
         if svc == "pool" and verb in ("stop", "restart") and not body.get("force") and not body.get("keep_seats"):

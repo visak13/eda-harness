@@ -33,6 +33,8 @@ from . import run_state, settings
 #: Start order; stop runs it backwards.
 ORDER = ("board", "broker", "pool", "mcp", "bridge")
 SUPERVISOR = "supervisor"
+#: The optional code server (S21, edp8.code_service): not in ORDER; `code_server.autostart` adds it to `all`.
+CODE = "code"
 #: The flag a frozen bundle's entry point dispatches on, before any GUI import (strategyhl-5af811e7bd §3).
 SERVICE_FLAG = "--heronry-service"
 
@@ -619,7 +621,22 @@ def status_rows() -> list[dict[str, Any]]:
     for r in rows:
         if r["state"] != "up":
             r["reason"] = r.get("note") or down_reason(r["service"])
+    rows.append(code_row())
     return rows
+
+
+def code_row() -> dict[str, Any]:
+    """The optional `code` service (S21): edp8.code_service, outside ORDER (opt-in, code_server.autostart)."""
+    from . import code_service
+    try:
+        st = code_service.status()
+    except Exception as e:  # noqa: BLE001 — a status row never fails the table
+        return {"service": CODE, "state": "down", "pid": None, "port": None, "url": None, "reason": str(e)}
+    rec = code_service.record() if st["state"] == "up" else {}
+    return {"service": CODE, "state": st["state"], "pid": st["pid"], "port": st["port"], "url": st["url"],
+            "git_rev": rec.get("git_rev"), "uptime": run_state._uptime(rec) if rec.get("started_at") else None,
+            "version": st.get("version"), "installed": st["installed"], "install_hint": st["install_hint"],
+            "autostart": st["autostart"], "reason": st.get("reason")}
 
 
 def down_reason(svc: str) -> str:

@@ -2,7 +2,8 @@
 S3 s-870e401942). User-facing names come from `brand.py` (§4.12).
 
     heronry init      dirs, config.toml, tokens, agent home, harness choice, claude folder trust
-    heronry start|stop|restart [svc|all]    services through `edp8.launcher` (+ the supervisor)
+    heronry start|stop|restart [svc|all]    services through `edp8.launcher` (+ the supervisor); `code` is the
+                      optional code server (edp8.code_service), in `all` only with code_server.autostart
     heronry status    one row per service: state, pid, port, url, rev, uptime, last probe, last restart
     heronry doctor    prerequisites, harnesses (with install links), ports, secrets, trust
     heronry prereqs [install]   the prerequisites checklist; install the missing ones (edp_contracts.prereqs)
@@ -22,17 +23,19 @@ from typing import NamedTuple
 
 #: frozen-bundle re-entry: service name -> module run as __main__
 _SERVICE_MODULES = {"board": "edp8.service", "broker": "edp_broker.main", "pool": "edp_pool.main",
-                    "mcp": "edp8.mcp_server", "bridge": "edp8.slack_bridge", "supervisor": "edp8.supervisor"}
+                    "mcp": "edp8.mcp_server", "bridge": "edp8.slack_bridge", "supervisor": "edp8.supervisor",
+                    # the code server's host guard (S21): the only re-entered service that takes arguments
+                    "code-guard": "edp8.code_guard"}
 SERVICE_FLAG = "--heronry-service"
 
 
-def _run_service(name: str) -> int:
+def _run_service(name: str, args: list[str] | None = None) -> int:
     import runpy
     mod = _SERVICE_MODULES.get(name)
     if mod is None:
         print(f"unknown service {name!r}", file=sys.stderr)
         return 2
-    sys.argv = [mod]
+    sys.argv = [mod, *(args or [])]
     runpy.run_module(mod, run_name="__main__", alter_sys=True)
     return 0
 
@@ -110,13 +113,40 @@ _VALUED = {"harness", "owner", "admin-token", "from", "ports", "board-port", "mc
 
 
 def _targets(pos: list[str]) -> list[str]:
-    from . import launcher
+    """The services a verb acts on. `all` is ORDER, plus the optional code server (S21) only when
+    code_server.autostart is on: it is opt-in, so a plain `heronry start|stop` leaves it alone."""
+    from . import code_service, launcher
     want = pos[0] if pos else "all"
     if want == "all":
-        return list(launcher.ORDER)
-    if want not in (*launcher.ORDER, launcher.SUPERVISOR):
-        raise SystemExit(f"unknown service {want!r} (board|broker|pool|mcp|bridge|supervisor|all)")
+        return [*launcher.ORDER, *([launcher.CODE] if code_service.autostart() else [])]
+    if want not in (*launcher.ORDER, launcher.CODE, launcher.SUPERVISOR):
+        raise SystemExit(f"unknown service {want!r} (board|broker|pool|mcp|bridge|code|supervisor|all)")
     return [want]
+
+
+def _code(verb: str, explicit: bool) -> int:
+    """`heronry start|stop|restart code` (S21): edp8.code_service directly. The supervisor does not watch the
+    code server, so there is nothing to race; the Admin console reaches the same module through the
+    supervisor's control port. A missing code-server is a failure only when `code` was asked for by name."""
+    from . import code_service
+    try:
+        if verb == "start":
+            out = code_service.start(say=lambda m: print(f"code       {m}"))
+        elif verb == "stop":
+            out = code_service.stop()
+        else:
+            out = code_service.restart(say=lambda m: print(f"code       {m}"))
+    except code_service.CodeError as e:
+        print(f"code       FAILED  {e}", file=sys.stderr)
+        return 1
+    if out.get("state") == "not_installed":
+        print(f"code       not installed  {out.get('install_hint')}", file=sys.stderr if explicit else sys.stdout)
+        return 1 if explicit else 0
+    _say(out)
+    if out.get("survivors"):
+        print(f"code: still running {out['survivors']}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def _legacy_supervisor() -> bool:
@@ -146,7 +176,8 @@ def status(argv: list[str]) -> int:
         print(launcher.dumps(rows))
         return 0
     _table(rows, _COLS, _HEAD)
-    down = [r["service"] for r in rows if r.get("state") == "down" and r["service"] != "bridge"]
+    down = [r["service"] for r in rows if r.get("state") == "down" and r["service"] != "bridge"
+            and (r["service"] != launcher.CODE or r.get("autostart"))]
     if down:
         print()  # the gap goes to stdout: an empty stderr line reads as a bare RemoteException in PowerShell 5.1
         print(f"down: {', '.join(down)} — `heronry start` starts them (the supervisor restarts a crashed one). "
@@ -171,9 +202,12 @@ def start(argv: list[str]) -> int:
     from . import launcher
     pos, opts = _split(argv)
     rc = 0
-    for svc in _targets(pos):
+    targets = _targets(pos)
+    for svc in targets:
         if svc == launcher.SUPERVISOR:
             continue  # started below, last
+        if svc == launcher.CODE:
+            continue  # started below, after the board it links to
         try:
             out = _via_control(f"/services/{svc}/start", {"by": _who()}) or launcher.start(svc)
         except Exception as e:  # noqa: BLE001
@@ -181,12 +215,16 @@ def start(argv: list[str]) -> int:
             rc = 1
             continue
         _say(out)
+    if targets == [launcher.CODE]:
+        return _code("start", explicit=True)
     if not opts.get("no-supervisor") and rc == 0:
         try:
             _say(launcher.ensure_supervisor())
         except Exception as e:  # noqa: BLE001
             print(f"supervisor FAILED  {e}", file=sys.stderr)
             rc = 1
+    if launcher.CODE in targets and rc == 0:  # `all` with code_server.autostart
+        rc = _code("start", explicit=False)
     if rc == 0:
         try:
             from .updater import notice
@@ -292,6 +330,11 @@ def stop(argv: list[str]) -> int:
     if targets == [launcher.SUPERVISOR]:
         _say(launcher.stop_supervisor())
         return 0
+    if targets == [launcher.CODE]:
+        return _code("stop", explicit=True)
+    if launcher.CODE in targets:  # `all` with autostart: the code server goes first, before the board it links to
+        rc = _code("stop", explicit=False)
+        targets = [t for t in targets if t != launcher.CODE]
     if everything:  # the supervisor goes first, so nothing is restarted behind our back
         _say(launcher.stop_supervisor())
     elif _legacy_supervisor():
@@ -324,6 +367,10 @@ def restart(argv: list[str]) -> int:
         _say(launcher.stop_supervisor())
         _say(launcher.ensure_supervisor())
         return 0
+    if targets == [launcher.CODE]:
+        return _code("restart", explicit=True)
+    code_too = launcher.CODE in targets
+    targets = [t for t in targets if t != launcher.CODE]
     replace = _legacy_supervisor()
     if replace:  # it would race the relaunch below; a new one (with a control port) starts after
         _say(launcher.stop_supervisor())
@@ -343,6 +390,8 @@ def restart(argv: list[str]) -> int:
             rc = 1
     if replace:
         _say(launcher.ensure_supervisor())
+    if code_too and rc == 0:
+        rc = _code("restart", explicit=False)
     return rc
 
 
@@ -397,7 +446,8 @@ COMMANDS: tuple[Command, ...] = (
         ("--yes", "no questions: take the defaults"),
         ("--force", "run even in a source checkout (dev mode)"),
     )),
-    Command("start", "start [svc|all]", "start services (board, broker, pool, mcp, bridge) and the supervisor", (
+    Command("start", "start [svc|all]", "start services (board, broker, pool, mcp, bridge) and the supervisor; "
+            "`start code` starts the optional code server (VS Code in the browser)", (
         ("--no-browser", "do not open the setup wizard in a browser on first run"),
         ("--no-supervisor", "start the services without the supervisor that restarts a crashed one"),
     )),
@@ -476,7 +526,7 @@ _ALIASES = {"--version": "version", "-V": "version", "--help": "help", "-h": "he
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if len(argv) >= 2 and argv[0] == SERVICE_FLAG:  # bundle re-entry: before anything else is imported
-        return _run_service(argv[1])
+        return _run_service(argv[1], argv[2:])
     from .brand import CLI_NAME
     load_dotenv()
     cmd = argv[0] if argv else "status"

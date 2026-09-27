@@ -115,10 +115,21 @@ def _local(host: str | None) -> bool:
         return False
 
 
+def _installed() -> tuple[bool, str | None]:
+    """Whether a code-server is there to start (S21), and the per-OS install command when it is not."""
+    from . import code_service
+    try:
+        found = code_service.locate() is not None
+    except Exception:  # noqa: BLE001 — a status answer never fails over the lookup
+        found = False
+    return found, None if found else code_service.install_hint()
+
+
 def code_status() -> dict[str, Any]:
     port = code_port()
     up = probe(port)
     mine = up and ours(port)
+    installed, hint = _installed()
     return {
         "port": port,
         "url": f"http://127.0.0.1:{port}/",
@@ -128,7 +139,10 @@ def code_status() -> dict[str, Any]:
         "version": _recorded_version(),
         # the folder the tab opens when the link names none: this board's own tree (v8)
         "default_folder": str(_home()),
-        "start_command": ".\\edp.ps1 start code",
+        # S21: one command on every OS (Admin → Services and the Code tab's Start run the same service)
+        "start_command": "heronry start code",
+        "installed": installed,
+        "install_hint": hint,
     }
 
 
@@ -196,7 +210,7 @@ def code_router(actor: Callable[..., Participant], render_markdown: Callable[[st
         if not key:
             return JSONResponse(status_code=503, content={
                 "ok": False, "error": {"code": "unavailable", "message": "the code service record has no mint key"},
-                "hint": "restart the code service (.\\edp.ps1 restart code)"}, headers={"Cache-Control": "no-store"})
+                "hint": "restart the code service (heronry restart code)"}, headers={"Cache-Control": "no-store"})
         token, exp = mint_token(key)
         response.headers["Cache-Control"] = "no-store"
         return {"ok": True, "value": {"token": token, "expires_at": exp}, "hint": ""}

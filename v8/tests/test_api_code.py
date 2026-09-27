@@ -108,7 +108,9 @@ def test_down_when_nothing_listens(board_env):
     v = r.json()["value"]
     assert v["port"] == port and v["url"] == f"http://127.0.0.1:{port}/"
     assert v["running"] is False and v["version"] is None
-    assert v["start_command"] == ".\\edp.ps1 start code"
+    # S21: one command on every OS; whether there is a code-server to start, and how to install one if not
+    assert v["start_command"] == "heronry start code"
+    assert isinstance(v["installed"], bool) and (v["installed"] or "code-server" in v["install_hint"])
     assert Path(v["default_folder"]) == tmp.resolve()
 
 
