@@ -55,6 +55,12 @@ class FakeWsServer:
             threading.Thread(target=self._conn, args=(c,), daemon=True).start()
 
     def _conn(self, c):
+        try:
+            self._exchange(c)
+        except OSError:  # a client that hangs up mid-exchange (CI 36328966893 macOS: ECONNRESET in this thread)
+            pass
+
+    def _exchange(self, c):
         buf = b""
         while b"\r\n\r\n" not in buf:
             buf += c.recv(4096)

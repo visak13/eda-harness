@@ -575,6 +575,7 @@ class Mon:
     ws_error: str = ""
     order: threading.RLock = field(default_factory=threading.RLock)  # serialises this watch's deliveries
     io: threading.Lock = field(default_factory=threading.Lock)  # stdout + stderr pumps share one output file
+    marked: bool = True  # False while a sandboxed command's READY_MARK is still due on stderr
     ready: threading.Event = field(default_factory=threading.Event)  # the command itself is running
 
 
@@ -743,6 +744,7 @@ class SeatTools:
         try:
             script, env = command, self.env
             if self.sandbox_prefix:
+                m.marked = False
                 m.proc = self._hand_to_warm(command)
                 threading.Thread(target=self._spawn_warm, name="seat-warm-sandbox", daemon=True).start()
                 script = SANDBOX_STUB  # cold fallback: no warm shell was ready
@@ -805,7 +807,8 @@ class SeatTools:
         assert m.proc and m.proc.stderr
         for raw in iter(m.proc.stderr.readline, b""):  # whole lines: a secret never splits across writes
             s = raw.decode("utf-8", "replace")
-            if not m.ready.is_set() and s.rstrip("\r\n") == READY_MARK:
+            if not m.marked and s.rstrip("\r\n") == READY_MARK:
+                m.marked = True
                 m.ready.set()  # the sandboxed command has started: our marker, not its output
                 continue
             self._append_output(m, s)
@@ -814,6 +817,9 @@ class SeatTools:
     def _pump_stdout(self, m: Mon) -> None:
         assert m.proc and m.proc.stdout
         for raw in iter(m.proc.stdout.readline, b""):
+            # a line proves the command runs: the grace counts from here if the stderr pump has not yet
+            # read the marker (the two pumps race; CI 36328966893 macOS attached a running watch's line)
+            m.ready.set()
             s = raw.decode("utf-8", "replace")
             self._append_output(m, s)
             line = s[:-1] if s.endswith("\n") else s
