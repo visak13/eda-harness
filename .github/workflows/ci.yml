@@ -94,26 +94,32 @@ jobs:
         run: uv sync --python 3.14 --extra dev && uv run --no-sync pytest -q -p no:cacheprovider
 
       - name: pytest edp-pool
+        if: ${{ !cancelled() }}  # run every suite even after one fails: one push shows every red
         working-directory: edp-pool
         run: uv sync --python 3.14 --extra dev && uv run --no-sync pytest -q -p no:cacheprovider
 
       - name: pytest edp-broker
+        if: ${{ !cancelled() }}  # run every suite even after one fails: one push shows every red
         working-directory: edp-broker
         run: uv sync --python 3.14 --extra dev && uv run --no-sync pytest -q -p no:cacheprovider
 
       - name: pytest v8 (board, MCP, supervisor, CLI)
+        if: ${{ !cancelled() }}  # run every suite even after one fails: one push shows every red
         working-directory: v8
         run: uv sync --python 3.14 --extra dev --locked && uv run --no-sync pytest -q -p no:cacheprovider
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: ${{ !cancelled() }}
         with:
           node-version: 24
 
       - name: vitest web app (unit; Playwright e2e is qa's, win32-only)
+        if: ${{ !cancelled() }}  # run every suite even after one fails: one push shows every red
         working-directory: v8/web
         run: npm ci && npx vitest run --pool=forks
 
       - name: vitest VS Code extension
+        if: ${{ !cancelled() }}  # run every suite even after one fails: one push shows every red
         working-directory: v8/vscode-ext/edp-code
         run: npm ci && npm test
 

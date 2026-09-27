@@ -89,6 +89,11 @@ LEFT="$(ps -eo pid=,command= | grep -F "$T" | grep -v grep | wc -l | tr -d ' ')"
 for p in "$EDP8_PORT" "$EDP8_MCP_PORT" "$EDP_POOL_PORT" "$EDP_BROKER_PORT"; do
   ! curl -s -o /dev/null --max-time 2 "http://127.0.0.1:$p/"; check $? "port $p is free"
 done
+if [ $FAIL != 0 ]; then  # the service logs live in the temp HOME, gone after this run: print their tails
+  find "$T/home" -name '*.log' -type f 2>/dev/null | sort | while read -r f; do
+    echo "== tail of ${f#$T/}"; tail -n 60 "$f" | sed 's/^/   /'
+  done
+fi
 [ "${KEEP:-0}" = 1 ] || rm -rf "$T"
 if [ $FAIL != 0 ]; then echo "RESULT: $FAIL check(s) FAILED"; exit 1; fi
 echo "RESULT: all checks passed"

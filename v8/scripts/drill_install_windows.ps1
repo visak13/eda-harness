@@ -100,6 +100,12 @@ Check ($left.Count -eq 0) "stop leaves no process running from the install ($($l
 foreach ($p in @($env:EDP8_PORT, $env:EDP8_MCP_PORT, $env:EDP_POOL_PORT, $env:EDP_BROKER_PORT)) {
   Check (-not (Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue)) "port $p is free"
 }
+if ($fail) {  # the service logs live in the temp profile, gone after this run: print their tails
+  Get-ChildItem -Path "$T\profile" -Recurse -File -Filter *.log -ErrorAction SilentlyContinue | Sort-Object FullName | ForEach-Object {
+    "== tail of $($_.FullName.Substring($T.Length + 1))"
+    Get-Content -Path $_.FullName -Tail 60 -ErrorAction SilentlyContinue | ForEach-Object { "   $_" }
+  }
+}
 if (-not $Keep) { Set-Location $env:TEMP; Remove-Item -Recurse -Force $T -ErrorAction SilentlyContinue }
 if ($fail) { "RESULT: $fail check(s) FAILED"; exit 1 }
 "RESULT: all checks passed"
