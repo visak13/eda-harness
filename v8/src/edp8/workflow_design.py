@@ -316,7 +316,7 @@ class _Walk:
         if g is None:
             return
         try:
-            self.b.gate_open(t_id, Gate(gate), by=opener or "board")
+            self.b.gate_open(t_id, Gate(gate), by=opener or "board", note=self.b.gate_question(t_id, gate))
         except Exception as e:  # noqa: BLE001 - the board's refusal is the stall
             raise _Stall(step, f"the {gate} gate opens", [{"role": opener or "board",
                                                              "refusal": getattr(e, "message", str(e))}]) from None

@@ -1282,8 +1282,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.post("/v1/gates/{ticket_id}/{gate}/open")
     def gate_open(ticket_id: str, gate: Gate, b: GateOpenIn, a: Participant = Depends(actor)):
-        ev = board.gate_open(ticket_id, gate, by=a.id, note=b.note)
-        who = delivery.after_gate_open(board, a.id, ticket_id, gate.value, b.note)
+        note = board.require_gate_note(ticket_id, gate, b.note)  # t-cfd8462f9d: never a blank question
+        ev = board.gate_open(ticket_id, gate, by=a.id, note=note)
+        who = delivery.after_gate_open(board, a.id, ticket_id, gate.value, ev.data.get("note") or note)
         return ok(_dump(ev), f"{who} is notified" if who else
                   "this epic has no human owner: the gate stands on the board for whoever opens the epic page")
 

@@ -37,7 +37,19 @@ describe("GateOpenControl", () => {
       ),
     );
     renderRoute("/x", "/x", <GateOpenControl ticketId="s-1" />);
+    fireEvent.change(screen.getByLabelText("Gate note"), { target: { value: "please rule" } });
     fireEvent.click(screen.getByRole("button", { name: /Open the .* gate/ }));
     expect(await screen.findByTestId("gate-open-error")).toHaveTextContent("only the owner or architect");
+  });
+
+  // t-cfd8462f9d: no gate opens without text — the button stays disabled on an empty or whitespace note
+  it("cannot open a gate without a note", () => {
+    renderRoute("/x", "/x", <GateOpenControl ticketId="s-1" />);
+    const button = screen.getByRole("button", { name: /Open the .* gate/ });
+    expect(button).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Gate note"), { target: { value: "   " } });
+    expect(button).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Gate note"), { target: { value: "is the demo good?" } });
+    expect(button).toBeEnabled();
   });
 });

@@ -53,7 +53,7 @@ async function setupReview(request: import('@playwright/test').APIRequestContext
   const doc = await post('/v1/docs', { doc_type: 'design', title: 'QA reviewed design', scope: epic.id, body_md: '# Current design' });
   await post('/v1/criteria', { ticket_id: epic.id, text: 'review', check: 'command' });
   await post(`/v1/tickets/${epic.id}`, { design_ref: doc.id }, 'arch', 'PATCH');
-  const gate = await post(`/v1/gates/${epic.id}/design_signoff/open`, {});
+  const gate = await post(`/v1/gates/${epic.id}/design_signoff/open`, { note: "please sign off the design" });
   return { epic, doc, gate, post };
 }
 
@@ -142,7 +142,7 @@ test('same-version new gate has a new approval operation', async ({ page, reques
   await expect(page.getByText('Design approved at v1.', { exact: true })).toBeVisible();
   await post(`/v1/tickets/${epic.id}`, { status: 'drafted' }, 'owner', 'PATCH');
   await post(`/v1/tickets/${epic.id}`, { design_ref: doc.id }, 'arch', 'PATCH');
-  await post(`/v1/gates/${epic.id}/design_signoff/open`, {});
+  await post(`/v1/gates/${epic.id}/design_signoff/open`, { note: "please sign off the design" });
   await page.goto(url);
   await expect(page.getByRole('button', { name: 'Approve design', exact: true })).toBeEnabled();
   const second = page.waitForResponse(r => r.url().endsWith('/v1/gates/decide'));
@@ -203,7 +203,7 @@ test('approval deep link keeps its viewer after delayed notification authorizati
   const doc = await post('/v1/docs', { doc_type: 'design', title: 'QA exact design', scope: epic.id, body_md: '# Review me' });
   await post('/v1/criteria', { ticket_id: epic.id, text: 'Review remains visible', check: 'command' });
   await post(`/v1/tickets/${epic.id}`, { design_ref: doc.id }, 'arch', 'PATCH');
-  const gate = await post(`/v1/gates/${epic.id}/design_signoff/open`, {});
+  const gate = await post(`/v1/gates/${epic.id}/design_signoff/open`, { note: "please sign off the design" });
   let release!: () => void;
   const held = new Promise<void>(resolve => { release = resolve; });
   await page.route('**/v1/me/notifications?*', async route => {

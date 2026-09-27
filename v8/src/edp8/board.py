@@ -94,6 +94,22 @@ _log = logging.getLogger("edp8.board")
 # The Standard workflow's source (S13): the board reads gate answerers, caps and every table below from the
 # epic's pinned workflow (edp8.workflow); these constants only build Standard@1.
 HUMAN_GATE_ANSWERERS = {Role.owner}
+#: t-cfd8462f9d (owner m-fcb4463e1e: "a decision on the epic without any text?"): the plain-words question each
+#: gate kind asks, used when the board opens a gate itself and for any legacy gate stored with a blank note.
+#: {title} is the ticket's own title; acceptance on an epic reads its story count instead (Board.gate_question).
+GATE_QUESTIONS = {
+    "design_signoff": "Sign off the design for “{title}”: approve it to release the stories, or send it back "
+                      "saying what to change.",
+    "poc": "Is the proof of concept on “{title}” good enough to build on? Approve it, or say what to change.",
+    "demo": "Look at the demo of “{title}”: approve it, or say what to change.",
+    "adversarial": "The adversarial review of “{title}” is in: accept it with its findings handled, or send "
+                   "the work back.",
+    "budget": "“{title}” needs more budget: approve the spend, or stop the work.",
+    "acceptance": "“{title}” is ready for acceptance: accept it (done or partial), or send it back.",
+    "scope": "“{title}” is over its story or criteria cap: approve the larger scope, or ask for a split.",
+}
+_EPIC_ACCEPTANCE_Q = ("Every story on “{title}” is in review ({n} {stories}). qa is giving its verdicts; once "
+                      "qa's report passes, accept the epic here: done, partial, or send back.")
 _TERMINAL = (TicketStatus.done, TicketStatus.partial, TicketStatus.dropped)
 #: v34 (owner m-8aa6439a77): the only statuses to a human that wait on them; a plain status is an update
 ASK_STATUSES = (StatusValue.blocked, StatusValue.failed, StatusValue.deferred)
@@ -911,7 +927,7 @@ class Board:
             kids = self.children(t.id)
             if kids and all(k.status == TicketStatus.dropped or self._released(k) for k in kids) \
                     and self.workflow_of(t).hook("epic_auto_advance") is not None:
-                self.gate_open(t.id, Gate.acceptance, by="board")
+                self.gate_open(t.id, Gate.acceptance, by="board", note=self.gate_question(t, Gate.acceptance))
                 self._advance_epic_phase(self.ticket(t.id), TicketStatus.in_review,
                                          trigger="every story released")
                 return
@@ -958,7 +974,7 @@ class Board:
             if kids and all(k.status == TicketStatus.dropped or self._released(k) for k in kids):
                 if (parent.kind == TicketKind.epic and parent.status not in (TicketStatus.done, TicketStatus.partial)
                         and self.workflow_of(parent).hook("epic_auto_advance") is not None):
-                    self.gate_open(parent.id, Gate.acceptance, by="board")
+                    self.gate_open(parent.id, Gate.acceptance, by="board", note=self.gate_question(parent, Gate.acceptance))
                     self._advance_epic_phase(self.ticket(parent.id), TicketStatus.in_review,
                                              trigger="every story released")
                 elif parent.kind == TicketKind.story and parent.status == TicketStatus.in_progress:
@@ -1856,6 +1872,37 @@ class Board:
                 rows.sort(key=lambda r: r[0])
         return [m for _, m in rows]  # type: ignore[misc]
 
+    def gate_question(self, t: Ticket | str, gate: Gate | str) -> str:
+        """The plain-words question a gate asks (t-cfd8462f9d): the workflow gate's declared `question` template,
+        else the built-in one for the kind. Never empty; the ticket's title is in it, not only its id."""
+        t = self.ticket(t) if isinstance(t, str) else t
+        g = getattr(gate, "value", gate)
+        gd = self.workflow_of(t).gates.get(g)
+        vals = {"title": t.title, "id": t.id, "kind": t.kind.value}
+        if gd is not None and gd.question.strip():
+            try:
+                return gd.question.format(**vals)
+            except (KeyError, IndexError, ValueError):
+                return gd.question
+        if g == Gate.acceptance and t.kind == TicketKind.epic:
+            n = sum(1 for k in self.children(t.id) if k.kind == TicketKind.story and k.status != TicketStatus.dropped)
+            return _EPIC_ACCEPTANCE_Q.format(title=t.title, n=n, stories="story" if n == 1 else "stories")
+        return GATE_QUESTIONS.get(g, "“{title}” waits on your {gate} decision: answer it here.").format(
+            title=t.title, gate=g.replace("_", " "))
+
+    def require_gate_note(self, ticket_id: str, gate: Gate, note: str | None) -> str:
+        """The seat/human edge (MCP gate_open, REST open): a blank note is refused unless the workflow gate declares
+        a default question, which is then the note (t-cfd8462f9d). Returns the note to store."""
+        text = (note or "").strip()
+        if text:
+            return text
+        t = self.ticket(ticket_id)
+        gd = self.workflow_of(t).gates.get(gate.value)
+        if gd is not None and gd.question.strip():
+            return self.gate_question(t, gate)
+        raise BoardError("validation", f"a {gate.value} gate needs a note: the question the answerer is asked",
+                         f"pass note='…' in plain words, e.g. \"{self.gate_question(t, gate)}\"")
+
     def gate_open(self, ticket_id: str, gate: Gate, *, by: str = "board", note: str = "") -> Event:
         """S13 guards as data: a gate opens only when the preconditions its workflow declares hold, so the
         board never offers a gate the answer would refuse (S16, pain p-77ab1bf1). Standard's design_signoff
@@ -1874,6 +1921,8 @@ class Board:
                     raise refusal
         if self.open_gates(ticket_id, gate):
             return self.open_gates(ticket_id, gate)[0]
+        # t-cfd8462f9d: no gate is ever stored blank, whatever the path (the edges refuse a blank note first)
+        note = (note or "").strip() or self.gate_question(t, gate)
         ev = self._emit(t.id, EventKind.gate_opened, {"gate": gate, "by": by, "note": note})
         # §24 rule 3: the acceptance gate opening pairs the checker seat once (acceptance_pairs_checker;
         # the spawn is deferred to run_pending_pairings so no request thread blocks on the pool).

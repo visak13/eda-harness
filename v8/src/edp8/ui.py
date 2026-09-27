@@ -266,7 +266,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                     f"<span class='count'>{len(rows)}</span></summary>{''.join(rows)}</details>")
         asks="".join(_group(t,rows) for t,rows in groups.items()) or _empty_state("inbox","Inbox clear","Nothing is waiting for your answer.")
         gate_rows=[(tid,ev.data.get("gate"),ev) for tid,ev in (r["_src"] for r in att if r["kind"]=="gate")]
-        gates="".join(_gate_card_html(t,g,e.data.get("by"),e.data.get("note"),hidden,True) for t,g,e in gate_rows) or _empty_state("gate","No open gates","No rulings need your attention.")
+        gates="".join(_gate_card_html(t,g,e.data.get("by"),(e.data.get("note") or "").strip() or board.gate_question(t,g or ""),hidden,True) for t,g,e in gate_rows) or _empty_state("gate","No open gates","No rulings need your attention.")
         # docs awaiting the human's sign-off: criteria checked_by=owner, pending, with evidence —
         # the deliverable renders HERE (markdown) and the verdict button IS the HITL gate
         signoff_rows=[]

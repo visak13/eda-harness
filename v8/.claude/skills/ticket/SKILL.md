@@ -43,7 +43,7 @@ a quick ticket. Never the assignee.
 |---|---|---|---|---|
 | 1 | Asked | — | `ticket_create(kind=story, tags=[quick], words=…)` with no parent (owner only), or the one-step quick-task endpoint | `ready` |
 | 2 | Design note | `ready` | `doc_create(doc_type=note, title='Design: …')`, `ticket_update(design_ref=<note>)`, `criterion_create` (engineer only), read-only until signed | `ready` |
-| 3 | Sign-off asked | `ready` | `gate_open(design_signoff)` on the ticket (engineer only). The board refuses it while no design note is set. | `ready` |
+| 3 | Sign-off asked | `ready` | `gate_open(design_signoff, note='<what to review, in plain words>')` on the ticket (engineer only; a blank note is refused). The board refuses it while no design note is set. | `ready` |
 | 4 | Sign-off answered | `ready` | The owner approves on the board, or sends quoted comments: fold them into the note with `doc_edit` and re-open the gate (engineer only). | `ready` |
 | 5 | Build | `ready` | `ticket_update(status=in_progress)` (engineer). The board refuses it until the owner has answered the sign-off. | `in_progress` |
 | 6 | Hand-off | `in_progress` | a report doc, `evidence_ref` on every criterion, then `ticket_update(status=in_review)`, then CLOSE (engineer) | `in_review` |

@@ -54,15 +54,20 @@ describe("GateForm", () => {
     expect(posted).toMatchObject({ path: "epic-1/acceptance", body: { answer: "approved" } });
   });
 
-  it("renders a gate with no note (the em-dash quote branch is skipped)", () => {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    render(
-      <QueryClientProvider client={qc}>
-        <MemoryRouter><GateForm gate={{ ...gate, note: "" }} /></MemoryRouter>
-      </QueryClientProvider>,
-    );
-    expect(screen.getByText(/opened by architect\.epic-1/)).toBeInTheDocument();
-    expect(screen.queryByText(/please rule/)).not.toBeInTheDocument();
+  it("shows the opener, the gate's meaning and its note as the question", () => {
+    mount();
+    expect(screen.getByText(/opened by architect\.epic-1/)).toHaveTextContent("Decide whether the result is accepted.");
+    expect(screen.getByTestId("gate-question")).toHaveTextContent("please rule");
+  });
+
+  // t-cfd8462f9d (owner m-fcb4463e1e): a legacy gate stored with a blank note (the board's auto-opened acceptance
+  // gate before the fix) renders the question its kind asks, never an empty card
+  it.each([null, "", "   "])("renders a legacy blank gate (note=%j) with the generated question", (note) => {
+    mount(vi.fn(), { ...gate, by: "board", note });
+    expect(screen.getByText(/opened by board/)).toBeInTheDocument();
+    const q = screen.getByTestId("gate-question");
+    expect(q).toHaveTextContent("Acceptance on epic-1: Decide whether the result is accepted. Answer it here.");
+    expect(q.textContent?.trim()).not.toBe("");
   });
 
   it("keeps the ruling and shows an error when the answer POST fails", async () => {
@@ -81,6 +86,11 @@ describe("GateForm design_signoff", () => {
     mount(undefined, { ...gate, gate: "design_signoff", event_id: "ev-1" });
     expect(screen.queryByTestId("gate-answer")).toBeNull();
     expect(screen.getByRole("link", { name: "Review design at source" })).toHaveAttribute("href", expect.stringContaining("/epic/epic-1?"));
+  });
+
+  it("a legacy blank design_signoff gate still says what it asks", () => {
+    mount(undefined, { ...gate, gate: "design_signoff", note: null });
+    expect(screen.getByTestId("gate-question")).toHaveTextContent("Design sign-off on epic-1: Decide whether a design can proceed.");
   });
 
   // S22 (consult #3): the gate leaves the open list (answered in another tab) while a ruling is unsent.

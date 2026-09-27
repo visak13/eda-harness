@@ -6,6 +6,7 @@ import type { GateRow } from "../api/types";
 import { answerGate } from "../api/endpoints";
 import { useDirtyGuard } from "../live/useDraftGuard";
 import { Term } from "./Term";
+import { label as glossLabel, meaning as glossMeaning } from "../copy/glossary";
 import { attentionMark } from "./AttentionDot";
 import styles from "./GateForm.module.css";
 
@@ -47,11 +48,19 @@ export function useRetainedGates(gates: GateRow[]): RetainedGate[] {
   return out;
 }
 
+/** t-cfd8462f9d (owner m-fcb4463e1e): what a gate asks, never blank. The board stores a note on every new gate; a
+ *  legacy gate stored blank reads the question its kind asks, from the glossary, instead of an empty card. */
+export function gateQuestion(g: Pick<GateRow, "gate" | "note" | "ticket_id">): string {
+  const note = g.note?.trim();
+  if (note) return note;
+  return `${glossLabel("gate", g.gate)} on ${g.ticket_id}: ${glossMeaning("gate", g.gate)} Answer it here.`;
+}
+
 export function GateForm(props: GateFormProps): React.JSX.Element {
   const { gate } = props;
   if (gate.gate === "design_signoff") return <section className={styles.gate} data-testid="gate-form" aria-label="Gate design_signoff">
     <h3>Design review · {gate.ticket_id}</h3>
-    <p>{gate.note}</p>
+    <p data-testid="gate-question">{gateQuestion(gate)}</p>
     <Link to={`/${gate.ticket_id === gate.epic ? "epic" : "ticket"}/${encodeURIComponent(gate.ticket_id)}?${new URLSearchParams({ as: identity(), ...(gate.event_id ? { request: gate.event_id } : {}) })}`}>
       Review design at source
     </Link>
@@ -90,9 +99,9 @@ function AcceptanceGateForm({ gate, onAnswered, closed, onDismiss }: GateFormPro
         <span className={styles.crumb}>{gate.ticket_id}</span>
       </header>
       <div className={styles.meta}>
-        opened by {gate.by}
-        {gate.note ? <> — “{gate.note}”</> : null}
+        opened by {gate.by} · {glossMeaning("gate", gate.gate)}
       </div>
+      <p className={styles.question} data-testid="gate-question">{gateQuestion(gate)}</p>
       {closed ? (
         <p className={styles.closed} role="status" data-testid="gate-answered-elsewhere">
           Answered elsewhere — this gate is closed. Your unsent ruling is kept below; copy it before you dismiss it.

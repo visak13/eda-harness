@@ -26,7 +26,7 @@ test('epic page with conversation at 320', async ({ page, request }) => {
   const doc = await post('/v1/docs', { doc_type: 'design', title: 'QA reviewed design', scope: epic.id, body_md: '# Current design' });
   await post('/v1/criteria', { ticket_id: epic.id, text: 'review', check: 'command' });
   await post(`/v1/tickets/${epic.id}`, { design_ref: doc.id }, 'arch', 'PATCH');
-  const gate = await post(`/v1/gates/${epic.id}/design_signoff/open`, {});
+  const gate = await post(`/v1/gates/${epic.id}/design_signoff/open`, { note: "please sign off the design" });
   await post('/v1/messages', { ticket_id: epic.id, to: 'arch', kind: 'note', text: 'Keep the conversation central. A little personality is welcome — without making the board harder to use.' }, 'owner');
   await post('/v1/messages', { ticket_id: epic.id, to: 'owner', kind: 'note', text: 'Here is the revised design. The review stays beside the conversation; your feedback returns to this thread.' });
   await page.goto(`/ui/epic/${epic.id}?as=owner`);

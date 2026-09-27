@@ -30,6 +30,11 @@
   font-size: 13px;
   color: var(--muted);
 }
+.question {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink);
+}
 .label {
   font-size: 11px;
   letter-spacing: 0.08em;

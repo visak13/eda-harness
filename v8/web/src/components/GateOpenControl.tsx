@@ -61,11 +61,12 @@ export function GateOpenControl({
         className={styles.textarea}
         value={note}
         onChange={(e) => setNote(e.target.value)}
-        placeholder="What are you asking to be decided? (optional)"
+        placeholder="What are you asking to be decided? (required)"
+        required
         rows={2}
         aria-label="Gate note"
       />
-      <button type="submit" className={styles.submit} disabled={open.isPending}>
+      <button type="submit" className={styles.submit} disabled={open.isPending || note.trim().length === 0}>
         {open.isPending ? "Opening…" : `Open the ${glossLabel("gate", gate)} gate`}
       </button>
       {open.isError ? (

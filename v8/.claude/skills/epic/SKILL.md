@@ -21,7 +21,7 @@ the board's refusal names the missing piece. Fix that piece. Do not force the st
 |---|---|---|---|---|
 | 1 | Words recorded | — | `ticket_create(kind=epic, words=…)` (owner only) | `drafted` |
 | 2 | Design + acceptance criteria | `drafted` | `doc_create(design)`, `ticket_update(design_ref=…)`, `criterion_create` on the epic (architect only). *Board:* once the epic has both a design_ref and at least one criterion, it goes to `designed`, whichever lands last. | `designed` |
-| 3 | Sign-off asked | `designed` | `gate_open(design_signoff)` on the epic (architect only). The board refuses it while the design_ref or the criteria are missing, and names what is missing. | `designed` |
+| 3 | Sign-off asked | `designed` | `gate_open(design_signoff, note='<what to review, in plain words>')` on the epic (architect only; a blank note is refused). The board refuses it while the design_ref or the criteria are missing, and names what is missing. | `designed` |
 | 4 | Sign-off answered | `designed` | The owner approves on the board: Needs you, the SPA reader, or the VS Code reader. Request changes is a steer, so fold it into the design and re-open. *Board:* the approval carries the epic forward. | `signed_off` |
 | 5 | Stories released | `signed_off` | *Board:* unblocked `signed_off` stories go `ready`. Then `spawn(role=engineer, ticket_id=<story>)` (architect only). | `signed_off` |
 | 6 | Build starts | `signed_off` | A story goes `in_progress` (engineer). *Board:* the epic follows. | `in_progress` |

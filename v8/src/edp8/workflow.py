@@ -135,6 +135,8 @@ class GateDef(BaseModel):
     answerers: list[str] = Field(default_factory=list)
     requires: list[Precondition] = Field(default_factory=list)  # to open, and so to answer
     answer_requires: list[Precondition] = Field(default_factory=list)  # extra checks on the answer
+    # t-cfd8462f9d: the gate's default question ({title}, {id}, {kind}); when set, gate_open may omit the note
+    question: str = ""
 
 
 class RoleDef(BaseModel):

@@ -571,7 +571,7 @@ def sample_args(a: Audit, role: str, name: str) -> dict:
                "topic_research": {"url": RESEARCH_URL},
                "topic_propose": {"body_md": "- [expected] tests follow arrange-act-assert (audit fixture)"},
                "propose_fix": {"topic_id": "audit-topic"}, "message_send": {"ticket_id": ids.get("story"), "kind": "note"},
-               "gate_open": {"ticket_id": ids.get("story"), "gate": "demo"},
+               "gate_open": {"ticket_id": ids.get("story"), "gate": "demo", "note": "Is the audit demo acceptable?"},
                "gate_answer": {"ticket_id": ids.get("story"), "gate": "demo", "answer": "approved"},
                "doc_create": {"scope": ids.get("epic"), "doc_type": "note"},
                "ticket_create": {"parent_id": ids.get("story"), "kind": "task", "work_type": "chore"},

@@ -57,6 +57,7 @@ test.describe("S16 — one full loop from the pages, no shell", () => {
 
     // 1) open a gate from the page → the board records an open gate on the story
     await page.getByTestId("gate-open-kind").selectOption("demo");
+    await page.getByLabel("Gate note").fill("is the demo good?"); // t-cfd8462f9d: no gate opens without text
     await page.getByTestId("gate-open").getByRole("button", { name: /Open the .* gate/ }).click();
     await expect.poll(async () => ((await get(`/v1/gates/${fx.story}`)) ?? []).length).toBeGreaterThan(0);
 

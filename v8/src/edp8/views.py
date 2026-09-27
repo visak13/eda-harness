@@ -519,6 +519,12 @@ def summary_for(board: Board, viewer: Participant) -> dict[str, Any]:
             "last_seq": board.store.max_seq()}
 
 
+def _gate_note(board: Board, ticket_id: str, ev: Any) -> str:
+    """A gate row's question: its note, or for a legacy gate stored blank the question its kind asks (t-cfd8462f9d)."""
+    note = (ev.data.get("note") or "").strip()
+    return note or board.gate_question(ticket_id, ev.data.get("gate") or "")
+
+
 def _owner_gates(board: Board, viewer: Participant) -> list[tuple[str, Any]]:
     """(ticket_id, gate_event) open gates the owner viewer can answer, across their owned epics'
     subtrees. Empty for a non-owner (design §4.1 owner scoping)."""
@@ -591,7 +597,7 @@ def decisions_for(board: Board, viewer: Participant) -> dict[str, Any]:
     gates = []
     for tid, ev in (r["_src"] for r in rows if r["kind"] == "gate"):
         gates.append({"event_id": ev.id, "ticket_id": tid, "gate": ev.data.get("gate"), "by": ev.data.get("by"),
-                      "note": ev.data.get("note"), "opened_at": ev.created_at.isoformat(),
+                      "note": _gate_note(board, tid, ev), "opened_at": ev.created_at.isoformat(),
                       "epic": board.epic_of(board.ticket(tid)).id})
     return {"signoffs": signoffs, "questions": questions, "gates": gates,
             "counts": {"signoffs": len(signoffs), "questions": len(questions), "gates": len(gates)}}
@@ -836,7 +842,7 @@ def epic_page(board: Board, epic_id: str, include: str | None = None) -> dict[st
     # gates are answered on their own ticket pages. `open_gates` (the [tid,gate] tree aggregate from
     # board()) stays as-is for the at-a-glance count.
     answerable_gates = [{"event_id": ev.id, "ticket_id": epic_id, "gate": ev.data.get("gate"), "by": ev.data.get("by"),
-                         "note": ev.data.get("note"), "opened_at": ev.created_at.isoformat(), "epic": epic_id}
+                         "note": _gate_note(board, epic_id, ev), "opened_at": ev.created_at.isoformat(), "epic": epic_id}
                         for ev in board.open_gates(epic_id)]
     crits = board.criteria(epic_id)
     epic = board.ticket(epic_id)
@@ -889,7 +895,7 @@ def ticket_page(board: Board, ticket_id: str, include: str | None = None) -> dic
     # Open gates on THIS ticket, so the page can close the loop by answering them (design §16,
     # c-eb4300f7b2 "answer gate"). Shape matches GateRow so the same GateForm renders them.
     open_gates = [{"event_id": ev.id, "ticket_id": ticket_id, "gate": ev.data.get("gate"), "by": ev.data.get("by"),
-                   "note": ev.data.get("note"), "opened_at": ev.created_at.isoformat(), "epic": epic_id}
+                   "note": _gate_note(board, ticket_id, ev), "opened_at": ev.created_at.isoformat(), "epic": epic_id}
                   for ev in board.open_gates(ticket_id)]
     return {"ticket": t.model_dump(mode="json"), "epic_id": epic_id, "epic_title": epic.title,
             # t-994970028d: the Work pop-up description, rendered like a thread message (raw HTML escaped)
