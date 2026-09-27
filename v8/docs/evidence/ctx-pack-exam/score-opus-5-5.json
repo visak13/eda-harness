@@ -1,0 +1,1043 @@
+{
+ "model": "claude-opus-5-5",
+ "method": "Answers were written from each size pack alone and committed (80148b2) before key.json was opened, then scored by hand against key.json. A FETCH counts only when the named call returns the key content (message_query on a ticket counts when the key message is on that ticket).",
+ "summary": {
+  "8k": {
+   "correct": 25,
+   "fetch_correct": 10,
+   "wrong": 7,
+   "missing": 0,
+   "total": 42,
+   "tokens": 26230,
+   "bytes": 104920
+  },
+  "16k": {
+   "correct": 30,
+   "fetch_correct": 6,
+   "wrong": 6,
+   "missing": 0,
+   "total": 42,
+   "tokens": 41840,
+   "bytes": 167364
+  },
+  "40k": {
+   "correct": 32,
+   "fetch_correct": 2,
+   "wrong": 8,
+   "missing": 0,
+   "total": 42,
+   "tokens": 59809,
+   "bytes": 239237
+  }
+ },
+ "rows": [
+  {
+   "seat": "architect.epic-7f3d64e6de",
+   "size": "8k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "architect.epic-7f3d64e6de",
+   "size": "8k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "wrong",
+   "note": "fetched m-98c7821acc (newest thread item); key is qa finding m-e633397a42, not in any pack"
+  },
+  {
+   "seat": "architect.epic-7f3d64e6de",
+   "size": "8k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "architect.epic-7f3d64e6de",
+   "size": "16k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "architect.epic-7f3d64e6de",
+   "size": "16k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "wrong",
+   "note": "same as 8k"
+  },
+  {
+   "seat": "architect.epic-7f3d64e6de",
+   "size": "16k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "architect.epic-7f3d64e6de",
+   "size": "40k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "architect.epic-7f3d64e6de",
+   "size": "40k",
+   "qid": "Q2",
+   "mark": "ANSWERED",
+   "score": "wrong",
+   "note": "named m-98c7821acc; key m-e633397a42 not in the pack"
+  },
+  {
+   "seat": "architect.epic-7f3d64e6de",
+   "size": "40k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "qa.epic-7f3d64e6de",
+   "size": "8k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "32/32 ids"
+  },
+  {
+   "seat": "qa.epic-7f3d64e6de",
+   "size": "8k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "wrong",
+   "note": "fetched m-98c7821acc; key is architect question m-078c3f13c3, not in the pack"
+  },
+  {
+   "seat": "qa.epic-7f3d64e6de",
+   "size": "8k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "wrong",
+   "note": "8 of 9 ids: m-b42de746e3 hidden in a truncated criterion; extra m-1998f097c0 (not an owner ask)"
+  },
+  {
+   "seat": "qa.epic-7f3d64e6de",
+   "size": "16k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "32/32 ids"
+  },
+  {
+   "seat": "qa.epic-7f3d64e6de",
+   "size": "16k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "wrong",
+   "note": "fetched m-98c7821acc; key is architect question m-078c3f13c3, not in the pack"
+  },
+  {
+   "seat": "qa.epic-7f3d64e6de",
+   "size": "16k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "wrong",
+   "note": "8 of 9 ids: m-b42de746e3 hidden in a truncated criterion; extra m-1998f097c0 (not an owner ask)"
+  },
+  {
+   "seat": "qa.epic-7f3d64e6de",
+   "size": "40k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "32/32 ids"
+  },
+  {
+   "seat": "qa.epic-7f3d64e6de",
+   "size": "40k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "wrong",
+   "note": "fetched m-98c7821acc; key is architect question m-078c3f13c3, not in the pack"
+  },
+  {
+   "seat": "qa.epic-7f3d64e6de",
+   "size": "40k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "wrong",
+   "note": "8 of 9 ids: m-b42de746e3 hidden in a truncated criterion; extra m-1998f097c0 (not an owner ask)"
+  },
+  {
+   "seat": "qa.s-da61d38c5e",
+   "size": "8k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "qa.s-da61d38c5e",
+   "size": "8k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "wrong",
+   "note": "fetched my own m-99a046a575"
+  },
+  {
+   "seat": "qa.s-da61d38c5e",
+   "size": "8k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "qa.s-da61d38c5e",
+   "size": "16k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "qa.s-da61d38c5e",
+   "size": "16k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "fetch_correct",
+   "note": "message_query on the ticket returns m-6cc4b4e352"
+  },
+  {
+   "seat": "qa.s-da61d38c5e",
+   "size": "16k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "qa.s-da61d38c5e",
+   "size": "40k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "qa.s-da61d38c5e",
+   "size": "40k",
+   "qid": "Q2",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "qa.s-da61d38c5e",
+   "size": "40k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "sme.s-1dccea48b5",
+   "size": "8k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none"
+  },
+  {
+   "seat": "sme.s-1dccea48b5",
+   "size": "8k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "fetch_correct",
+   "note": "key none; message_query shows only my own messages"
+  },
+  {
+   "seat": "sme.s-1dccea48b5",
+   "size": "8k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none cited"
+  },
+  {
+   "seat": "sme.s-1dccea48b5",
+   "size": "16k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none"
+  },
+  {
+   "seat": "sme.s-1dccea48b5",
+   "size": "16k",
+   "qid": "Q2",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none"
+  },
+  {
+   "seat": "sme.s-1dccea48b5",
+   "size": "16k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none cited"
+  },
+  {
+   "seat": "sme.s-1dccea48b5",
+   "size": "40k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none"
+  },
+  {
+   "seat": "sme.s-1dccea48b5",
+   "size": "40k",
+   "qid": "Q2",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none"
+  },
+  {
+   "seat": "sme.s-1dccea48b5",
+   "size": "40k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none cited"
+  },
+  {
+   "seat": "engineer.t-8e1ac0c445",
+   "size": "8k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none"
+  },
+  {
+   "seat": "engineer.t-8e1ac0c445",
+   "size": "8k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "fetch_correct",
+   "note": "message_query on the ticket returns m-4ff3d73691"
+  },
+  {
+   "seat": "engineer.t-8e1ac0c445",
+   "size": "8k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "m-8fe09cecd4; m-317c088ba9 given only as a recall aside"
+  },
+  {
+   "seat": "engineer.t-8e1ac0c445",
+   "size": "16k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none"
+  },
+  {
+   "seat": "engineer.t-8e1ac0c445",
+   "size": "16k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "fetch_correct",
+   "note": "message_read(m-4ff3d73691) = key"
+  },
+  {
+   "seat": "engineer.t-8e1ac0c445",
+   "size": "16k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "m-8fe09cecd4; m-317c088ba9 given only as a recall aside"
+  },
+  {
+   "seat": "engineer.t-8e1ac0c445",
+   "size": "40k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none"
+  },
+  {
+   "seat": "engineer.t-8e1ac0c445",
+   "size": "40k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "fetch_correct",
+   "note": "message_read(m-4ff3d73691) = key"
+  },
+  {
+   "seat": "engineer.t-8e1ac0c445",
+   "size": "40k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "m-8fe09cecd4; m-317c088ba9 given only as a recall aside"
+  },
+  {
+   "seat": "engineer.t-cd4712c855",
+   "size": "8k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-cd4712c855",
+   "size": "8k",
+   "qid": "Q2",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-cd4712c855",
+   "size": "8k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-cd4712c855",
+   "size": "16k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-cd4712c855",
+   "size": "16k",
+   "qid": "Q2",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-cd4712c855",
+   "size": "16k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-cd4712c855",
+   "size": "40k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-cd4712c855",
+   "size": "40k",
+   "qid": "Q2",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-cd4712c855",
+   "size": "40k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-d606b5d93f",
+   "size": "8k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-d606b5d93f",
+   "size": "8k",
+   "qid": "Q2",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-d606b5d93f",
+   "size": "8k",
+   "qid": "Q3",
+   "mark": "FETCH",
+   "score": "fetch_correct",
+   "note": "key none; ticket_read shows no owner id"
+  },
+  {
+   "seat": "engineer.t-d606b5d93f",
+   "size": "16k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-d606b5d93f",
+   "size": "16k",
+   "qid": "Q2",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-d606b5d93f",
+   "size": "16k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none cited"
+  },
+  {
+   "seat": "engineer.t-d606b5d93f",
+   "size": "40k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-d606b5d93f",
+   "size": "40k",
+   "qid": "Q2",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-d606b5d93f",
+   "size": "40k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none cited"
+  },
+  {
+   "seat": "engineer.t-852e7add63",
+   "size": "8k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none"
+  },
+  {
+   "seat": "engineer.t-852e7add63",
+   "size": "8k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "fetch_correct",
+   "note": "message_query on the ticket returns m-6f35504905"
+  },
+  {
+   "seat": "engineer.t-852e7add63",
+   "size": "8k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "wrong",
+   "note": "missed m-f5f30e92bb (in the truncated description; should have been FETCH)"
+  },
+  {
+   "seat": "engineer.t-852e7add63",
+   "size": "16k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none"
+  },
+  {
+   "seat": "engineer.t-852e7add63",
+   "size": "16k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "fetch_correct",
+   "note": "message_read(m-6f35504905) = key"
+  },
+  {
+   "seat": "engineer.t-852e7add63",
+   "size": "16k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "wrong",
+   "note": "missed m-f5f30e92bb, shown in the pack as the owner reply in item 2"
+  },
+  {
+   "seat": "engineer.t-852e7add63",
+   "size": "40k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none"
+  },
+  {
+   "seat": "engineer.t-852e7add63",
+   "size": "40k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "fetch_correct",
+   "note": "message_read(m-6f35504905) = key"
+  },
+  {
+   "seat": "engineer.t-852e7add63",
+   "size": "40k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "wrong",
+   "note": "missed m-f5f30e92bb (same)"
+  },
+  {
+   "seat": "engineer.t-20f0718990",
+   "size": "8k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none"
+  },
+  {
+   "seat": "engineer.t-20f0718990",
+   "size": "8k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "fetch_correct",
+   "note": "key none; message_query shows only my own messages"
+  },
+  {
+   "seat": "engineer.t-20f0718990",
+   "size": "8k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-20f0718990",
+   "size": "16k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none"
+  },
+  {
+   "seat": "engineer.t-20f0718990",
+   "size": "16k",
+   "qid": "Q2",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none"
+  },
+  {
+   "seat": "engineer.t-20f0718990",
+   "size": "16k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-20f0718990",
+   "size": "40k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none"
+  },
+  {
+   "seat": "engineer.t-20f0718990",
+   "size": "40k",
+   "qid": "Q2",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none"
+  },
+  {
+   "seat": "engineer.t-20f0718990",
+   "size": "40k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-32035a77da",
+   "size": "8k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-32035a77da",
+   "size": "8k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "fetch_correct",
+   "note": "message_query on the ticket returns m-114e668531"
+  },
+  {
+   "seat": "engineer.s-32035a77da",
+   "size": "8k",
+   "qid": "Q3",
+   "mark": "FETCH",
+   "score": "fetch_correct",
+   "note": "ticket_read returns m-549b8adc3a in full"
+  },
+  {
+   "seat": "engineer.s-32035a77da",
+   "size": "16k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-32035a77da",
+   "size": "16k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "fetch_correct",
+   "note": "same as 8k"
+  },
+  {
+   "seat": "engineer.s-32035a77da",
+   "size": "16k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-32035a77da",
+   "size": "40k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-32035a77da",
+   "size": "40k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "wrong",
+   "note": "named m-abbb6cd444 (what my last answer replied to); key is the later steer m-114e668531"
+  },
+  {
+   "seat": "engineer.s-32035a77da",
+   "size": "40k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-9648fded35",
+   "size": "8k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-9648fded35",
+   "size": "8k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "fetch_correct",
+   "note": "message_read(m-7f1c5a58a2) = key"
+  },
+  {
+   "seat": "engineer.s-9648fded35",
+   "size": "8k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "wrong",
+   "note": "extra m-1998f097c0 (a ruling, not an owner ask in the key)"
+  },
+  {
+   "seat": "engineer.s-9648fded35",
+   "size": "16k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-9648fded35",
+   "size": "16k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "fetch_correct",
+   "note": "same as 8k"
+  },
+  {
+   "seat": "engineer.s-9648fded35",
+   "size": "16k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "wrong",
+   "note": "extra m-1998f097c0 (a ruling, not an owner ask in the key)"
+  },
+  {
+   "seat": "engineer.s-9648fded35",
+   "size": "40k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-9648fded35",
+   "size": "40k",
+   "qid": "Q2",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-9648fded35",
+   "size": "40k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "wrong",
+   "note": "extra m-1998f097c0 (a ruling, not an owner ask in the key)"
+  },
+  {
+   "seat": "engineer.s-54a03afc5a",
+   "size": "8k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-54a03afc5a",
+   "size": "8k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "fetch_correct",
+   "note": "message_query on s-54a03afc5a returns m-bf83c16da7 (verified: on that ticket, to me)"
+  },
+  {
+   "seat": "engineer.s-54a03afc5a",
+   "size": "8k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "wrong",
+   "note": "missed m-b42de746e3; extra m-ce21682c2a"
+  },
+  {
+   "seat": "engineer.s-54a03afc5a",
+   "size": "16k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-54a03afc5a",
+   "size": "16k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "fetch_correct",
+   "note": "same as 8k"
+  },
+  {
+   "seat": "engineer.s-54a03afc5a",
+   "size": "16k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "wrong",
+   "note": "same as 8k"
+  },
+  {
+   "seat": "engineer.s-54a03afc5a",
+   "size": "40k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-54a03afc5a",
+   "size": "40k",
+   "qid": "Q2",
+   "mark": "ANSWERED",
+   "score": "wrong",
+   "note": "named owner m-4a1af7db57 ([demo] approved); key m-bf83c16da7 is older but addressed to me"
+  },
+  {
+   "seat": "engineer.s-54a03afc5a",
+   "size": "40k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "wrong",
+   "note": "5/5 key ids but extra m-ce21682c2a"
+  },
+  {
+   "seat": "engineer.s-461403ebd1",
+   "size": "8k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-461403ebd1",
+   "size": "8k",
+   "qid": "Q2",
+   "mark": "FETCH",
+   "score": "fetch_correct",
+   "note": "message_read(m-08a12a71e5) = key"
+  },
+  {
+   "seat": "engineer.s-461403ebd1",
+   "size": "8k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-461403ebd1",
+   "size": "16k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-461403ebd1",
+   "size": "16k",
+   "qid": "Q2",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-461403ebd1",
+   "size": "16k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-461403ebd1",
+   "size": "40k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-461403ebd1",
+   "size": "40k",
+   "qid": "Q2",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.s-461403ebd1",
+   "size": "40k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-77c3a55b75",
+   "size": "8k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-77c3a55b75",
+   "size": "8k",
+   "qid": "Q2",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none"
+  },
+  {
+   "seat": "engineer.t-77c3a55b75",
+   "size": "8k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-77c3a55b75",
+   "size": "16k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-77c3a55b75",
+   "size": "16k",
+   "qid": "Q2",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none"
+  },
+  {
+   "seat": "engineer.t-77c3a55b75",
+   "size": "16k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-77c3a55b75",
+   "size": "40k",
+   "qid": "Q1",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  },
+  {
+   "seat": "engineer.t-77c3a55b75",
+   "size": "40k",
+   "qid": "Q2",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": "none"
+  },
+  {
+   "seat": "engineer.t-77c3a55b75",
+   "size": "40k",
+   "qid": "Q3",
+   "mark": "ANSWERED",
+   "score": "correct",
+   "note": ""
+  }
+ ]
+}
