@@ -1,0 +1,7 @@
+INFO    -  heronry site: release v0.9.0
+INFO    -  Cleaning site directory
+INFO    -  Building documentation to directory: C:\Projects\Learning\eda-base3\docs\site\site
+INFO    -  heronry site: PII scan clean (site)
+INFO    -  Documentation built in 4.35 seconds
+pii scan: 0 finding(s) in docs/site/site
+8 passed in 4.44s
