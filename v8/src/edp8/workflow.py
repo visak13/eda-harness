@@ -1179,6 +1179,10 @@ class WorkflowRegistry:
             # S14: the body of a version as it was when something was duplicated from it, so the diff and the
             # three-way merge keep their base after an app update rebuilds a preset at a new version
             store._conn.execute("CREATE TABLE IF NOT EXISTS workflow_snapshots (ref TEXT PRIMARY KEY, body TEXT)")
+            # t-0c16c00424: a published version no epic pins is archived on delete (hidden, restorable)
+            cols = {r[1] for r in store._conn.execute("PRAGMA table_info(workflow_defs)").fetchall()}
+            if "archived" not in cols:
+                store._conn.execute("ALTER TABLE workflow_defs ADD COLUMN archived INTEGER DEFAULT 0")
 
     # ---- reads
     def builtin(self, wf_id: str) -> WorkflowDef | None:
@@ -1217,26 +1221,33 @@ class WorkflowRegistry:
             return b
         with self.store._lock:
             row = self.store._conn.execute("SELECT body FROM workflow_defs WHERE id=? AND published=1 "
-                                           "ORDER BY version DESC LIMIT 1", (wf_id,)).fetchone()
+                                           "AND COALESCE(archived, 0)=0 ORDER BY version DESC LIMIT 1",
+                                           (wf_id,)).fetchone()
         if not row:
             raise WorkflowError("not_found", f"workflow {wf_id} has no published version",
                                 "publish a version before pinning an epic to it")
         return WorkflowDef.model_validate(migrate(json.loads(row[0])))
 
-    def list(self) -> list[dict[str, Any]]:
-        """Every version with the epics pinned to it (S14: the Design tab's list) and where it came from."""
+    def list(self, *, archived: bool = False) -> list[dict[str, Any]]:
+        """Every version with the epics pinned to it (S14: the Design tab's list) and where it came from.
+        An archived version is left out unless `archived` (t-0c16c00424); each row says what Delete would do."""
         pins = self.pins()
 
-        def row(d: WorkflowDef, builtin: bool) -> dict[str, Any]:
+        def row(d: WorkflowDef, builtin: bool, arch: bool = False) -> dict[str, Any]:
+            pinned = pins.get(d.ref, [])
             return {"id": d.id, "version": d.version, "ref": d.ref, "name": d.name, "description": d.description,
                     "builtin": builtin, "published": d.published or builtin, "source": d.source,
-                    "pinned_by": pins.get(d.ref, []), "roles": len(d.roles)}
+                    "pinned_by": pinned, "roles": len(d.roles), "archived": arch,
+                    "delete_outcome": _delete_outcome(builtin, d.published, pinned, arch)}
 
         out = [row(d, True) for d in (self.builtin(k) for k in BUILTIN_BUILDERS) if d]
         with self.store._lock:
-            rows = self.store._conn.execute("SELECT body FROM workflow_defs ORDER BY id, version").fetchall()
-        for (body,) in rows:
-            out.append(row(WorkflowDef.model_validate(migrate(json.loads(body))), False))
+            rows = self.store._conn.execute("SELECT body, COALESCE(archived, 0) FROM workflow_defs "
+                                            "ORDER BY id, version").fetchall()
+        for body, arch in rows:
+            if arch and not archived:
+                continue
+            out.append(row(WorkflowDef.model_validate(migrate(json.loads(body))), False, bool(arch)))
         return out
 
     def pins(self) -> dict[str, list[str]]:
@@ -1379,6 +1390,42 @@ class WorkflowRegistry:
         self._put(d, by)
         return d
 
+    def delete(self, wf_ref: str, *, by: str) -> dict[str, Any]:
+        """t-0c16c00424: an unpublished draft is deleted outright; a published version no epic pins is archived
+        (hidden from the list, restorable); a pinned version or a preset is refused."""
+        wf_id, ver = parse_ref(wf_ref)
+        if wf_id in BUILTIN_BUILDERS:
+            raise WorkflowError("immutable", f"{wf_id} is a built-in preset and cannot be deleted",
+                                "presets always stay; delete a copy you made instead")
+        d = self.get(wf_id, ver)
+        pinned = self.pins().get(d.ref, [])
+        if pinned:
+            raise WorkflowError("conflict", f"{d.ref} is pinned by {len(pinned)} epic"
+                                f"{'' if len(pinned) == 1 else 's'}: {', '.join(pinned)}",
+                                "an epic keeps the version it was created on; delete it once those epics are gone")
+        with self.store._lock, self.store._conn:
+            if not d.published:
+                self.store._conn.execute("DELETE FROM workflow_defs WHERE id=? AND version=?", (d.id, d.version))
+                outcome = "deleted"
+            else:
+                self.store._conn.execute("UPDATE workflow_defs SET archived=1 WHERE id=? AND version=?",
+                                         (d.id, d.version))
+                outcome = "archived"
+        with self._lock:
+            self._resolved.pop(d.ref, None)
+        return {"ref": d.ref, "outcome": outcome, "by": by}
+
+    def restore(self, wf_ref: str) -> dict[str, Any]:
+        """Bring an archived version back into the list."""
+        wf_id, ver = parse_ref(wf_ref)
+        d = self.get(wf_id, ver)
+        with self.store._lock, self.store._conn:
+            n = self.store._conn.execute("UPDATE workflow_defs SET archived=0 WHERE id=? AND version=? AND "
+                                         "COALESCE(archived, 0)=1", (d.id, d.version)).rowcount
+        if not n:
+            raise WorkflowError("conflict", f"{d.ref} is not archived", "only an archived version is restored")
+        return {"ref": d.ref, "outcome": "restored"}
+
     # ---- epic pins
     def pin(self, epic_id: str, wf_ref: str) -> None:
         with self.store._lock, self.store._conn:
@@ -1412,6 +1459,19 @@ class WorkflowRegistry:
                 self.pin(eid, std)
                 n += 1
         return n
+
+
+def _delete_outcome(builtin: bool, published: bool, pinned: list[str], archived: bool) -> dict[str, Any]:
+    """What DELETE /v1/workflows/<ref> would do, so the Design tab's confirm names it before asking."""
+    if builtin:
+        return {"action": "refused", "reason": "a built-in preset always stays"}
+    if pinned:
+        return {"action": "refused", "reason": f"pinned by {len(pinned)} epic{'' if len(pinned) == 1 else 's'}: "
+                + ", ".join(pinned)}
+    if archived:
+        return {"action": "refused", "reason": "already archived; restore it instead"}
+    return {"action": "archived" if published else "deleted",
+            "reason": "published: hidden from the list, restorable" if published else "an unpublished draft"}
 
 
 def _applies(p: Precondition, kind: str) -> bool:

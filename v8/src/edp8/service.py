@@ -1513,12 +1513,20 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             raise BoardError("scope", f"{a.handle} may not edit workflows (admins only)",
                              "an admin edits workflows in the Design tab; everyone else reads them")
 
-    @app.get("/v1/workflows")
-    def workflows_list(a: Participant = Depends(actor)):
-        """Every workflow version: the built-in presets (published, immutable) and stored ones, each with
-        the epics pinned to it and the version it was duplicated from (S14)."""
+    def _wf_admin(a: Participant) -> None:
+        # t-0c16c00424: deleting and restoring a version is an admin's call only (an architect seat included)
         from .admin import is_admin
-        return ok(board.workflows.list(),
+        if not is_admin(a):
+            raise BoardError("scope", f"{a.handle} may not delete workflows (admins only)",
+                             "an admin deletes or restores workflows in the Design tab")
+
+    @app.get("/v1/workflows")
+    def workflows_list(archived: bool = False, a: Participant = Depends(actor)):
+        """Every workflow version: the built-in presets (published, immutable) and stored ones, each with
+        the epics pinned to it and the version it was duplicated from (S14). `archived=true` also lists the
+        archived versions; each row's `delete_outcome` says what Delete would do (t-0c16c00424)."""
+        from .admin import is_admin
+        return ok(board.workflows.list(archived=archived),
                   "GET /v1/workflows/<id>[@version] reads one; epics pin a published one"
                   + ("" if (is_admin(a) or a.role == Role.architect) else "; read-only: only an admin edits"))
 
@@ -1677,6 +1685,31 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         except wflow.WorkflowError as e:
             return _wf_error(e)
         return ok(wflow.dump(d), f"draft {d.ref}; edit it with PUT /v1/workflows, then publish")
+
+    @app.delete("/v1/workflows/{ref_}")
+    def workflow_delete(ref_: str, a: Participant = Depends(actor)):
+        """t-0c16c00424: delete an unpublished draft; archive a published version no epic pins (restorable);
+        refuse a pinned version (409, naming the epics) and a built-in preset."""
+        _wf_admin(a)
+        try:
+            out = board.workflows.delete(ref_, by=a.id)
+        except ValueError as e:
+            return _wf_error(wflow.WorkflowError("schema", str(e)))
+        except wflow.WorkflowError as e:
+            return _wf_error(e)
+        return ok(out, f"{out['ref']} deleted" if out["outcome"] == "deleted"
+                  else f"{out['ref']} archived; POST /v1/workflows/{out['ref']}/restore brings it back")
+
+    @app.post("/v1/workflows/{ref_}/restore")
+    def workflow_restore(ref_: str, a: Participant = Depends(actor)):
+        _wf_admin(a)
+        try:
+            out = board.workflows.restore(ref_)
+        except ValueError as e:
+            return _wf_error(wflow.WorkflowError("schema", str(e)))
+        except wflow.WorkflowError as e:
+            return _wf_error(e)
+        return ok(out, f"{out['ref']} is back in the list")
 
     @app.post("/v1/workflows/{ref_}/publish")
     def workflow_publish(ref_: str, a: Participant = Depends(actor)):
