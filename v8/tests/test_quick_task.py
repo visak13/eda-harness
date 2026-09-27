@@ -329,7 +329,7 @@ def test_adv1_spawn_never_mints_an_owner_or_retired_role(api):
                         headers=ARCH)
         assert not r.json().get("ok"), r.text  # a 422 validation body carries no envelope
         if role == "owner":
-            assert "is not spawned" in r.text, r.text
+            assert "is a person, not an agent" in r.text, r.text  # one refusal text since t-cd4712c855
         else:
             assert r.status_code in (400, 422), r.text
         assert not client.get(f"/v1/participants/new-{role}", headers=OWNER).json()["ok"]
