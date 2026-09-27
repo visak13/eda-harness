@@ -5,6 +5,9 @@ bundle older than the SPA sources would ship stale UI silently (adversary findin
 - dist older than web/src → same: rebuild when npm is available, otherwise FAIL the build.
 - EDP8_WEB_AUTOBUILD=0    → never run npm; just check (CI that builds the SPA in its own step).
 - no web/src beside the package (a trimmed sdist) → nothing to compare; the check is skipped.
+- an editable install (`uv sync`, `pip install -e`) ships no bundle: the checkout serves dist from source, so
+  the check is skipped and dist leaves the editable force-include (CI run 36324602694: `uv sync` on a runner
+  with no web/node_modules died on `vite: not found`, then on "Forced include not found: …/webapp/dist").
 """
 from __future__ import annotations
 
@@ -33,6 +36,11 @@ class WebBundleFreshness(BuildHookInterface):
 
     def initialize(self, version: str, build_data: dict) -> None:  # noqa: ARG002
         if self.target_name != "wheel":
+            return
+        if version == "editable":
+            dist = os.path.normpath(os.path.join(self.root, "src", "edp8", "webapp", "dist"))
+            build_data["force_include_editable"] = {
+                src: dst for src, dst in self.build_config.get_force_include().items() if os.path.normpath(src) != dist}
             return
         root = Path(self.root)
         web = root / "web"
