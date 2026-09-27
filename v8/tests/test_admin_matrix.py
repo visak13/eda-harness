@@ -45,6 +45,10 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(tailnet, "listeners", lambda: {})
     monkeypatch.setattr(net, "transport", httpx.MockTransport(lambda req: httpx.Response(503)))
     monkeypatch.setattr(pool_adapter, "sessions", lambda: {"ok": False, "error": "faked"})
+    # a faked pool limits read: unfaked, /v1/admin/capacity read the fleet pool's caps on :9301 (qa m-c4f23e49f0)
+    monkeypatch.setattr(pool_adapter, "_get", lambda path, params=None: {"ok": True, "value": {
+        "max_total_shells": 10, "max_live_shells": 20, "usage": {}}, "hint": ""} if path == "/v1/limits"
+        else {"ok": False, "error": {"code": "unavailable", "message": "faked"}, "hint": ""})
     monkeypatch.setattr(H, "_run", lambda argv, timeout=0: (1, "faked"))
     monkeypatch.setattr(H, "find_tool", lambda name, key=None: None)
 

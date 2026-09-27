@@ -113,6 +113,8 @@ def _stub_pool(monkeypatch):
         return {"ok": True, "value": {"session_id": f"sess-{len(calls)}"}, "hint": ""}
 
     monkeypatch.setattr(pool_adapter, "spawn", fake)
+    # the stub pool is up; unstubbed, the probe reached the fleet pool on :9301 (qa m-c4f23e49f0)
+    monkeypatch.setattr(pool_adapter, "reachable", lambda timeout=2.0: True)
     return calls
 
 

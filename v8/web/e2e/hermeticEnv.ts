@@ -35,6 +35,16 @@ export function hermeticEnv(env: NodeJS.ProcessEnv, home: string): NodeJS.Proces
   return out;
 }
 
+/** qa m-c4f23e49f0: with no EDP_POOL_URL a board derives its pool from EDP_POOL_PORT, whose default is the
+ *  fleet's 9301 (a spec board read and could write the fleet's seat caps). Pin the pool port to one nothing
+ *  listens on; the broker stays unset (off), and the MCP URL handed to seats is dead too. */
+export function deadServiceEnv(deadPort: number): NodeJS.ProcessEnv {
+  return {
+    EDP_POOL_PORT: String(deadPort),
+    EDP8_MCP_URL: `http://127.0.0.1:${deadPort}`,
+  };
+}
+
 /** t-67d19c5807 (qa m-e633397a42): the spec board's agent home. With a private EDP_HOME the board is not in dev
  *  mode, so its agent home is `<home>/agent-home` and it has no source checkout to fall back on: every card is
  *  missing and a Standard copy fails validation with card_missing, and there is no shipped models.json, so the

@@ -17,8 +17,19 @@ the switch itself are also proven explicitly in tests/test_cutover.py.
 from __future__ import annotations
 
 import os
+import socket
 
 import pytest
+
+
+def _dead_port() -> int:
+    """A loopback port nothing listens on (bound, then released)."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+DEAD_PORT = _dead_port()
 
 
 @pytest.fixture(autouse=True)
@@ -56,9 +67,14 @@ def isolated_tokens(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytes
 def no_pool_watch(monkeypatch: pytest.MonkeyPatch) -> None:
     """No test app starts the pool watcher (incident m-c31573e1a2): a seat shell carries EDP_POOL_URL, so
     create_app() started the real `_pool_watch` daemon thread in tests; it outlived its test, drained a
-    queued pairing and minted into the fleet's tokens.json. A test that wants the watcher sets it itself."""
+    queued pairing and minted into the fleet's tokens.json. A test that wants the watcher sets it itself.
+    With EDP_POOL_URL unset the pool URL derives from EDP_POOL_PORT, pinned here to a port nothing listens on:
+    an unmocked pool call fails, it never reaches the fleet pool on :9301 (qa m-c4f23e49f0). A test that runs
+    a pool sets EDP_POOL_URL (or the port) itself."""
     monkeypatch.delenv("EDP_POOL_URL", raising=False)
     monkeypatch.delenv("EDP8_POOL_WATCH", raising=False)
+    monkeypatch.delenv("EDP_POOL_HOST", raising=False)
+    monkeypatch.setenv("EDP_POOL_PORT", str(DEAD_PORT))
 
 
 @pytest.fixture(autouse=True)

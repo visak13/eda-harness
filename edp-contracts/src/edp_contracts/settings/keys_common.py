@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ._core import agent_home, data_dir, declare, secrets_dir
+from ._core import agent_home, data_dir, declare, get, secrets_dir
 
 # ---- roots and directories (read by _core's dir functions; env-only: they locate config.toml)
 declare("paths.home", "EDP_HOME", "path", None, "Paths",
@@ -73,8 +73,15 @@ declare("network.mcp_url", "EDP8_MCP_URL", "url", "http://127.0.0.1:9402", "Netw
 declare("network.broker_url", "EDP_BROKER_URL", "url", "http://127.0.0.1:9300", "Network",
         "Message broker base URL.", restart_required="all",
         tier="internal")
-declare("network.pool_url", "EDP_POOL_URL", "url", "http://127.0.0.1:9301", "Network",
-        "Seat pool base URL.", restart_required="board",
+def _pool_url() -> str:
+    # the pool THIS home configures (pool.host/pool.port), never a fixed :9301: a board on spare ports (an e2e spec
+    # board, a second install) must not reach another home's pool (qa m-c4f23e49f0: a spec board wrote fleet caps)
+    host = str(get("EDP_POOL_HOST") or "127.0.0.1")
+    return f"http://{'127.0.0.1' if host in ('0.0.0.0', '::', '') else host}:{int(get('EDP_POOL_PORT'))}"
+
+
+declare("network.pool_url", "EDP_POOL_URL", "url", _pool_url, "Network",
+        "Seat pool base URL.", default_doc="http://<pool.host>:<pool.port>", restart_required="board",
         tier="internal")
 declare("network.public_url", "EDP8_PUBLIC_URL", "url", None, "Network",
         "Public (tailnet) URL of the board; set turns on public mode's fail-closed token rules.",

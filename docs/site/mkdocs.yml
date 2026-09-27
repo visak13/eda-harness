@@ -71,6 +71,7 @@ markdown_extensions:
   - pymdownx.superfences
   - pymdownx.highlight:
       anchor_linenums: true
+      pygments_lang_class: true  # language-<lang> on each block: heronry.css wraps shell one-liners (qa S15)
   - pymdownx.inlinehilite
   - pymdownx.tabbed:
       alternate_style: true

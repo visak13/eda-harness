@@ -21,8 +21,13 @@ import httpx
 from . import settings
 from .schemas import SessionState
 
-POOL_URL = settings.get("EDP_POOL_URL")
 POOL_ID = settings.get("EDP8_POOL_ID")
+
+
+def pool_url() -> str:
+    """EDP_POOL_URL, else this home's own pool (pool.host/pool.port), read per call: never a URL cached at import
+    from a seat shell's env, which pointed test and spec boards at the fleet pool (qa m-c4f23e49f0)."""
+    return str(settings.get("EDP_POOL_URL")).rstrip("/")
 
 
 def _env(name: str, default: str) -> str:
@@ -36,7 +41,7 @@ def _envelope(ok: bool, value: Any = None, error: str = "", hint: str = "", code
 
 def _post(path: str, body: dict[str, Any] | None = None, timeout: float = 90.0) -> dict[str, Any]:
     try:
-        r = httpx.post(f"{_env('EDP_POOL_URL', POOL_URL)}{path}", json=body or {}, timeout=timeout)
+        r = httpx.post(f"{pool_url()}{path}", json=body or {}, timeout=timeout)
     except httpx.HTTPError as e:
         return _envelope(False, error=f"pool unreachable: {e}", hint="start the pool (edp-pool) and retry",
                          code="unavailable")
@@ -51,7 +56,7 @@ def _post(path: str, body: dict[str, Any] | None = None, timeout: float = 90.0) 
 
 def _get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     try:
-        r = httpx.get(f"{_env('EDP_POOL_URL', POOL_URL)}{path}", params=params, timeout=20.0)
+        r = httpx.get(f"{pool_url()}{path}", params=params, timeout=20.0)
     except httpx.HTTPError as e:
         return _envelope(False, error=f"pool unreachable: {e}", code="unavailable")
     try:
@@ -65,7 +70,7 @@ def reachable(timeout: float = 2.0) -> bool:
     """Fast liveness probe (design §22 rule 4: spawn/resume must refuse within 2s when the pool
     does not answer, instead of hanging on the 90s spawn timeout). GET /v1/limits is cheap."""
     try:
-        r = httpx.get(f"{_env('EDP_POOL_URL', POOL_URL)}/v1/limits", timeout=timeout)
+        r = httpx.get(f"{pool_url()}/v1/limits", timeout=timeout)
         return r.status_code < 500
     except httpx.HTTPError:
         return False
@@ -237,7 +242,7 @@ def _liveness_via(client: httpx.Client, handle: str) -> dict[str, Any]:
     {answered: bool, state: str|None, reason: str}. A transport error / 4xx / missing or
     'unknown' state is a NON-ANSWER (answered may be True but state None)."""
     try:
-        r = client.get(f"{_env('EDP_POOL_URL', POOL_URL)}/v1/liveness/{handle}")
+        r = client.get(f"{pool_url()}/v1/liveness/{handle}")
     except httpx.HTTPError as e:
         return {"answered": False, "state": None, "reason": str(e)}
     if r.status_code >= 400:

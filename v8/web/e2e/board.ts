@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { hermeticEnv, seedAgentHome } from "./hermeticEnv";
+import { deadServiceEnv, hermeticEnv, seedAgentHome } from "./hermeticEnv";
 import { e2eBoardDistEnv } from "./distDir";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -82,6 +82,8 @@ export async function startBoard(extraEnv: Record<string, string> = {}): Promise
     env: {
       // Allowlist + a private EDP_HOME/EDP8_HOME/EDP8_RUN_DIR (hermeticEnv.ts): no shell EDP* passes.
       ...hermeticEnv(process.env, tmpHome),
+      // qa m-c4f23e49f0: never the fleet pool/MCP on the default ports (a spec may still point them elsewhere)
+      ...deadServiceEnv(await freePort()),
       EDP8_HOST: "127.0.0.1",
       EDP8_PORT: String(port),
       EDP8_DB: path.join(tmpHome, "edp8.db"),

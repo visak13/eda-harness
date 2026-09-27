@@ -86,6 +86,10 @@ def test_start_never_opens_a_browser_for_a_seat_a_test_or_the_fleet(tmp_path, mo
     monkeypatch.setenv("EDP_HANDLE", "engineer.s-x")   # a seat shell
     run()
     monkeypatch.delenv("EDP_HANDLE")
+    monkeypatch.setenv("EDP8_PARTICIPANT", "engineer.s-x")  # a seat shell known by its participant only (c-ba9bd79051)
+    run()
+    assert opened == []
+    monkeypatch.delenv("EDP8_PARTICIPANT")
     monkeypatch.setenv("HERONRY_NO_BROWSER", "1")      # edp.ps1 / the test fixture
     run()
     monkeypatch.delenv("HERONRY_NO_BROWSER")

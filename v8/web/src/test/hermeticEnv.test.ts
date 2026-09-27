@@ -90,3 +90,26 @@ describe("seedAgentHome (t-67d19c5807)", () => {
     }
   });
 });
+
+// qa m-c4f23e49f0 (SEVERE): with no EDP_POOL_URL the board derives its pool from EDP_POOL_PORT, default 9301 = the
+// fleet pool; a spec board read the fleet's caps and could write them. startBoard layers deadServiceEnv on top.
+describe("deadServiceEnv", () => {
+  it("points the spec board's pool and MCP at a dead port, never the fleet defaults", async () => {
+    const { deadServiceEnv } = await import("../../e2e/hermeticEnv");
+    const env = { ...hermeticEnv(FLEET_SHELL, HOME), ...deadServiceEnv(51234) };
+    expect(env.EDP_POOL_PORT).toBe("51234");
+    expect(env.EDP8_MCP_URL).toBe("http://127.0.0.1:51234");
+    expect(env).not.toHaveProperty("EDP_POOL_URL");
+    expect(env).not.toHaveProperty("EDP_BROKER_URL"); // unset = the broker is off for the spec board
+    expect(Object.values(env).filter((v) => typeof v === "string" && /:(9301|9300|9402)\b/.test(v))).toEqual([]);
+  });
+
+  it("is what startBoard spawns the spec board with", async () => {
+    const fs = await import("node:fs");
+    const src = fs.readFileSync(path.join(__dirname, "..", "..", "e2e", "board.ts"), "utf8");
+    const spawnEnv = src.slice(src.indexOf("board = spawn("), src.indexOf("await waitHealthy(base)"));
+    expect(spawnEnv).toContain("...deadServiceEnv(await freePort())");
+    expect(spawnEnv.indexOf("...hermeticEnv(")).toBeLessThan(spawnEnv.indexOf("...deadServiceEnv("));
+    expect(spawnEnv.indexOf("...deadServiceEnv(")).toBeLessThan(spawnEnv.indexOf("...extraEnv"));
+  });
+});

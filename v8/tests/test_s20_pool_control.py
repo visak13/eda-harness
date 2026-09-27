@@ -67,6 +67,13 @@ def rig(client):
     return {"epic": epic_id, "arch": arch, "story": story_id}
 
 
+@pytest.fixture(autouse=True)
+def stub_pool_is_up(monkeypatch):
+    """The pool is a stub here: its liveness probe is too. Unstubbed, `reachable()` probed the fleet pool on :9301
+    and these tests passed only while it was up (qa m-c4f23e49f0; the conftest now pins a dead pool port)."""
+    monkeypatch.setattr(pool_adapter, "reachable", lambda timeout=2.0: True)
+
+
 # ---------------------------------------------------------------- authz (c-68756731c3)
 
 def _stub_spawn(monkeypatch, sink=None):

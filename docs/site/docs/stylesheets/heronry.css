@@ -100,3 +100,11 @@
 .hy-player { display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; border: 1px solid var(--hy-border); background: #000; }
 .hy-video table { font-size: .75rem; }
 @media (max-width: 960px) { .hy-video { grid-template-columns: 1fr; } }
+
+/* install one-liners (qa S15): a shell command wraps inside its box instead of running off it, and the text keeps
+   clear of the copy button (Material pins it top-right, over the first line). Copy still takes the one line. */
+.md-typeset pre > code { padding-right: 2.6em; }
+.md-typeset .language-sh pre > code, .md-typeset .language-bash pre > code,
+.md-typeset .language-powershell pre > code, .md-typeset .language-console pre > code {
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
