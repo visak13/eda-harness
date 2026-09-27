@@ -18,6 +18,7 @@ service's module and nothing else, before anything GUI-related is imported.
 from __future__ import annotations
 
 import sys
+from typing import NamedTuple
 
 #: frozen-bundle re-entry: service name -> module run as __main__
 _SERVICE_MODULES = {"board": "edp8.service", "broker": "edp_broker.main", "pool": "edp_pool.main",
@@ -379,30 +380,85 @@ def _lazy(module: str, fn: str = "main"):
     return run
 
 
+class Command(NamedTuple):
+    """One `heronry` command as `help` prints it and the project site's CLI reference renders it (S15)."""
+    name: str
+    usage: str
+    summary: str
+    flags: tuple[tuple[str, str], ...] = ()
+
+
+#: the command table: `help` prints it and the site's CLI reference is generated from it, so a new command or flag
+#: is declared here once (docs/site/hooks/sitegen.py)
+COMMANDS: tuple[Command, ...] = (
+    Command("init", "init", "first-time setup: dirs, config, tokens, agent home, harnesses, ports", (
+        ("--harness claude,codex,pi", "the seat harnesses to use; at least one (asked when interactive)"),
+        ("--owner NAME", "the first human's handle"),
+        ("--ports N", "a port block: board N, mcp N+2, pool N-99, broker N-100, code N+10"),
+        ("--board-port / --mcp-port / --pool-port / --broker-port / --code-port N", "one service's port"),
+        ("--admin-token TOKEN", "use this admin token instead of generating one"),
+        ("--yes", "no questions: take the defaults"),
+        ("--force", "run even in a source checkout (dev mode)"),
+    )),
+    Command("start", "start [svc|all]", "start services (board, broker, pool, mcp, bridge) and the supervisor", (
+        ("--no-browser", "do not open the setup wizard in a browser on first run"),
+        ("--no-supervisor", "start the services without the supervisor that restarts a crashed one"),
+    )),
+    Command("stop", "stop [svc|all]", "stop services and verify nothing is left", (
+        ("--force", "stop the pool even with live seats"),
+        ("--keep-seats", "stop only the pool's own processes; its seat shells run on"),
+    )),
+    Command("restart", "restart [svc|all]", "restart through the supervisor (records service_restarted)", (
+        ("--force", "restart the pool even with live seats"),
+    )),
+    Command("status", "status", "one row per service: state, pid, port, url, rev, uptime, last probe, last restart", (
+        ("--json", "print the rows as JSON"),
+    )),
+    Command("doctor", "doctor", "check prerequisites, harnesses, ports, secrets and claude folder trust", (
+        ("--agent [text]", "ask the Help seat (an agent that diagnoses and proposes fixes you approve)"),
+        ("--bundle [PATH]", "write a redacted diagnostics zip to attach to a GitHub issue"),
+    )),
+    Command("prereqs", "prereqs [install]", "list the tools Heronry needs; install installs the missing ones", (
+        ("--yes", "install without asking"),
+        ("--no-embed", "skip the local search model"),
+        ("--only NAME", "install only this prerequisite"),
+        ("--with NAME", "also install this optional prerequisite"),
+        ("--json", "print the checklist as JSON"),
+    )),
+    Command("update", "update", "check for a new release and install it (backup, stop, upgrade, start)", (
+        ("--check", "only report the current and latest versions"),
+        ("--dry-run", "check, download and verify, then stop before changing anything"),
+        ("--force", "reinstall the same version, or update with live seats (takes them offline)"),
+        ("--allow-downgrade", "install an older release"),
+        ("--skip-compat", "skip the custom-workflow compatibility check"),
+        ("--release-url URL", "update from this release instead of the latest"),
+    )),
+    Command("import", "import --from DIR", "copy an existing v8 install's state (dry run first)", (
+        ("--from DIR", "the v8 folder to copy from (never written)"),
+        ("--apply", "copy for real (without it: a dry run with a diff report)"),
+        ("--force", "import even in a source checkout (dev mode)"),
+    )),
+    Command("workflows", "workflows check --db PATH", "check every custom workflow in a board DB against this version", (
+        ("--db PATH", "the board database (read on a scratch copy)"),
+        ("--json", "print a JSON list of {workflow, version, ok, errors}"),
+    )),
+    Command("gui", "gui", "open the desktop app", (
+        ("--capture [DIR]", "save the app's own window content as PNGs under its data folder, then quit"),
+    )),
+    Command("version", "version", "print the product name and version (also --version)"),
+    Command("help", "help", "this text (also --help, -h)"),
+)
+
+
 def help_cmd(_argv: list[str]) -> int:
     from .brand import CLI_NAME, PRODUCT_NAME, TAGLINE
     print(f"{PRODUCT_NAME}: {TAGLINE}\n")
     print(f"usage: {CLI_NAME} <command> [args]\n")
     print("commands:")
-    for name, text in (
-        ("init", "first-time setup: dirs, config, tokens, agent home, harnesses (--harness claude,codex), "
-                 "ports (--ports 10400 = board 10400, mcp 10402, pool 10301, broker 10300, code 10410)"),
-        ("start [svc|all]", "start services (board, broker, pool, mcp, bridge) and the supervisor"),
-        ("stop [svc|all]", "stop services and verify nothing is left (--force to take pool seats down)"),
-        ("restart [svc|all]", "restart through the supervisor (records service_restarted)"),
-        ("status", "one row per service: state, pid, port, url, rev, uptime, last probe, last restart"),
-        ("doctor", "check prerequisites, harnesses, ports, secrets and claude folder trust"),
-        ("prereqs [install]", "list the tools Heronry needs; install installs the missing ones (--yes, "
-                              "--no-embed, --only NAME)"),
-        ("doctor --agent [text]", "ask the Help seat (an agent that diagnoses and proposes fixes you approve)"),
-        ("doctor --bundle [PATH]", "write a redacted diagnostics zip to attach to a GitHub issue"),
-        ("update", "check for a new release; --apply installs it (backup, stop, upgrade, start)"),
-        ("import --from DIR", "copy an existing v8 install's state (dry run first; --apply to copy)"),
-        ("gui", "open the desktop app (--capture [<dir>]: save its own window content as PNGs under its data folder, then quit)"),
-        ("version", "print the product name and version (also --version)"),
-        ("help", "this text (also --help, -h)"),
-    ):
-        print(f"  {name:<20} {text}")
+    for c in COMMANDS:
+        print(f"  {c.usage:<20} {c.summary}")
+        for flag, text in c.flags:
+            print(f"  {'':<20}   {flag}  {text}")
     return 0
 
 

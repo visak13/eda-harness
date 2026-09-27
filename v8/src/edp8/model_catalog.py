@@ -16,7 +16,22 @@ from . import settings
 
 HARNESSES = {"claude", "codex", "pi"}
 EFFORTS = {"low", "medium", "high"}
-MODEL_FIELDS = {"harness", "provider", "model", "context_window", "auto_compact", "effort_cap"}
+#: the fields a catalog row may carry, with their meaning (the project site's models reference renders this, S15)
+MODEL_FIELD_DOCS = {
+    "harness": "the program that runs the seat: claude, codex or pi",
+    "provider": "who serves the model (for pi, the provider name Pi is configured with)",
+    "model": "the model name passed to the harness, when it differs from the row's id",
+    "context_window": "the model's context window, in tokens",
+    "auto_compact": "the context size, in tokens, at which the seat compacts its conversation",
+    "effort_cap": "the highest reasoning effort a seat on this model may be given: low, medium or high",
+}
+MODEL_FIELDS = set(MODEL_FIELD_DOCS)
+#: the catalog's top-level keys, with their meaning (S15 site reference)
+CATALOG_KEY_DOCS = {
+    "models": "every model a seat may run on: model id → a row (below)",
+    "role_models": "role → the ordered list of model ids that role may run on; the first is its default",
+    "default_model": "the model any role absent from role_models spawns on (custom workflow roles too)",
+}
 DEFAULT_KEY = "default_model"  # the model any role absent from role_models spawns on (custom roles too)
 SHIPPED_KEY = "_shipped"       # snapshot of the shipped catalog last merged into the data-dir copy
 #: harnesses whose window and compaction come from the harness itself when a row leaves them unset
