@@ -11,6 +11,7 @@ name: CI
 
 on:
   push:
+    branches: ["**"]  # a v* tag push is built and checked by release.yml; this skips a duplicate run
   pull_request:
   workflow_dispatch:
 

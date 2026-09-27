@@ -15,6 +15,7 @@ community-tested, so please [report issues](https://github.com/visak13/eda-harne
 ### Added
 - Heronry: the board, its seats and services, installable on Windows, macOS and Linux.
 - Heronry Desktop: a native window and tray icon, shipped as MSI, DMG and deb installers (unsigned).
+- The macOS DMG is for Apple Silicon Macs; on an Intel Mac, install with install.sh.
 - The `heronry` command line: `init`, `start`, `stop`, `status`, `doctor`, `update`, `import`, `gui`.
 - A setup wizard, harness choice (Claude Code, Codex, Pi) and in-app updates.
 - One-line installers (`install.ps1`, `install.sh`) that verify every wheel against `SHA256SUMS`.

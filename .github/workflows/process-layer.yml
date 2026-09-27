@@ -8,6 +8,7 @@ name: process layer (3 OS)
 
 on:
   push:
+    branches: ["**"]  # a v* tag push is built and checked by release.yml; this skips a duplicate run
     paths:
       - "edp-contracts/**"
       - "edp-pool/**"
