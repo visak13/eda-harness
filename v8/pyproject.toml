@@ -23,7 +23,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.4"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.4", "pyyaml>=6"]  # pyyaml: test_release_workflow parses the workflows
 embed = ["fastembed>=0.3"]
 # Heronry Desktop (`heronry gui`, S8): the native installers bundle these; a uv tool install adds them with --with
 desktop = ["pywebview>=6.0", "pystray>=0.19"]
