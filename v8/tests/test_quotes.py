@@ -319,7 +319,8 @@ def test_a_seat_reads_a_two_quote_message_as_text_everywhere(client, env):
     q = ALL_TOOLS["message_query"]
     check(next(r for r in q.handler(q.args_model(ticket_id=env["story"]))["value"]["items"] if r["id"] == mid))
     # context: the bounded thread carries the rendered block and compact refs only
-    row = next(r for r in ctx.handler(ctx.args_model())["value"]["tickets"][0]["thread"] if r["id"] == mid)
+    tv = ctx.handler(ctx.args_model())["value"]["tickets"][0]
+    row = next(r for r in tv.get("for_you", []) + tv["thread"] if r["id"] == mid)  # addressed to eng: for_you (dec-7581ebda87)
     check(row)
     assert all("text" not in qq and "note" not in qq for qq in row["quotes"])
     # context_delta
@@ -349,7 +350,8 @@ def test_a_code_quote_renders_its_anchor_and_long_passages_clip_in_bounded_reads
     assert "> def f():\n>     return 1\n— code src/edp8/board.py:L10-11 @0123456" in full and long in full
     set_client(BoardClient(participant="eng", admin_token="t", client=client))
     ctx = ALL_TOOLS["context"]
-    row = next(r for r in ctx.handler(ctx.args_model())["value"]["tickets"][0]["thread"] if r["id"] == mid)
+    tv = ctx.handler(ctx.args_model())["value"]["tickets"][0]
+    row = next(r for r in tv.get("for_you", []) + tv["thread"] if r["id"] == mid)  # addressed to eng: for_you (dec-7581ebda87)
     assert long not in row["quoted"] and "message_read for all" in row["quoted"]
 
 
