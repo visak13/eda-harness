@@ -22,6 +22,8 @@ MD_LINK = re.compile(r"!?\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")
 HTML_REF = re.compile(r"""\b(?:href|src|srcset)\s*=\s*["']([^"']+)["']""")
 ABS_URL = re.compile(r"https?://[^\s)\"'<>`]+")
 VIDEO_PAGE = f"{brand.REPO_URL}/blob/main/docs/readme/storefront/heronry-demo.mp4"
+# owner m-ae2ac70eaa: the README video plays in place, so it is the owner's user-attachments upload (m-03077b8d1d)
+INLINE_VIDEO = re.compile(r"^https://github\.com/user-attachments/assets/[0-9a-f-]{36}$", re.M)
 
 
 def _targets() -> list[str]:
@@ -56,12 +58,12 @@ def test_urls_derive_from_the_one_repo_slug() -> None:
     # the storefront's named links are exactly the derived ones
     assert f'<a href="{brand.RELEASES_URL}"><strong>Download</strong></a>' in README
     assert f'<a href="{brand.SITE_URL}"><strong>Website</strong></a>' in README
-    # the video slot opens the committed MP4's github.com viewer page, never a raw download (owners m-db01fcfb40,
-    # m-54b1f89b31); the hero GIF links nowhere: the poster above the intro is the ONLY video link (epic criterion
-    # c-cc63aae5b2); the top link row is Download and Website only
+    # the video plays inline from the owner's upload, never a viewer page or a raw download (owners m-db01fcfb40,
+    # m-54b1f89b31, m-ae2ac70eaa); the hero GIF links nowhere (epic criterion c-cc63aae5b2); the top link row is
+    # Download and Website only
     hero = README.split("</picture>")[0]
     assert "<a " not in hero and "90-second" not in hero, "the hero GIF must not link anywhere"
-    assert README.count(f'<a href="{VIDEO_PAGE}"') == 1
+    assert len(INLINE_VIDEO.findall(README)) == 1 and VIDEO_PAGE not in README
     assert "Watch the video" not in README and "#see-it-work" not in README
     assert brand.VIDEO_URL not in README
     for raw in ("raw.githubusercontent.com", "?raw=true", "/raw/main/", "/releases/download/"):
@@ -97,11 +99,11 @@ def test_hero_badges_and_video() -> None:
     for badge in ("Latest release", "CI", "Licence"):
         assert f'alt="{badge}' in top, badge
     assert brand.TAGLINE in top
-    # the video slot sits right above the intro: the VIDEO_URL marker, then the poster linked to the committed MP4
+    # the video slot sits right above the intro: the inline-playing upload of the committed MP4, alone on its line
     assert "## See it work" not in README
-    slot = README.split("<!-- VIDEO_URL:", 1)[1].split("A heronry is a tree", 1)[0]
+    slot = README.split("<!-- VIDEO:", 1)[1].split("A heronry is a tree", 1)[0]
     assert "docs/readme/storefront/heronry-demo.mp4" in slot.split("-->", 1)[0]
-    assert f'<a href="{VIDEO_PAGE}"' in slot and 'src="docs/readme/storefront/video-poster.jpg"' in slot
+    assert INLINE_VIDEO.search(slot) and "<a " not in slot
     assert "\n## " not in slot
     assert (REPO / "docs" / "readme" / "storefront" / "heronry-demo.mp4").is_file()
     assert "storefront/still-" not in README and "docs/readme/why/" not in README
