@@ -34,3 +34,14 @@ export const MONO = "'JetBrains Mono', ui-monospace, monospace";
 export const FPS = 30;
 export const W = 1920;
 export const H = 1080;
+
+/** WCAG 2 contrast ratio of two #RRGGBB colours (chapter 2b states the muted-text ratio from this). */
+export const contrast = (a: string, b: string): number => {
+  const lum = (hex: string) => {
+    const [r, g, bl] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+      .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};

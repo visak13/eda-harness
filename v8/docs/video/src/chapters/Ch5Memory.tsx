@@ -6,6 +6,7 @@ import React from "react";
 import { interpolate, useCurrentFrame } from "remotion";
 import { C, FONT } from "../theme";
 import { Avatar, Card, Chapter, Mono, T, useAppear } from "../components/kit";
+import FACTS from "../code-facts.json"; // the harvest cap, from the /harvest skill
 
 const R = 290;
 const CX = 520;
@@ -13,7 +14,7 @@ const CY = 520;
 const NODES = [
   { label: "pain", sub: "a tool or guide was wrong", c: C.danger, ang: -90, at: 40 },
   { label: "lesson", sub: "/learn · one sentence", c: C.warning, ang: 0, at: 90 },
-  { label: "harvest", sub: "qa · epic end · ≤5 lessons", c: C.success, ang: 90, at: 140 },
+  { label: "harvest", sub: `qa · epic end · ≤${FACTS.harvestMaxLessons} lessons`, c: C.success, ang: 90, at: 140 },
   { label: "recall", sub: "into the next context()", c: "#B9A3E0", ang: 180, at: 190 },
 ];
 

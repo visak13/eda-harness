@@ -7,7 +7,7 @@
 // tailnet (guides/tailnet-public-mode.md). Invented names only.
 import React from "react";
 import { interpolate, useCurrentFrame } from "remotion";
-import { C, FONT } from "../theme";
+import { C, FONT, contrast } from "../theme";
 import { Avatar, Card, Chapter, Mono, Pill, T, useAppear } from "../components/kit";
 
 /** A person's avatar in the board's people style: rounded square, torso, round face, hair. */
@@ -78,7 +78,7 @@ export const Ch2bTeam: React.FC = () => {
               Looks close. <At>@engineer.t-3f9a</At> what ratio does the muted text hit?
             </Msg>
             <Msg at={230} who={<Avatar role="engineer" size={64} />} name="engineer" where="agent seat · on Maya's machine" agent>
-              Muted text is 8.0 : 1 on the dark background; AA needs 4.5. Evidence is on the criterion.
+              Muted text is {contrast(C.muted, C.bg).toFixed(1)} : 1 on the dark background; AA needs 4.5. Evidence is on the criterion.
             </Msg>
           </div>
         </Card>

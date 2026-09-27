@@ -2,6 +2,8 @@
 //   node scripts/code-facts.mjs          → writes src/code-facts.json
 //   node scripts/code-facts.mjs --check  → exits 1 if src/code-facts.json no longer matches the code
 // render-all.mjs and stills.mjs run it first; a constant that moved or was renamed fails the render.
+// v8/tests/test_video_code_facts.py fails when src/code-facts.json, or a doc that states the same number,
+// drifts from the code default. If the default changes: node scripts/code-facts.mjs && npm run render:all.
 import path from "node:path";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -31,6 +33,13 @@ if (!reg) throw new Error("code-facts: board.context_budget_b not declared in ed
 if (Number(reg[1].replaceAll("_", "")) !== facts.contextBudgetBytes)
   throw new Error(`code-facts: keys_board.py board.context_budget_b=${reg[1]} disagrees with bundles._CONTEXT_BUDGET_B=${facts.contextBudgetBytes}`);
 facts.contextBudgetBytesSource += " = edp_contracts/settings/keys_board.py board.context_budget_b";
+
+// Chapter 5's harvest chip ("≤N lessons"): the /harvest skill's own cap.
+const harvest = readFileSync(path.resolve(root, "../../.claude/skills/harvest/SKILL.md"), "utf8");
+const cap = harvest.match(/At most (\d+); none is a valid answer/);
+if (!cap) throw new Error("code-facts: the lesson cap ('At most N; none is a valid answer') is gone from .claude/skills/harvest/SKILL.md");
+facts.harvestMaxLessons = Number(cap[1]);
+facts.harvestMaxLessonsSource = "v8/.claude/skills/harvest/SKILL.md step 1";
 
 const out = path.join(root, "src/code-facts.json");
 const text = JSON.stringify(facts, null, 2) + "\n";
