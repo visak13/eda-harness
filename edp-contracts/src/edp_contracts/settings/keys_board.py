@@ -18,6 +18,11 @@ declare("board.log_level", "EDP8_LOG", "str", "warning", "Limits/tuning", "The b
         restart_required="board",
         tier="advanced", label='Board log detail',
         help="How much the board's web server writes to its log. Use debug only while chasing a problem.", choices=("debug", "info", "warning", "error", "critical"))
+declare("board.timing", "EDP8_TIMING", "bool", False, "Limits/tuning",
+        "Log every request's route template, status, ms and bytes to <logs>/timing.jsonl (S22 profiling).",
+        restart_required="board",
+        tier="advanced", label='Log request timings',
+        help='Write how long every board request takes to a log file, to find what makes the app slow.')
 declare("board.upload_sweep", "EDP8_UPLOAD_SWEEP", "bool", True, "Limits/tuning",
         "Hourly sweep of staged uploads nobody finalised (the startup sweep always runs).",
         restart_required="board",

@@ -712,8 +712,24 @@ def _crit_counts(board: Board, ticket_id: str) -> dict[str, int]:
             "total": len(crits)}
 
 
+def _open_gate_count(board: Board, ticket_ids: list[str]) -> int:
+    """sum(len(board.open_gates(id)) for id in ticket_ids), from one query: the same fold (a gate_opened opens
+    its gate; a later gate_answered or gate_closed of that gate retires it), per ticket, in seq order."""
+    kinds = [EventKind.gate_opened, EventKind.gate_answered, EventKind.gate_closed]
+    opened: dict[str, set[str]] = {}
+    for i in range(0, len(ticket_ids), 400):  # bounded IN lists (SQLite's host-parameter cap)
+        evs = board.store.query("event", {"subject_id": ticket_ids[i:i + 400], "kind": kinds}, limit=1_000_000)
+        for e in evs:
+            gates = opened.setdefault(e.subject_id, set())
+            if e.kind == EventKind.gate_opened:
+                gates.add(e.data.get("gate"))
+            else:
+                gates.discard(e.data.get("gate"))
+    return sum(len(g) for g in opened.values())
+
+
 def epics_summary(board: Board, viewer: Participant | None = None, *, status: str | None = None,
-                  q: str | None = None) -> list[dict[str, Any]]:
+                  q: str | None = None, epic_id: str | None = None) -> list[dict[str, Any]]:
     """One row per epic for the Projects list (design §4.1): criteria tally, open gates,
     waiting_reason, assigned seats and latest status. Honours the same status/q filters the
     legacy /ui page uses. Quick tasks (a parentless story tagged `quick`) are listed too, `kind: quick`
@@ -722,6 +738,8 @@ def epics_summary(board: Board, viewer: Participant | None = None, *, status: st
     rows = board.store.query("ticket", {"kind": TicketKind.epic}, limit=5000)
     rows += [t for t in board.store.query("ticket", {"kind": TicketKind.story}, limit=5000)
              if t.parent_id is None and is_quick(t)]
+    if epic_id:  # S22: one epic's row (the epic page), before any per-row work
+        rows = [t for t in rows if t.id == epic_id]
     if status == "open":
         rows = [t for t in rows if t.status not in _TERMINAL]
     elif status:
@@ -736,14 +754,17 @@ def epics_summary(board: Board, viewer: Participant | None = None, *, status: st
         need = {s["id"]: s for s in attention.rollup(attention.items(board, viewer))["scopes"]}
     out = []
     for t in rows:
-        seats = sorted({k.assignee for k in board._descendants(t.id) if k.assignee}
-                       | ({t.assignee} if t.assignee else set()))
+        # S22: the subtree and waiting_reason once per row (each was computed twice), and the tree's open
+        # gates from ONE event query instead of one per descendant
+        desc = board._descendants(t.id)
+        seats = sorted({k.assignee for k in desc if k.assignee} | ({t.assignee} if t.assignee else set()))
+        wr = waiting_reason(board, t)
         out.append({"id": t.id, "title": t.title, "status": t.status.value,
                     "kind": "epic" if t.kind == TicketKind.epic else "quick",
                     "created_at": t.created_at.isoformat(), "criteria": _crit_counts(board, t.id),
-                    "open_gates": sum(len(board.open_gates(s.id)) for s in (t, *board._descendants(t.id))),
-                    "waiting_reason": waiting_reason(board, t), "assigned_seats": seats,
-                    "latest_status": waiting_reason(board, t)["latest_status"],
+                    "open_gates": _open_gate_count(board, [t.id, *(k.id for k in desc)]),
+                    "waiting_reason": wr, "assigned_seats": seats,
+                    "latest_status": wr["latest_status"],
                     "attention": ({k: need[t.id][k] for k in ("count", "reason", "tabs", "sections", "tickets")}
                                   if t.id in need else None)})
     out.sort(key=lambda r: 0 if r["attention"] else 1)  # stable: the board's order within each group

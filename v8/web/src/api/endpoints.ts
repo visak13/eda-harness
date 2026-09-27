@@ -46,7 +46,8 @@ function qs(params: Record<string, string | number | null | undefined>): string 
   return s ? `?${s}` : "";
 }
 
-export type EpicsFilter = { status?: string | null; q?: string | null };
+// S22: `id` narrows the answer to one epic's row (the epic page needs only its own)
+export type EpicsFilter = { status?: string | null; q?: string | null; id?: string | null };
 export const getEpicsSummary = (f: EpicsFilter = {}) =>
   api<EpicSummaryRow[]>(`/v1/epics/summary${qs(f)}`);
 

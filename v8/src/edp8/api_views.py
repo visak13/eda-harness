@@ -186,8 +186,9 @@ def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
 
     # -------------------------------------------------------------- epics / tickets
     @r.get("/v1/epics/summary")
-    def epics_summary(status: str | None = None, q: str | None = None, a: Participant = Depends(actor)):
-        return ok(views.epics_summary(board, a, status=status, q=q))
+    def epics_summary(status: str | None = None, q: str | None = None, id: str | None = None,
+                      a: Participant = Depends(actor)):
+        return ok(views.epics_summary(board, a, status=status, q=q, epic_id=id))
 
     @r.get("/v1/epics/{epic_id}/page")
     def epic_page(epic_id: str, include: str | None = None, a: Participant = Depends(actor)):

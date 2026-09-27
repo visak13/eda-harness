@@ -132,8 +132,25 @@ class Store:
             self._conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(type UNINDEXED, id UNINDEXED, text)")
             if self._conn.execute("SELECT count(*) FROM fts").fetchone()[0] == 0:
                 self._fts_rebuild_locked()
+            # S22: a thread's per-author lookup (Board.ask_resolved (d)) — one index for both columns
+            self._conn.execute('CREATE INDEX IF NOT EXISTS ix_message_ticket_created ON message("ticket_id", "created_by")')
+            # and a thread's asks to one addressee (views._pending_owner_request): stat1 averages ~90 rows per
+            # "to", but the owner holds ~1,100, so the single-column pick scanned them all (4 ms per epic)
+            self._conn.execute('CREATE INDEX IF NOT EXISTS ix_message_ticket_to ON message("ticket_id", "to")')
             self.migrated_reviewer = self._migrate_reviewer_locked()
             self.retired_roles = self._retire_roles_locked()
+        self.optimize(on_open=True)
+
+    def optimize(self, *, on_open: bool = False) -> None:
+        """S22: planner statistics. With no sqlite_stat1 SQLite guessed every single-column index equally
+        selective and picked `kind`/`created_by` over `subject_id`/`ticket_id` — a scan of every status_recorded
+        event per epic (epics/summary 248 ms → 110 ms on the fleet copy with stats). `PRAGMA optimize` is the
+        documented call for a long-lived connection; 0x10002 also analyses on open, bounded by analysis_limit."""
+        if self.path == ":memory:":
+            return
+        with self._lock:
+            self._conn.execute("PRAGMA analysis_limit=1000")
+            self._conn.execute("PRAGMA optimize=0x10002" if on_open else "PRAGMA optimize")
 
     # S-ROLES (s-a0c67e6aa7, owner m-bba708e10e): "reviewer" is no longer a role — qa checks stories.
     # (table, indexed column, JSON path) rows still naming it; migrated to qa at every open (idempotent).

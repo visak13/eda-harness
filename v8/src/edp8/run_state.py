@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import json
 import os
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from . import settings
 
@@ -265,15 +267,41 @@ def listener_pid(port: int | None) -> int | None:
     process, not a defunct MSYS shim pid."""
     if not port:
         return None
+    memo = _scan_memo.get()
+    if memo is not None:
+        if "map" not in memo:
+            memo["map"] = _listeners()
+        return memo["map"].get(int(port))
+    return _listeners().get(int(port))
+
+
+# S22: one socket scan per status read. psutil.net_connections lists EVERY socket on the host (~3,300 here, most
+# in TIME_WAIT) at ~32 ms, and a status table asked once per service: 5 scans = 160 ms of /v1/admin/services.
+_scan_memo: ContextVar[dict[str, Any] | None] = ContextVar("edp8_listener_scan", default=None)
+
+
+@contextmanager
+def one_socket_scan() -> Iterator[None]:
+    """Inside the block listener_pid answers every port from ONE scan (a status snapshot). Never wrap a
+    start/verify step: a listener that appears after the scan would be missed."""
+    tok = _scan_memo.set({})
+    try:
+        yield
+    finally:
+        _scan_memo.reset(tok)
+
+
+def _listeners() -> dict[int, int]:
+    out: dict[int, int] = {}
     try:
         import psutil
         for c in psutil.net_connections(kind="inet"):
             if (getattr(c, "status", None) == psutil.CONN_LISTEN and c.laddr
-                    and getattr(c.laddr, "port", None) == int(port) and c.pid):
-                return int(c.pid)
+                    and getattr(c.laddr, "port", None) and c.pid):
+                out.setdefault(int(c.laddr.port), int(c.pid))
     except Exception:  # noqa: BLE001 — psutil absent or unprivileged; caller falls back to its own pid
-        return None
-    return None
+        return {}
+    return out
 
 
 def process_pid_matching(needle: str) -> int | None:

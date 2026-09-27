@@ -249,8 +249,10 @@ def make_dispatch(sup: Supervisor, emit: Callable[..., None]) -> Callable[[str, 
             sup.stop_event.set()
             return 200, {"ok": True, "state": "stopping"}
         if parts == ["status"]:
-            return 200, {"ok": True, "services": launcher.status_rows(), "paused": sorted(sup.paused),
-                         "failed": sorted(sup.failed)}
+            out = {"ok": True, "paused": sorted(sup.paused), "failed": sorted(sup.failed)}
+            if body.get("rows", True):  # S22: the board's Admin read passes rows=false (it builds its own table)
+                out["services"] = launcher.status_rows()
+            return 200, out
         if parts == ["update"]:
             return start_update(body, who)
         if len(parts) != 3 or parts[0] != "services" or parts[2] not in ("start", "stop", "restart"):

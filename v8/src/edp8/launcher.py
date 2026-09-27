@@ -209,6 +209,19 @@ def my_home_id() -> str:
     return home_id_of(settings.data_dir())
 
 
+_client: Any = None
+
+
+def _loopback() -> Any:
+    """One shared client for the loopback health probes (S22): a fresh httpx.get per probe built a new SSL
+    context each time (~8 ms of load_verify_locations), five times per Admin → Services read."""
+    global _client
+    if _client is None:
+        import httpx
+        _client = httpx.Client()
+    return _client
+
+
 def probe(svc: str, *, port_: int | None = None, timeout: float = 2.0) -> dict[str, Any] | None:
     """The health answer on `svc`'s port: its JSON body ({} when not an object), None when nothing answers
     the health route. `home_id`/`home` in it name the home that service belongs to."""
@@ -218,7 +231,7 @@ def probe(svc: str, *, port_: int | None = None, timeout: float = 2.0) -> dict[s
         return None
     import httpx
     try:
-        r = httpx.get(f"http://127.0.0.1:{p}{spec.health}", timeout=timeout)
+        r = _loopback().get(f"http://127.0.0.1:{p}{spec.health}", timeout=timeout)
     except httpx.HTTPError:
         return None
     if r.status_code >= 400:
@@ -603,6 +616,11 @@ def stop_supervisor() -> dict[str, Any]:
 # ------------------------------------------------------------------------------------------ status
 
 def status_rows() -> list[dict[str, Any]]:
+    with run_state.one_socket_scan():  # S22: one host socket scan for the whole table, not one per service
+        return _status_rows()
+
+
+def _status_rows() -> list[dict[str, Any]]:
     rows = run_state.snapshot()
     for r in rows:
         r["url"] = url(r["service"]) if r["service"] in SPECS else None

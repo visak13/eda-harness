@@ -11,6 +11,8 @@ is handed to the supervisor on a background thread and answered 202 at once with
 from __future__ import annotations
 
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -45,19 +47,46 @@ def _code_server_row(r: dict[str, Any]) -> dict[str, Any]:
     return r
 
 
-def status() -> dict[str, Any]:
-    rows = launcher.status_rows()
-    paused: list[str] = []
-    failed: list[str] = []
-    supervisor = {"running": launcher.supervisor_running(), "control": False}
+def _supervisor_state() -> dict[str, Any]:
+    """The supervisor's paused/failed sets. `rows: false` (S22) asks it NOT to build its own status table: the
+    board builds that itself, so the supervisor's copy (~530 ms on the fleet) was thrown away on every read.
+    A supervisor started before S22 ignores the flag and answers the full table; only the sets are read."""
+    supervisor: dict[str, Any] = {"running": launcher.supervisor_running(), "control": False,
+                                  "paused": [], "failed": []}
     if supervisor["running"]:
         try:
-            code, out = control.request("/status", timeout=10.0)
+            code, out = control.request("/status", {"rows": False}, timeout=10.0)
             if code == 200:
                 supervisor["control"] = True
-                paused, failed = list(out.get("paused") or []), list(out.get("failed") or [])
+                supervisor["paused"] = list(out.get("paused") or [])
+                supervisor["failed"] = list(out.get("failed") or [])
         except control.ControlUnavailable as e:
             supervisor["error"] = str(e)
+    return supervisor
+
+
+_TTL_S = 3.0
+_cache: dict[str, Any] = {"at": 0.0, "value": None}
+_cache_lock = threading.Lock()
+
+
+def invalidate() -> None:
+    with _cache_lock:
+        _cache["value"] = None
+
+
+def status(*, max_age_s: float = _TTL_S) -> dict[str, Any]:
+    """Every service's row plus the supervisor's view. The supervisor call and the local probes run
+    concurrently (S22), and an answer younger than `max_age_s` is reused: the Admin page and the tray poll
+    this, and each read probes five ports and asks the supervisor. A service action invalidates it."""
+    with _cache_lock:
+        if _cache["value"] is not None and time.monotonic() - _cache["at"] < max_age_s:
+            return _cache["value"]
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="admin-services") as pool:
+        sup_future = pool.submit(_supervisor_state)
+        rows = launcher.status_rows()
+        supervisor = sup_future.result()
+    paused, failed = supervisor.pop("paused"), supervisor.pop("failed")
     rows = [_code_server_row(r) if r["service"] == launcher.CODE else r for r in rows]
     for r in rows:
         svc = r["service"]
@@ -73,7 +102,10 @@ def status() -> dict[str, Any]:
         elif svc in paused:
             health = "stopped by admin"
         r["health"] = health
-    return {"services": rows, "supervisor": supervisor}
+    value = {"services": rows, "supervisor": supervisor}
+    with _cache_lock:
+        _cache.update(at=time.monotonic(), value=value)
+    return value
 
 
 def _refuse_unavailable(e: Exception) -> HTTPException:
@@ -102,6 +134,7 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
             control.endpoint()
         except control.ControlUnavailable as e:
             raise _refuse_unavailable(e) from None
+        invalidate()
         body = {"by": a.handle.lstrip("@"), "force": b.force, "keep_seats": b.keep_seats}
         path = f"/services/{svc}/{verb}"
         if svc == "board" and verb in ("stop", "restart"):
@@ -116,6 +149,7 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
             code, out = control.request(path, body)
         except control.ControlUnavailable as e:
             raise _refuse_unavailable(e) from None
+        invalidate()  # the action changed what a read shows; never serve the pre-action rows
         if code >= 400:
             raise HTTPException(code, str(out.get("error") or out))
         return {"ok": True, "value": out, "hint": f"{svc} {verb} done by the supervisor"}

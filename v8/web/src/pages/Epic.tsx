@@ -75,7 +75,8 @@ export function EpicPage(): React.JSX.Element {
 
   const page = useQuery({ queryKey: ["epic", id, include], queryFn: () => getEpicPage(id, include) });
   const history = useThreadHistory(id, page.data);
-  const summary = useQuery({ queryKey: ["epics", "summary", "", ""], queryFn: () => getEpicsSummary() });
+  // S22: only this epic's row (the whole list cost ~250 ms per feed event on the fleet copy)
+  const summary = useQuery({ queryKey: ["epics", "summary", "id", id], queryFn: () => getEpicsSummary({ id }) });
   // S22: before the early returns (a hook); keeps a gate answered elsewhere while its ruling is unsent.
   const gates = useRetainedGates((page.data?.answerable_gates ?? []).filter((g) => g.gate !== "design_signoff"));
   // S20 attention trail: this epic's items (its own at their opener, its tickets' behind Work)
