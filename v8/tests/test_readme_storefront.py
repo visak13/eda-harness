@@ -7,6 +7,7 @@ README carries no user-profile path, e-mail address or board id.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from urllib.parse import unquote
@@ -32,7 +33,7 @@ def _relative() -> list[str]:
 
 def test_every_relative_link_target_exists() -> None:
     rel = _relative()
-    assert len(rel) >= 15, rel  # the hero, 3 stills, 4 why-graphics, docs, changelog, contributing, licence
+    assert len(rel) >= 10, rel  # the hero, docs, guides, changelog, contributing, licence, notice
     missing = [t for t in rel if not (REPO / unquote(t.split("#")[0])).exists()]
     assert not missing, f"README links to files that do not exist: {missing}"
 
@@ -54,7 +55,10 @@ def test_urls_derive_from_the_one_repo_slug() -> None:
     # the storefront's named links are exactly the derived ones
     assert f'<a href="{brand.RELEASES_URL}"><strong>Download</strong></a>' in README
     assert f'<a href="{brand.SITE_URL}"><strong>Website</strong></a>' in README
-    assert f'<a href="{brand.VIDEO_URL}"' in README.split("</picture>")[0], "the hero must link the video"
+    # the hero and "Watch the video" open the inline player; nothing links the raw MP4 (owner m-db01fcfb40)
+    assert '<a href="#see-it-work"' in README.split("</picture>")[0], "the hero must link See it work"
+    assert '<a href="#see-it-work"><strong>Watch the video</strong></a>' in README
+    assert brand.VIDEO_URL not in README and "heronry-demo.mp4" not in README
     assert f"irm {brand.DOWNLOAD_URL}/install.ps1 | iex" in README
     assert f"curl -LsSf {brand.DOWNLOAD_URL}/install.sh | sh" in README
     assert f"-R {brand.REPO_SLUG}" in README  # gh attestation verify
@@ -80,17 +84,41 @@ def test_no_url_names_the_repo_outside_the_constant() -> None:
     assert owner not in rest.lower()
 
 
-def test_hero_badges_and_stills() -> None:
+def _see_it_work() -> str:
+    return README.split("## See it work", 1)[1].split("\n## ", 1)[0]
+
+
+def test_hero_badges_and_video() -> None:
     top = README[:2500]
     assert "docs/readme/storefront/hero.webp" in top and "docs/readme/storefront/hero.gif" in top
     for badge in ("Latest release", "CI", "Licence"):
         assert f'alt="{badge}' in top, badge
     assert brand.TAGLINE in top
-    for still in ("still-1-pool.png", "still-2-context.png", "still-3-board.png"):
-        assert f"docs/readme/storefront/{still}" in README
+    see = _see_it_work()
+    assert "<!-- VIDEO_URL: owner uploads docs/readme/storefront/heronry-demo-readme.mp4" in see
+    assert f"({brand.SITE_URL}video/)" in see  # the fallback until the user-attachments URL is pasted
+    assert "storefront/still-" not in README and "docs/readme/why/" not in README
+    for gone in ("## Why this architecture", "## How it works in one screen", "**Antivirus.**",
+                 "The antivirus removed the app"):
+        assert gone not in README, gone
     # no host captures: the storefront shows only generated frames
     for capture in ("docs/readme/needs-you.png", "docs/readme/seats.png", "docs/readme/epic-expanded.png"):
         assert capture not in README
+
+
+def test_chapter_list_matches_the_video() -> None:
+    """README and the site's Video page list the 7 numbered chapters at their start times in the composition."""
+    table = json.loads((V8 / "docs" / "video" / "src" / "chapters.json").read_text(encoding="utf-8"))
+    start, want = 0, []
+    for c in table:
+        if c["id"] != "ch7":  # the closing title card is not a numbered chapter
+            want.append((f"{start // 30 // 60}:{start // 30 % 60:02d}", c["title"]))
+        start += c["frames"]
+    assert len(want) == 7
+    video_page = (REPO / "docs" / "site" / "docs" / "video.md").read_text(encoding="utf-8")
+    for text in (_see_it_work(), video_page):
+        rows = re.findall(r"^\| (\d:\d\d) \| \*\*([^*]+?)\.?\*\*", text, re.M)
+        assert rows == want, rows
 
 
 def _section(title: str) -> str:

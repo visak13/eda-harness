@@ -44,10 +44,6 @@ jobs:
         run: |
           uv python install 3.14
           uv sync --project v8 --extra dev
-      - name: The product video player (the Watch page embeds it)
-        run: |
-          npm --prefix v8/docs/video ci
-          npm --prefix v8/docs/video run player:build
       - name: Build the site (strict)
         env:
           HERONRY_SITE_RELEASE_JSON: docs/site/fixtures/release-latest.json  # a PR never depends on a live release
@@ -91,10 +87,6 @@ jobs:
         run: |
           uv python install 3.14
           uv sync --project v8
-      - name: The product video player
-        run: |
-          npm --prefix v8/docs/video ci
-          npm --prefix v8/docs/video run player:build
       - name: Build (strict) and scan before anything is pushed
         env:
           GITHUB_TOKEN: ${{ github.token }}  # the Download page reads this release from the Releases API

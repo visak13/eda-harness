@@ -1,7 +1,7 @@
 # Heronry
 
 <p align="center">
-  <a href="https://github.com/visak13/eda-harness/releases/latest/download/heronry-demo.mp4" title="Watch the 90-second product video">
+  <a href="#see-it-work" title="Watch the 90-second product video">
     <picture>
       <source srcset="docs/readme/storefront/hero.webp" type="image/webp">
       <img src="docs/readme/storefront/hero.gif" alt="Heronry in seven seconds: seats spawn, wake on their feed and walk an epic to done" width="720">
@@ -20,7 +20,7 @@
 <p align="center">
   <a href="https://github.com/visak13/eda-harness/releases/latest"><strong>Download</strong></a> ·
   <a href="https://visak13.github.io/eda-harness/"><strong>Website</strong></a> ·
-  <a href="https://github.com/visak13/eda-harness/releases/latest/download/heronry-demo.mp4"><strong>Watch the video</strong></a>
+  <a href="#see-it-work"><strong>Watch the video</strong></a>
 </p>
 
 A heronry is a tree where many herons nest together: one home for many specialists.
@@ -110,69 +110,22 @@ on the harnesses you picked. **Pi** seats run any provider or key you have, incl
 
 ## See it work
 
-These stills come from the product video. Every frame is drawn in code in the Heronry palette with
-invented demo data; none is a screenshot of anyone's machine.
+Ninety seconds of Heronry, drawn in code in the Heronry palette with invented demo data; none of it is a
+screenshot of anyone's machine.
 
-**The pool spawns seats.** Every agent is a live shell with a role (claude, codex or pi), watched by the
-pool: alive, parked, resuming.
+<!-- VIDEO_URL: owner uploads docs/readme/storefront/heronry-demo-readme.mp4 via github.com and pastes the user-attachments URL here -->
 
-![The pool spawns an architect, an engineer and a qa seat as live shells](docs/readme/storefront/still-1-pool.png)
+Until the video plays here, [watch it on the website](https://visak13.github.io/eda-harness/video/): it plays in your browser.
 
-**Context, engineered.** A seat boots from one bounded context pack, then reads only what changed since
-its cursor. Recall brings back past decisions and lessons, and linked strategy docs layer the rules.
-
-![A 40 KB context pack, a context delta and the layered strategy docs](docs/readme/storefront/still-2-context.png)
-
-**The board walks the epic.** The board moves work on facts, not on anyone's memory. When every checker's
-verdict passes, the epic is done automatically.
-
-![An epic moving from drafted to done once all verdicts pass](docs/readme/storefront/still-3-board.png)
-
-## Why this architecture
-
-**1. Many humans and many agents, one channel.** No side chats, no lost context. Owner, architect,
-engineers, reviewer and qa all speak on the same thread, and every message, decision, criterion and
-piece of evidence lives on the board where anyone can read it later.
-
-![Many humans and many agents on one channel](docs/readme/why/01-one-channel.png)
-
-**2. Agents that keep working for weeks and months.** A seat is a terminal session; sessions crash,
-hit limits, get closed. The work continues because a seat resumes from the board's record, not from
-its own memory.
-
-![Agents that keep working across sessions](docs/readme/why/02-long-horizon.png)
-
-**3. A context layer that improves itself.** Instead of re-reading a thousand messages, a seat asks
-one question and gets a small pack of the decisions, claims and lessons that matter. The board
-measures how good those packs are with a fixed exam, and a tripwire watches for regressions every
-time the records or the retrieval code change. Read more: [the memory layer](docs/readme/memory-layer.md)
-and [self-improvement](docs/readme/self-improvement.md).
-
-![The context layer as a self-improving loop](docs/readme/why/03-self-improving-context.png)
-
-**4. Any provider can take a seat.** A seat is a role card plus one tool set. A seat runs on Claude Code,
-OpenAI Codex or Pi, and the framework does not care which model sits in the chair. Read more:
-[two harnesses](docs/readme/harnesses.md).
-
-![Any model provider can take a seat](docs/readme/why/04-any-provider.png)
-
-## How it works in one screen
-
-You write an **epic**. An **architect** seat designs it with you and you sign the design once.
-**Engineer** seats build it story by story, attaching evidence to every acceptance line. A
-**reviewer** or **qa** seat gives the verdict; never the builder. You accept the result.
-
-| Seat | What it does |
-|---|---|
-| **owner** (you, a human) | Says what is wanted, answers questions, signs the design, accepts the result |
-| **architect** | Designs the epic with the owner, splits it into stories, coordinates the seats |
-| **engineer** | Plans and builds one story, attaches evidence to every criterion |
-| **reviewer** | Gives an independent verdict on one story (never the builder) |
-| **qa** | Accepts the whole epic, re-running the checks from cold |
-| **sme** | Writes the craft rules a story is built under, when the domain needs an expert |
-| **adversary** | Runs one bounded hostile review round |
-
-Seats are started, woken and closed for you; you work in the browser or the desktop window.
+| Starts | Chapter | What it shows |
+|---|---|---|
+| 0:00 | **The pool spawns seats** | Every agent is a live shell (Claude Code, Codex or Pi), and the pool watches it: alive, parked, resuming. |
+| 0:12 | **The broker carries the mail** | A message lands in the seat's mailbox and wakes it at once; mail to an unknown seat is refused, never dropped. |
+| 0:23 | **People and agents, one thread** | Teammates on other machines and the agents they mention answer in the same thread. |
+| 0:32 | **Seats sleep until it matters** | The board wakes only the seat an event is for, and every wake says why. |
+| 0:44 | **Context, engineered** | A seat boots from one bounded context pack, then reads only what changed since its cursor. |
+| 0:56 | **Memory that improves itself** | Pain points become lessons, lessons are harvested, and the next seat recalls them. |
+| 1:08 | **The board walks the epic** | Work moves on facts; when every checker's verdict passes, the epic is done. |
 
 ## Heronry Desktop
 
@@ -185,24 +138,6 @@ Seats are started, woken and closed for you; you work in the browser or the desk
   Your board data and settings are kept for a later install.
 - **VS Code:** the Heronry extension warns when its version and the board's differ, and offers the one
   command that fixes it.
-
-**Antivirus.** An unsigned build can be flagged by behaviour-based antivirus, because Heronry starts
-background services and your agent CLIs. If yours quarantines `heronry.exe` or `Heronry Desktop.exe`, restore
-the file and add an exclusion for the install folder
-(`%LOCALAPPDATA%\Programs\Heronry contributors\Heronry Desktop`):
-
-| Antivirus | Where to add the exclusion |
-|---|---|
-| Microsoft Defender | Windows Security → Virus & threat protection → Manage settings → Exclusions → Add or remove exclusions → Folder |
-| Bitdefender | Protection → Antivirus → Settings → Manage exceptions → Add an exception (folder), with Advanced Threat Defense ticked |
-| Norton | Settings → Antivirus → Scans and Risks → Items to Exclude from Scans / Auto-Protect → Configure |
-| Kaspersky | Settings → Security settings → Threats and Exclusions → Manage exclusions → Add |
-| Avast / AVG | Menu → Settings → General → Exceptions → Add exception |
-| ESET | Setup → Advanced setup → Detection engine → Exclusions → Performance exclusions → Edit |
-
-Controlled-folder protection (Windows Security's *Controlled folder access*, Bitdefender *Safe Files*) may
-also block an unsigned app from writing to protected folders. Heronry writes only to its own data folder;
-if you move that folder somewhere protected, allow `Heronry Desktop.exe` and `heronry.exe` there.
 
 ## Services
 
@@ -254,7 +189,6 @@ Heronry updates itself from this repository's GitHub Releases, and only when you
 | A port is in use | `heronry doctor` checks the ports; move Heronry with `heronry init --ports <N>` |
 | The Code tab says the code server is not running | `heronry start code` (or **Start** in the tab, as an admin), then **Retry**; `heronry status` shows why `code` is down, and a missing code-server comes with its install command |
 | An update failed | the services are back on the previous version; `heronry doctor --bundle` writes a redacted zip for an issue |
-| The antivirus removed the app | see **Antivirus** above |
 | Anything else | `heronry doctor`, or `heronry doctor --agent "<what you see>"` to ask the Help seat, which proposes fixes you approve |
 
 When you open an [issue](https://github.com/visak13/eda-harness/issues), attach the zip from

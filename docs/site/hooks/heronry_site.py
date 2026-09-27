@@ -3,7 +3,7 @@
 - on_config: names, URLs and the version come from the product (`edp8.brand`, the installed edp8), never from
   this file; the latest release is read once (fixture or GitHub Releases API).
 - on_files: the generated pages (reference, changelog) and the assets copied from their tracked homes (brand
-  art from S7, stills from the README storefront, S17's player build when present) are added as generated
+  art from S7, the video poster and hero from the README storefront) are added as generated
   files, so nothing generated is committed and nothing can drift.
 - on_page_markdown: fills the `<!-- heronry:... -->` markers and `{{ brand.<key> }}` values.
 - on_post_build: the PII scan over the built site; a finding fails the build.
@@ -84,11 +84,6 @@ def _assets(config: Any) -> list[File]:
     for src in sorted((ROOT / "docs" / "readme" / "storefront").glob("*")):
         if src.suffix.lower() in {".png", ".webp", ".gif", ".jpg"}:
             out.append(_asset(config, f"assets/storefront/{src.name}", src))
-    player = V8 / "docs" / "video" / "player" / "dist"
-    _state["player"] = (player / "index.html").is_file()
-    if _state["player"]:
-        for src in sorted(p for p in player.rglob("*") if p.is_file()):
-            out.append(_asset(config, f"watch/player/{src.relative_to(player).as_posix()}", src))
     return out
 
 
@@ -111,11 +106,11 @@ def on_files(files: Files, config: Any) -> Files:
 
 
 def _watch_block() -> str:
+    # an inline HTML5 player over the release asset; the page never links the MP4 as a download (owner m-db01fcfb40)
     b = _state["brand"]
-    if _state.get("player"):
-        return ('<div class="hy-player"><iframe src="player/" title="The Heronry product video, playing live" '
-                'loading="lazy" allow="autoplay; fullscreen"></iframe></div>')
-    return (f'<p><a class="md-button md-button--primary" href="{b["video_url"]}">Watch the video (MP4)</a></p>')
+    return ('<video class="hy-player" controls preload="metadata" playsinline '
+            'poster="../assets/storefront/video-poster.jpg" title="The Heronry product video">'
+            f'<source src="{b["video_url"]}" type="video/mp4"></video>')
 
 
 _BRAND_RX = re.compile(r"\{\{\s*brand\.(\w+)\s*\}\}")

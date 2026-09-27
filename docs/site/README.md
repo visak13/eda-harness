@@ -24,7 +24,7 @@ HERONRY_SITE_RELEASE_JSON=docs/site/fixtures/release-latest.json \
 ```
 
 The site lands in `docs/site/site/` (git-ignored). Leave `HERONRY_SITE_RELEASE_JSON` unset to read the live
-latest release. `mkdocs serve -f docs/site/mkdocs.yml` previews it. The Watch page embeds the product video's
-live player when `v8/docs/video/player/dist` is built (`npm run player:build` there); otherwise it links the MP4.
+latest release. `mkdocs serve -f docs/site/mkdocs.yml` previews it. The Video page plays the release's product video
+in an HTML5 `<video>` player; no page links the MP4 as a download.
 
 Tests: `cd v8 && uv run --with-requirements ../docs/site/requirements.txt pytest tests/test_site_reference.py`.

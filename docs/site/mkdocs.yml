@@ -78,7 +78,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Download: download.md
-  - Watch: watch.md
+  - Video: video.md
   - Setup guide:
       - setup/index.md
       - First run: setup/first-run.md

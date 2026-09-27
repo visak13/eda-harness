@@ -17,7 +17,7 @@ You say what you want in your own words. A team of AI seats designs it with you,
 cold, and leaves every decision and proof on the board.
 
 [Download](download.md){ .md-button .md-button--primary }
-[Watch the video](watch.md){ .md-button }
+[Watch the video](video.md){ .md-button }
 [Set it up](setup/index.md){ .md-button }
 </div>
 <div markdown>
@@ -42,38 +42,8 @@ on your own machine as a few small services and a board you open in your browser
 - **Any provider.** A seat runs on Claude Code, OpenAI Codex or Pi with any model provider. See
   [harnesses and models](setup/harnesses.md).
 
-## How it works
-
-| Seat | What it does |
-|---|---|
-| **owner** (you, a human) | Says what is wanted, answers questions, signs the design, accepts the result |
-| **architect** | Designs the epic with the owner, splits it into stories, coordinates the seats |
-| **engineer** | Plans and builds one story, attaches evidence to every criterion |
-| **qa** | Accepts the whole epic, re-running the checks from cold |
-| **sme** | Writes the craft rules a story is built under, when the domain needs an expert |
-| **adversary** | Runs one bounded hostile review round |
-
 Read the [concepts](docs/concepts.md) for the whole picture, or change who does what in the
 [Design tab](docs/design-tab.md).
-
-## A look inside
-
-<div class="hy-stills" markdown>
-<figure markdown>
-![The pool starts seats as live shells](assets/storefront/still-1-pool.png)
-<figcaption>The pool starts seats as live shells.</figcaption>
-</figure>
-<figure markdown>
-![A bounded context pack feeds every seat](assets/storefront/still-2-context.png)
-<figcaption>A bounded context pack feeds every seat.</figcaption>
-</figure>
-<figure markdown>
-![An epic walks the board to done](assets/storefront/still-3-board.png)
-<figcaption>An epic walks the board to done.</figcaption>
-</figure>
-</div>
-
-These frames are drawn from invented demo data, never from a real board.
 
 ## Get started
 

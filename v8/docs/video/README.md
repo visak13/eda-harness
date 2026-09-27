@@ -22,7 +22,7 @@ Renders go to `out/` (git-ignored). Large renders are attached to the GitHub Rel
 
 ## Play it live
 `player/` is a small page that plays the same `Main` composition through `@remotion/player`
-(no video file needed); the project site embeds it.
+(no video file needed). The project site plays the rendered MP4 in an HTML5 player instead.
 
 ```sh
 npm run player:build   # static page in player/dist/
