@@ -5,7 +5,7 @@ import type { Change, DryRun, MergeResult, Problem, WorkflowDef, WorkflowRow } f
 import ui from "../../components/ui.module.css";
 import { AdminError } from "../admin/shared";
 import styles from "./Design.module.css";
-import { PANELS, panelFor, short, type PanelKey } from "./model";
+import { FIELD_NAME, PANELS, PROBLEM_TITLE, panelFor, plain, plainText, roleLabel, short, type PanelKey } from "./model";
 
 // S14 (§4.14(e).2-4): Validate (the board's lint + the dry run, each issue linked to the panel where it is
 // fixed), Dry run (the timeline of a synthetic epic), Diff (against the version it came from) and the
@@ -17,9 +17,10 @@ export function StepTitle({ n, children }: { n: number; children: React.ReactNod
   return <h2 className={styles.stepTitle}><span className={styles.stepNum} aria-hidden="true">{n}</span>{children}</h2>;
 }
 
-export function ValidatePanel({ problems, ran, onGo }: {
-  problems: Problem[] | null; ran: boolean; onGo: (panel: PanelKey, role?: string, field?: string) => void;
+export function ValidatePanel({ problems, ran, onGo, wf }: {
+  problems: Problem[] | null; ran: boolean; onGo: (panel: PanelKey, role?: string, field?: string) => void; wf?: WorkflowDef;
 }): React.JSX.Element {
+  const roleName = (id: string) => { const r = wf?.roles.find((x) => x.id === id); return r ? roleLabel(r) : id; };
   const errors = (problems ?? []).filter((p) => p.severity === "error");
   const warnings = (problems ?? []).filter((p) => p.severity !== "error");
   return (
@@ -34,14 +35,15 @@ export function ValidatePanel({ problems, ran, onGo }: {
           const label = PANELS.find((x) => x.key === go.panel)?.label ?? go.panel;
           return (
             <li key={i} className={`${styles.problem} ${p.severity === "error" ? "" : styles.problemWarn}`} data-testid={`problem-${p.code}`}>
-              <span className={styles.problemCode}>{p.severity === "error" ? "Error" : "Warning"} · {p.code}</span>
-              <span>{p.message}</span>
-              {p.why ? <span className={styles.help}><strong>Why:</strong> {p.why}</span> : null}
-              {p.fix ? <span className={styles.help}><strong>Fix:</strong> {p.fix}</span> : null}
+              <span className={styles.problemCode}>{p.severity === "error" ? "Error" : "Warning"}: {PROBLEM_TITLE[p.code] ?? plain(p.code)}
+                {" "}<code className={styles.keyName} title={`The board's code for this problem: ${p.code}`}>{p.code}</code></span>
+              <span title={p.message} data-testid={`problem-text-${p.code}`}>{plainText(p.message, wf)}</span>
+              {p.why ? <span className={styles.help}><strong>Why:</strong> {plainText(p.why, wf)}</span> : null}
+              {p.fix ? <span className={styles.help}><strong>Fix:</strong> {plainText(p.fix, wf)}</span> : null}
               <span>
                 <button type="button" className={`${ui.button} ${styles.small}`} data-testid={`problem-go-${p.code}`}
                   onClick={() => onGo(go.panel, go.role, go.field)}>
-                  Go to {label}{go.role ? ` → ${go.role}` : ""}{go.field ? ` → ${go.field.replaceAll("_", " ")}` : ""}
+                  Go to {label}{go.role ? ` → ${roleName(go.role)}` : ""}{go.field ? ` → ${FIELD_NAME[go.field] ?? plain(go.field)}` : ""}
                 </button>
               </span>
             </li>

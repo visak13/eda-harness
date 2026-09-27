@@ -112,6 +112,7 @@
 .fieldRow input[type="text"],
 .fieldRow input[type="number"],
 .fieldRow input[type="password"],
+.fieldRow input[type="url"],
 .fieldRow select {
   min-width: min(420px, 100%);
 }
@@ -379,8 +380,13 @@
   flex: 0 0 auto;
   width: 320px;
   max-width: 100%;
-  height: auto;
   border-radius: 10px;
+  overflow: hidden;
+}
+.guideImg svg {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 .guideNum {
   display: inline-grid;

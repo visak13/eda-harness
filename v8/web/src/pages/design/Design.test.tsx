@@ -93,7 +93,7 @@ describe("pipeline view", () => {
     expect(roleLayers(INVALID).unreached).toContain("designer");
     wrap(<PipelineView wf={INVALID} />);
     expect(screen.getByTestId("role-node-designer")).toHaveTextContent("no spawner");
-    expect(screen.getByTestId("pipeline-unreached")).toHaveTextContent("designer");
+    expect(screen.getByTestId("pipeline-unreached")).toHaveTextContent("Designer");
   });
 });
 
@@ -201,6 +201,35 @@ describe("hooks, gates and caps", () => {
 });
 
 describe("validate and dry run", () => {
+  it("S14 reopen: problems read in plain words; the board's code and raw message stay in a detail and tooltip", () => {
+    wrap(<ValidatePanel problems={INVALID.problems} ran onGo={() => {}} wf={INVALID} />);
+    const panel = screen.getByTestId("design-validate");
+    const shown = (() => { const c = panel.cloneNode(true) as HTMLElement; c.querySelectorAll("code").forEach((e) => e.remove()); return c.textContent ?? ""; })();
+    expect(shown).not.toMatch(/[a-z]+_[a-z_]+/); // no snake_case ids
+    expect(shown).not.toMatch(/role '|caps.[a-z]|`/);
+    expect(screen.getByTestId("problem-role_without_spawner")).toHaveTextContent("Nobody can start this role");
+    expect(screen.getByTestId("problem-text-role_without_spawner")).toHaveTextContent("the Designer role can be started but no role may start it");
+    expect(screen.getByTestId("problem-text-bundle_missing")).toHaveTextContent("the Designer role has no tools");
+    expect(screen.getByTestId("problem-text-role_without_spawner")).toHaveAttribute("title", expect.stringContaining("role 'designer'"));
+    expect(screen.getByTestId("problem-text-cap_below_1")).toHaveTextContent('"Tasks per story" is 0');
+    expect(within(screen.getByTestId("problem-card_missing")).getByText("card_missing").tagName).toBe("CODE");
+    expect(screen.getByTestId("problem-go-card_missing")).toHaveTextContent("Go to Roles → Designer → Card");
+  });
+
+  it("S14 reopen: the role form names tools and permissions in words, ids only in tooltips", () => {
+    server.use(...workflowHandlers());
+    const props = { savedRef: "standard@1", templates: TEMPLATES, catalog: MODEL_CATALOG as unknown as ModelCatalog, errorRoles: new Set<string>() };
+    wrap(<RolePanel {...props} wf={STANDARD} editable={false} selected="engineer" onSelect={() => {}} onChange={() => {}} />);
+    const tools = screen.getByTestId("role-tools");
+    expect(tools).toHaveTextContent("Create tickets");
+    expect(screen.getByTestId("role-tool-ticket_create").closest("label")).toHaveAttribute("title", expect.stringContaining("tool id: ticket_create"));
+    const perms = screen.getByTestId("role-perm-task_verdict").closest("label")!;
+    expect(perms).toHaveTextContent("Judge tasks");
+    expect(perms).toHaveAttribute("title", expect.stringContaining("permission id: task_verdict"));
+    const c = (screen.getByTestId("role-form-engineer").querySelector("[data-field='permissions']")!.cloneNode(true) as HTMLElement);
+    expect(c.textContent).not.toMatch(/[a-z]+_[a-z_]+/);
+  });
+
   it("lists the invalid draft's planted errors inline, each linked to the panel that fixes it", async () => {
     const onGo = vi.fn();
     wrap(<ValidatePanel problems={INVALID.problems} ran onGo={onGo} />);

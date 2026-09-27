@@ -206,7 +206,7 @@ export function DesignPage(): React.JSX.Element {
               ) : null}
               {panel === "publish" ? (
                 <>
-                  <ValidatePanel problems={problems ?? (editable ? null : wfq.data?.problems ?? [])} ran={problems !== null || !editable} onGo={go} />
+                  <ValidatePanel problems={problems ?? (editable ? null : wfq.data?.problems ?? [])} ran={problems !== null || !editable} onGo={go} wf={draft} />
                   <DryRunPanel run={run} pending={dry.isPending} error={dry.error} onRun={() => dry.mutate(draft)} />
                   <DiffPanel key={refOf(draft)} wf={draft} rows={rows.filter((r) => r.ref !== refOf(draft))} />
                   <PublishSummary wf={draft} rows={rows} editable={editable} errors={problems ? errorCount : null}

@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 150" width="320" height="150" font-family="system-ui,Segoe UI,sans-serif" font-size="11" role="img" aria-label="Readiness checklist: admin token, loopback bind, tokens; every blocker cleared">
-<title>Readiness</title><rect width="320" height="150" rx="10" fill="#F8F1E8"/>
-<rect x="60" y="18" width="200" height="104" rx="8" fill="#FFF9F2" stroke="#30231E" stroke-width="1.5"/>
-<g fill="#30231E"><text x="100" y="46">admin token is not the default</text><text x="100" y="72">board listens on 127.0.0.1 only</text><text x="100" y="98">people and agents have tokens</text></g>
-<g stroke="#9B4734" stroke-width="2.5" fill="none" stroke-linecap="round"><path d="m78 42 5 5 9-9"/><path d="m78 68 5 5 9-9"/><path d="m78 94 5 5 9-9"/></g>
-<text x="160" y="140" text-anchor="middle" fill="#30231E">0 blockers = ready to share.</text>
+<title>Readiness</title><rect width="320" height="150" rx="10" style="fill:var(--bg,#F8F1E8)"/>
+<rect x="60" y="18" width="200" height="104" rx="8" stroke-width="1.5" style="fill:var(--panel,#FFF9F2);stroke:var(--ink,#30231E)"/>
+<g style="fill:var(--ink,#30231E)"><text x="100" y="46">admin token is not the default</text><text x="100" y="72">board listens on 127.0.0.1 only</text><text x="100" y="98">people and agents have tokens</text></g>
+<g stroke-width="2.5" fill="none" stroke-linecap="round" style="stroke:var(--accentink,#9B4734)"><path d="m78 42 5 5 9-9"/><path d="m78 68 5 5 9-9"/><path d="m78 94 5 5 9-9"/></g>
+<text x="160" y="140" text-anchor="middle" style="fill:var(--ink,#30231E)">0 blockers = ready to share.</text>
 </svg>

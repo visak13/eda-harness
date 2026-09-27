@@ -183,17 +183,31 @@ function SlackCard({ onRestartRequired }: { onRestartRequired: (s: string[]) => 
       <StatusLine state={stateOf(configured, test, test.data ? `sent to ${test.data.value.to}` : undefined)} testid="slack-status" />
       <AdminError error={q.error} testid="slack-error" />
       <form className={styles.panel} onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
-        <label className={styles.capCell}>Bot token
-          <input className={ui.input} type="password" autoComplete="new-password" value={bot} onChange={(e) => setBot(e.target.value)}
-            placeholder={slack?.bot_token_set ? `set ${MASK}: type to replace` : "xoxb-… (optional)"} data-testid="slack-bot-token" />
-        </label>
-        <label className={styles.capCell}>Default webhook
-          <input className={ui.input} type="url" value={webhook} onChange={(e) => setWebhook(e.target.value)}
-            placeholder={slack?.webhook_set ? `${String(slack.config.webhook_url ?? "")}: paste a new one to replace` : "https://hooks.slack.com/services/…"} data-testid="slack-webhook" />
-        </label>
-        <label className={styles.capCell}>Board URL in messages
-          <input className={ui.input} value={boardUrl} onChange={(e) => setBoardUrl(e.target.value)} data-testid="slack-board-url" />
-        </label>
+        {/* S14 reopen (qa m-c4f23e49f0): Admin's standard field (label, hint, min(420px, 100%) input), not the
+            100 px cap cell these once borrowed */}
+        <div className={styles.field} data-testid="slack-field-bot">
+          <label htmlFor="slack-bot-token" className={styles.fieldLabel}>Bot token</label>
+          <p className={styles.fieldDoc}>Sends direct messages to people. From your Slack app's OAuth page; starts with xoxb-. Optional if you use a webhook.</p>
+          <div className={styles.fieldRow}>
+            <input id="slack-bot-token" className={ui.input} type="password" autoComplete="new-password" value={bot} onChange={(e) => setBot(e.target.value)}
+              placeholder={slack?.bot_token_set ? `set ${MASK}: type to replace` : "xoxb-… (optional)"} data-testid="slack-bot-token" />
+          </div>
+        </div>
+        <div className={styles.field} data-testid="slack-field-webhook">
+          <label htmlFor="slack-webhook" className={styles.fieldLabel}>Default webhook</label>
+          <p className={styles.fieldDoc}>Posts to one channel when a person has no Slack of their own. From Slack's Incoming webhooks page.</p>
+          <div className={styles.fieldRow}>
+            <input id="slack-webhook" className={ui.input} type="url" value={webhook} onChange={(e) => setWebhook(e.target.value)}
+              placeholder={slack?.webhook_set ? `${String(slack.config.webhook_url ?? "")}: paste a new one to replace` : "https://hooks.slack.com/services/…"} data-testid="slack-webhook" />
+          </div>
+        </div>
+        <div className={styles.field} data-testid="slack-field-board-url">
+          <label htmlFor="slack-board-url" className={styles.fieldLabel}>Board URL in messages</label>
+          <p className={styles.fieldDoc}>The address each ping links back to. Use one your team can open, such as the tailnet URL from Remote access.</p>
+          <div className={styles.fieldRow}>
+            <input id="slack-board-url" className={ui.input} type="text" value={boardUrl} onChange={(e) => setBoardUrl(e.target.value)} data-testid="slack-board-url" />
+          </div>
+        </div>
         <div className={styles.row}>
           <button type="submit" className={`${ui.button} ${ui.buttonPrimary}`} disabled={save.isPending} data-testid="slack-save">{save.isPending ? "Saving…" : "Save Slack"}</button>
           <select className={ui.select} value={who} onChange={(e) => setWho(e.target.value)} aria-label="Test destination" data-testid="slack-test-who">

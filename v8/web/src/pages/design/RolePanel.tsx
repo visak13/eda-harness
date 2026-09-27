@@ -7,7 +7,7 @@ import type { CapacityClass, RoleDef, Templates, WorkflowDef } from "../../api/w
 import { Markdown } from "../../components/Markdown";
 import ui from "../../components/ui.module.css";
 import styles from "./Design.module.css";
-import { DOC_TYPES, EFFORTS, FIELD_HELP, KINDS, NON_AGENT_ROLES, PERMISSION_HELP, ROLE_ID, roleLabel, spawnersOf } from "./model";
+import { DOC_TYPES, DOC_TYPE_LABEL, EFFORTS, FIELD_HELP, KINDS, KIND_PLURAL, NEED_LABEL, NON_AGENT_ROLES, PERMISSION_HELP, PERMISSION_LABEL, ROLE_ID, roleLabel, plainHint, spawnersOf, toolLabel } from "./model";
 
 // S14 (§4.14(c)-(e)): one role at a time — its model/harness/effort from the S12 catalog, its card (a
 // markdown editor with the board's own preview), its tool checklist and its permissions — plus Add role
@@ -144,18 +144,24 @@ function RoleForm({ wf, savedRef, editable, templates, catalog, role, onChange, 
       {role.human ? null : <CardEditor role={role} savedRef={savedRef} editable={editable} onChange={(card_md) => set({ card_md })} />}
       {role.human ? null : (
         <div className={styles.field} data-field="bundle">
-          <span className={styles.fieldLabel}>Tools ({(role.bundle ?? []).length} ticked + {kernel.size} kernel)</span>
+          <span className={styles.fieldLabel}>Tools ({(role.bundle ?? []).length} ticked, plus {kernel.size} every seat has)</span>
           <Help k="bundle" />
           <div className={styles.toolGrid} data-testid="role-tools">
             {(templates?.tools ?? []).map((t) => {
               const isKernel = kernel.has(t.name);
               const need = needs[t.name];
               return (
-                <label key={t.name} className={styles.check} title={t.description}>
+                // S14 reopen: the plain name, the board's one-line description as its hint, the id only in the tooltip
+                <label key={t.name} className={`${styles.check} ${styles.tool}`} title={`${t.description} (tool id: ${t.name})`}>
                   <input type="checkbox" disabled={dis || isKernel} checked={isKernel || (role.bundle ?? []).includes(t.name)}
                     data-testid={`role-tool-${t.name}`} onChange={(e) => set({ bundle: toggleIn(role.bundle, t.name, e.target.checked) })} />
-                  <span className={styles.mono}>{t.name}</span>
-                  {isKernel ? <span className={styles.badge}>kernel</span> : need ? <span className={styles.badge} title={`needs the ${need[0]} permission`}>needs {need[0]}</span> : null}
+                  <span className={styles.toolText}>
+                    <span>{toolLabel(t.name)}
+                      {isKernel ? <span className={styles.badge} title="Every seat has this tool">always on</span>
+                        : need ? <span className={styles.badge} title={`The board lets a role use this only if it ${NEED_LABEL[need[0]] ?? need[0]}`}>needs “{NEED_LABEL[need[0]] ?? need[0]}”</span> : null}
+                    </span>
+                    <span className={styles.toolHint}>{plainHint(t.description)}</span>
+                  </span>
                 </label>
               );
             })}
@@ -167,14 +173,14 @@ function RoleForm({ wf, savedRef, editable, templates, catalog, role, onChange, 
         <div className={styles.checks}>
           {!role.human ? (
             <label className={styles.check} data-field="spawnable">
-              <input type="checkbox" checked={Boolean(role.spawnable)} disabled={dis} data-testid="role-spawnable" onChange={(e) => set({ spawnable: e.target.checked })} />spawnable
+              <input type="checkbox" checked={Boolean(role.spawnable)} disabled={dis} data-testid="role-spawnable" onChange={(e) => set({ spawnable: e.target.checked })} />can be started as a seat
             </label>
           ) : null}
           <label className={styles.check} data-field="criterion_author">
-            <input type="checkbox" checked={Boolean(role.criterion_author)} disabled={dis} data-testid="role-author" onChange={(e) => set({ criterion_author: e.target.checked })} />authors criteria
+            <input type="checkbox" checked={Boolean(role.criterion_author)} disabled={dis} data-testid="role-author" onChange={(e) => set({ criterion_author: e.target.checked })} />writes checks (criteria)
           </label>
           <label className={styles.check} data-field="criterion_checker">
-            <input type="checkbox" checked={Boolean(role.criterion_checker)} disabled={dis} data-testid="role-checker" onChange={(e) => set({ criterion_checker: e.target.checked })} />checks criteria
+            <input type="checkbox" checked={Boolean(role.criterion_checker)} disabled={dis} data-testid="role-checker" onChange={(e) => set({ criterion_checker: e.target.checked })} />judges checks (pass or fail)
           </label>
           <label className={styles.check} data-field="gate_answerer">
             <input type="checkbox" checked={Boolean(role.gate_answerer)} disabled={dis} data-testid="role-gate" onChange={(e) => set({ gate_answerer: e.target.checked })} />answers gates
@@ -182,7 +188,7 @@ function RoleForm({ wf, savedRef, editable, templates, catalog, role, onChange, 
         </div>
         <span className={styles.help}>{FIELD_HELP.criterion_checker} {FIELD_HELP.gate_answerer}</span>
         <div className={styles.field} data-field="may_spawn">
-          <span className={styles.fieldLabel}>May spawn</span>
+          <span className={styles.fieldLabel}>May start seats of</span>
           <div className={styles.checks}>
             {others.filter((o) => !o.human).map((o) => (
               <label key={o.id} className={styles.check}>
@@ -195,7 +201,7 @@ function RoleForm({ wf, savedRef, editable, templates, catalog, role, onChange, 
         </div>
         {!role.human ? (
           <div className={styles.field} data-field="spawned_by">
-            <span className={styles.fieldLabel}>Spawned by</span>
+            <span className={styles.fieldLabel}>Started by</span>
             <div className={styles.checks}>
               {others.map((o) => (
                 <label key={o.id} className={styles.check}>
@@ -208,12 +214,12 @@ function RoleForm({ wf, savedRef, editable, templates, catalog, role, onChange, 
           </div>
         ) : null}
         <div className={styles.field} data-field="may_create">
-          <span className={styles.fieldLabel}>May create</span>
+          <span className={styles.fieldLabel}>May create tickets</span>
           <div className={styles.checks}>
             {KINDS.map((k) => (
               <label key={k} className={styles.check}>
                 <input type="checkbox" disabled={dis} checked={(role.may_create ?? []).includes(k)} data-testid={`role-may-create-${k}`}
-                  onChange={(e) => set({ may_create: toggleIn(role.may_create, k, e.target.checked) })} />{k}
+                  onChange={(e) => set({ may_create: toggleIn(role.may_create, k, e.target.checked) })} />{KIND_PLURAL[k] ?? k}
               </label>
             ))}
           </div>
@@ -224,7 +230,7 @@ function RoleForm({ wf, savedRef, editable, templates, catalog, role, onChange, 
             {DOC_TYPES.map((k) => (
               <label key={k} className={styles.check}>
                 <input type="checkbox" disabled={dis} checked={(role.doc_types ?? []).includes(k)}
-                  onChange={(e) => set({ doc_types: toggleIn(role.doc_types, k, e.target.checked) })} />{k}
+                  onChange={(e) => set({ doc_types: toggleIn(role.doc_types, k, e.target.checked) })} />{DOC_TYPE_LABEL[k] ?? k}
               </label>
             ))}
           </div>
@@ -233,9 +239,9 @@ function RoleForm({ wf, savedRef, editable, templates, catalog, role, onChange, 
           <span className={styles.fieldLabel}>Workflow permissions</span>
           <div className={styles.checks}>
             {Object.keys(wf.permissions).map((k) => (
-              <label key={k} className={styles.check} title={PERMISSION_HELP[k]}>
+              <label key={k} className={styles.check} title={`${PERMISSION_HELP[k] ?? ""} (permission id: ${k})`}>
                 <input type="checkbox" disabled={dis} checked={(wf.permissions[k] ?? []).includes(role.id)} data-testid={`role-perm-${k}`}
-                  onChange={(e) => setPermission(k, e.target.checked)} />{k}
+                  onChange={(e) => setPermission(k, e.target.checked)} />{PERMISSION_LABEL[k] ?? k.replaceAll("_", " ")}
               </label>
             ))}
           </div>

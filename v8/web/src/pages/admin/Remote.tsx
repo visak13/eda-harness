@@ -6,18 +6,21 @@ import { Markdown } from "../../components/Markdown";
 import ui from "../../components/ui.module.css";
 import styles from "./Admin.module.css";
 import { AdminError, CopyButton, Done } from "./shared";
-import purposeSvg from "../../../../assets/guides/remote-access-1-purpose.svg";
-import installSvg from "../../../../assets/guides/remote-access-2-install.svg";
-import signinSvg from "../../../../assets/guides/remote-access-3-signin.svg";
-import readySvg from "../../../../assets/guides/remote-access-4-ready.svg";
-import serveSvg from "../../../../assets/guides/remote-access-5-serve.svg";
-import restartSvg from "../../../../assets/guides/remote-access-6-restart.svg";
+import purposeSvg from "../../../../assets/guides/remote-access-1-purpose.svg?raw";
+import installSvg from "../../../../assets/guides/remote-access-2-install.svg?raw";
+import signinSvg from "../../../../assets/guides/remote-access-3-signin.svg?raw";
+import readySvg from "../../../../assets/guides/remote-access-4-ready.svg?raw";
+import serveSvg from "../../../../assets/guides/remote-access-5-serve.svg?raw";
+import restartSvg from "../../../../assets/guides/remote-access-6-restart.svg?raw";
 
 // Admin → Remote access (design §4.8, R7 a; t-20f0718990, owner m-3136ceca05 "nothing clear on that tab. no
 // mention about the tailscale setup"): a numbered, guided Tailscale setup. Each step says what to do, shows
 // its diagram (assets/guides/remote-access-*.svg) and a done / not done chip computed from the live
 // GET /v1/admin/tailnet (the board runs `tailscale status` / `tailscale serve status`); Check again re-reads
 // it. guides/remote-access.md is the same walk as a written guide, opened from the header.
+// S14 reopen (qa m-c4f23e49f0, owner m-b841864899 "everything aligns with our app theme"): the diagrams are
+// inlined, not <img>, because an <img> SVG is its own document and never sees data-theme; their colours are
+// var(--token, light fallback), so they follow every theme here and keep the light look when opened alone.
 
 const TAILSCALE_DL = [
   { os: "Windows", href: "https://tailscale.com/download/windows" },
@@ -57,7 +60,8 @@ function Step({ n, title, state, img, alt, children, testid }: {
         </div>
         {children}
       </div>
-      <img className={styles.guideImg} src={img} alt={alt} width={320} height={150} />
+      <div className={styles.guideImg} role="img" aria-label={alt} data-testid={`${testid}-img`}
+        dangerouslySetInnerHTML={{ __html: img.replace("<svg ", '<svg aria-hidden="true" focusable="false" ') }} />
     </li>
   );
 }

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { Transition, WorkflowDef } from "../../api/workflows";
 import styles from "./Design.module.css";
-import { GATE_EDGE, GATE_LABEL, MAIN_PATH, checksByRole, plain, preconditionText, roleLabel, roleLayers, whoTakes } from "./model";
-import { CHAR_W, FLOW, GRID, cellRect, flowSlots, flowWidth, polyline, routeRoles, wrapWords, type EdgeIn } from "./pipelineLayout";
+import { GATE_EDGE, GATE_LABEL, MAIN_PATH, checksByRole, plain, preconditionKey, preconditionText, roleLabel, roleLayers, whoTakes } from "./model";
+import { CHAR_W, FLOW, GRID, cellRect, flowSlots, flowWidth, placeCells, polyline, routeRoles, wrapWords, type EdgeIn } from "./pipelineLayout";
 
 // S14 (§4.14(c)): the pipeline at a glance — who spawns whom and who checks what (roles graph), then the
 // status flow with the gates between stages. Every edge comes from the definition; the full transition
@@ -47,58 +47,63 @@ function RolesGraph({ wf }: { wf: WorkflowDef }): React.JSX.Element {
   const { layers, unreached, idle } = roleLayers(wf);
   const checks = checksByRole(wf);
   const cols = [...layers, ...(unreached.length ? [unreached] : [])];
-  const cells = new Map<string, { col: number; row: number }>();
-  cols.forEach((col, ci) => col.forEach((id, ri) => cells.set(id, { col: ci, row: ri })));
+  const inGraph = new Set(cols.flat());
   const byId = new Map(wf.roles.map((r) => [r.id, r]));
-  const builders = wf.roles.filter((r) => r.capacity_class === "builder" && cells.has(r.id)).map((r) => r.id);
-  const edges: (EdgeIn & { kind: "spawn" | "check" })[] = [
-    ...wf.roles.flatMap((r) => (r.may_spawn ?? []).filter((s) => cells.has(s) && cells.has(r.id))
+  const builders = wf.roles.filter((r) => r.capacity_class === "builder" && inGraph.has(r.id)).map((r) => r.id);
+  const edges: EdgeIn[] = [
+    ...wf.roles.flatMap((r) => (r.may_spawn ?? []).filter((s) => inGraph.has(s) && inGraph.has(r.id))
       .map((s) => ({ id: `spawn-edge-${r.id}-${s}`, from: r.id, to: s, kind: "spawn" as const }))),
-    ...Object.entries(checks).flatMap(([checker, kinds]) => cells.has(checker)
-      ? builders.filter((b) => b !== checker).map((b) => ({ id: `check-edge-${checker}-${b}`, from: checker, to: b, kind: "check" as const, label: `checks ${kinds.join(", ")}` }))
+    ...Object.entries(checks).flatMap(([checker]) => inGraph.has(checker)
+      ? builders.filter((b) => b !== checker).map((b) => ({ id: `check-edge-${checker}-${b}`, from: checker, to: b, kind: "check" as const }))
       : []),
   ];
-  const kindOf = new Map(edges.map((e) => [e.id, e.kind]));
-  const { routes, extraHeight, rows } = routeRoles(cells, edges);
+  const cells = placeCells(cols, edges);
+  const { routes, rows } = routeRoles(cells, edges);
   const width = GRID.PADX + cols.length * (GRID.W + GRID.COLGAP);
-  const height = Math.max(120, GRID.PADY + rows * (GRID.H + GRID.ROWGAP) + extraHeight);
+  const height = Math.max(120, GRID.PADY + rows * (GRID.H + GRID.ROWGAP));
   const unreachedSet = new Set(unreached);
-  const fit = (text: string, room: number) => (text.length * CHAR_W <= room ? text : null);
+  const label = (id: string) => { const r = byId.get(id); return r ? roleLabel(r) : id; };
+  // one line per fact, each whole: what the role is, then what it checks (the dashed arrows carry no label)
+  const lines = (id: string): string[] => {
+    const r = byId.get(id)!;
+    const what = unreachedSet.has(id) ? "no spawner" : r.human ? "a person" : `${r.capacity_class ?? "no class"}${r.max_concurrent ? ` · max ${r.max_concurrent}` : ""}`;
+    const chk = checks[id] ? `checks ${checks[id].join(", ")}` : "";
+    return [what, ...(chk ? [chk] : [])];
+  };
+  const room = Math.floor((GRID.W - 20) / CHAR_W);
   return (
     <>
       <div className={styles.svgWrap}>
         <svg className={`${styles.svg} ${styles.svgFit}`} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" data-testid="pipeline-roles"
-          aria-label={`Roles: ${cols.flat().map((id) => `${id}${byId.get(id)?.human ? " (human)" : ""} spawns ${(byId.get(id)?.may_spawn ?? []).join(", ") || "nobody"}`).join("; ")}`}>
+          aria-label={`Roles: ${cols.flat().map((id) => `${label(id)}${byId.get(id)?.human ? " (a person)" : ""} starts ${(byId.get(id)?.may_spawn ?? []).map(label).join(", ") || "nobody"}${checks[id] ? ` and checks ${checks[id].join(", ")}` : ""}`).join("; ")}`}>
           <defs>
             <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M0 0L10 5L0 10z" fill="currentColor" />
             </marker>
           </defs>
-          {routes.map((r) => kindOf.get(r.id) === "spawn" ? (
+          {routes.map((r) => r.kind === "spawn" ? (
             <path key={r.id} className={styles.edgeSpawn} markerEnd="url(#arrow)" data-testid={r.id} data-from={r.from} data-to={r.to} d={polyline(r.points)}>
-              <title>{r.from} starts seats of {r.to}</title>
+              <title>{label(r.from)} starts seats of {label(r.to)}</title>
             </path>
           ) : (
             <g key={r.id} data-testid={r.id} data-from={r.from} data-to={r.to}>
               <path className={styles.edgeCheck} markerEnd="url(#arrow)" d={polyline(r.points)}>
-                <title>{r.from} {r.label?.text} work of {r.to}</title>
+                <title>{label(r.from)} checks the work of {label(r.to)} ({(checks[r.from] ?? []).join(", ")})</title>
               </path>
-              {r.label ? <text className={`${styles.edgeLabel} ${styles.halo}`} x={r.label.x} y={r.label.y} textAnchor="middle">{r.label.text}</text> : null}
             </g>
           ))}
           {cols.flat().map((id) => {
             const r = byId.get(id)!; const p = cellRect(cells.get(id)!.col, cells.get(id)!.row);
             const cls = [styles.node, r.human ? styles.nodeHuman : "", unreachedSet.has(id) ? styles.nodeUnreached : ""].join(" ");
-            const sub = r.human ? "human" : `${r.capacity_class ?? "no class"}${r.max_concurrent ? ` · max ${r.max_concurrent}` : ""}`;
-            const full = `${unreachedSet.has(id) ? "no spawner" : sub}${checks[id] ? ` · checks ${checks[id].join(", ")}` : ""}`;
-            // the sub line never ends mid-word: the full line when it fits, else the class alone (full text in the tooltip)
-            const shown = fit(full, GRID.W - 20) ?? (unreachedSet.has(id) ? "no spawner" : sub);
+            const ls = lines(id);
             return (
               <g key={id} className={cls} transform={`translate(${p.x} ${p.y})`} data-testid={`role-node-${id}`}>
-                <title>{`${roleLabel(r)}: ${full}`}</title>
+                <title>{`${roleLabel(r)}: ${ls.join(" · ")}`}</title>
                 <rect width={GRID.W} height={GRID.H} rx={8} />
-                <text className={styles.nodeLabel} x={10} y={19}>{roleLabel(r)}</text>
-                <text className={styles.nodeSub} x={10} y={36}>{shown}</text>
+                <text className={styles.nodeLabel} x={10} y={ls.length > 1 ? 18 : 23}>{roleLabel(r)}</text>
+                {ls.map((l, i) => (
+                  <text key={i} className={styles.nodeSub} x={10} y={(ls.length > 1 ? 34 : 40) + i * 14}>{l.length > room ? `${l.slice(0, l.lastIndexOf(" ", room))} …` : l}</text>
+                ))}
               </g>
             );
           })}
@@ -106,9 +111,9 @@ function RolesGraph({ wf }: { wf: WorkflowDef }): React.JSX.Element {
       </div>
       <div className={styles.legend}>
         <span><span className={styles.swatch} />starts seats of</span>
-        <span><span className={`${styles.swatch} ${styles.swatchCheck}`} />checks the builders' work</span>
-        {idle.length ? <span data-testid="pipeline-idle">on call, not in the flow: {idle.join(", ")}</span> : null}
-        {unreached.length ? <span data-testid="pipeline-unreached">no role starts: {unreached.join(", ")}</span> : null}
+        <span><span className={`${styles.swatch} ${styles.swatchCheck}`} />checks the work of (what it checks is on its box)</span>
+        {idle.length ? <span data-testid="pipeline-idle">on call, not in the flow: {idle.map(label).join(", ")}</span> : null}
+        {unreached.length ? <span data-testid="pipeline-unreached">no role starts: {unreached.map(label).join(", ")}</span> : null}
       </div>
     </>
   );
@@ -218,7 +223,7 @@ function EdgeDetail({ wf, t }: { wf: WorkflowDef; t: Transition }): React.JSX.El
       <strong>{plain(t.from)} → {plain(t.to)}</strong>
       <span className={styles.muted}>Who may move a ticket here: {whoTakes(wf, t)}{t.auto ? " — the board carries a ticket along it when the checks pass" : ""}</span>
       {t.requires.length ? (
-        <ul className={styles.pre}>{t.requires.map((p, i) => <li key={i}>{preconditionText(p)}</li>)}</ul>
+        <ul className={styles.pre}>{t.requires.map((p, i) => <li key={i} title={`board check: ${preconditionKey(p)}`}>{preconditionText(p)}</li>)}</ul>
       ) : <span className={styles.badge} data-testid="flow-edge-bare">no check: anyone may move a ticket here at any time</span>}
     </div>
   );
@@ -237,7 +242,7 @@ function TransitionTable({ wf, onPick, picked }: { wf: WorkflowDef; onPick: (k: 
               <tr key={key} aria-selected={picked === key}>
                 <td><button type="button" className={`${styles.item} ${styles.small}`} onClick={() => onPick(key)}>{plain(t.from)} → {plain(t.to)}</button></td>
                 <td>{whoTakes(wf, t)}</td>
-                <td>{t.requires.length ? t.requires.map((p) => p.check).join(", ") : <span className={`${styles.badge} ${styles.badgeDraft}`}>none</span>}</td>
+                <td>{t.requires.length ? t.requires.map((p, i) => <span key={i} title={`board check: ${preconditionKey(p)}`}>{i ? "; " : ""}{preconditionText(p)}</span>) : <span className={`${styles.badge} ${styles.badgeDraft}`}>none</span>}</td>
               </tr>
             );
           })}

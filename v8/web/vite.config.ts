@@ -1,6 +1,7 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import { searchForWorkspaceRoot } from "vite";
 import { execSync } from "node:child_process";
 
 // SEAM (serve-under-prefix): the built bundle is mounted by FastAPI (serve.py::mount_spa).
@@ -35,6 +36,9 @@ export default defineConfig({
   plugins: [react()],
   define: { __EDP_BUILD__: JSON.stringify(BUILD) },
   server: {
+    // S14 reopen: Admin → Remote access inlines assets/guides/*.svg?raw (so the diagrams follow the theme); the dev
+    // server and vitest may read that one folder outside web/, besides the default workspace root.
+    fs: { allow: [searchForWorkspaceRoot(process.cwd()), "../assets/guides"] },
     proxy: {
       "/v1": { target, changeOrigin: true },
       "/ui/poll": { target, changeOrigin: true },

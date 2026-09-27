@@ -9,14 +9,14 @@ export function build_standard_like(): { cells: Map<string, { col: number; row: 
     ["qa", { col: 1, row: 3 }], ["doctor", { col: 1, row: 4 }],
     ["sme", { col: 2, row: 0 }],
   ]);
-  const spawn = (a: string, b: string): EdgeIn => ({ id: `spawn-edge-${a}-${b}`, from: a, to: b });
-  const check = (a: string, b: string, k: string): EdgeIn => ({ id: `check-edge-${a}-${b}`, from: a, to: b, label: `checks ${k}` });
+  const spawn = (a: string, b: string): EdgeIn => ({ id: `spawn-edge-${a}-${b}`, from: a, to: b, kind: "spawn" });
+  const check = (a: string, b: string): EdgeIn => ({ id: `check-edge-${a}-${b}`, from: a, to: b, kind: "check" });
   const edges = [
     ...["architect", "engineer", "adversary", "qa", "doctor"].map((r) => spawn("owner", r)),
     ...["engineer", "adversary", "qa", "sme"].map((r) => spawn("architect", r)),
-    check("engineer", "sme", "task"),
-    check("qa", "engineer", "epic, story"), check("qa", "sme", "epic, story"),
-    check("adversary", "engineer", "epic, story"), check("adversary", "sme", "epic, story"),
+    check("engineer", "sme"),
+    check("qa", "engineer"), check("qa", "sme"),
+    check("adversary", "engineer"), check("adversary", "sme"),
   ];
   return { cells, edges };
 }

@@ -101,7 +101,7 @@
 .fieldLabel { font-size: 12px; font-weight: 600; color: var(--muted); }
 .checks { display: flex; flex-wrap: wrap; gap: 6px 14px; }
 .check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink); }
-.toolGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px 14px; max-height: 320px; overflow: auto; padding: 4px; border: 1px solid var(--line); border-radius: 8px; }
+.toolGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px 16px; max-height: 420px; overflow: auto; padding: 4px; border: 1px solid var(--line); border-radius: 8px; }
 .cardEditor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 @media (max-width: 900px) { .cardEditor { grid-template-columns: minmax(0, 1fr); } }
 .preview { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; max-height: 360px; overflow: auto; background: var(--bg); }
@@ -156,3 +156,9 @@
 .checkItem { display: grid; grid-template-columns: minmax(140px, 200px) minmax(0, 1fr); gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; }
 .checkItem:first-child { border-top: 0; }
 .diffTable td:first-child, .diffTable td:nth-child(2) { word-break: normal; white-space: nowrap; }
+/* S14 reopen: a tool reads as its plain name with the board's one-line description under it */
+.tool { align-items: flex-start; }
+.tool input { margin-top: 3px; }
+.toolText { display: grid; gap: 1px; min-width: 0; }
+.toolText .badge { margin-left: 6px; }
+.toolHint { color: var(--muted); font-size: 12px; line-height: 16px; }

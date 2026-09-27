@@ -11,6 +11,14 @@ import type { ServiceRow, SettingsView } from "../../api/admin";
 import { AdminPage } from "./Admin";
 import { actionsFor } from "./Services";
 import { attentionHandler } from "../../test/attentionFixture";
+import purposeSvg from "../../../../assets/guides/remote-access-1-purpose.svg?raw";
+import installSvg from "../../../../assets/guides/remote-access-2-install.svg?raw";
+import signinSvg from "../../../../assets/guides/remote-access-3-signin.svg?raw";
+import readySvg from "../../../../assets/guides/remote-access-4-ready.svg?raw";
+import serveSvg from "../../../../assets/guides/remote-access-5-serve.svg?raw";
+import restartSvg from "../../../../assets/guides/remote-access-6-restart.svg?raw";
+
+const GUIDE_SVGS = { purposeSvg, installSvg, signinSvg, readySvg, serveSvg, restartSvg };
 
 // S6 (s-e6b4fa59d5) Admin console. c-f27302e7e4: tabs for an admin, none for a non-admin; the Settings tab
 // renders EVERY visible key of a registry fixture (scripts/gen_admin_settings_fixture.py) —
@@ -544,6 +552,37 @@ describe("Integrations", () => {
     mount("integrations", [http.post("/v1/admin/integrations/slack/test", () => ok({ sent: true, to: "the default webhook" }))]);
     fireEvent.click(await screen.findByTestId("slack-test"));
     expect(await screen.findByTestId("slack-test-done")).toHaveTextContent("Test ping sent to the default webhook");
+  });
+});
+
+describe("S14 reopen: Admin visuals on the app theme (qa m-c4f23e49f0)", () => {
+  it("every colour in the six diagram files is var(--token, light fallback), so it follows the theme when inlined", () => {
+    for (const [name, text] of Object.entries(GUIDE_SVGS)) {
+      expect(text.replace(/var(--(bg|panel|ink|accentink),#[0-9A-F]{6})/g, "").match(/#[0-9a-fA-F]{3,6}/g), name).toBeNull();
+      expect(text, name).not.toMatch(/(fill|stroke)="#/);
+    }
+  });
+
+  it("the six Remote-access diagrams are inline SVG painted only with theme tokens", async () => {
+    mount("remote");
+    for (const id of ["purpose", "install", "signin", "ready", "serve", "restart"]) {
+      const box = await screen.findByTestId(`remote-step-${id}-img`);
+      expect(box).toHaveAttribute("role", "img");
+      const svg = box.querySelector("svg")!;
+      expect(svg).not.toBeNull();
+      expect(svg.querySelectorAll("[fill^='#'], [stroke^='#']").length, id).toBe(0);
+    }
+  });
+
+  it("the Slack fields use Admin's standard field (label, hint, full-width row), not the narrow cap cell", async () => {
+    mount("integrations");
+    for (const [field, input] of [["slack-field-bot", "slack-bot-token"], ["slack-field-webhook", "slack-webhook"], ["slack-field-board-url", "slack-board-url"]]) {
+      const f = await screen.findByTestId(field);
+      expect(within(f).getByTestId(input)).toBe(screen.getByTestId(input));
+      expect(within(f).getByTestId(input).closest("label")).toBeNull();
+      expect(f.querySelector("p")?.textContent?.length ?? 0).toBeGreaterThan(20);
+      expect(screen.getByLabelText(f.querySelector("label")!.textContent!)).toBe(screen.getByTestId(input));
+    }
   });
 });
 
