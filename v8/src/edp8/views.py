@@ -99,6 +99,35 @@ class _NestedListIndent(_markdown.preprocessors.Preprocessor):
         return out
 
 
+_TABLE_DELIM = re.compile(r"^ {0,3}\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$")
+
+
+class _TableBreak(_markdown.preprocessors.Preprocessor):
+    """v34 item 8 (owner m-8aa6439a77, fixture m-14333c915c): GFM editors accept a table that starts straight
+    after a paragraph line; Python-Markdown's table needs its own blank-line block. A header row (has `|`)
+    followed by a delimiter row gets a blank line above it when the line before is text, and the table ends
+    at the first line without `|` (a blank line is inserted there too). Runs after fenced_code: code is safe."""
+
+    def run(self, lines: list[str]) -> list[str]:
+        out: list[str] = []
+        in_table = False
+        for i, line in enumerate(lines):
+            nxt = lines[i + 1] if i + 1 < len(lines) else ""
+            if in_table:
+                if "|" in line and line.strip():
+                    out.append(line)
+                    continue
+                in_table = False
+                if line.strip():
+                    out.append("")
+            elif "|" in line and "|" in nxt and _TABLE_DELIM.match(nxt) and not _TABLE_DELIM.match(line):
+                if out and out[-1].strip():
+                    out.append("")
+                in_table = True
+            out.append(line)
+        return out
+
+
 def _escaping_markdown(extensions: list[str]) -> _markdown.Markdown:
     """Python-Markdown with raw HTML ESCAPED (shown as typed, never parsed): the html block and
     inline processors are removed. A placeholder like `<card>` in prose once made its whole
@@ -108,6 +137,7 @@ def _escaping_markdown(extensions: list[str]) -> _markdown.Markdown:
     md.preprocessors.deregister("html_block")
     md.inlinePatterns.deregister("html")
     md.preprocessors.register(_NestedListIndent(md), "nested_list_indent", 20)  # after fenced_code (25)
+    md.preprocessors.register(_TableBreak(md), "table_break", 19)
     return md
 
 

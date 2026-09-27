@@ -95,6 +95,8 @@ _log = logging.getLogger("edp8.board")
 # epic's pinned workflow (edp8.workflow); these constants only build Standard@1.
 HUMAN_GATE_ANSWERERS = {Role.owner}
 _TERMINAL = (TicketStatus.done, TicketStatus.partial, TicketStatus.dropped)
+#: v34 (owner m-8aa6439a77): the only statuses to a human that wait on them; a plain status is an update
+ASK_STATUSES = (StatusValue.blocked, StatusValue.failed, StatusValue.deferred)
 
 # Design §24.1 caps — the tool layer bounds what an architect can file, so an epic's shell
 # count is bounded by construction, not restraint. Enforced in the board (not the cards).
@@ -2126,13 +2128,15 @@ class Board:
         steer to a booting seat must survive the whoami->subscribe race, so this is queried BY
         RECIPIENT (indexed) — a global scan capped at 200 rows silently dropped every recent ask
         once the board grew (drill 2026-09-03). Empty list == clear to close.
-        A HUMAN is also waited on by a status, finding or deviation sent to them: a seat's "blocked —
-        pick one" went out as kind=status and never reached Needs you (owner m-bf83c16da7)."""
+        A HUMAN is also waited on by a deviation sent to them, and by a status whose `status` is blocked,
+        failed or deferred (v34, owner m-8aa6439a77: 18 of 21 items were FYI statuses). A plain status,
+        a note or a finding never counts (narrows m-bf83c16da7 / t-9e9ba3a6e5)."""
         kinds = [MessageKind.question, MessageKind.steer]
         if p.type == "human":
-            kinds += [MessageKind.status, MessageKind.finding, MessageKind.deviation]
-        asks = list(reversed(self.store.query("message", {"to": p.id, "kind": kinds},
-                                              limit=100, newest_first=True)))
+            kinds += [MessageKind.status, MessageKind.deviation]
+        asks = [m for m in reversed(self.store.query("message", {"to": p.id, "kind": kinds},
+                                                     limit=100, newest_first=True))
+                if m.kind != MessageKind.status or m.status in ASK_STATUSES]
         if p.role.value != p.id:
             # a bare-role address (legacy rows, or a role with no seat when sent) reaches the
             # seats of that role ON THE SAME EPIC only — never every seat of the role fleet-wide
@@ -2168,7 +2172,10 @@ class Board:
         is left to read an answer (a human author, or an agent that never had a shell, stays open);
         (b) any kind=answer replies to it; or (c) any message from the ADDRESSEE replies to it — owners
         answer with notes and mentions, never kind=answer (26 "unanswered" on epic-44a0576511, 18 from
-        closed seats). The one rule the inbox, the epic's Needs attention and the Needs you views read."""
+        closed seats). v34 (owner m-8aa6439a77) adds, for a HUMAN addressee: (d) any later message of theirs on
+        the same ticket addressed to the asker, reply_to or not (the owner answered m-584a1c342d with
+        m-f5f30e92bb and it stayed highlighted); (e) their dismissal (an ask_dismissed event).
+        The one rule the inbox, the epic's Needs attention and the attention trail read."""
         author = self.store.get("participant", m.created_by)
         if (author is not None and author.type == "agent"  # type: ignore[union-attr]
                 and self.seat_state(m.created_by) == "dead"):
@@ -2176,7 +2183,35 @@ class Board:
         for r in self.store.query("message", {"reply_to": m.id}, limit=200):
             if r.kind == MessageKind.answer or self._is_addressee(r.created_by, m.to):  # type: ignore[union-attr]
                 return True
+        human = self._human_addressee(m)
+        if human is None:
+            return False
+        for e in self.store.query("event", {"subject_id": m.id, "kind": EventKind.ask_dismissed}, limit=20):
+            if e.data.get("by") == human.id:  # type: ignore[union-attr]
+                return True
+        for r in self.store.query("message", {"ticket_id": m.ticket_id, "created_by": human.id}, limit=500):
+            if r.created_at > m.created_at and self._is_addressee(m.created_by, r.to):  # type: ignore[union-attr]
+                return True
         return False
+
+    def _human_addressee(self, m: Message) -> Participant | None:
+        """The human an ask is addressed to by id, or None (a role, a handle or an agent)."""
+        p = self.store.get("participant", m.to) if m.to else None
+        return p if p is not None and p.type == "human" else None  # type: ignore[return-value,union-attr]
+
+    def dismiss_asks(self, actor: Participant, ids: list[str]) -> list[str]:
+        """v34 item 6: the viewer dismisses asks waiting on them without replying (a server-side write, so the
+        rail count, the dots and every highlight clear together). Only an ask in the viewer's own inbox can be
+        dismissed; anything else is refused whole. Returns the dismissed ids."""
+        waiting = {a["id"]: a for a in self.inbox(actor)}
+        unknown = [i for i in ids if i not in waiting]
+        if unknown:
+            raise BoardError("invalid", f"not waiting on {actor.id}: {', '.join(unknown)}",
+                             "dismiss only asks in your own attention list (GET /v1/me/attention)")
+        with self.store.transaction():
+            for i in dict.fromkeys(ids):
+                self._emit(i, EventKind.ask_dismissed, {"by": actor.id, "ticket": waiting[i]["ticket_id"]})
+        return list(dict.fromkeys(ids))
 
     def _is_addressee(self, pid: str, to: str | None) -> bool:
         """pid is who `to` names: the participant id, its @handle/handle, or its bare role."""

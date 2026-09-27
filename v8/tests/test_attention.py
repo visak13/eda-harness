@@ -50,8 +50,7 @@ def only(rows, **match):
 
 # ------------------------------------------------------------------ each kind × each location
 
-@pytest.mark.parametrize("kind", [MessageKind.question, MessageKind.steer, MessageKind.status,
-                                  MessageKind.finding, MessageKind.deviation])
+@pytest.mark.parametrize("kind", [MessageKind.question, MessageKind.steer, MessageKind.deviation])  # v34: + blocked status
 def test_every_ask_kind_to_a_human_is_an_item_with_its_path(rig, kind):
     b, owner, _, arch, epic, story = rig
     on_epic = b.message_send(arch, ticket_id=epic.id, kind=kind, text="x", to=owner.id)

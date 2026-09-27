@@ -247,6 +247,9 @@ class EventKind(StrEnum):
     # a proposal's source URL + fetched-at are stamped from (edp8.topics.propose)
     topic_fetched = "topic_fetched"
     binding_changed = "binding_changed"  # a decision's binding flag was set: {decision, from, to, reason, by} (D5 audit)
+    # v34 (design-e963c656f5 §4.18, owner m-8aa6439a77): the addressee dismissed a waiting ask without replying:
+    # subject = the message id, {by, ticket}. Board.ask_resolved reads it, so every attention surface clears together.
+    ask_dismissed = "ask_dismissed"
 
 
 class Reason(StrEnum):

@@ -45,6 +45,10 @@ class AvatarIn(BaseModel):
     avatar_id: str
 
 
+class DismissIn(BaseModel):
+    ids: list[str]
+
+
 class VerdictIn(BaseModel):
     model_config = {"extra": "forbid"}
     criterion_id: str
@@ -77,6 +81,12 @@ def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
         ticket → item), plus per-scope counts and reasons. Every attention surface renders this one read."""
         from .attention import attention as _attention_read
         return ok(_attention_read(board, a), "follow each item's scope/tab/section/ticket to reach it; url deep-links")
+
+    @r.post("/v1/me/attention/dismiss")
+    def me_attention_dismiss(body: DismissIn, a: Participant = Depends(actor)):
+        """v34 item 6 (owner m-1a09573d3d): the no-reply path. Marks asks waiting on you as dismissed. A pure
+        attention write: no message is posted and no seat is woken; every attention surface clears together."""
+        return ok({"dismissed": board.dismiss_asks(a, body.ids)})
 
     # -------------------------------------------------------------- me (Decisions home)
     @r.get("/v1/me/decisions")

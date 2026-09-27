@@ -218,13 +218,16 @@ def test_contextual_unanswered_attention_and_answer_transition(rig, kind):
         "by": architect.id, "at": ask.created_at.isoformat(), "text": "Please answer"}]  # S-UI: the badge lists them
     ask2 = b.message_send(architect, ticket_id=ticket.id, to=owner.id, kind=MessageKind.question, text="And this")
     assert [a["id"] for a in contextual_work(b, ticket.id)["unresolved_asks"]] == [ask.id, ask2.id]  # oldest first
-    b.message_send(owner, ticket_id=ticket.id, to=architect.id, kind=MessageKind.answer, text="Done", reply_to=ask2.id)
+    # a third party's answer-less note resolves nothing
+    b.message_send(architect, ticket_id=ticket.id, to=None, kind=MessageKind.note, text="bump", reply_to=ask2.id)
     client = TestClient(create_app(b))
     assert client.get(f"/v1/tickets/{ticket.id}/contextual").status_code == 401
     response = client.get(f"/v1/tickets/{ticket.id}/contextual", headers={"X-Participant": owner.id})
     assert response.status_code == 200
-    assert response.json()["value"]["unresolved_asks"][0]["id"] == ask.id
-    b.message_send(owner, ticket_id=ticket.id, to=architect.id, kind=MessageKind.answer, text="Answered", reply_to=ask.id)
+    assert [a["id"] for a in response.json()["value"]["unresolved_asks"]] == [ask.id, ask2.id]
+    # v34 rule 2 (owner m-8aa6439a77): the human's later message to the asker on this ticket clears every earlier
+    # ask of that asker here, reply_to or not
+    b.message_send(owner, ticket_id=ticket.id, to=architect.id, kind=MessageKind.answer, text="Done", reply_to=ask2.id)
     assert contextual_work(b, ticket.id)["unresolved_asks"] == []
 
 

@@ -6,7 +6,7 @@ import pytest
 
 from edp8.board import Board
 from edp8.contextual_work import contextual_work
-from edp8.schemas import MessageKind, Role, SessionState, TicketKind, WorkType
+from edp8.schemas import MessageKind, Role, SessionState, StatusValue, TicketKind, WorkType
 from edp8.store import Store
 from edp8.views import _pending_owner_request
 
@@ -37,9 +37,10 @@ def test_live_author_unanswered_counts(rig):
 
 def test_status_to_a_human_waits_in_needs_you_until_they_reply(rig):
     # owner m-bf83c16da7: a seat's "blocked — pick one" went to the owner as kind=status and never
-    # surfaced. A status/finding/deviation TO a human is an ask; the same kinds to an agent are not.
+    # surfaced. v34 (owner m-8aa6439a77): only a blocked/failed/deferred status waits; to an agent it never does.
     b, owner, arch, qa, epic = rig
     s = b.message_send(arch, ticket_id=epic.id, to="owner", kind=MessageKind.status, text="Blocked: pick 1 or 2")
+    s = b.store.put("message", s.model_copy(update={"status": StatusValue.blocked}))
     b.message_send(arch, ticket_id=epic.id, to=qa.id, kind=MessageKind.status, text="fyi")
     b.message_send(arch, ticket_id=epic.id, to="owner", kind=MessageKind.note, text="just a note")
     assert [m["id"] for m in b.inbox(owner)] == [s.id]
