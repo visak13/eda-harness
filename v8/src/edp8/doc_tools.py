@@ -10,8 +10,8 @@ class TextEdit(BaseModel):
 
 
 class DocEdit(BaseModel):
-    expected_version: int = Field(ge=1)
-    edits: list[TextEdit] = Field(min_length=1, max_length=100)
+    expected_version: int = Field(ge=1, description='version you read')
+    edits: list[TextEdit] = Field(min_length=1, max_length=100, description='old_text/new_text pairs')
     title: str | None = None
 
 

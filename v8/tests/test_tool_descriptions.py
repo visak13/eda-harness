@@ -1,8 +1,9 @@
 """Design §19 rule 2 (criterion c-c91255c430): every ToolDef description states, in order,
-what it does · when to call it · the enum args it takes (allowed values inline, or a pointer
-to describe) · what it returns; and every enum value named in a description is a real schema
-value. The objects/enums clause is COMPOSED from the args_model, so a tool's advertised
-allowed set can never drift from its pydantic schema.
+what it does · when to call it · its linked objects and skills · the enum args it takes · what it
+returns. S23 (architect ruling m-fbd6ae40d3): the enum clause names the enum ARGS and points at
+describe('enums'); the allowed values live once, in the advertised schema, never duplicated in prose.
+The objects/skills clause is composed from tool_contracts and the enum clause from the args_model,
+so neither can drift from the metadata or the pydantic schema.
 
 Also pins §19 rule 1: the role-card commands are untouched by this story — a diff of
 `.claude/commands/` is empty at story close.
@@ -33,18 +34,21 @@ def test_description_has_four_parts(name: str):
 
     # part 2 — WHEN: an explicit "when to call it" clause
     assert tool.when.strip(), f"{name}: empty 'when'"
-    assert "When to call:" in desc, f"{name}: description missing the 'When to call:' clause"
+    assert "When: " in desc, f"{name}: description missing the 'When:' clause"
 
-    # part 3 — OBJECTS + ENUMS: every enum arg's allowed values appear inline, with a
-    # pointer to describe('enums'); tools with no enum arg carry no enum clause (their
-    # objects are named in the what/when prose and per-arg field descriptions)
+    # part 3 — OBJECTS + ENUMS: the linked objects are named; every enum arg is named with a
+    # pointer to describe('enums'), and its allowed values are in the advertised schema
+    assert "Objects: " in desc, f"{name}: description names no linked object"
     ef = enum_fields(tool.args_model)
     if ef:
-        assert "Enum args —" in desc, f"{name}: has enum args but no enum clause"
+        assert "Enums: " in desc, f"{name}: has enum args but no enum clause"
         assert "describe('enums')" in desc, f"{name}: enum clause must point at describe('enums')"
+        props = tool.input_schema.get("properties", {})
         for field, values in ef.items():
-            for v in values:
-                assert v in desc, f"{name}.{field}: allowed value {v!r} not named in the description"
+            assert field in desc, f"{name}: enum arg {field!r} not named in the description"
+            node = props[field]
+            got = node.get("enum") or [v for alt in node.get("anyOf", []) for v in alt.get("enum", [])]
+            assert got == values, f"{name}.{field}: advertised schema lacks the allowed values"
 
     # part 4 — RETURNS: the structured field is present and the word appears
     assert tool.returns.strip(), f"{name}: empty 'returns'"
@@ -66,7 +70,7 @@ def test_description_is_pure_function_of_fields_and_schema():
     """The description is composed, not hand-typed: recomposing from the same inputs is
     identical — so editing prose can never silently desync the enum clause from the schema."""
     for name, tool in ALL_TOOLS.items():
-        again = compose_description(tool.what, tool.when, tool.returns, tool.args_model)
+        again = compose_description(tool.what, tool.when, tool.returns, tool.args_model, name)
         assert tool.description == again, name
 
 

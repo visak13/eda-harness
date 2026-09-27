@@ -134,7 +134,7 @@ def test_doc_query_filters_by_tag_and_status(client, rig):
     # the MCP tool carries the filters too
     set_client(BoardClient(participant="owner", client=client))
     out = ALL_TOOLS["doc_query"].handler(ALL_TOOLS["doc_query"].args_model(tag="python", status="proposed"))
-    assert [d["id"] for d in out["value"]] == [p["id"]]
+    assert [d["id"] for d in out["value"]["items"]] == [p["id"]]
 
 
 def test_legacy_doc_rows_read_as_active(board, client, rig):

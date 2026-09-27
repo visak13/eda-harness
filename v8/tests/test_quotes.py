@@ -317,7 +317,7 @@ def test_a_seat_reads_a_two_quote_message_as_text_everywhere(client, env):
     # message_read and message_query (the tools)
     check(ALL_TOOLS["message_read"].handler(ALL_TOOLS["message_read"].args_model(id=mid))["value"])
     q = ALL_TOOLS["message_query"]
-    check(next(r for r in q.handler(q.args_model(ticket_id=env["story"]))["value"] if r["id"] == mid))
+    check(next(r for r in q.handler(q.args_model(ticket_id=env["story"]))["value"]["items"] if r["id"] == mid))
     # context: the bounded thread carries the rendered block and compact refs only
     row = next(r for r in ctx.handler(ctx.args_model())["value"]["tickets"][0]["thread"] if r["id"] == mid)
     check(row)

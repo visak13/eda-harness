@@ -14,6 +14,7 @@ named tools for the running participant's role.
 from __future__ import annotations
 
 import contextlib
+import difflib
 import copy
 import functools
 import contextvars
@@ -27,11 +28,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Literal
 
-from pydantic import AliasChoices, BaseModel, Field, ValidationError
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationError
 
 from . import seat_choice, settings
 from .client import BoardClient
 from .doc_tools import DocEdit
+from . import tool_idem, tool_paging
+from .tool_contracts import LOCAL_OBJECTS, link_clause, tool_objects, tools_by_object
 from .schemas import (
     ENUMS,
     ArtifactForm,
@@ -49,6 +52,10 @@ from .schemas import (
     StatusValue,
     SessionState,
     SeatEffort,
+    PainAction,
+    PainSeverity,
+    TeammateAction,
+    WorkflowAction,
     SpawnMode,
     TicketKind,
     TicketStatus,
@@ -108,6 +115,24 @@ def unavailable(message: str, hint: str) -> dict[str, Any]:
 # ----------------------------------------------------------------------------- tool def
 
 
+class Args(BaseModel):
+    """Every tool's argument model (S23 standard 4): an unknown arg is an ERROR naming the nearest
+    accepted field, never a silent drop (T1 audit: `limt` was accepted and ignored)."""
+    model_config = ConfigDict(extra="forbid")
+
+
+class CreateArgs(Args):
+    """S23 standard 2: a create a seat may retry safely (tool_idem)."""
+    idempotency_key: str | None = Field(default=None, description='retry-safe: same key+args = same result')
+
+
+class PageArgs(Args):
+    """S23 standard 3/6: a list tool pages (tool_paging). No field descriptions: the Returns clause says it."""
+    limit: int | None = None  # clamped to 1..100 by tool_paging
+    cursor: str | None = None
+    verbose: bool = False
+
+
 # ----------------------------------------------------------------------------- description composer
 #
 # A tool's MCP description is COMPOSED, never hand-typed as one blob (design §19 rule 2):
@@ -134,7 +159,19 @@ def enum_fields(args_model: type[BaseModel]) -> dict[str, list[str]]:
         ec = _enum_class(field.annotation)
         if ec is not None:
             out[fname] = [m.value for m in ec]
+        elif lit := _literal_values(field.annotation):
+            out[fname] = lit  # S23: a Literal is an enum arg too (doc status active|proposed)
     return out
+
+
+def _literal_values(annotation: Any) -> list[str]:
+    if typing.get_origin(annotation) is typing.Literal:
+        vals = list(typing.get_args(annotation))
+        return vals if all(isinstance(v, str) for v in vals) else []
+    for a in typing.get_args(annotation):
+        if got := _literal_values(a):
+            return got
+    return []
 
 
 def _type_name(annotation: Any) -> str:
@@ -149,15 +186,18 @@ def _enum_clause(args_model: type[BaseModel]) -> str:
     ef = enum_fields(args_model)
     if not ef:
         return ""
-    parts = [f"{k}: {'|'.join(v)}" for k, v in ef.items()]
-    return "Enum args — " + "; ".join(parts) + " (describe('enums')). "
+    # names only: the advertised schema carries every value (architect ruling m-fbd6ae40d3 — no duplicate)
+    return f"Enums: {', '.join(ef)} (describe('enums')). "
 
 
-def compose_description(what: str, when: str, returns: str, args_model: type[BaseModel]) -> str:
+def compose_description(what: str, when: str, returns: str, args_model: type[BaseModel], name: str = "") -> str:
+    """what · when · objects/skills (tool_contracts metadata) · enums (from the schema) · returns."""
     what = what.strip().rstrip(".") + "."
     when = when.strip().rstrip(".") + "."
+    if when[:5].lower() == "when ":  # "When: when …" says it twice
+        when = when[5:]
     returns = returns.strip().rstrip(".") + "."
-    return f"{what} When to call: {when} {_enum_clause(args_model)}Returns {returns}"
+    return f"{what} When: {when} {link_clause(name)}{_enum_clause(args_model)}Returns {returns}"
 
 
 @dataclass
@@ -173,7 +213,7 @@ class ToolDef:
     @property
     def description(self) -> str:
         """The composed MCP description: what · when · enum args (from schema) · returns."""
-        return compose_description(self.what, self.when, self.returns, self.args_model)
+        return compose_description(self.what, self.when, self.returns, self.args_model, self.name)
 
     @property
     def input_schema(self) -> dict[str, Any]:
@@ -221,6 +261,8 @@ def compact_schema(args_model: type[BaseModel]) -> dict[str, Any]:
             other = next(a for a in alts if a != {"type": "null"})
             out.pop("anyOf")
             out = {**other, **out}
+        if out.get("type") == "string" and isinstance(out.get("enum"), list):
+            out.pop("type")  # S23: a string enum states its type by its values
         return out
 
     return walk(schema)
@@ -254,18 +296,45 @@ def _reset_failure(seat: str, name: str) -> None:
         _FAIL_COUNTS.pop((seat, name), None)
 
 
+def accepted_args(args_model: type[BaseModel]) -> list[str]:
+    """Every name a caller may pass: field names plus their validation aliases."""
+    out: list[str] = []
+    for fname, field in args_model.model_fields.items():
+        out.append(fname)
+        alias = field.validation_alias
+        for choice in getattr(alias, "choices", None) or ([alias] if isinstance(alias, str) else []):
+            if isinstance(choice, str) and choice not in out:
+                out.append(choice)
+    return out
+
+
 def _validation_envelope(tool: ToolDef, exc: ValidationError) -> dict[str, Any]:
-    err = exc.errors()[0]
+    """One schema error that names the fix: the field, its enum values, the nearest accepted arg for an
+    unknown or misspelled one, and the accepted/required args (S23 standards 3-4)."""
+    errs = exc.errors()
+    # an unknown arg usually explains a 'missing' one (checkable vs check): report it first
+    err = next((e for e in errs if e.get("type") == "extra_forbidden"), errs[0])
     field = ".".join(str(x) for x in err.get("loc", ())) or "?"
+    accepted = accepted_args(tool.args_model)
+    required = [n for n, f in tool.args_model.model_fields.items() if f.is_required()]
     allowed = enum_fields(tool.args_model).get(field)
-    error: dict[str, Any] = {"code": "schema",
-                             "message": f"{tool.name}: invalid {field!r} — {err.get('msg')}",
-                             "field": field}
+    error: dict[str, Any] = {"code": "schema", "field": field}
+    if err.get("type") == "extra_forbidden":
+        near = difflib.get_close_matches(field, accepted, n=1, cutoff=0.5)
+        error["message"] = f"{tool.name}: unknown arg {field!r}" + (f" — did you mean {near[0]!r}?" if near else "")
+        if near:
+            error["nearest"] = near[0]
+    else:
+        error["message"] = f"{tool.name}: invalid {field!r} — {err.get('msg')}"
+    missing = [".".join(str(x) for x in e.get("loc", ())) for e in errs if e.get("type") == "missing"]
+    if missing:
+        error["missing"] = missing
     if allowed:
         error["allowed"] = allowed
-    hint = (f"pass a valid {field}"
-            + (f" — one of: {'|'.join(allowed)}" if allowed else "")
-            + "; describe('enums') lists allowed values")
+    error["accepted"] = accepted
+    hint = (f"pass a valid {field}" + (f" — one of: {'|'.join(allowed)}" if allowed else "")
+            + (f"; required: {', '.join(required)}" if required else "")
+            + "; describe('enums') lists enum values")
     return {"ok": False, "error": error, "hint": hint}
 
 
@@ -349,43 +418,43 @@ def _bounded(name: str, thunk: Callable[[], dict[str, Any]], running: dict[str, 
 # ============================================================================= identity
 
 
-class SubscribeArgs(BaseModel):
+class SubscribeArgs(Args):
     pass
 
 
-class ResumeSelfArgs(BaseModel):
+class ResumeSelfArgs(Args):
     pass
 
 
-class ContextArgs(BaseModel):
+class ContextArgs(Args):
     ticket_id: str | None = Field(default=None, description='one ticket, or omit for all yours')
     verbose: bool = Field(default=False, description='full unbounded snapshot')
 
 
-class ContextDeltaArgs(BaseModel):
+class ContextDeltaArgs(Args):
     # not a subclass of ContextArgs: context_delta takes no `verbose` — its behaviour is unchanged by S12.
     ticket_id: str | None = Field(default=None, description='one ticket, or omit for all yours')
     cursor: str = Field(description='the cursor from your last context/delta')
     limit: int = Field(default=50, ge=1, le=100, description='max changes per page; continue if has_more')
 
 
-class DescribeObjectsArgs(BaseModel):
+class DescribeObjectsArgs(Args):
     type: str | None = Field(default=None, description="omit to list; an object name, a Context* type, 'enums' or 'enum:<Name>'")
 
 
-class DescribeArgs(BaseModel):
+class DescribeArgs(Args):
     type: str = Field(description="an object type, 'enums', or 'enum:<Name>'")
 
 
-class GetGuideArgs(BaseModel):
+class GetGuideArgs(Args):
     name: str = Field(description='guide name without .md')
 
 
-class WhoamiArgs(BaseModel):
+class WhoamiArgs(Args):
     pass
 
 
-class PreflightArgs(BaseModel):
+class PreflightArgs(Args):
     pass
 
 
@@ -526,7 +595,7 @@ def _subscribe(_: SubscribeArgs) -> dict[str, Any]:
 # overflowed the MCP client cap. The snapshot is bounded HERE, in the tool layer, so board.py
 # _context_snapshot / ticket_view (shared by context_delta) stay unchanged. Default is bounded;
 # verbose=True hands back the full snapshot. The budget is deliberately below the client cap.
-_CONTEXT_BUDGET_B = 40_000        # default byte cap for the bounded snapshot (env-overridable)
+_CONTEXT_BUDGET_B = 8_000         # default byte cap for the bounded snapshot (env-overridable)
 _THREAD_HEAD = 200                # per-message body kept in a bounded thread
 _THREAD_KEEP = 3                  # newest messages kept per ticket by default
 _DOC_SUMMARY_HEAD = 200           # doc summary kept in a bounded snapshot
@@ -546,7 +615,8 @@ def _clip(s: Any, n: int) -> Any:
 
 
 def _bound_snapshot(snap: dict[str, Any], *, thread_keep: int, thread_head: int,
-                    doc_head: int, words_head: int | None) -> tuple[dict[str, Any], set[str]]:
+                    doc_head: int, words_head: int | None,
+                    desc_head: int | None = None) -> tuple[dict[str, Any], set[str]]:
     """Return a byte-bounded copy of a context snapshot and the set of categories trimmed
     ('thread'/'docs'/'words'). Per-ticket summaries + read_refs stay; thread bodies and doc
     summaries are clipped/paged. Never touches `cursor`, `asks_for_me`, criteria, chain or the
@@ -585,9 +655,51 @@ def _bound_snapshot(snap: dict[str, Any], *, thread_keep: int, thread_head: int,
         if words_head is not None and isinstance(tv.get("words"), str) and len(tv["words"]) > words_head:
             tv["words"] = _clip(tv["words"], words_head)
             hit.add("words")
+        rec = tv.get("ticket")
+        if desc_head is not None and isinstance(rec, dict) and len(rec.get("description") or "") > desc_head:
+            # S23: the 8 KB default budget — a long ticket description is the usual floor; ticket_read has it
+            tv["ticket"] = {**rec, "description": _clip(rec["description"], desc_head)}
+            hit.add("description")
+        if desc_head is not None and isinstance(tv.get("recall"), dict) and tv["recall"].get("items"):
+            tv["recall"] = {**tv["recall"], "items": [{**r, "text": _clip(r.get("text"), 100)}
+                                                      for r in tv["recall"]["items"]]}
         new_tickets.append(tv)
     out["tickets"] = new_tickets
     return out, hit
+
+
+def _compact_snapshot(snap: dict[str, Any]) -> tuple[dict[str, Any], set[str]]:
+    """S23 floor pass (8 KB default): each ticket keeps its record, chain and criteria as compact rows
+    (id/status/verdict, text clipped) and its docs/children/links as refs; recall becomes a count. Every
+    dropped field has a named fetch in `omitted`."""
+    out = dict(snap)
+    tickets = []
+    for tv in snap.get("tickets") or []:
+        rec = tv.get("ticket") or {}
+        tickets.append({
+            "ticket": {k: (_clip(rec.get(k), 160) if k in ("title", "description") else rec.get(k))
+                       for k in ("id", "kind", "status", "assignee", "parent_id", "design_ref", "title",
+                                 "description") if rec.get(k)},
+            "chain": [{"id": c.get("id"), "kind": c.get("kind"), "status": c.get("status")}
+                      for c in tv.get("chain") or []],
+            "criteria": [{"id": c.get("id"), "text": _clip(c.get("text"), 120), "check": c.get("check"),
+                          "checked_by": c.get("checked_by"), "verdict": c.get("verdict"),
+                          **({"evidence_ref": c["evidence_ref"]} if c.get("evidence_ref") else {})}
+                         for c in tv.get("criteria") or []],
+            "docs": [f"{d.get('id')} {d.get('doc_type')} v{d.get('version')}" for d in tv.get("docs") or []],
+            "children": [f"{c.get('id')} {c.get('status')}" for c in tv.get("children") or []],
+            "links": [f"{x.get('from_id')} {x.get('relation')} {x.get('to_id')}" for x in tv.get("links") or []],
+            **({"open_gates": tv["open_gates"]} if tv.get("open_gates") else {}),
+            **({"blockers": tv["blockers"]} if tv.get("blockers") else {}),
+            # the newest message stays readable (clipped); older bodies are the named thread fetch
+            "thread": [{k: (_clip(m.get(k), 120) if k == "body" else m.get(k))
+                        for k in ("id", "kind", "from_id", "created_at", "body") if m.get(k)}
+                       for m in (tv.get("thread") or [])[-1:] if isinstance(m, dict)],
+            "thread_total": tv.get("thread_total", len(tv.get("thread") or [])),
+            "recall_count": len((tv.get("recall") or {}).get("items") or []),
+        })
+    out["tickets"] = tickets
+    return out, {"thread", "docs", "words", "description", "compact"}
 
 
 def _bytes(obj: Any) -> int:
@@ -609,8 +721,8 @@ def _context(args: ContextArgs) -> dict[str, Any]:
     # per-ticket records + criteria + asks are the irreducible floor and are never dropped).
     passes = [
         dict(thread_keep=_THREAD_KEEP, thread_head=_THREAD_HEAD, doc_head=_DOC_SUMMARY_HEAD, words_head=800),
-        dict(thread_keep=1, thread_head=120, doc_head=120, words_head=400),
-        dict(thread_keep=0, thread_head=0, doc_head=0, words_head=200),
+        dict(thread_keep=1, thread_head=120, doc_head=120, words_head=400, desc_head=1500),
+        dict(thread_keep=0, thread_head=0, doc_head=0, words_head=200, desc_head=600),
     ]
     bounded: dict[str, Any] = {}
     hit: set[str] = set()
@@ -620,6 +732,8 @@ def _context(args: ContextArgs) -> dict[str, Any]:
             hit.add("_tightened")
         if _bytes(bounded) <= budget - reserve:
             break
+    else:
+        bounded, hit = _compact_snapshot(snap)
     over = _bytes(bounded) > budget
     if hit:  # something was clipped or a tighter pass was forced
         fetch = {}
@@ -630,6 +744,11 @@ def _context(args: ContextArgs) -> dict[str, Any]:
             fetch["doc_summaries"] = "doc_read(id) for the full body"
         if "words" in hit:
             fetch["epic_words"] = "context(verbose=True) or ticket_read(<epic id>) for the owner's full words"
+        if "description" in hit:
+            fetch["description"] = "ticket_read(ticket_id=<id>, include='') for the full description"
+        if "compact" in hit:
+            fetch["compact"] = ("criteria/docs/children/links are refs; ticket_read(ticket_id=<id>) or "
+                                "criterion_query(ticket_id=<id>) for rows, lookup(scope=<epic>) for recall")
         bounded["omitted"] = {
             "why": f"bounded to EDP8_CONTEXT_BUDGET_B={budget} bytes (verbose=False); "
                    f"snapshot is {_bytes(bounded)} bytes",
@@ -728,30 +847,25 @@ def _resume_self(_: ResumeSelfArgs) -> dict[str, Any]:
     }
 
 
-_TOOLS_BY_TYPE: dict[str, list[str]] = {
-    "ticket": ["ticket_create", "ticket_read", "ticket_query", "ticket_update", "find", "board", "spawn"],
-    "criterion": ["criterion_create", "criterion_query", "criterion_update", "ticket_read"],
-    "doc": ["doc_create", "doc_read", "doc_query", "doc_update", "doc_edit", "link_create", "assemble_ruleset", "find"],
-    "link": ["link_create", "link_query", "link_delete", "ticket_read"],
-    "message": ["message_send", "message_query", "message_read", "inbox", "record_status", "find"],
-    "event": ["events_query", "subscribe"],
-    "artifact": ["artifact_create", "artifact_read", "artifact_upload"],
-    "session": ["session_query", "spawn", "reap", "resume", "resume_self", "close_self"],
-    "participant": ["participants", "whoami", "spawn"],
-    "decision": ["record_decision", "withdraw_decision", "set_binding", "lookup", "dense_search", "find"],
-    "claim": ["record_claim", "withdraw_claim", "lookup", "find"],
-    "lesson": ["record_lesson", "lookup", "find"],
-    "kglink": ["lookup"],
-}
+def _object_index() -> list[str]:
+    """Every describable object: the board's types, the tool layer's own (LOCAL_OBJECTS) and every object a
+    tool names (tool_contracts.TOOL_OBJECTS) — the contract test asserts the last is a subset."""
+    from .schemas import OBJECT_TYPES
+    return sorted(set(OBJECT_TYPES) | set(LOCAL_OBJECTS) | set(tools_by_object()))
 
 
 def _describe_objects(args: DescribeObjectsArgs) -> dict[str, Any]:
     from .context_contracts import CONTEXT_TYPES
     if args.type is None:
-        return {"ok": True, "value": {"objects": sorted(_TOOLS_BY_TYPE) + sorted(CONTEXT_TYPES),
+        return {"ok": True, "value": {"objects": _object_index() + sorted(CONTEXT_TYPES),
                 "enums": sorted(ENUMS), "guides": ["context-refresh", "agent-tools"]},
-                "hint": "describe_objects(type=<name>) for schema, relationships and skill references"}
+                "hint": "describe(type=<name>) for fields, contract, linked tools and skills"}
     return _describe(DescribeArgs(type=args.type))
+
+
+def _links_for(t: str) -> dict[str, Any]:
+    from .tool_contracts import OBJECT_SKILLS
+    return {"tools": tools_by_object().get(t, []), "skills": list(OBJECT_SKILLS.get(t, ()))}
 
 
 def _describe(args: DescribeArgs) -> dict[str, Any]:
@@ -779,14 +893,17 @@ def _describe(args: DescribeArgs) -> dict[str, Any]:
                               "field": "type", "allowed": sorted(ENUMS)},
                     "hint": "describe('enums') lists every enum name"}
         return {"ok": True, "value": {"enum": name, "values": [m.value for m in e]}, "hint": ""}
+    if t in LOCAL_OBJECTS:  # S23: objects the tool layer owns (gate, topic, workflow, pain, ...)
+        return {"ok": True, "value": {"type": t, **LOCAL_OBJECTS[t], **_links_for(t)}, "hint": ""}
     out = get_client().describe(t)
     if out.get("ok"):
-        out["value"]["tools"] = _TOOLS_BY_TYPE.get(t, [])
+        out["value"].update(_links_for(t))
         out["value"]["relationships"] = {"ticket": ["criterion", "doc", "message", "link"],
             "doc": ["ticket", "link", "criterion"], "artifact": ["message", "ticket", "link"]}.get(t, ["ticket"])
-        out["value"]["skills"] = {"doc": ["methodology", "verify"], "artifact": ["demo"],
-            "criterion": ["verify"], "ticket": ["methodology", "handoff"]}.get(t, [])
         out["value"]["guides"] = ["agent-tools"]
+    elif (out.get("error") or {}).get("code") == "not_found":
+        out["error"]["allowed"] = _object_index()
+        out["hint"] = "describe_objects() lists every object; 'enums' or 'enum:<Name>' for vocabularies"
     return out
 
 
@@ -851,9 +968,9 @@ IDENTITY_TOOLS = [
 # ============================================================================= ticket
 
 
-class TicketCreateArgs(BaseModel):
-    kind: SeatTicketKind = Field()
-    work_type: WorkType = Field()
+class TicketCreateArgs(CreateArgs):
+    kind: SeatTicketKind = Field(description='ticket level')
+    work_type: WorkType = Field(description='kind of work')
     title: str = Field(description="epic: the owner's words verbatim (a short title is derived); story/task: the slice name")
     words: str | None = Field(default=None, description="epic or quick task: the owner's verbatim request; immutable")
     parent_id: str | None = None  # story/task: required, except the owner's quick task (the tool description says so)
@@ -862,14 +979,14 @@ class TicketCreateArgs(BaseModel):
     tags: list[str] | None = Field(default=None)
 
 
-class TicketReadArgs(BaseModel):
-    ticket_id: str = Field(validation_alias=AliasChoices("ticket_id", "id"))
+class TicketReadArgs(Args):
+    ticket_id: str = Field(validation_alias=AliasChoices("ticket_id", "id"), description='ticket id')
     include: str | None = Field(default=None, description='comma list of chain,criteria,docs,children,blockers,gates,thread,links; omit for all; lifecycle (only when named) = the pinned workflow\'s lifecycle table')
     thread_limit: int = Field(default=20, ge=0, le=200,
                               description='newest thread messages to include (0-200)')
 
 
-class TicketQueryArgs(BaseModel):
+class TicketQueryArgs(PageArgs):
     kind: SeatTicketKind | None = Field(default=None)
     work_type: WorkType | None = None
     parent_id: str | None = None
@@ -881,8 +998,8 @@ class TicketQueryArgs(BaseModel):
     q: str | None = Field(default=None, description='exact words in title/description/tags')
 
 
-class TicketUpdateArgs(BaseModel):
-    ticket_id: str = Field(validation_alias=AliasChoices("ticket_id", "id"))
+class TicketUpdateArgs(Args):
+    ticket_id: str = Field(validation_alias=AliasChoices("ticket_id", "id"), description='ticket id')
     status: TicketStatus | None = Field(default=None, description='next legal status')
     assignee: str | None = Field(default=None)
     design_ref: str | None = Field(default=None, description='design/plan doc id')
@@ -891,21 +1008,21 @@ class TicketUpdateArgs(BaseModel):
     title: str | None = Field(default=None, description='short title, <=80 chars (architect/owner)')
 
 
-class CriterionCreateArgs(BaseModel):
-    ticket_id: str
-    text: str = Field()
-    check: Check = Field()
+class CriterionCreateArgs(Args):
+    ticket_id: str = Field(description='ticket id')
+    text: str = Field(description='the checkable fact')
+    check: Check = Field(description='how it is checked')
     checked_by: CheckedBy | None = None  # the tool description: needs the owner's override_reason
     override_reason: str | None = Field(default=None, description='owner only: why the derived checker is overridden')
 
 
-class CriterionQueryArgs(BaseModel):
-    ticket_id: str
+class CriterionQueryArgs(Args):
+    ticket_id: str = Field(description='ticket id')
 
 
-class CriterionUpdateArgs(BaseModel):
+class CriterionUpdateArgs(Args):
     model_config = {"extra": "forbid"}  # an unknown kwarg is an ERROR, never a silent drop
-    id: str = Field()
+    id: str = Field(description='criterion id')
     evidence_ref: str | None = None  # the report doc id proving the check
     verdict: Verdict | None = Field(default=None, description='set after evidence_ref (checker only)')
     text: str | None = Field(default=None, description='reword (author, while pending)')
@@ -915,20 +1032,49 @@ class CriterionUpdateArgs(BaseModel):
     note: str = ''  # why, with a verdict; the board keeps it as a claim (S-IMPLICIT)
 
 
+def _once(tool: str, a: CreateArgs, create: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    return tool_idem.once(tool, get_client().participant, a.model_dump(mode="json", exclude={"idempotency_key"}),
+                          a.idempotency_key, create)
+
+
 def _ticket_create(a: TicketCreateArgs) -> dict[str, Any]:
-    return get_client().ticket_create(kind=a.kind, work_type=a.work_type, title=a.title,
-                                      parent_id=a.parent_id, assignee=a.assignee, description=a.description,
-                                      tags=a.tags, words=a.words)
+    return _once("ticket_create", a, lambda: get_client().ticket_create(
+        kind=a.kind, work_type=a.work_type, title=a.title, parent_id=a.parent_id, assignee=a.assignee,
+        description=a.description, tags=a.tags, words=a.words))
 
 
 def _ticket_read(a: TicketReadArgs) -> dict[str, Any]:
     return get_client().ticket_read(a.ticket_id, include=a.include, thread_limit=a.thread_limit)
 
 
+def _filters(a: PageArgs) -> dict[str, Any]:
+    return a.model_dump(exclude={"limit", "cursor", "verbose"}, exclude_none=True)
+
+
+def _paged(tool: str, resp: dict[str, Any], a: PageArgs, project: Callable[[dict[str, Any]], dict[str, Any]],
+           full: str, rows_of: Callable[[Any], list[Any]] | None = None) -> dict[str, Any]:
+    """Offset-page a board list reply (S23): count, compact items, next_cursor and the `page` receipt."""
+    if not resp.get("ok"):
+        return resp
+    rows = rows_of(resp.get("value")) if rows_of else (resp.get("value") or [])
+    try:
+        value = tool_paging.offset_page(tool, list(rows), filters=_filters(a), limit=a.limit, cursor=a.cursor,
+                                        verbose=a.verbose, project=project, full=full)
+    except tool_paging.CursorError as e:
+        return tool_paging.cursor_error(tool, e)
+    return {**resp, "value": value}
+
+
+def _ticket_row(r: dict[str, Any]) -> dict[str, Any]:
+    return tool_paging.pick(r, ("id", "kind", "status", "title", "assignee", "parent_id", "work_type", "tags"),
+                            {"title": 90})
+
+
 def _ticket_query(a: TicketQueryArgs) -> dict[str, Any]:
-    return get_client().ticket_query(kind=a.kind, work_type=a.work_type, parent_id=a.parent_id,
+    resp = get_client().ticket_query(kind=a.kind, work_type=a.work_type, parent_id=a.parent_id,
                                      status=a.status, assignee=a.assignee, epic_id=a.epic_id,
                                      created_by=a.created_by, tag=a.tag, q=a.q)
+    return _paged("ticket_query", resp, a, _ticket_row, "ticket_read(ticket_id) or verbose=true")
 
 
 def _ticket_update(a: TicketUpdateArgs) -> dict[str, Any]:
@@ -964,7 +1110,7 @@ TICKET_TOOLS = [
     ToolDef("ticket_query",
             'List tickets matching the filter args',
             'to find tickets without an id',
-            'matching tickets',
+            'matching tickets as a ≤8 KB page + next_cursor; verbose=full rows',
             TicketQueryArgs, _ticket_query, "ticket"),
     ToolDef("ticket_update",
             "Change the args given, per the transition rules",
@@ -991,10 +1137,10 @@ TICKET_TOOLS = [
 # ============================================================================= doc
 
 
-class DocCreateArgs(BaseModel):
+class DocCreateArgs(CreateArgs):
     doc_type: DocType = Field(description='design: architect; strategy_*/domain: sme; report: engineer/adversary/qa; note: any')
-    title: str
-    body_md: str
+    title: str = Field(description='doc title')
+    body_md: str = Field(description='markdown body')
     scope: str = Field(description='epic id | domain:<name> | global')
     tags: list[str] | None = Field(default=None, description='knowledge tags')
     status: Literal["active", "proposed"] | None = Field(
@@ -1003,8 +1149,8 @@ class DocCreateArgs(BaseModel):
     ticket_id: str | None = Field(default=None, description='source ticket')
 
 
-class DocReadArgs(BaseModel):
-    id: str = Field()
+class DocReadArgs(Args):
+    id: str = Field(description='doc id')
     version: int | None = Field(default=None, description='omit for latest; reuse the returned one to continue')
     offset: int | None = Field(default=None, ge=0, description='char offset; opts into bounded output')
     limit: int | None = Field(default=None, ge=1, le=32768, description='chars, default 8192 when bounded')
@@ -1012,10 +1158,11 @@ class DocReadArgs(BaseModel):
 
 
 class DocEditArgs(DocEdit):
-    id: str = Field()
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(description='doc id')
 
 
-class DocQueryArgs(BaseModel):
+class DocQueryArgs(PageArgs):
     doc_type: DocType | None = None
     scope: str | None = None
     owner_role: SeatRole | None = None
@@ -1023,42 +1170,49 @@ class DocQueryArgs(BaseModel):
     status: Literal["active", "proposed", "retired"] | None = None
 
 
-class DocUpdateArgs(BaseModel):
-    id: str = Field()
+class DocUpdateArgs(Args):
+    id: str = Field(description='doc id')
     body_md: str | None = None
     title: str | None = None
     tags: list[str] | None = Field(default=None, description='replaces the tag list')
     compact: bool = Field(default=False, description='return only a receipt')
 
 
-class LinkCreateArgs(BaseModel):
+class LinkCreateArgs(Args):
     from_id: str = Field(description='subject (blocks: finishes first; extends: the more specific layer)')
     to_id: str = Field(description='object')
-    relation: SeatRelation = Field()
+    relation: SeatRelation = Field(description='from_id <relation> to_id')
 
 
-class LinkQueryArgs(BaseModel):
+class LinkQueryArgs(PageArgs):
     from_id: str | None = None
     to_id: str | None = None
     relation: SeatRelation | None = None
 
 
-class LinkDeleteArgs(BaseModel):
-    id: str = Field()
+class LinkDeleteArgs(Args):
+    id: str = Field(description='link id')
 
 
 def _doc_create(a: DocCreateArgs) -> dict[str, Any]:
-    return get_client().doc_create(doc_type=a.doc_type, title=a.title, body_md=a.body_md, scope=a.scope,
-                                   tags=a.tags, status=a.status, proposes=a.proposes, ticket_id=a.ticket_id)
+    return _once("doc_create", a, lambda: get_client().doc_create(
+        doc_type=a.doc_type, title=a.title, body_md=a.body_md, scope=a.scope, tags=a.tags, status=a.status,
+        proposes=a.proposes, ticket_id=a.ticket_id))
 
 
 def _doc_read(a: DocReadArgs) -> dict[str, Any]:
     return get_client().doc_read(a.id, version=a.version, offset=a.offset, limit=a.limit, section=a.section)
 
 
+def _doc_row(r: dict[str, Any]) -> dict[str, Any]:
+    return tool_paging.pick(r, ("id", "doc_type", "title", "version", "scope", "status", "owner_role", "tags"),
+                            {"title": 90})
+
+
 def _doc_query(a: DocQueryArgs) -> dict[str, Any]:
-    return get_client().doc_query(doc_type=a.doc_type, scope=a.scope, owner_role=a.owner_role,
+    resp = get_client().doc_query(doc_type=a.doc_type, scope=a.scope, owner_role=a.owner_role,
                                   tag=a.tag, status=a.status)
+    return _paged("doc_query", resp, a, _doc_row, "doc_read(id) or verbose=true")
 
 
 def _doc_update(a: DocUpdateArgs) -> dict[str, Any]:
@@ -1074,7 +1228,9 @@ def _link_create(a: LinkCreateArgs) -> dict[str, Any]:
 
 
 def _link_query(a: LinkQueryArgs) -> dict[str, Any]:
-    return get_client().link_query(from_id=a.from_id, to_id=a.to_id, relation=a.relation)
+    resp = get_client().link_query(from_id=a.from_id, to_id=a.to_id, relation=a.relation)
+    return _paged("link_query", resp, a,
+                  lambda r: tool_paging.pick(r, ("id", "from_id", "relation", "to_id")), "verbose=true")
 
 
 def _link_delete(a: LinkDeleteArgs) -> dict[str, Any]:
@@ -1099,7 +1255,7 @@ DOC_TOOLS = [
     ToolDef("doc_query",
             'List docs by doc_type/scope/owner_role',
             'to find docs without an id',
-            'doc summaries',
+            'doc summaries as a ≤8 KB page + next_cursor; verbose=full rows',
             DocQueryArgs, _doc_query, "doc"),
     ToolDef("doc_update",
             "Replace a doc's body/title as a new version",
@@ -1114,7 +1270,7 @@ DOC_TOOLS = [
     ToolDef("link_query",
             'List links by from_id/to_id/relation',
             'to see what something is linked to',
-            'the links',
+            'the links as a ≤8 KB page + next_cursor; verbose=full rows',
             LinkQueryArgs, _link_query, "doc"),
     ToolDef("link_delete",
             'Remove a link',
@@ -1126,10 +1282,10 @@ DOC_TOOLS = [
 # ============================================================================= thread
 
 
-class MessageSendArgs(BaseModel):
-    ticket_id: str
-    kind: MessageKind = Field()
-    text: str
+class MessageSendArgs(Args):
+    ticket_id: str = Field(description='thread ticket')
+    kind: MessageKind = Field(description='message kind')
+    text: str = Field(description='message body')
     to: str | None = Field(default=None, description='id/@handle/role; omit=note')
     reply_to: str | None = Field(default=None, description='id answered')
     artifacts: list[str] | None = Field(default=None, description='staged artifact ids')
@@ -1139,33 +1295,32 @@ class MessageSendArgs(BaseModel):
     quotes: list[dict] | None = None  # C18: rules in describe('message'); no description (S20 budget)
 
 
-class MessageQueryArgs(BaseModel):
+class MessageQueryArgs(PageArgs):
     ticket_id: str | None = Field(default=None)
     to: str | None = Field(default=None, description='addressee id/role')
     kind: MessageKind | None = Field(default=None)
     created_by: str | None = Field(default=None)
-    since_seq: int | None = Field(default=None, description='newer than your last last_seq')
-    limit: int = 50
+    since_seq: int | None = Field(default=None, description='newer than this seq; 0 = from the start')
 
 
-class MessageReadArgs(BaseModel):
-    id: str = Field(validation_alias=AliasChoices("id", "message_id"))
+class MessageReadArgs(Args):
+    id: str = Field(validation_alias=AliasChoices("id", "message_id"), description='message id')
 
 
-class GateOpenArgs(BaseModel):
-    ticket_id: str
-    gate: Gate = Field()
+class GateOpenArgs(Args):
+    ticket_id: str = Field(description='ticket id')
+    gate: Gate = Field(description='gate kind')
     note: str = ""
 
 
-class GateAnswerArgs(BaseModel):
-    ticket_id: str
-    gate: Gate
-    answer: str
+class GateAnswerArgs(Args):
+    ticket_id: str = Field(description='ticket id')
+    gate: Gate = Field(description='gate kind')
+    answer: str = Field(description='the decision')
 
 
-class GatesArgs(BaseModel):
-    ticket_id: str
+class GatesArgs(Args):
+    ticket_id: str = Field(description='ticket id')
 
 
 def _message_send(a: MessageSendArgs) -> dict[str, Any]:
@@ -1174,9 +1329,30 @@ def _message_send(a: MessageSendArgs) -> dict[str, Any]:
                                      quotes=a.quotes)
 
 
+def _message_row(r: dict[str, Any]) -> dict[str, Any]:
+    return tool_paging.pick(r, ("id", "seq", "kind", "created_by", "to", "ticket_id", "reply_to", "created_at",
+                                "quoted", "text", "artifacts", "code_anchor"),
+                            {"text": 240, "quoted": 960, "code_anchor": 400})
+
+
 def _message_query(a: MessageQueryArgs) -> dict[str, Any]:
-    return get_client().message_query(ticket_id=a.ticket_id, to=a.to, kind=a.kind, limit=a.limit,
-                                      since_seq=a.since_seq, created_by=a.created_by)
+    filters = _filters(a)
+    try:
+        since = tool_paging.decode_cursor(a.cursor, filters).get("s", a.since_seq)
+    except tool_paging.CursorError as e:
+        return tool_paging.cursor_error("message_query", e)
+    limit = max(1, min(a.limit or 20, tool_paging.MAX_LIMIT))
+    resp = get_client().message_query(ticket_id=a.ticket_id, to=a.to, kind=a.kind, limit=limit,
+                                      since_seq=since, created_by=a.created_by)
+    if not resp.get("ok"):
+        return resp
+    rows = resp.get("value") or []
+    value = tool_paging.seq_page("message_query", rows, filters=filters, limit=limit, verbose=a.verbose,
+                                 project=_message_row, full="message_read(id) for a whole body, or verbose=true",
+                                 more_possible=since is not None and len(rows) >= limit)
+    if since is None and len(rows) >= limit:  # a full newest page: older messages may exist
+        value["page"]["older"] = "this is the newest page; since_seq=0 pages the thread from the start"
+    return {**resp, "value": value}
 
 
 def _message_read(a: MessageReadArgs) -> dict[str, Any]:
@@ -1204,7 +1380,7 @@ THREAD_TOOLS = [
     ToolDef("message_query",
             'List thread messages oldest first with seq; since_seq returns only newer ones',
             'to read or poll a thread',
-            'the messages and a last_seq hint',
+            'the newest page (since_seq pages forward): items with text clipped to 240 chars, last_seq, next_cursor (a hint names older pages)',
             MessageQueryArgs, _message_query, "thread"),
     ToolDef("message_read",
             'Read one message with its seq, parent and replies',
@@ -1231,17 +1407,16 @@ THREAD_TOOLS = [
 # ============================================================================= board
 
 
-class BoardArgs(BaseModel):
+class BoardArgs(Args):
     epic_id: str = Field(description='an epic, or any ticket under it')
 
 
-class EventsQueryArgs(BaseModel):
+class EventsQueryArgs(PageArgs):
     subject_id: str | None = None
     since: int = 0
-    limit: int = 200
 
 
-class ParticipantsArgs(BaseModel):
+class ParticipantsArgs(PageArgs):
     role: SeatRole | None = None
 
 
@@ -1250,16 +1425,36 @@ def _board(a: BoardArgs) -> dict[str, Any]:
 
 
 def _events_query(a: EventsQueryArgs) -> dict[str, Any]:
-    return get_client().events_query(subject_id=a.subject_id, since=a.since, limit=a.limit)
+    filters = _filters(a)
+    try:
+        since = tool_paging.decode_cursor(a.cursor, filters).get("s", a.since)
+    except tool_paging.CursorError as e:
+        return tool_paging.cursor_error("events_query", e)
+    limit = max(1, min(a.limit or tool_paging.DEFAULT_LIMIT, tool_paging.MAX_LIMIT))
+    resp = get_client().events_query(subject_id=a.subject_id, since=since, limit=limit)
+    if not resp.get("ok"):
+        return resp
+    rows = resp.get("value") or []
+
+    def row(r: dict[str, Any]) -> dict[str, Any]:
+        out = tool_paging.pick(r, ("seq", "id", "kind", "subject_id", "created_by", "created_at"))
+        if r.get("data"):
+            out["data"] = tool_paging.clip(json.dumps(r["data"], default=str), 200)
+        return out
+
+    return {**resp, "value": tool_paging.seq_page("events_query", rows, filters=filters, limit=limit,
+                                                  verbose=a.verbose, project=row, full="verbose=true",
+                                                  more_possible=len(rows) >= limit)}
 
 
 def _participants(a: ParticipantsArgs) -> dict[str, Any]:
-    resp = get_client().participants(role=a.role)
+    resp = _paged("participants", get_client().participants(role=a.role), a,
+                  lambda r: tool_paging.pick(r, ("id", "type", "role", "handle", "admin", "retired")), "verbose=true")
     if not resp.get("ok"):
         return resp
     c = get_client()
-    rows = resp.get("value") or []
-    for row in rows:
+    rows = resp["value"]["items"]
+    for row in rows:  # reach for this page only: one session read per row shown, never the whole roster
         if row.get("handle", "").startswith(("__", "wt-")):
             row["reach"] = "test fixture"
             continue
@@ -1285,12 +1480,12 @@ BOARD_TOOLS = [
     ToolDef("events_query",
             'Read the event log by subject or since a seq',
             'to reconstruct or catch up on events',
-            'matching events',
+            'matching events, a ≤8 KB page from `since` + last_seq, next_cursor',
             EventsQueryArgs, _events_query, "board"),
     ToolDef("participants",
             'List humans and seats, optionally by role, with @handle and reach',
             "to find a collaborator, then message_send(to='@'+handle)",
-            'the roster',
+            'the roster as a ≤8 KB page + next_cursor; verbose=full rows',
             ParticipantsArgs, _participants, "board"),
 ]
 
@@ -1304,8 +1499,8 @@ def _spawnable_roles() -> set[str]:
     return Workflow(BUILTIN_BUILDERS[STANDARD_ID]()).spawnable
 
 
-class SpawnArgs(BaseModel):
-    role: SeatRole = Field()
+class SpawnArgs(Args):
+    role: SeatRole = Field(description='seat role')
     ticket_id: str | None = Field(default=None, description="registers and assigns '<role>.<ticket_id>'")
     participant_id: str | None = Field(default=None, description='explicit pool handle; omit with ticket_id')
     parent_session: str | None = Field(default=None, description='spawning session id')
@@ -1315,30 +1510,30 @@ class SpawnArgs(BaseModel):
     mode: SpawnMode | None = None
 
 
-class ResumeArgs(BaseModel):
-    participant_id: str
+class ResumeArgs(Args):
+    participant_id: str = Field(description='seat id')
 
 
-class InboxArgs(BaseModel):
+class InboxArgs(Args):
     pass
 
 
-class RecordStatusArgs(BaseModel):
-    status: StatusValue = Field()
+class RecordStatusArgs(Args):
+    status: StatusValue = Field(description='your outcome')
     note: str = Field(default="", description='one line: done / left')
     to: str | None = Field(default=None, description='an extra recipient')
     ticket_id: str | None = Field(default=None, description='omit on a per-ticket seat')
 
 
-class CloseSelfArgs(BaseModel):
+class CloseSelfArgs(Args):
     pass
 
 
-class ReapArgs(BaseModel):
-    participant_id: str
+class ReapArgs(Args):
+    participant_id: str = Field(description='seat id')
 
 
-class SessionQueryArgs(BaseModel):
+class SessionQueryArgs(PageArgs):
     participant_id: str | None = None
     ticket_id: str | None = None
     state: SessionState | None = None
@@ -1371,10 +1566,12 @@ def _pool_caller_check(c: BoardClient, tk: dict[str, Any] | None, pid: str | Non
                                        "message": f"role {my_role!r} may not operate the pool control plane"},
                 "hint": "the owner or the epic's architect spawns and reaps seats"}
     target = _epic_id(c, tk) if tk else None
-    if target is None and pid and "." in pid:
-        got_e = c.ticket_read(pid.split(".", 1)[1])
+    for tid in (spawn_ticket_of(c, pid) if target is None and pid else []):
+        got_e = c.ticket_read(tid)
         v = got_e.get("value") if got_e.get("ok") else None
         target = _epic_id(c, v.get("ticket", v)) if isinstance(v, dict) else None
+        if target:
+            break
     my_epics = set()
     for tid in (me.get("value") or {}).get("tickets") or []:
         got_m = c.ticket_read(tid)
@@ -1391,6 +1588,39 @@ def _pool_caller_check(c: BoardClient, tk: dict[str, Any] | None, pid: str | Non
                                                                   "; target epic could not be resolved")},
                 "hint": "pass ticket_id in your epic"}
     return None
+
+
+SPAWN_TICKET_ENV = "EDP_SPAWN_TICKET"
+
+
+def spawn_ticket_of(c: BoardClient, pid: str) -> list[str]:
+    """The ticket(s) a seat was spawned for, most authoritative first (pain p-a05affa0: a custom
+    participant_id is not '<role>.<ticket>', so its handle suffix names no ticket):
+    1. the ticket the spawn recorded in the pool session's env (EDP_SPAWN_TICKET);
+    2. the board's session rows for the seat (newest first);
+    3. tickets the seat is assigned;
+    4. the handle suffix (the '<role>.<ticket>' convention).
+    Only resolves WHICH epic the seat belongs to — the caller's authority check is unchanged."""
+    out: list[str] = []
+
+    def add(t: Any) -> None:
+        if isinstance(t, str) and t and t not in out:
+            out.append(t)
+
+    pool = _pool_call("sessions", {})
+    rows = pool.get("value") if pool.get("ok") else None
+    rows = rows.get("sessions", []) if isinstance(rows, dict) else (rows or [])
+    for r in reversed([r for r in rows if isinstance(r, dict) and pid in (r.get("handle"), r.get("participant_id"))]):
+        add(((r.get("spawn_settings") or {}).get("env") or {}).get(SPAWN_TICKET_ENV))
+    sq = c.session_query(participant_id=pid)
+    for r in _newest_first(sq.get("value") if sq.get("ok") else []):
+        add(r.get("ticket_id"))
+    tq = c.ticket_query(assignee=pid)
+    for r in (tq.get("value") or []) if tq.get("ok") else []:
+        add(r.get("id"))
+    if "." in pid:
+        add(pid.split(".", 1)[1])
+    return out
 
 
 def _spawn(a: SpawnArgs) -> dict[str, Any]:
@@ -1490,8 +1720,11 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
     minted = c.seat_token(pid, ticket_id, model=choice.model)
     if not minted.get("ok"):
         return minted
-    if (minted.get("value") or {}).get("env"):
-        args["env"] = minted["value"]["env"]
+    args["env"] = dict((minted.get("value") or {}).get("env") or {})
+    if ticket_id:  # the spawn ticket rides on the pool session, so reap resolves a custom id's epic
+        args["env"][SPAWN_TICKET_ENV] = ticket_id
+    if not args["env"]:
+        args.pop("env")
     out = _pool_call("spawn", args)
     if not out.get("ok") and "lock" in str(out.get("error", "")).lower():
         # board said dead, pool lock says staffed (pain 2026-09-01 11:19) — resolve with the
@@ -1603,8 +1836,18 @@ def _reap(a: ReapArgs) -> dict[str, Any]:
     return _pool_call("reap", a.model_dump())
 
 
+def _session_row(r: dict[str, Any]) -> dict[str, Any]:
+    return tool_paging.pick(r, ("id", "participant_id", "ticket_id", "state", "updated_at", "reason"),
+                            {"reason": 120})
+
+
+def _newest_first(v: Any) -> list[Any]:
+    return sorted(v or [], key=lambda r: str(r.get("updated_at") or r.get("created_at") or ""), reverse=True)
+
+
 def _session_query(a: SessionQueryArgs) -> dict[str, Any]:
-    return get_client().session_query(participant_id=a.participant_id, ticket_id=a.ticket_id, state=a.state)
+    resp = get_client().session_query(participant_id=a.participant_id, ticket_id=a.ticket_id, state=a.state)
+    return _paged("session_query", resp, a, _session_row, "verbose=true", rows_of=_newest_first)
 
 
 # Bounded (§19 rule 4): a pool call that hangs must not block the tool past the call cap.
@@ -1663,14 +1906,14 @@ POOL_TOOLS = [
     ToolDef("session_query",
             'List sessions by participant/ticket/state',
             'to check a seat is live',
-            'matching sessions',
+            'matching sessions, newest first, a ≤8 KB page + next_cursor; verbose=full rows',
             SessionQueryArgs, _session_query, "pool"),
 ]
 
 # ============================================================================= search
 
 
-class FindArgs(BaseModel):
+class FindArgs(Args):
     query: str = Field(description='words or a phrase (FTS + semantic)')
     k: int = 10
     types: str | None = Field(default=None, description='comma list of ticket,doc,message,criterion')
@@ -1692,7 +1935,7 @@ SEARCH_TOOLS = [
 # ============================================================================= knowledge (design-d2c4f39fc6)
 
 
-class RecordDecisionArgs(BaseModel):
+class RecordDecisionArgs(Args):
     scope: str = Field(description='epic or ticket id it is in force for')
     text: str = Field(description='one sentence, <=240 chars')
     detail: str = Field(default="", description='why, <=1000 chars')
@@ -1704,7 +1947,7 @@ class RecordDecisionArgs(BaseModel):
     domains: list[str] = Field(default_factory=list, description='domain checklist names')
 
 
-class RecordClaimArgs(BaseModel):
+class RecordClaimArgs(Args):
     scope: str = Field(description='epic or ticket id')
     text: str = Field(description='one sentence')
     basis: ClaimBasis = Field(default=ClaimBasis.assumption)
@@ -1713,16 +1956,16 @@ class RecordClaimArgs(BaseModel):
     source: str | None = Field(default=None, description='message or doc id')
 
 
-class RecordLessonArgs(BaseModel):
+class RecordLessonArgs(Args):
     # S-HARVEST: no field descriptions — record_lesson is back in every /learn seat's bundle and must
     # fit the tightest S20 surface budget; the tool description names the fields.
-    domain: str
-    topic: str
-    text: str
+    domain: str = Field(description='domain name')
+    topic: str = Field(description='short topic')
+    text: str = Field(description='one sentence')
     evidence: list[str] = Field(default_factory=list)
 
 
-class LookupArgs(BaseModel):
+class LookupArgs(Args):
     scope: str = Field(description='epic or ticket id (never crosses epics)')
     question: str | None = Field(default=None, description='plain words; or use id/path')
     id: str | None = Field(default=None, description='record/ticket/doc id to start from')
@@ -1742,25 +1985,25 @@ def _record_claim(a: RecordClaimArgs) -> dict[str, Any]:
     return get_client().record_claim(a.scope, a.text, basis=a.basis.value, evidence=a.evidence, source=a.source)
 
 
-class WithdrawDecisionArgs(BaseModel):
-    decision_id: str = Field()
+class WithdrawDecisionArgs(Args):
+    decision_id: str = Field(description='decision id')
     reason: str = Field(default="", description='one line, <=240 chars')
 
 
-class WithdrawClaimArgs(BaseModel):
-    claim_id: str = Field()
+class WithdrawClaimArgs(Args):
+    claim_id: str = Field(description='claim id')
     reason: str = Field(default="", description='one line, <=240 chars')
 
 
-class SetBindingArgs(BaseModel):
+class SetBindingArgs(Args):
     decision_id: str = Field(description='a live decision')
-    binding: bool = Field()
+    binding: bool = Field(description='true = binding')
     reason: str = Field(default="", description='one line, <=240 chars')
 
 
-class DenseSearchArgs(BaseModel):
+class DenseSearchArgs(Args):
     scope: str = Field(description='epic or ticket id')
-    question: str = Field()
+    question: str = Field(description='plain words')
     k: int = Field(default=10)
 
 
@@ -1784,15 +2027,15 @@ def _withdraw_claim(a: WithdrawClaimArgs) -> dict[str, Any]:
     return get_client().withdraw_claim(a.claim_id, reason=a.reason)
 
 
-class TopicResearchArgs(BaseModel):
-    topic_id: str
+class TopicResearchArgs(Args):
+    topic_id: str = Field(description='Library topic id')
     query: str | None = Field(default=None, description="search skills.sh")
     url: str | None = Field(default=None, description="read one page: skills.sh, GitHub or the seed host")
 
 
-class TopicProposeArgs(BaseModel):
-    topic_id: str
-    title: str
+class TopicProposeArgs(Args):
+    topic_id: str = Field(description='Library topic id')
+    title: str = Field(description='doc title')
     body_md: str = Field(description="what you distilled; the board prepends Source + fetched-at")
     source_url: str = Field(description="a URL topic_research fetched")
     doc_type: DocType = DocType.strategy_hl
@@ -1828,24 +2071,24 @@ TOPIC_TOOLS = [
 # propose_fix, which files an inert proposal an admin approves (edp8.fixes). Nothing here changes state.
 
 
-class NoArgs(BaseModel):
+class NoArgs(Args):
     pass
 
 
-class WhyStuckArgs(BaseModel):
+class WhyStuckArgs(Args):
     ticket_id: str = Field(description="the ticket the person says is stuck")
 
 
-class WorkflowCheckArgs(BaseModel):
+class WorkflowCheckArgs(Args):
     ref: str = Field(description="workflow id or id@version, e.g. standard@1")
 
 
-class DoctorLogsArgs(BaseModel):
+class DoctorLogsArgs(Args):
     service: str = Field(description="board|broker|pool|mcp|bridge|supervisor|update|update-run, or pool-logs/<name>; a wrong name lists the available logs")
     lines: int = Field(default=100, ge=1, le=500)
 
 
-class ProposeFixArgs(BaseModel):
+class ProposeFixArgs(Args):
     topic_id: str = Field(description="your help thread (the topic in your context)")
     action: dict[str, Any] = Field(description="{kind: service.restart|service.start|service.stop|pool.set_limits|"
                                                "gate.open|gate.answer|teammate.rotate_token|agent_token.revoke, "
@@ -1934,7 +2177,7 @@ KNOWLEDGE_TOOLS = [
 # ============================================================================= ruleset
 
 
-class AssembleRulesetArgs(BaseModel):
+class AssembleRulesetArgs(Args):
     ticket_id: str | None = Field(default=None, description='use its linked strategy/domain docs (inherited up the chain)')
     doc_ids: list[str] | None = Field(default=None, description='explicit leaf doc ids instead')
     full: bool = Field(default=False, description='also inline constructive lines')
@@ -2034,28 +2277,72 @@ RULESET_TOOLS = [
 # ============================================================================= artifact
 
 
-class ArtifactCreateArgs(BaseModel):
-    form: ArtifactForm = Field()
+class ArtifactCreateArgs(CreateArgs):
+    form: ArtifactForm = Field(description='artifact form')
     uri: str = Field(description='a uri, never a machine path')
     note: str = ""
     ticket_id: str | None = Field(default=None, description='link as produced')
 
 
-class ArtifactUploadArgs(BaseModel):
+class ArtifactUploadArgs(Args):
     path: str = Field(description='workspace file (HTTP policy: absolute, inside configured roots)')
     note: str = ""
 
 
-class ArtifactReadArgs(BaseModel):
-    id: str = Field()
+class ArtifactReadArgs(Args):
+    id: str = Field(description='artifact id')
+    offset: int = 0  # text continuation: the next_offset a previous read returned
+
+
+IMAGE_CAP_B = 3_750_000   # an inline image block at most this size (the model's per-image limit is ~5 MB)
+TEXT_CAP_B = 6_000        # inline text per call; next_offset continues
+_TEXT_TYPES = ("text/", "application/json", "application/xml", "application/x-yaml", "application/yaml",
+               "image/svg+xml")  # an SVG is markup: read as text, never an image block
+_IMAGE_TYPES = ("image/png", "image/jpeg", "image/gif", "image/webp")
 
 
 def _artifact_create(a: ArtifactCreateArgs) -> dict[str, Any]:
-    return get_client().artifact_create(form=a.form, uri=a.uri, note=a.note, ticket_id=a.ticket_id)
+    return _once("artifact_create", a, lambda: get_client().artifact_create(
+        form=a.form, uri=a.uri, note=a.note, ticket_id=a.ticket_id))
 
 
 def _artifact_read(a: ArtifactReadArgs) -> dict[str, Any]:
-    return get_client().artifact_read(a.id)
+    """S23 (T1 coverage gap 2): metadata AND content in one call — an image as an inline image block (the MCP
+    layer turns value.content.base64 into an ImageContent), text inline up to TEXT_CAP_B with next_offset."""
+    import base64
+    c = get_client()
+    meta = c.artifact_read(a.id)
+    if not meta.get("ok") or not isinstance(meta.get("value"), dict):
+        return meta
+    v = meta["value"]
+    if not v.get("has_content"):
+        return {**meta, "hint": "no stored file (a uri artifact): open its uri"}
+    ctype = str(v.get("content_type") or "")
+    if ctype in _IMAGE_TYPES:
+        status, got_type, body = c.artifact_content(a.id)
+        if status != 200:
+            return {**meta, "hint": f"metadata only: content read answered {status}"}
+        if len(body) > IMAGE_CAP_B:
+            v["content"] = {"kind": "image", "mime": got_type or ctype, "bytes": len(body), "inline": False}
+            return {**meta, "hint": f"image is {len(body)} bytes, over the {IMAGE_CAP_B}-byte inline cap: "
+                                    "open value.uri in the board UI; nothing was inlined"}
+        v["content"] = {"kind": "image", "mime": (got_type or ctype).split(";")[0], "bytes": len(body),
+                        "base64": base64.b64encode(body).decode()}
+        return {**meta, "hint": "the image is attached as an image block"}
+    if ctype.startswith(_TEXT_TYPES) or ctype == "":
+        status, got_type, body = c.artifact_content(a.id, start=a.offset, length=TEXT_CAP_B + 1)
+        if status == 416:  # offset at or past the end
+            body = b""
+        elif status not in (200, 206):
+            return {**meta, "hint": f"metadata only: content read answered {status}"}
+        more = len(body) > TEXT_CAP_B
+        chunk = body[:TEXT_CAP_B]
+        text = chunk.decode("utf-8", errors="ignore")
+        v["content"] = {"kind": "text", "mime": (got_type or ctype).split(";")[0], "offset": a.offset,
+                        "text": text, **({"next_offset": a.offset + len(chunk)} if more else {})}
+        return {**meta, "hint": "artifact_read(id, offset=next_offset) continues" if more else ""}
+    v["content"] = {"kind": "binary", "mime": ctype, "inline": False}
+    return {**meta, "hint": f"{ctype} is not inlined (image and text are): open value.uri in the board UI"}
 
 
 ARTIFACT_TOOLS = [
@@ -2069,17 +2356,213 @@ ARTIFACT_TOOLS = [
             'the artifact',
             ArtifactCreateArgs, _artifact_create, "artifact"),
     ToolDef("artifact_read",
-            'Read one artifact',
-            'when a ticket or link names it',
-            'the artifact',
+            'Read one artifact with its content: an image inline, text inline (6 KB per call)',
+            'when a ticket, message or link names it',
+            'the artifact + content; text: next_offset continues via offset',
             ArtifactReadArgs, _artifact_read, "artifact"),
+]
+
+# ============================================================================= S23 framework tools
+# One action-enum tool per capability (architect ruling m-fbd6ae40d3), each replacing a shell workaround the
+# T1 audit found (report-e517e9e87e coverage gaps). Every action's required args are checked here and a miss
+# names the arg, like a schema error.
+
+
+def _need(tool: str, action: str, a: BaseModel, *names: str) -> dict[str, Any] | None:
+    missing = [n for n in names if getattr(a, n) in (None, "")]
+    if not missing:
+        return None
+    return {"ok": False, "error": {"code": "schema", "field": missing[0], "missing": missing,
+                                   "message": f"{tool}(action={action!r}) needs {', '.join(missing)}"},
+            "hint": f"pass {', '.join(missing)}; describe('{ALL_TOOLS_OBJECT.get(tool, tool)}') has the fields"}
+
+
+ALL_TOOLS_OBJECT = {"pain": "pain", "workflow": "workflow", "teammate": "teammate"}
+
+
+class PainArgs(Args):
+    action: PainAction = Field(description='what to do')
+    id: str | None = None
+    q: str | None = None
+    area: str | None = None
+    status: str | None = None
+    severity: PainSeverity | None = None
+    symptom: str | None = None
+    expected: str | None = None
+    evidence: str | None = None
+    workaround: str | None = None
+    dup_of: str | None = None
+    supersedes: str | None = None
+    note: str | None = None
+    cursor: str | None = None
+
+
+def _pain(a: PainArgs) -> dict[str, Any]:
+    c = get_client()
+    if a.action == PainAction.query:
+        resp = c.pain_query(status=a.status or "open", area=a.area, q=a.q)
+        if not resp.get("ok"):
+            return resp
+        try:
+            value = tool_paging.offset_page(
+                "pain", list(resp.get("value") or []), filters={"status": a.status, "area": a.area, "q": a.q},
+                limit=None, cursor=a.cursor, verbose=False, project=lambda r: r,
+                full="pain(action='read', id=<id>)")
+        except tool_paging.CursorError as e:
+            return tool_paging.cursor_error("pain", e)
+        return {**resp, "value": value, "hint": "newest first; narrow with q/area"}
+    if a.action == PainAction.read:
+        return _need("pain", "read", a, "id") or c.pain_read(a.id or "")
+    if a.action == PainAction.file:
+        missing = _need("pain", "file", a, "severity", "area", "symptom", "expected", "evidence")
+        if missing:
+            return missing
+        return c.pain_file({k: (v.value if hasattr(v, "value") else v) for k, v in a.model_dump().items()
+                            if k in ("severity", "area", "symptom", "expected", "evidence", "workaround",
+                                     "dup_of", "supersedes") and v not in (None, "")})
+    return _need("pain", "resolve", a, "id", "status") or c.pain_resolve(a.id or "", a.status or "",
+                                                                        note=a.note or "")
+
+
+class WorkflowArgs(Args):
+    action: WorkflowAction = Field(description='what to do')
+    ref: str | None = None
+    new_id: str | None = None
+    definition: dict | None = None
+    full: bool = False
+    cursor: str | None = None
+
+
+def _workflow(a: WorkflowArgs) -> dict[str, Any]:
+    c = get_client()
+    act = a.action
+    if act == WorkflowAction.list:
+        resp = c.workflows()
+        if not resp.get("ok"):
+            return resp
+        rows = resp.get("value") or []
+        rows = rows.get("workflows", rows) if isinstance(rows, dict) else rows
+        try:
+            value = tool_paging.offset_page(
+                "workflow", list(rows), filters={"action": "list"}, limit=None, cursor=a.cursor, verbose=False,
+                project=lambda r: tool_paging.pick(r, ("ref", "id", "version", "status", "title", "pinned_by",
+                                                       "duplicated_from")),
+                full="workflow(action='read', ref=...)")
+        except tool_paging.CursorError as e:
+            return tool_paging.cursor_error("workflow", e)
+        return {**resp, "value": value}
+    if act == WorkflowAction.read:
+        miss = _need("workflow", "read", a, "ref")
+        if miss:
+            return miss
+        resp = c.workflow_read(a.ref or "")
+        if not resp.get("ok") or not isinstance(resp.get("value"), dict):
+            return resp
+        v = dict(resp["value"])
+        problems = v.pop("problems", [])
+        if a.full:  # the definition as edit takes it, with the lint problems beside it
+            return {**resp, "value": {"definition": v, "problems": problems},
+                    "hint": "change definition, then workflow(action='validate'|'edit', definition=...)"}
+        return {**resp, "value": {**_wf_summary(v), "problems": len(problems)},
+                "hint": "summary; full=true returns the definition to edit"}
+    if act == WorkflowAction.duplicate:
+        return _need("workflow", "duplicate", a, "ref") or _wf_compact(c.workflow_duplicate(a.ref or "", a.new_id))
+    if act == WorkflowAction.edit:
+        return _need("workflow", "edit", a, "definition") or _wf_compact(c.workflow_save(a.definition or {}))
+    if act == WorkflowAction.validate:
+        return _need("workflow", "validate", a, "definition") or c.workflow_validate(a.definition or {})
+    return _need("workflow", "publish", a, "ref") or _wf_compact(c.workflow_publish(a.ref or ""))
+
+
+def _wf_summary(v: dict[str, Any]) -> dict[str, Any]:
+    out = {k: v.get(k) for k in ("id", "version", "status", "title", "duplicated_from") if v.get(k) is not None}
+    roles = v.get("roles")
+    out["roles"] = sorted(roles) if isinstance(roles, dict) else roles
+    out["bytes"] = tool_paging.nbytes(v)
+    return out
+
+
+def _wf_compact(resp: dict[str, Any]) -> dict[str, Any]:
+    """A stored version comes back as its summary (the full definition is read(full=true)'s job)."""
+    v = resp.get("value") if resp.get("ok") else None
+    if isinstance(v, dict) and "roles" in v:
+        return {**resp, "value": _wf_summary(v)}
+    return resp
+
+
+class TeammateArgs(Args):
+    action: TeammateAction = Field(description='what to do')
+    handle: str | None = None
+    role: str | None = None
+    admin: bool = False
+
+
+def _teammate(a: TeammateArgs) -> dict[str, Any]:
+    """Owner-only credential lifecycle over the admin Teammates routes (the board still requires an admin
+    human's token there, so an agent seat is refused 403: registration never widens authority). A minted token is returned ONCE in
+    this reply; the tool layer never logs it and the board records no secret in its events."""
+    c = get_client()
+    if a.action == TeammateAction.list:
+        resp = c.teammates()
+        if resp.get("ok") and isinstance(resp.get("value"), list):
+            resp["value"] = [tool_paging.pick(r, ("handle", "role", "admin", "state", "retired", "last_seen"))
+                             for r in resp["value"]]
+        return resp
+    miss = _need("teammate", a.action.value, a, "handle")
+    if miss:
+        return miss
+    handle = (a.handle or "").lstrip("@")
+    if a.action == TeammateAction.create:
+        return c.teammate_create(handle, role=a.role or "owner", admin=a.admin)
+    if a.action == TeammateAction.mint:
+        out = c.teammate_action(handle, "rotate")
+        if out.get("ok"):
+            out["hint"] = ("shown ONCE: hand it to the teammate privately; it is not stored anywhere you can "
+                           "read again — mint again to replace it")
+        return out
+    return c.teammate_action(handle, "revoke")
+
+
+class HarvestCostArgs(Args):
+    participant_id: str = Field(description='the seat')
+    since: str | None = None
+    until: str | None = None
+
+
+FRAMEWORK_TOOLS = [
+    ToolDef("pain",
+            "Pain log: query (q, area, status=all), read (id), file (severity, area, symptom, expected, "
+            "evidence; dup_of), resolve (id, status)",
+            "a tool or guide is wrong versus reality; query first",
+            'rows or the record',
+            PainArgs, _pain, "framework"),
+    ToolDef("workflow",
+            "Owner: workflow versions: list, read (ref, full), duplicate (ref), edit|validate (definition), publish (ref)",
+            'changing the workflow an epic pins',
+            'the version or its problems',
+            WorkflowArgs, _workflow, "framework"),
+    ToolDef("teammate",
+            "Owner: teammate credentials: list, create (handle: invite link), mint (handle: token shown once), revoke",
+            'adding, re-keying or removing a person',
+            'the teammate, invite or token',
+            TeammateArgs, _teammate, "framework"),
+    ToolDef("service_status",
+            'Read-only host services: state, pid, port, git rev, uptime',
+            'a service seems down; restarting is a human action',
+            'one row per service',
+            NoArgs, lambda a: get_client().services_status(), "framework"),
+    ToolDef("harvest_cost",
+            "A seat's harvest token cost from its transcript, plus records it wrote",
+            'at epic acceptance, after the harvest',
+            'window, token totals, record counts',
+            HarvestCostArgs, lambda a: get_client().harvest_cost(a.participant_id, a.since, a.until), "framework"),
 ]
 
 # ============================================================================= close
 
 
-class CloseArgs(BaseModel):
-    epic_id: str
+class CloseArgs(Args):
+    epic_id: str = Field(description='epic id')
 
 
 def _close(a: CloseArgs) -> dict[str, Any]:
@@ -2114,7 +2597,7 @@ ALL_TOOLS: dict[str, ToolDef] = {
     t.name: t for t in (
         IDENTITY_TOOLS + TICKET_TOOLS + DOC_TOOLS + THREAD_TOOLS + BOARD_TOOLS + POOL_TOOLS
         + SEARCH_TOOLS + KNOWLEDGE_TOOLS + TOPIC_TOOLS + RULESET_TOOLS + ARTIFACT_TOOLS + CLOSE_TOOLS
-        + DOCTOR_TOOLS
+        + DOCTOR_TOOLS + FRAMEWORK_TOOLS
     )
 }
 
@@ -2214,6 +2697,27 @@ _S20_UNUSED: dict[str, tuple[str, ...]] = {
 }
 for _role, _unused in _S20_UNUSED.items():
     ROLE_BUNDLES[_role] = [n for n in ROLE_BUNDLES[_role] if n not in _unused]
+
+
+# S23 framework tools (architect ruling m-fbd6ae40d3): pain for every role (resolve is enforced by the board
+# for the owner and the doctor); workflow + teammate owner only; service_status for owner/architect/doctor;
+# harvest_cost for qa and the owner. close_self stays last.
+_S23_FRAMEWORK: dict[str, tuple[str, ...]] = {
+    Role.owner.value: ("pain", "workflow", "teammate", "service_status", "harvest_cost"),
+    Role.architect.value: ("pain", "service_status"),
+    Role.engineer.value: ("pain",),
+    Role.adversary.value: ("pain",),
+    Role.qa.value: ("pain", "harvest_cost"),
+    Role.sme.value: ("pain",),
+    Role.doctor.value: ("pain", "service_status"),
+}
+for _role, _add in _S23_FRAMEWORK.items():
+    _role_tools = ROLE_BUNDLES[_role]
+    _at = _role_tools.index("inbox") if "close_self" in _role_tools else len(_role_tools)
+    for _kt in _add:
+        if _kt not in _role_tools:
+            _role_tools.insert(_at, _kt)
+            _at += 1
 
 
 from .workflow import KERNEL_TOOLS  # noqa: E402 - S13 §4.14(e).1: every spawned role carries these

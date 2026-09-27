@@ -10,7 +10,8 @@ tools_for_role for every role the line applies to:
   skill or fetch any guide), unless the file carries `<!-- roles: a, b -->`.
 
 A line narrows itself with `(role/role only)` or `(not role/role)`. The same marker on a heading
-scopes every line under it, up to the next heading. A method call (`f.close()`) is not a tool call.
+scopes every line under it, up to the next heading. A method call (`f.close()`) is not a tool call, nor is a dotted action id
+(`teammate.rotate_token`).
 """
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ from edp8.bundles import ALL_TOOLS, tools_for_role
 V8 = Path(__file__).resolve().parents[1]
 SEAT_ROLES = ("owner", "architect", "engineer", "qa", "sme", "adversary", "doctor")
 _ALT = "|".join(sorted(ALL_TOOLS, key=len, reverse=True))
-_CALL = re.compile(r"`(" + _ALT + r")\b[^`]*`|(?<![.\w])(" + _ALT + r")\(")
+_CALL = re.compile(r"`(" + _ALT + r")\b(?!\.)[^`]*`|(?<![.\w])(" + _ALT + r")\(")
 _ROLE = "|".join(SEAT_ROLES)
 _ROLES = r"((?:" + _ROLE + r")(?:\s*/\s*(?:" + _ROLE + r"))*)"
 _ONLY = re.compile(r"\(" + _ROLES + r" only\)")

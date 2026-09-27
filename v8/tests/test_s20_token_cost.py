@@ -93,9 +93,17 @@ def _surface_bytes(role):
                + len(json.dumps(t.input_schema, ensure_ascii=False).encode()) for t in tools_for_role(role))
 
 
+# S23 re-baseline (architect ruling m-fbd6ae40d3): after compaction these roles still carry the measured
+# shortfall, in bytes, of the S23 fixes. architect/sme: the metadata-composed "Objects/Skills" clause and
+# per-field descriptions on required args; owner: also the five framework tools (pain, workflow, teammate,
+# service_status, harvest_cost) that replace its shell workarounds; every role: the pre-S23 facts the
+# owner's no-loss steer (m-891b9f42bd) keeps in the descriptions (tests/test_tool_info_parity.py).
+_S23_REBASELINE = {'architect': 613, 'engineer': 133, 'sme': 632, 'owner': 2_390}
+
+
 @pytest.mark.parametrize('role', sorted(_AUDIT_BEFORE))
 def test_role_tool_surface_is_at_most_half_the_audit(role):
-    assert _surface_bytes(role) <= _AUDIT_BEFORE[role] // 2
+    assert _surface_bytes(role) <= _AUDIT_BEFORE[role] // 2 + _S23_REBASELINE.get(role, 0)
 
 
 @pytest.mark.parametrize('name', sorted(ALL_TOOLS))

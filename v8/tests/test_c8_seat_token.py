@@ -147,4 +147,5 @@ def test_mcp_spawn_tool_adds_no_env_in_trusted_mode(tmp_path, monkeypatch):
     set_client(BoardClient(participant=arch, admin_token="t", client=c))
     out = ALL_TOOLS["spawn"].handler(ALL_TOOLS["spawn"].args_model(role="engineer", ticket_id=epic))
     assert out["ok"], out
-    assert [kw.get("env") for fn, kw in calls if fn == "spawn"] == [None]
+    # no token env in trusted mode; the spawn ticket rides along for reap's scope (S23, pain p-a05affa0)
+    assert [kw.get("env") for fn, kw in calls if fn == "spawn"] == [{"EDP_SPAWN_TICKET": epic}]

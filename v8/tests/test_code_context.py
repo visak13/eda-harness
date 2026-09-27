@@ -175,7 +175,8 @@ def test_missing_field_is_named(client, story):
 
 # ------------------------------------------------------------------------------ agent rendering
 
-def test_context_and_delta_render_the_anchor_within_the_caps(client, story):
+def test_context_and_delta_render_the_anchor_within_the_caps(client, story, monkeypatch):
+    monkeypatch.setenv("EDP8_CONTEXT_BUDGET_B", "40000")  # the anchor rendering, not the S23 8 KB default
     set_client(BoardClient(participant="eng", admin_token="t", client=client))
     ctx, dl = ALL_TOOLS["context"], ALL_TOOLS["context_delta"]
     base = ctx.handler(ctx.args_model())["value"]

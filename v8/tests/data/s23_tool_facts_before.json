@@ -1,0 +1,1504 @@
+{
+ "source": "git HEAD before S23-T2 (e16a637)",
+ "tools": {
+  "artifact_create": {
+   "enums": {
+    "form": [
+     "image",
+     "file",
+     "url",
+     "app",
+     "repo_ref"
+    ]
+   },
+   "fields": [
+    "form",
+    "note",
+    "ticket_id",
+    "uri"
+   ],
+   "required": [
+    "form",
+    "uri"
+   ],
+   "returns": "the artifact",
+   "roles": [
+    "adversary",
+    "architect",
+    "engineer"
+   ],
+   "what": "Record a produced thing by uri, optionally linked to a ticket",
+   "when": "when you ship something the owner should see"
+  },
+  "artifact_read": {
+   "enums": {},
+   "fields": [
+    "id"
+   ],
+   "required": [
+    "id"
+   ],
+   "returns": "the artifact",
+   "roles": [
+    "adversary",
+    "engineer",
+    "qa"
+   ],
+   "what": "Read one artifact",
+   "when": "when a ticket or link names it"
+  },
+  "artifact_upload": {
+   "enums": {},
+   "fields": [
+    "note",
+    "path"
+   ],
+   "required": [
+    "path"
+   ],
+   "returns": "the staged artifact; message_send(artifacts=[id]) finalizes it",
+   "roles": [
+    "adversary",
+    "architect",
+    "engineer"
+   ],
+   "what": "Stage a workspace file (25 MB cap) as an artifact",
+   "when": "to attach a local file"
+  },
+  "assemble_ruleset": {
+   "enums": {},
+   "fields": [
+    "doc_ids",
+    "full",
+    "ticket_id"
+   ],
+   "required": [],
+   "returns": "enforced lines + a doc index (full adds constructive), or a cycle/missing-layer error",
+   "roles": [
+    "adversary",
+    "engineer",
+    "qa",
+    "sme"
+   ],
+   "what": "Compose a ticket's layered ruleset from its strategy/domain docs: enforced lines inlined, each doc one index line",
+   "when": "at the start of a story/task, for your working brief"
+  },
+  "board": {
+   "enums": {},
+   "fields": [
+    "epic_id"
+   ],
+   "required": [
+    "epic_id"
+   ],
+   "returns": "the board view",
+   "roles": [
+    "architect",
+    "doctor",
+    "owner",
+    "qa"
+   ],
+   "what": "An epic's ticket tree with status counts, ready/in_review lists and open gates",
+   "when": "for the whole epic at a glance"
+  },
+  "close": {
+   "enums": {},
+   "fields": [
+    "epic_id"
+   ],
+   "required": [
+    "epic_id"
+   ],
+   "returns": "the checklist, or a transition error",
+   "roles": [
+    "owner"
+   ],
+   "what": "Confirm an epic is closed and get the disarm checklist",
+   "when": "as the owner, once an epic is done/partial"
+  },
+  "close_self": {
+   "enums": {},
+   "fields": [],
+   "required": [],
+   "returns": "the release result; then stop calling tools",
+   "roles": [
+    "adversary",
+    "doctor",
+    "engineer",
+    "qa",
+    "sme"
+   ],
+   "what": "End your own shell now; refused while inbox is non-empty or no status is recorded",
+   "when": "step 3 of closing"
+  },
+  "context": {
+   "enums": {},
+   "fields": [
+    "ticket_id",
+    "verbose"
+   ],
+   "required": [],
+   "returns": "ContextSnapshot with a cursor for context_delta; `omitted` names each fetch",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "Load your ticket(s): chain, criteria, docs, thread, open asks; byte-capped unless verbose",
+   "when": "at boot, after compaction without a cursor, or when a delta says resync_required"
+  },
+  "context_delta": {
+   "enums": {},
+   "fields": [
+    "cursor",
+    "limit",
+    "ticket_id"
+   ],
+   "required": [
+    "cursor"
+   ],
+   "returns": "changes, next_cursor, has_more (byte-capped, `omitted` names the fetch); resync_required means context()",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "Read what changed for you since a context cursor",
+   "when": "on a heartbeat wake, with your last cursor; not with context() routinely"
+  },
+  "criterion_create": {
+   "enums": {
+    "check": [
+     "command",
+     "path",
+     "look",
+     "verdict"
+    ],
+    "checked_by": [
+     "qa",
+     "owner",
+     "engineer"
+    ]
+   },
+   "fields": [
+    "check",
+    "checked_by",
+    "override_reason",
+    "text",
+    "ticket_id"
+   ],
+   "required": [
+    "check",
+    "text",
+    "ticket_id"
+   ],
+   "returns": "the criterion with its derived checker",
+   "roles": [
+    "adversary",
+    "architect",
+    "engineer"
+   ],
+   "what": "Add a checkable done-fact. Checker derived: qa (story/epic), engineer (task), owner (knowledge ticket); checked_by needs owner override_reason. Max 6 fresh per story",
+   "when": "before work starts, one per checkable fact"
+  },
+  "criterion_query": {
+   "enums": {},
+   "fields": [
+    "ticket_id"
+   ],
+   "required": [
+    "ticket_id"
+   ],
+   "returns": "the criteria",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "List a ticket's criteria",
+   "when": "to see what is pending"
+  },
+  "criterion_update": {
+   "enums": {
+    "verdict": [
+     "pending",
+     "pass",
+     "fail"
+    ]
+   },
+   "fields": [
+    "evidence_ref",
+    "evidence_version",
+    "id",
+    "note",
+    "stale_ok",
+    "text",
+    "verdict"
+   ],
+   "required": [
+    "id"
+   ],
+   "returns": "the criterion and the pending count",
+   "roles": [
+    "adversary",
+    "architect",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "Set a criterion's evidence_ref, then its verdict (checker only)",
+   "when": "as the checker after the evidence doc exists; a doer attaches evidence_ref only"
+  },
+  "dense_search": {
+   "enums": {},
+   "fields": [
+    "k",
+    "question",
+    "scope"
+   ],
+   "required": [
+    "question",
+    "scope"
+   ],
+   "returns": "hits with cosine scores",
+   "roles": [],
+   "what": "Diagnostic: dense-only cosine top-k over an epic's live records",
+   "when": "when diagnosing why lookup missed a record"
+  },
+  "describe": {
+   "enums": {},
+   "fields": [
+    "type"
+   ],
+   "required": [
+    "type"
+   ],
+   "returns": "the schema and contract, or the enum values",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "An object type's fields and contract, or an enum's values ('enums' = all, 'enum:<Name>' = one)",
+   "when": "unsure of a type's fields or an argument's allowed values"
+  },
+  "describe_objects": {
+   "enums": {},
+   "fields": [
+    "type"
+   ],
+   "required": [],
+   "returns": "the index or the schema",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "List object/enum names, or one object's schema",
+   "when": "unsure of an object's contract; omit type to list names"
+  },
+  "doc_create": {
+   "enums": {
+    "doc_type": [
+     "design",
+     "strategy_hl",
+     "strategy_ll",
+     "domain",
+     "report",
+     "note"
+    ]
+   },
+   "fields": [
+    "body_md",
+    "doc_type",
+    "proposes",
+    "scope",
+    "status",
+    "tags",
+    "ticket_id",
+    "title"
+   ],
+   "required": [
+    "body_md",
+    "doc_type",
+    "scope",
+    "title"
+   ],
+   "returns": "the doc; link it to its ticket",
+   "roles": [
+    "adversary",
+    "architect",
+    "engineer",
+    "qa",
+    "sme"
+   ],
+   "what": "Author a versioned markdown doc",
+   "when": "to record a design, strategy, domain guide, report or note"
+  },
+  "doc_edit": {
+   "enums": {},
+   "fields": [
+    "edits",
+    "expected_version",
+    "id",
+    "title"
+   ],
+   "required": [
+    "edits",
+    "expected_version",
+    "id"
+   ],
+   "returns": "a compact receipt, or a conflict/match error (re-read)",
+   "roles": [
+    "adversary",
+    "architect",
+    "engineer",
+    "qa"
+   ],
+   "what": "Apply exact, unique, non-overlapping edits to one doc version atomically",
+   "when": "for small revisions after doc_read; match old_text against the original"
+  },
+  "doc_query": {
+   "enums": {
+    "doc_type": [
+     "design",
+     "strategy_hl",
+     "strategy_ll",
+     "domain",
+     "report",
+     "note"
+    ],
+    "owner_role": [
+     "owner",
+     "architect",
+     "sme",
+     "engineer",
+     "adversary",
+     "qa",
+     "doctor"
+    ]
+   },
+   "fields": [
+    "doc_type",
+    "owner_role",
+    "scope",
+    "status",
+    "tag"
+   ],
+   "required": [],
+   "returns": "doc summaries",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "sme"
+   ],
+   "what": "List docs by doc_type/scope/owner_role",
+   "when": "to find docs without an id"
+  },
+  "doc_read": {
+   "enums": {},
+   "fields": [
+    "id",
+    "limit",
+    "offset",
+    "section",
+    "version"
+   ],
+   "required": [
+    "id"
+   ],
+   "returns": "the doc; offset/limit/section: a version-pinned range",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "Read a doc (latest or a version), whole or a bounded range",
+   "when": "when a ticket or link points at a doc"
+  },
+  "doc_update": {
+   "enums": {},
+   "fields": [
+    "body_md",
+    "compact",
+    "id",
+    "tags",
+    "title"
+   ],
+   "required": [
+    "id"
+   ],
+   "returns": "the doc (compact=true: a receipt)",
+   "roles": [
+    "adversary",
+    "architect",
+    "engineer",
+    "qa",
+    "sme"
+   ],
+   "what": "Replace a doc's body/title as a new version",
+   "when": "to amend a doc you own"
+  },
+  "doctor_dead_mail": {
+   "enums": {},
+   "fields": [],
+   "required": [],
+   "returns": "the dead messages + causes",
+   "roles": [
+    "doctor"
+   ],
+   "what": "Broker publishes that had no recipient (publish_no_route)",
+   "when": "a message that never arrived"
+  },
+  "doctor_feed_lag": {
+   "enums": {},
+   "fields": [],
+   "required": [],
+   "returns": "seats + causes",
+   "roles": [
+    "doctor"
+   ],
+   "what": "Per live seat: unread addressed messages, their age, last request and output",
+   "when": "a seat that does not answer or wake"
+  },
+  "doctor_health": {
+   "enums": {},
+   "fields": [],
+   "required": [],
+   "returns": "services + causes (named root causes with a fix and a guide)",
+   "roles": [
+    "doctor"
+   ],
+   "what": "Service health, the supervisor, package versions and pool reachability",
+   "when": "first, for any 'it is broken' report"
+  },
+  "doctor_logs": {
+   "enums": {},
+   "fields": [
+    "lines",
+    "service"
+   ],
+   "required": [
+    "service"
+   ],
+   "returns": "the tail, or the available logs",
+   "roles": [
+    "doctor"
+   ],
+   "what": "A redacted log tail (secrets, user paths, emails and tokens scrubbed)",
+   "when": "after a health or pool cause names a service"
+  },
+  "doctor_pains": {
+   "enums": {},
+   "fields": [],
+   "required": [],
+   "returns": "the open pains",
+   "roles": [
+    "doctor"
+   ],
+   "what": "Open pain records (tools or guides found wrong)",
+   "when": "to see whether a symptom is already known"
+  },
+  "doctor_pool": {
+   "enums": {},
+   "fields": [],
+   "required": [],
+   "returns": "the pool view + causes",
+   "roles": [
+    "doctor"
+   ],
+   "what": "Pool liveness, sessions, caps and usage, saturated caps and queued spawns",
+   "when": "seats not spawning, false deaths, slow spawns"
+  },
+  "events_query": {
+   "enums": {},
+   "fields": [
+    "limit",
+    "since",
+    "subject_id"
+   ],
+   "required": [],
+   "returns": "matching events",
+   "roles": [
+    "architect",
+    "doctor",
+    "owner"
+   ],
+   "what": "Read the event log by subject or since a seq",
+   "when": "to reconstruct or catch up on events"
+  },
+  "find": {
+   "enums": {},
+   "fields": [
+    "epic_id",
+    "k",
+    "query",
+    "types"
+   ],
+   "required": [
+    "query"
+   ],
+   "returns": "ranked hits with snippets",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "qa"
+   ],
+   "what": "Search tickets, criteria, docs and messages by words or meaning; hits carry ticket_id and epic_id",
+   "when": "to find something without its id"
+  },
+  "gate_answer": {
+   "enums": {
+    "gate": [
+     "design_signoff",
+     "poc",
+     "demo",
+     "adversarial",
+     "budget",
+     "acceptance",
+     "scope"
+    ]
+   },
+   "fields": [
+    "answer",
+    "gate",
+    "ticket_id"
+   ],
+   "required": [
+    "answer",
+    "gate",
+    "ticket_id"
+   ],
+   "returns": "the gate_answered event",
+   "roles": [
+    "owner"
+   ],
+   "what": "Answer an open human gate (owner only)",
+   "when": "to resolve a gate a seat opened"
+  },
+  "gate_open": {
+   "enums": {
+    "gate": [
+     "design_signoff",
+     "poc",
+     "demo",
+     "adversarial",
+     "budget",
+     "acceptance",
+     "scope"
+    ]
+   },
+   "fields": [
+    "gate",
+    "note",
+    "ticket_id"
+   ],
+   "required": [
+    "gate",
+    "ticket_id"
+   ],
+   "returns": "the gate_opened event; the owner is notified",
+   "roles": [
+    "adversary",
+    "architect",
+    "engineer"
+   ],
+   "what": "Open a human gate on a ticket (one per gate at a time)",
+   "when": "when work needs a human decision"
+  },
+  "gates": {
+   "enums": {},
+   "fields": [
+    "ticket_id"
+   ],
+   "required": [
+    "ticket_id"
+   ],
+   "returns": "the open gates",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "owner",
+    "qa"
+   ],
+   "what": "List a ticket's open gates",
+   "when": "to see if a ticket waits on a human"
+  },
+  "get_guide": {
+   "enums": {},
+   "fields": [
+    "name"
+   ],
+   "required": [
+    "name"
+   ],
+   "returns": "the guide's markdown, or not_found",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "Fetch one reference guide by name",
+   "when": "when a card or task names a guide"
+  },
+  "inbox": {
+   "enums": {},
+   "fields": [],
+   "required": [],
+   "returns": "the list (empty = clear)",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "qa",
+    "sme"
+   ],
+   "what": "Questions and steers awaiting you, oldest first, each with answer_with",
+   "when": "first when woken, and step 1 of closing"
+  },
+  "link_create": {
+   "enums": {
+    "relation": [
+     "designed_by",
+     "uses_strategy",
+     "uses_domain",
+     "evidence_for",
+     "blocks",
+     "produced",
+     "extends"
+    ]
+   },
+   "fields": [
+    "from_id",
+    "relation",
+    "to_id"
+   ],
+   "required": [
+    "from_id",
+    "relation",
+    "to_id"
+   ],
+   "returns": "the link",
+   "roles": [
+    "adversary",
+    "architect",
+    "engineer",
+    "qa",
+    "sme"
+   ],
+   "what": "Link from_id <relation> to_id (ticket/doc/artifact)",
+   "when": "to attach a design, strategy, evidence, blocker, artifact or doc layer"
+  },
+  "link_delete": {
+   "enums": {},
+   "fields": [
+    "id"
+   ],
+   "required": [
+    "id"
+   ],
+   "returns": "whether it was deleted",
+   "roles": [
+    "architect"
+   ],
+   "what": "Remove a link",
+   "when": "to undo a link made in error"
+  },
+  "link_query": {
+   "enums": {
+    "relation": [
+     "designed_by",
+     "uses_strategy",
+     "uses_domain",
+     "evidence_for",
+     "blocks",
+     "produced",
+     "extends"
+    ]
+   },
+   "fields": [
+    "from_id",
+    "relation",
+    "to_id"
+   ],
+   "required": [],
+   "returns": "the links",
+   "roles": [
+    "adversary",
+    "architect",
+    "engineer",
+    "sme"
+   ],
+   "what": "List links by from_id/to_id/relation",
+   "when": "to see what something is linked to"
+  },
+  "lookup": {
+   "enums": {},
+   "fields": [
+    "id",
+    "path",
+    "question",
+    "scope"
+   ],
+   "required": [
+    "scope"
+   ],
+   "returns": "records, rendered body and receipt",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "Current decisions, claims and lessons for a question, id or path in one epic (binding ones always)",
+   "when": "on resume or before acting, instead of trusting memory"
+  },
+  "message_query": {
+   "enums": {
+    "kind": [
+     "question",
+     "answer",
+     "steer",
+     "status",
+     "finding",
+     "deviation",
+     "note"
+    ]
+   },
+   "fields": [
+    "created_by",
+    "kind",
+    "limit",
+    "since_seq",
+    "ticket_id",
+    "to"
+   ],
+   "required": [],
+   "returns": "the messages and a last_seq hint",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "List thread messages oldest first with seq; since_seq returns only newer ones",
+   "when": "to read or poll a thread"
+  },
+  "message_read": {
+   "enums": {},
+   "fields": [
+    "id"
+   ],
+   "required": [
+    "id"
+   ],
+   "returns": "the message",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "Read one message with its seq, parent and replies",
+   "when": "when a feed event or reply_to names it"
+  },
+  "message_send": {
+   "enums": {
+    "kind": [
+     "question",
+     "answer",
+     "steer",
+     "status",
+     "finding",
+     "deviation",
+     "note"
+    ]
+   },
+   "fields": [
+    "artifacts",
+    "code_context",
+    "kind",
+    "quotes",
+    "reply_to",
+    "text",
+    "ticket_id",
+    "to"
+   ],
+   "required": [
+    "kind",
+    "text",
+    "ticket_id"
+   ],
+   "returns": "the message; asks reach the recipient's feed",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "Post to a ticket thread: a participant/role/@handle, or a note",
+   "when": "milestones, blockers, questions, answers, hand-offs"
+  },
+  "participants": {
+   "enums": {
+    "role": [
+     "owner",
+     "architect",
+     "sme",
+     "engineer",
+     "adversary",
+     "qa",
+     "doctor"
+    ]
+   },
+   "fields": [
+    "role"
+   ],
+   "required": [],
+   "returns": "the roster",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "List humans and seats, optionally by role, with @handle and reach",
+   "when": "to find a collaborator, then message_send(to='@'+handle)"
+  },
+  "preflight": {
+   "enums": {},
+   "fields": [],
+   "required": [],
+   "returns": "the numbers and rules of thumb",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "Host free RAM and live seats vs pool caps; advisory, never blocks",
+   "when": "before a spawn"
+  },
+  "propose_fix": {
+   "enums": {},
+   "fields": [
+    "action",
+    "effect",
+    "topic_id"
+   ],
+   "required": [
+    "action",
+    "effect",
+    "topic_id"
+   ],
+   "returns": "the proposal and its card",
+   "roles": [
+    "doctor"
+   ],
+   "what": "Propose ONE fix as an admin approval card showing the exact action; nothing runs until an admin approves, then the result is posted on your thread",
+   "when": "after the evidence names a root cause a listed action fixes"
+  },
+  "reap": {
+   "enums": {},
+   "fields": [
+    "participant_id"
+   ],
+   "required": [
+    "participant_id"
+   ],
+   "returns": "confirmation, or running/unavailable",
+   "roles": [
+    "architect",
+    "owner"
+   ],
+   "what": "Tear down a seat's shell (dead, or the resident architect at epic close)",
+   "when": "to clear a dead seat or close the architect after the epic"
+  },
+  "record_claim": {
+   "enums": {
+    "basis": [
+     "assumption",
+     "measured",
+     "ruled"
+    ]
+   },
+   "fields": [
+    "basis",
+    "evidence",
+    "scope",
+    "source",
+    "text"
+   ],
+   "required": [
+    "scope",
+    "text"
+   ],
+   "returns": "the claim",
+   "roles": [
+    "adversary",
+    "architect",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "Record something stated but not yet shown, with basis and evidence",
+   "when": "when you assert something without attached proof"
+  },
+  "record_decision": {
+   "enums": {},
+   "fields": [
+    "binding",
+    "detail",
+    "domains",
+    "replaces",
+    "scope",
+    "source",
+    "text"
+   ],
+   "required": [
+    "scope",
+    "text"
+   ],
+   "returns": "the decision",
+   "roles": [
+    "adversary",
+    "architect",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "Record what is in force, why, and which decisions it replaces",
+   "when": "the moment a ruling or in-authority decision is made, before acting on it"
+  },
+  "record_lesson": {
+   "enums": {},
+   "fields": [
+    "domain",
+    "evidence",
+    "text",
+    "topic"
+   ],
+   "required": [
+    "domain",
+    "text",
+    "topic"
+   ],
+   "returns": "the lesson",
+   "roles": [
+    "adversary",
+    "architect",
+    "engineer",
+    "qa",
+    "sme"
+   ],
+   "what": "Record a lesson: domain, topic, one sentence, evidence ids",
+   "when": "/learn or /harvest"
+  },
+  "record_status": {
+   "enums": {
+    "status": [
+     "done",
+     "deferred",
+     "failed",
+     "blocked",
+     "reviewed",
+     "handed_off"
+    ]
+   },
+   "fields": [
+    "note",
+    "status",
+    "ticket_id",
+    "to"
+   ],
+   "required": [
+    "status"
+   ],
+   "returns": "the message and who was told",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "qa",
+    "sme"
+   ],
+   "what": "Record your outcome with a one-line note to your spawner, architect and owner",
+   "when": "at milestones and as step 2 of closing"
+  },
+  "resume": {
+   "enums": {},
+   "fields": [
+    "participant_id"
+   ],
+   "required": [
+    "participant_id"
+   ],
+   "returns": "the session, or running/unavailable",
+   "roles": [
+    "architect",
+    "owner"
+   ],
+   "what": "Resume a parked or stalled session",
+   "when": "to wake a stalled seat"
+  },
+  "resume_self": {
+   "enums": {},
+   "fields": [],
+   "required": [],
+   "returns": "identity, ordered steps, monitor_cmd + cron, open asks; see get_guide('resume')",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "Resume after a park, reap, crash or respawn: re-arm wakes, list open asks and steps",
+   "when": "first call of a resumed shell, after compaction, or when unsure Monitor/cron are alive"
+  },
+  "session_query": {
+   "enums": {
+    "state": [
+     "alive",
+     "stalled",
+     "dead",
+     "parked"
+    ]
+   },
+   "fields": [
+    "participant_id",
+    "state",
+    "ticket_id"
+   ],
+   "required": [],
+   "returns": "matching sessions",
+   "roles": [
+    "architect",
+    "owner"
+   ],
+   "what": "List sessions by participant/ticket/state",
+   "when": "to check a seat is live"
+  },
+  "set_binding": {
+   "enums": {},
+   "fields": [
+    "binding",
+    "decision_id",
+    "reason"
+   ],
+   "required": [
+    "binding",
+    "decision_id"
+   ],
+   "returns": "the decision",
+   "roles": [
+    "architect"
+   ],
+   "what": "Promote or demote a live decision's binding flag (architect/owner); audited",
+   "when": "when re-judging which decisions every seat must follow"
+  },
+  "spawn": {
+   "enums": {
+    "effort": [
+     "low",
+     "medium",
+     "high"
+    ],
+    "mode": [
+     "headless",
+     "monitor"
+    ],
+    "role": [
+     "owner",
+     "architect",
+     "sme",
+     "engineer",
+     "adversary",
+     "qa",
+     "doctor"
+    ]
+   },
+   "fields": [
+    "assign",
+    "effort",
+    "mode",
+    "model",
+    "parent_session",
+    "participant_id",
+    "role",
+    "ticket_id"
+   ],
+   "required": [
+    "role"
+   ],
+   "returns": "the session, or status running (poll session_query)",
+   "roles": [
+    "architect",
+    "owner"
+   ],
+   "what": "Start a seat for a role on a ticket",
+   "when": "to delegate a story/task or spawn a checker"
+  },
+  "subscribe": {
+   "enums": {},
+   "fields": [],
+   "required": [],
+   "returns": "the monitor command and heartbeat cron to arm",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "Arm your event feed (once per session)",
+   "when": "at boot, right after whoami"
+  },
+  "ticket_create": {
+   "enums": {
+    "kind": [
+     "epic",
+     "story",
+     "task"
+    ],
+    "work_type": [
+     "feature",
+     "bug",
+     "rnd",
+     "creative",
+     "review",
+     "knowledge",
+     "chore"
+    ]
+   },
+   "fields": [
+    "assignee",
+    "description",
+    "kind",
+    "parent_id",
+    "tags",
+    "title",
+    "words",
+    "work_type"
+   ],
+   "required": [
+    "kind",
+    "title",
+    "work_type"
+   ],
+   "returns": "the ticket, or a scope error at a cap",
+   "roles": [
+    "adversary",
+    "architect",
+    "engineer",
+    "owner"
+   ],
+   "what": "Create an epic (owner), story (architect; owner: a quick task, tag quick, no parent) or task. At most 8 open stories per epic (raised via a scope gate), at most 5 tasks per story",
+   "when": "when you own a new slice of work"
+  },
+  "ticket_query": {
+   "enums": {
+    "kind": [
+     "epic",
+     "story",
+     "task"
+    ],
+    "status": [
+     "drafted",
+     "designed",
+     "signed_off",
+     "ready",
+     "in_progress",
+     "in_review",
+     "blocked",
+     "done",
+     "partial",
+     "dropped"
+    ],
+    "work_type": [
+     "feature",
+     "bug",
+     "rnd",
+     "creative",
+     "review",
+     "knowledge",
+     "chore"
+    ]
+   },
+   "fields": [
+    "assignee",
+    "created_by",
+    "epic_id",
+    "kind",
+    "parent_id",
+    "q",
+    "status",
+    "tag",
+    "work_type"
+   ],
+   "required": [],
+   "returns": "matching tickets",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "sme"
+   ],
+   "what": "List tickets matching the filter args",
+   "when": "to find tickets without an id"
+  },
+  "ticket_read": {
+   "enums": {},
+   "fields": [
+    "include",
+    "thread_limit",
+    "ticket_id"
+   ],
+   "required": [
+    "ticket_id"
+   ],
+   "returns": "the ticket record",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "One read of a ticket: record, chain, criteria, docs, children, blockers, gates, newest thread (thread_seq), links",
+   "when": "when you need a ticket's full state"
+  },
+  "ticket_update": {
+   "enums": {
+    "status": [
+     "drafted",
+     "designed",
+     "signed_off",
+     "ready",
+     "in_progress",
+     "in_review",
+     "blocked",
+     "done",
+     "partial",
+     "dropped"
+    ]
+   },
+   "fields": [
+    "assignee",
+    "description",
+    "design_ref",
+    "status",
+    "tags",
+    "ticket_id",
+    "title"
+   ],
+   "required": [
+    "ticket_id"
+   ],
+   "returns": "the ticket, or an error naming what is missing",
+   "roles": [
+    "adversary",
+    "architect",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "Change the args given, per the transition rules",
+   "when": "to move or assign a ticket; in_review only once verified"
+  },
+  "topic_propose": {
+   "enums": {
+    "doc_type": [
+     "design",
+     "strategy_hl",
+     "strategy_ll",
+     "domain",
+     "report",
+     "note"
+    ]
+   },
+   "fields": [
+    "body_md",
+    "doc_type",
+    "proposes",
+    "source_url",
+    "tags",
+    "title",
+    "topic_id"
+   ],
+   "required": [
+    "body_md",
+    "source_url",
+    "title",
+    "topic_id"
+   ],
+   "returns": "the proposed doc with Source + fetched-at in its header",
+   "roles": [
+    "sme"
+   ],
+   "what": "File a proposed Library doc from a page topic_research fetched; the owner approves it",
+   "when": "after research, or to propose the next version of a topic doc"
+  },
+  "topic_research": {
+   "enums": {},
+   "fields": [
+    "query",
+    "topic_id",
+    "url"
+   ],
+   "required": [
+    "topic_id"
+   ],
+   "returns": "search results or the page text, plus the fetch receipt",
+   "roles": [
+    "sme"
+   ],
+   "what": "Search skills.sh or read one page for your Library topic (skills.sh, GitHub, the seed host only)",
+   "when": "a topic seat's research step, before proposing a doc"
+  },
+  "whoami": {
+   "enums": {},
+   "fields": [],
+   "required": [],
+   "returns": "the participant, tickets, bundles and server version",
+   "roles": [
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "owner",
+    "qa",
+    "sme"
+   ],
+   "what": "Your identity, role, open tickets, lineage and tool bundles",
+   "when": "at boot"
+  },
+  "why_stuck": {
+   "enums": {},
+   "fields": [
+    "ticket_id"
+   ],
+   "required": [
+    "ticket_id"
+   ],
+   "returns": "the ticket's facts + causes",
+   "roles": [
+    "doctor"
+   ],
+   "what": "Why a ticket does not move: gates nobody can answer, a missing checker or doer seat, blockers, the next edges' missing preconditions, a full cap",
+   "when": "a stuck ticket, epic or gate"
+  },
+  "withdraw_claim": {
+   "enums": {},
+   "fields": [
+    "claim_id",
+    "reason"
+   ],
+   "required": [
+    "claim_id"
+   ],
+   "returns": "the withdrawn claim",
+   "roles": [],
+   "what": "Withdraw a claim with no successor; lookup never returns it again",
+   "when": "when a claim was superseded or wrong and nothing replaces it"
+  },
+  "withdraw_decision": {
+   "enums": {},
+   "fields": [
+    "decision_id",
+    "reason"
+   ],
+   "required": [
+    "decision_id"
+   ],
+   "returns": "the withdrawn decision",
+   "roles": [
+    "engineer"
+   ],
+   "what": "Withdraw a decision with no successor; lookup never returns it again",
+   "when": "when a decision was wrong and nothing replaces it"
+  },
+  "workflow_check": {
+   "enums": {},
+   "fields": [
+    "ref"
+   ],
+   "required": [
+    "ref"
+   ],
+   "returns": "problems, walk + causes",
+   "roles": [
+    "doctor"
+   ],
+   "what": "Validate a workflow version and walk its status graph (unreachable, dead ends)",
+   "when": "a stuck walk under a custom workflow, or a failed update compat check"
+  }
+ }
+}

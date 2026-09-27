@@ -32,10 +32,11 @@ from .http_upload import HttpUploadPolicy
 
 import anyio
 from mcp.server.mcpserver import Context, MCPServer
-from mcp_types import ListToolsResult
+from mcp_types import CallToolResult, ImageContent, ListToolsResult, TextContent
 from mcp.server.streamable_http_manager import StreamableHTTPASGIApp, StreamableHTTPSessionManager
 from mcp.server.transport_security import TransportSecuritySettings
-from pydantic import Field
+from mcp.server.mcpserver.utilities.func_metadata import ArgModelBase
+from pydantic import ConfigDict, Field
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -168,7 +169,7 @@ def _wrap(tool: ToolDef, *, board_url: str, admin_token: str | None, workspace_r
             # invoke() validates args → envelope on a bad enum (naming field + allowed values),
             # carries the deprecation hint, and counts consecutive failures per seat (§19).
             result = invoke(request_tool, kwargs, seat=participant)
-        return json.dumps(result, default=str)
+        return _as_content(result)
 
     params = [inspect.Parameter("ctx", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=Context)]
     for fname, field in tool.args_model.model_fields.items():
@@ -182,6 +183,19 @@ def _wrap(tool: ToolDef, *, board_url: str, admin_token: str | None, workspace_r
     call.__name__ = tool.name
     call.__annotations__ = {"ctx": Context, **{p.name: p.annotation for p in params[1:]}, "return": str}
     return call
+
+
+def _as_content(result: dict[str, Any]) -> Any:
+    """The JSON envelope as text; an artifact_read image (value.content.base64, S23) also goes out as an MCP
+    image block, so the model sees the pixels. The base64 never sits in the text or structured copy."""
+    content = (result.get("value") or {}).get("content") if isinstance(result.get("value"), dict) else None
+    data = content.pop("base64", None) if isinstance(content, dict) else None
+    text = json.dumps(result, default=str)
+    if not data:
+        return text
+    return CallToolResult(content=[TextContent(type="text", text=text),
+                                   ImageContent(type="image", data=data, mime_type=content.get("mime") or "image/png")],
+                          structured_content={"result": text})
 
 
 class _RoleServer(MCPServer):
@@ -214,9 +228,21 @@ def build_role_server(role: str, *, board_url: str, admin_token: str | None,
         server.add_tool(_wrap(tool, board_url=board_url, admin_token=admin_token, workspace_root=workspace_root,
                               http_upload_policy=http_upload_policy, path_role=role),
                         name=tool.name, description=tool.description)
-        # advertise the compact schema (S20); FastMCP still validates against the wrapper signature
-        server._tool_manager.get_tool(tool.name).parameters = tool.input_schema
+        # advertise the compact schema (S20); the raw arguments reach invoke(), whose strict args_model
+        # rejects an unknown or misspelled arg with the nearest accepted name (S23) — the SDK's own
+        # signature model would silently drop it and answer a bad enum with a bare ToolError
+        registered = server._tool_manager.get_tool(tool.name)
+        registered.parameters = tool.input_schema
+        registered.fn_metadata.arg_model = _RawArgs
     return server
+
+
+class _RawArgs(ArgModelBase):
+    """Pass every argument through unvalidated; bundles.invoke validates against the tool's args_model."""
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+
+    def model_dump_one_level(self) -> dict[str, Any]:
+        return dict(self.model_extra or {})
 
 
 def _env() -> tuple[str, str | None]:
