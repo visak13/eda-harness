@@ -1,0 +1,884 @@
+[
+ {
+  "seat": "architect.epic-7f3d64e6de",
+  "size": "8k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-aa16fab6d3 (t-e967ec72b5, engineer, pending); c-7f77c6c523, c-8093e35929, c-14348c35e8, c-7b1702f845, c-fc3b301a80, c-f8f4c89758 (epic-7f3d64e6de, qa, pending)"
+ },
+ {
+  "seat": "architect.epic-7f3d64e6de",
+  "size": "8k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_read(id='m-98c7821acc') - newest thread item (answer on epic-7f3d64e6de, 2026-09-27T08:14:50Z); pack holds id+kind only, no sender or body; asks_for_me empty"
+ },
+ {
+  "seat": "architect.epic-7f3d64e6de",
+  "size": "8k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-20ec2c5207 (t-e967ec72b5: no favicon and no rail logo; serve web/public brand files instead of SPA fallback); m-bf83c16da7 (t-9e9ba3a6e5, dropped: a kind=status message to owner, m-d98c7b57c9, never reached Needs you). s-226d9db7ec description truncated (+739 chars) may cite more: ticket_read(ticket_id='s-226d9db7ec')"
+ },
+ {
+  "seat": "architect.epic-7f3d64e6de",
+  "size": "16k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-aa16fab6d3 (t-e967ec72b5, engineer, pending); c-7f77c6c523, c-8093e35929, c-14348c35e8, c-7b1702f845, c-fc3b301a80, c-f8f4c89758 (epic-7f3d64e6de, qa, pending)"
+ },
+ {
+  "seat": "architect.epic-7f3d64e6de",
+  "size": "16k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_read(id='m-98c7821acc') - newest thread item (answer on epic-7f3d64e6de, 2026-09-27T08:14:50Z); the 16k pack is the same compact rendering as 8k: id+kind only, no sender or body"
+ },
+ {
+  "seat": "architect.epic-7f3d64e6de",
+  "size": "16k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-20ec2c5207 (t-e967ec72b5: no favicon and no rail logo; serve web/public brand files instead of SPA fallback); m-bf83c16da7 (t-9e9ba3a6e5, dropped: a kind=status message to owner, m-d98c7b57c9, never reached Needs you). s-226d9db7ec description truncated; ticket_read(ticket_id='s-226d9db7ec') to confirm"
+ },
+ {
+  "seat": "architect.epic-7f3d64e6de",
+  "size": "40k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-aa16fab6d3 (t-e967ec72b5, checked_by engineer, pending; evidence note-516d697631 attached); c-7f77c6c523, c-8093e35929, c-14348c35e8, c-7b1702f845 (look), c-fc3b301a80, c-f8f4c89758 (epic-7f3d64e6de, checked_by qa, pending)"
+ },
+ {
+  "seat": "architect.epic-7f3d64e6de",
+  "size": "40k",
+  "qid": "Q2",
+  "mark": "ANSWERED",
+  "answer": "Nothing in the pack is addressed to the architect (asks_for_me empty). Latest architect/owner message: m-98c7821acc (architect -> owner, kind=answer, reply_to m-e09a1fe3dd, 08:14Z): the Fable shell is building the 8/16/40 KB exam from this epic's seat boots and hands it to Opus 5.5 and Sol (body truncated +1542 chars). Latest owner message: m-cc7f9f04f8 on s-226d9db7ec: close the adversarial round here; fix what we can."
+ },
+ {
+  "seat": "architect.epic-7f3d64e6de",
+  "size": "40k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-20ec2c5207 (t-e967ec72b5: no favicon and no rail logo; brand files under /ui/brand returned index.html, serve real dist files); m-bf83c16da7 (t-9e9ba3a6e5, dropped: status message m-d98c7b57c9 to owner never reached Needs you; inbox should include status/finding/deviation to humans). s-226d9db7ec full description cites no owner id."
+ },
+ {
+  "seat": "qa.epic-7f3d64e6de",
+  "size": "8k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "All checked_by qa. epic-7f3d64e6de: c-7f77c6c523, c-8093e35929, c-14348c35e8, c-7b1702f845, c-fc3b301a80, c-f8f4c89758 (pending). s-ec73f74ea9: c-c19f9c4936, c-3722df2267, c-0dd1b51f61, c-6d8e6fe660 (pending). s-b7ec13d748: c-d7bd67f704, c-ac06d82a6e, c-85355907fe (pending). s-870e401942: c-5fb36ba3db, c-3753f0a63a, c-2d2dfd8976, c-9a2a84d019 (pending). s-461403ebd1: c-54afa8a81b, c-e7cba464fc, c-0e2611c3f2, c-5c7afde0e8, c-2c02d34d7f, c-328185ac06 (pending). s-9648fded35: c-d1efb29e94, c-9bf2b47192, c-0f247caf7d, c-eb6dc6172f (pending). s-6d5fdf783a: c-dc617c014b, c-cbbe11fb55 (pending). s-54a03afc5a: c-50778c655b (fail). s-0cfebd3862: c-0b7b0506e6, c-b73a4537db (pending)."
+ },
+ {
+  "seat": "qa.epic-7f3d64e6de",
+  "size": "8k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_read(id='m-98c7821acc') - newest thread item on any of my tickets (answer on epic-7f3d64e6de, 2026-09-27T08:14:50Z); asks_for_me is empty and the pack holds only ids+kinds, no sender or body"
+ },
+ {
+  "seat": "qa.epic-7f3d64e6de",
+  "size": "8k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-30023429f7 (S13: workflow engine as data, in this epic); m-6b6060dd38 (S13 c-5c7afde0e8: guards/preconditions declared as data in the workflow definition); m-3ab3753664 (S15: project site on GitHub Pages); m-26ffec400f, m-f2ce5f4f14, m-767dd93f62 (S17 product video asks), m-81bb4cca5e (S17 scope approved); m-1f39866c96 (S21: admin UI and heronry context menu give no way to start the code server - how does one start it?); m-1998f097c0 (S9 c-0f247caf7d: ruling carried from S8 c-eb38e8c949). Descriptions truncated; ticket_read per story for full text."
+ },
+ {
+  "seat": "qa.epic-7f3d64e6de",
+  "size": "16k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "All checked_by qa. epic-7f3d64e6de: c-7f77c6c523, c-8093e35929, c-14348c35e8, c-7b1702f845, c-fc3b301a80, c-f8f4c89758 (pending). s-ec73f74ea9: c-c19f9c4936, c-3722df2267, c-0dd1b51f61, c-6d8e6fe660 (pending). s-b7ec13d748: c-d7bd67f704, c-ac06d82a6e, c-85355907fe (pending). s-870e401942: c-5fb36ba3db, c-3753f0a63a, c-2d2dfd8976, c-9a2a84d019 (pending). s-461403ebd1: c-54afa8a81b, c-e7cba464fc, c-0e2611c3f2, c-5c7afde0e8, c-2c02d34d7f, c-328185ac06 (pending). s-9648fded35: c-d1efb29e94, c-9bf2b47192, c-0f247caf7d, c-eb6dc6172f (pending). s-6d5fdf783a: c-dc617c014b, c-cbbe11fb55 (pending). s-54a03afc5a: c-50778c655b (fail). s-0cfebd3862: c-0b7b0506e6, c-b73a4537db (pending)."
+ },
+ {
+  "seat": "qa.epic-7f3d64e6de",
+  "size": "16k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_read(id='m-98c7821acc') - newest thread item on any of my tickets (answer on epic-7f3d64e6de, 2026-09-27T08:14:50Z); asks_for_me is empty and the pack holds only ids+kinds, no sender or body"
+ },
+ {
+  "seat": "qa.epic-7f3d64e6de",
+  "size": "16k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-30023429f7 (S13: workflow engine as data, in this epic); m-6b6060dd38 (S13 c-5c7afde0e8: guards/preconditions declared as data in the workflow definition); m-3ab3753664 (S15: project site on GitHub Pages); m-26ffec400f, m-f2ce5f4f14, m-767dd93f62 (S17 product video asks), m-81bb4cca5e (S17 scope approved); m-1f39866c96 (S21: admin UI and heronry context menu give no way to start the code server - how does one start it?); m-1998f097c0 (S9 c-0f247caf7d: ruling carried from S8 c-eb38e8c949). Descriptions truncated; ticket_read per story for full text."
+ },
+ {
+  "seat": "qa.epic-7f3d64e6de",
+  "size": "40k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "All checked_by qa. epic-7f3d64e6de: c-7f77c6c523, c-8093e35929, c-14348c35e8, c-7b1702f845, c-fc3b301a80, c-f8f4c89758 (pending). s-ec73f74ea9: c-c19f9c4936, c-3722df2267, c-0dd1b51f61, c-6d8e6fe660 (pending). s-b7ec13d748: c-d7bd67f704, c-ac06d82a6e, c-85355907fe (pending). s-870e401942: c-5fb36ba3db, c-3753f0a63a, c-2d2dfd8976, c-9a2a84d019 (pending). s-461403ebd1: c-54afa8a81b, c-e7cba464fc, c-0e2611c3f2, c-5c7afde0e8, c-2c02d34d7f, c-328185ac06 (pending). s-9648fded35: c-d1efb29e94, c-9bf2b47192, c-0f247caf7d, c-eb6dc6172f (pending). s-6d5fdf783a: c-dc617c014b, c-cbbe11fb55 (pending). s-54a03afc5a: c-50778c655b (fail). s-0cfebd3862: c-0b7b0506e6, c-b73a4537db (pending)."
+ },
+ {
+  "seat": "qa.epic-7f3d64e6de",
+  "size": "40k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_read(id='m-98c7821acc') - newest thread item on any of my tickets (answer on epic-7f3d64e6de, 2026-09-27T08:14:50Z); asks_for_me is empty and the pack holds only ids+kinds, no sender or body"
+ },
+ {
+  "seat": "qa.epic-7f3d64e6de",
+  "size": "40k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-30023429f7 (S13: workflow engine as data, in this epic); m-6b6060dd38 (S13 c-5c7afde0e8: guards/preconditions declared as data in the workflow definition); m-3ab3753664 (S15: project site on GitHub Pages); m-26ffec400f, m-f2ce5f4f14, m-767dd93f62 (S17 product video asks), m-81bb4cca5e (S17 scope approved); m-1f39866c96 (S21: admin UI and heronry context menu give no way to start the code server - how does one start it?); m-1998f097c0 (S9 c-0f247caf7d: ruling carried from S8 c-eb38e8c949). Descriptions truncated; ticket_read per story for full text."
+ },
+ {
+  "seat": "qa.s-da61d38c5e",
+  "size": "8k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-de4fa3e6e6 (s-da61d38c5e, qa, fail); c-2c16f5ebf0 (s-da61d38c5e, qa, fail)"
+ },
+ {
+  "seat": "qa.s-da61d38c5e",
+  "size": "8k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_read(id='m-99a046a575') - latest thread item (status, 2026-09-27T05:50:09Z); asks_for_me empty; pack has no sender/body"
+ },
+ {
+  "seat": "qa.s-da61d38c5e",
+  "size": "8k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-79f8b9a5dc (S23 description: 'yes, lets do this now' - a fresh shell uses all tools across all shells and reports what is wasteful; audit and fix the tool layer); m-538d9896ab (c-1b76522c14: no workarounds - every framework task runs through a tool); m-891b9f42bd (c-2c16f5ebf0: no information loss - paging parity for bounded tools). Description truncated (+3161 chars); ticket_read(ticket_id='s-da61d38c5e') for any further citations."
+ },
+ {
+  "seat": "qa.s-da61d38c5e",
+  "size": "16k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-de4fa3e6e6 (s-da61d38c5e, qa, fail); c-2c16f5ebf0 (s-da61d38c5e, qa, fail)"
+ },
+ {
+  "seat": "qa.s-da61d38c5e",
+  "size": "16k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_query(ticket_id='s-da61d38c5e', since_seq=0) - the only visible item, m-99a046a575, is my own qa status (3 pass, 2 fail: F1 message_query hint skips messages; F2 7 creates not idempotent); asks_for_me empty and the 2 other thread messages are omitted"
+ },
+ {
+  "seat": "qa.s-da61d38c5e",
+  "size": "16k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-79f8b9a5dc (S23: 'yes, lets do this now' - a fresh shell uses all tools across all shells and reports token waste (astra high), a shell fixes it (opus 5.5), then an opus 5.5 shell verifies; plus the tool standards); m-538d9896ab (c-1b76522c14: no workarounds - every framework task runs through MCP tools alone); m-891b9f42bd (c-2c16f5ebf0: no information loss - paging parity, description compaction keeps facts, same outcomes)."
+ },
+ {
+  "seat": "qa.s-da61d38c5e",
+  "size": "40k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-de4fa3e6e6 (s-da61d38c5e, qa, fail); c-2c16f5ebf0 (s-da61d38c5e, qa, fail)"
+ },
+ {
+  "seat": "qa.s-da61d38c5e",
+  "size": "40k",
+  "qid": "Q2",
+  "mark": "ANSWERED",
+  "answer": "m-6cc4b4e352 from architect.epic-7f3d64e6de to qa (steer, 05:38Z): the S23-T3 brief for the owner-sanctioned Opus verify seat (m-79f8b9a5dc) - verdict only S23's five qa criteria (c-1e44b92059, c-729834c66e, ...), this story only, no other ticket; re-run the audit cold and report. (My reply m-359ed07eab: FAIL on 2 of 5.)"
+ },
+ {
+  "seat": "qa.s-da61d38c5e",
+  "size": "40k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-79f8b9a5dc (S23: 'yes, lets do this now' - fresh shell exercises all tools across all shells and reports token waste (astra high), a shell fixes it (opus 5.5), then an opus 5.5 shell verifies; just for this ticket); m-538d9896ab (c-1b76522c14: no workarounds - every framework task runs through MCP tools alone); m-891b9f42bd (c-2c16f5ebf0: no information loss - paging parity, compaction keeps every fact, same outcomes)."
+ },
+ {
+  "seat": "sme.s-1dccea48b5",
+  "size": "8k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "None: the only criterion, c-e2ce38b22c (s-1dccea48b5, checked_by owner), is pass."
+ },
+ {
+  "seat": "sme.s-1dccea48b5",
+  "size": "8k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_query(ticket_id='s-1dccea48b5', since_seq=0) - thread_total 2, both omitted; asks_for_me empty"
+ },
+ {
+  "seat": "sme.s-1dccea48b5",
+  "size": "8k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "none cited (the visible description and criterion cite no owner message id; description truncated +369 chars: ticket_read(ticket_id='s-1dccea48b5') to confirm)"
+ },
+ {
+  "seat": "sme.s-1dccea48b5",
+  "size": "16k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "None: c-e2ce38b22c (s-1dccea48b5, owner) is pass."
+ },
+ {
+  "seat": "sme.s-1dccea48b5",
+  "size": "16k",
+  "qid": "Q2",
+  "mark": "ANSWERED",
+  "answer": "No message is addressed to me and no architect/owner message is on my ticket. The latest is my own m-6f110dfe48 ([done]: owner passed ll-craft s-1dccea48b5; both strategy_ll docs linked). Nothing to act on; the story is done."
+ },
+ {
+  "seat": "sme.s-1dccea48b5",
+  "size": "16k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "none cited"
+ },
+ {
+  "seat": "sme.s-1dccea48b5",
+  "size": "40k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "None: c-e2ce38b22c (s-1dccea48b5, owner) is pass."
+ },
+ {
+  "seat": "sme.s-1dccea48b5",
+  "size": "40k",
+  "qid": "Q2",
+  "mark": "ANSWERED",
+  "answer": "No message is addressed to me and no architect/owner message is on my ticket. The latest is my own m-6f110dfe48 ([done]: owner passed ll-craft s-1dccea48b5; both strategy_ll docs linked). Nothing to act on; the story is done."
+ },
+ {
+  "seat": "sme.s-1dccea48b5",
+  "size": "40k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "none cited"
+ },
+ {
+  "seat": "engineer.t-8e1ac0c445",
+  "size": "8k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "None: c-4fa2c43f82 (t-8e1ac0c445, engineer) is pass."
+ },
+ {
+  "seat": "engineer.t-8e1ac0c445",
+  "size": "8k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_query(ticket_id='t-8e1ac0c445', since_seq=0) - all 13 thread messages omitted; asks_for_me empty"
+ },
+ {
+  "seat": "engineer.t-8e1ac0c445",
+  "size": "8k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-8fe09cecd4: the owner reviewed the root README ('it looks like a mess'): See it work must show all 7 video chapters; delete Why this architecture, How it works in one screen and the Antivirus block (+ its troubleshooting row); same removals on the site. (Recall also names owner steer m-317c088ba9, which superseded '7 stills' with the video plus the 7 chapters.)"
+ },
+ {
+  "seat": "engineer.t-8e1ac0c445",
+  "size": "16k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "None: c-4fa2c43f82 (t-8e1ac0c445, engineer) is pass."
+ },
+ {
+  "seat": "engineer.t-8e1ac0c445",
+  "size": "16k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_read(id='m-4ff3d73691') - the 3 visible messages are my own replies to the architect; the latest one (m-2010f29927) answers m-4ff3d73691, the newest message addressed to me, whose body is not in the pack (the others I answered: m-a24428d7a3, m-ec8b74e0fa)"
+ },
+ {
+  "seat": "engineer.t-8e1ac0c445",
+  "size": "16k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-8fe09cecd4: the owner reviewed the root README ('it looks like a mess'): See it work must show all 7 video chapters; delete Why this architecture, How it works in one screen and the Antivirus block (+ its troubleshooting row); same removals on the site. (Recall also names owner steer m-317c088ba9, which superseded '7 stills' with the video plus the 7 chapters.)"
+ },
+ {
+  "seat": "engineer.t-8e1ac0c445",
+  "size": "40k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "None: c-4fa2c43f82 (t-8e1ac0c445, engineer) is pass."
+ },
+ {
+  "seat": "engineer.t-8e1ac0c445",
+  "size": "40k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_read(id='m-4ff3d73691') - the 3 visible messages are my own replies to the architect; the latest one (m-2010f29927) answers m-4ff3d73691, the newest message addressed to me, whose body is not in the pack"
+ },
+ {
+  "seat": "engineer.t-8e1ac0c445",
+  "size": "40k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-8fe09cecd4: the owner reviewed the root README ('it looks like a mess'): See it work must show all 7 video chapters; delete Why this architecture, How it works in one screen and the Antivirus block (+ its troubleshooting row); same removals on the site. (Recall also names owner steer m-317c088ba9, which superseded '7 stills' with the video plus the 7 chapters.)"
+ },
+ {
+  "seat": "engineer.t-cd4712c855",
+  "size": "8k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-c7976fb9c1 (t-cd4712c855, checked_by engineer, pending)"
+ },
+ {
+  "seat": "engineer.t-cd4712c855",
+  "size": "8k",
+  "qid": "Q2",
+  "mark": "ANSWERED",
+  "answer": "m-a3a8943c39 from architect.epic-7f3d64e6de (steer, 08:13Z): from qa m-d757122a72 (S12 c-c0b35be596 fails, 4 resolve() parity diffs all for role owner) - fix it the non-agent way: migrate() drops legacy `roles` bindings for human roles (owner, human, expert) and keeps others as role_models rows; resolve() and seat_model_for refuse a human role; parity test loads the real pre-migration models.json fixture and asserts equality for agent roles and refusal for owner; include in the commit and name c-c0b35be596 in the report."
+ },
+ {
+  "seat": "engineer.t-cd4712c855",
+  "size": "8k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-da9a2ae62f: remove the reviewer role from everywhere (code, role cards, anything that mentions it; it must never appear again), and make the human role non-agent - no way anyone can launch the owner role."
+ },
+ {
+  "seat": "engineer.t-cd4712c855",
+  "size": "16k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-c7976fb9c1 (t-cd4712c855, checked_by engineer, pending)"
+ },
+ {
+  "seat": "engineer.t-cd4712c855",
+  "size": "16k",
+  "qid": "Q2",
+  "mark": "ANSWERED",
+  "answer": "m-a3a8943c39 from architect.epic-7f3d64e6de (steer, 08:13Z): from qa m-d757122a72 (S12 c-c0b35be596 fails, 4 resolve() parity diffs all for role owner) - fix it the non-agent way: migrate() drops legacy `roles` bindings for human roles (owner, human, expert) and keeps others as role_models rows; resolve() and seat_model_for refuse a human role; parity test loads the real pre-migration models.json fixture and asserts equality for agent roles and refusal for owner; include in the commit and name c-c0b35be596 in the report."
+ },
+ {
+  "seat": "engineer.t-cd4712c855",
+  "size": "16k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-da9a2ae62f: remove the reviewer role from everywhere (code, role cards, anything that mentions it; it must never appear again), and make the human role non-agent - no way anyone can launch the owner role."
+ },
+ {
+  "seat": "engineer.t-cd4712c855",
+  "size": "40k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-c7976fb9c1 (t-cd4712c855, checked_by engineer, pending)"
+ },
+ {
+  "seat": "engineer.t-cd4712c855",
+  "size": "40k",
+  "qid": "Q2",
+  "mark": "ANSWERED",
+  "answer": "m-a3a8943c39 from architect.epic-7f3d64e6de (steer, 08:13Z): from qa m-d757122a72 (S12 c-c0b35be596 fails, 4 resolve() parity diffs all for role owner) - fix it the non-agent way: migrate() drops legacy `roles` bindings for human roles (owner, human, expert) and keeps others as role_models rows; resolve() and seat_model_for refuse a human role; parity test loads the real pre-migration models.json fixture and asserts equality for agent roles and refusal for owner; include in the commit and name c-c0b35be596 in the report."
+ },
+ {
+  "seat": "engineer.t-cd4712c855",
+  "size": "40k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-da9a2ae62f: remove the reviewer role from everywhere (code, role cards, anything that mentions it; it must never appear again), and make the human role non-agent - no way anyone can launch the owner role."
+ },
+ {
+  "seat": "engineer.t-d606b5d93f",
+  "size": "8k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-03438d22fe (t-d606b5d93f, checked_by engineer, pending)"
+ },
+ {
+  "seat": "engineer.t-d606b5d93f",
+  "size": "8k",
+  "qid": "Q2",
+  "mark": "ANSWERED",
+  "answer": "m-c9abfa3828 from architect.epic-7f3d64e6de (steer, 08:01Z): two additions - fix guides/context-refresh.md:9 ('default 40 KB') to 8 KB in the same commit, and the source comment at Ch4Context.tsx:2; the ruling (m-093790d260 thread) is that 8 KB stays the default (S23-T2 8f40bc0), so every place that states it says 8 KB."
+ },
+ {
+  "seat": "engineer.t-d606b5d93f",
+  "size": "8k",
+  "qid": "Q3",
+  "mark": "FETCH",
+  "answer": "ticket_read(ticket_id='t-d606b5d93f', include='') - the visible description (truncated +1401 chars) and criterion cite only qa finding m-dbf4b571de; the steer mentions an owner question ruled in the m-093790d260 thread"
+ },
+ {
+  "seat": "engineer.t-d606b5d93f",
+  "size": "16k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-03438d22fe (t-d606b5d93f, checked_by engineer, pending)"
+ },
+ {
+  "seat": "engineer.t-d606b5d93f",
+  "size": "16k",
+  "qid": "Q2",
+  "mark": "ANSWERED",
+  "answer": "m-c9abfa3828 from architect.epic-7f3d64e6de (steer, 08:01Z): two additions - fix guides/context-refresh.md:9 ('default 40 KB') to 8 KB in the same commit, and the source comment at Ch4Context.tsx:2; the ruling (m-093790d260 thread) is that 8 KB stays the default (S23-T2 8f40bc0), so every place that states it says 8 KB."
+ },
+ {
+  "seat": "engineer.t-d606b5d93f",
+  "size": "16k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "none cited: the description and criterion cite only qa finding m-dbf4b571de. (The architect's steer mentions the owner's 40 KB question, ruled in the m-093790d260 thread: 8 KB stays the default.)"
+ },
+ {
+  "seat": "engineer.t-d606b5d93f",
+  "size": "40k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-03438d22fe (t-d606b5d93f, checked_by engineer, pending)"
+ },
+ {
+  "seat": "engineer.t-d606b5d93f",
+  "size": "40k",
+  "qid": "Q2",
+  "mark": "ANSWERED",
+  "answer": "m-c9abfa3828 from architect.epic-7f3d64e6de (steer, 08:01Z): two additions - fix guides/context-refresh.md:9 ('default 40 KB') to 8 KB in the same commit, and the source comment at Ch4Context.tsx:2; the ruling (m-093790d260 thread) is that 8 KB stays the default (S23-T2 8f40bc0), so every place that states it says 8 KB."
+ },
+ {
+  "seat": "engineer.t-d606b5d93f",
+  "size": "40k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "none cited: the description and criterion cite only qa finding m-dbf4b571de. (The architect's steer mentions the owner's 40 KB question, ruled in the m-093790d260 thread: 8 KB stays the default.)"
+ },
+ {
+  "seat": "engineer.t-852e7add63",
+  "size": "8k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "None: c-acc5077a9c (t-852e7add63, engineer) is pass."
+ },
+ {
+  "seat": "engineer.t-852e7add63",
+  "size": "8k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_query(ticket_id='t-852e7add63', since_seq=0) - all 10 thread messages omitted; asks_for_me empty"
+ },
+ {
+  "seat": "engineer.t-852e7add63",
+  "size": "8k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-8aa6439a77: owner rulings (on m-14333c915c) behind Attention v34 - only real asks count in the owner's attention list (18 of 21 items were FYI statuses), a human's reply clears, every waiting item reachable. Description truncated (+1763 chars): ticket_read(ticket_id='t-852e7add63') for the full list."
+ },
+ {
+  "seat": "engineer.t-852e7add63",
+  "size": "16k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "None: c-acc5077a9c (t-852e7add63, engineer) is pass."
+ },
+ {
+  "seat": "engineer.t-852e7add63",
+  "size": "16k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_read(id='m-6f35504905') - the visible messages are my own; my latest answer m-f1f191bbe3 replies to m-6f35504905, the newest message addressed to me (architect), whose body is not in the pack; asks_for_me empty (ticket in_review, nothing open)"
+ },
+ {
+  "seat": "engineer.t-852e7add63",
+  "size": "16k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-8aa6439a77 (owner rulings on m-14333c915c, design v34 §4.18): only real asks count (question/steer, blocked/failed/deferred status, deviation to a human); any later human reply on the ticket clears; every waiting item reachable; remove rail 'Waiting on you' and the comment dot; per-item Dismiss + 'Dismiss all updates'; one-off cleanup of pre-v34 items; GFM table after a paragraph renders. (Report also cites owner m-1a09573d3d.)"
+ },
+ {
+  "seat": "engineer.t-852e7add63",
+  "size": "40k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "None: c-acc5077a9c (t-852e7add63, engineer) is pass."
+ },
+ {
+  "seat": "engineer.t-852e7add63",
+  "size": "40k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_read(id='m-6f35504905') - the visible messages are my own; my latest answer m-f1f191bbe3 replies to m-6f35504905, the newest message addressed to me (architect), whose body is not in the pack; asks_for_me empty (ticket in_review, nothing open)"
+ },
+ {
+  "seat": "engineer.t-852e7add63",
+  "size": "40k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-8aa6439a77 (owner rulings on m-14333c915c, design v34 §4.18): only real asks count (question/steer, blocked/failed/deferred status, deviation to a human); any later human reply on the ticket clears; every waiting item reachable; remove rail 'Waiting on you' and the comment dot; per-item Dismiss + 'Dismiss all updates'; one-off cleanup of pre-v34 items; GFM table after a paragraph renders. (Report also cites owner m-1a09573d3d.)"
+ },
+ {
+  "seat": "engineer.t-20f0718990",
+  "size": "8k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "None: c-4d995b67f2 (t-20f0718990, engineer, look) is pass."
+ },
+ {
+  "seat": "engineer.t-20f0718990",
+  "size": "8k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_query(ticket_id='t-20f0718990', since_seq=0) - 3 thread messages, bodies omitted; latest id m-c4d9b91527 (status); asks_for_me empty"
+ },
+ {
+  "seat": "engineer.t-20f0718990",
+  "size": "8k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-3136ceca05: owner walkthrough part 2 - Admin UX pass 2 (Remote access and Integrations as guided setups, Seats & models explains itself, task order, Admin vs Settings)."
+ },
+ {
+  "seat": "engineer.t-20f0718990",
+  "size": "16k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "None: c-4d995b67f2 (t-20f0718990, engineer, look) is pass."
+ },
+ {
+  "seat": "engineer.t-20f0718990",
+  "size": "16k",
+  "qid": "Q2",
+  "mark": "ANSWERED",
+  "answer": "None addressed to me and no architect/owner message on my ticket: all 3 thread messages are my own; the latest is m-c4d9b91527 ([done] in_review, c-4d995b67f2 passes on report-67626cbf28; fleet board needs a restart for the tailnet guide route). Nothing to act on."
+ },
+ {
+  "seat": "engineer.t-20f0718990",
+  "size": "16k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-3136ceca05: owner walkthrough part 2 of the Admin UX - Remote access and Integrations as guided setups, Seats & models explains greyed combos (doctor as 'Help' with icon), Admin tabs in task order, Admin (whole install) vs Settings (personal) split. (Part 1 is t-5dd0cc18ea.)"
+ },
+ {
+  "seat": "engineer.t-20f0718990",
+  "size": "40k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "None: c-4d995b67f2 (t-20f0718990, engineer, look) is pass."
+ },
+ {
+  "seat": "engineer.t-20f0718990",
+  "size": "40k",
+  "qid": "Q2",
+  "mark": "ANSWERED",
+  "answer": "None addressed to me and no architect/owner message on my ticket: all 3 thread messages are my own; the latest is m-c4d9b91527 ([done] in_review, c-4d995b67f2 passes on report-67626cbf28; fleet board needs a restart for the tailnet guide route). Nothing to act on."
+ },
+ {
+  "seat": "engineer.t-20f0718990",
+  "size": "40k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-3136ceca05: owner walkthrough part 2 of the Admin UX - Remote access and Integrations as guided setups, Seats & models explains greyed combos (doctor as 'Help' with icon), Admin tabs in task order, Admin (whole install) vs Settings (personal) split. (Part 1 is t-5dd0cc18ea.)"
+ },
+ {
+  "seat": "engineer.s-32035a77da",
+  "size": "8k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-c0b35be596 (s-32035a77da, checked_by qa, fail)"
+ },
+ {
+  "seat": "engineer.s-32035a77da",
+  "size": "8k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_query(ticket_id='s-32035a77da', since_seq=0) - 26 thread messages, bodies omitted; only m-9e4c512ff6 (status, 2026-09-26T22:32Z) is listed; asks_for_me empty"
+ },
+ {
+  "seat": "engineer.s-32035a77da",
+  "size": "8k",
+  "qid": "Q3",
+  "mark": "FETCH",
+  "answer": "ticket_read(ticket_id='s-32035a77da') - visible: m-30023429f7 (design §4.14(a): any model, explicit harness/provider per catalog entry) and a truncated 'owner m-549b8ad…' in c-d38bf82b4a (every spawned role resolves to an explicit catalog model); the full id and gist need the full rows"
+ },
+ {
+  "seat": "engineer.s-32035a77da",
+  "size": "16k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-c0b35be596 (s-32035a77da, checked_by qa, fail)"
+ },
+ {
+  "seat": "engineer.s-32035a77da",
+  "size": "16k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_query(ticket_id='s-32035a77da', since_seq=0) - 26 messages, only my own m-9e4c512ff6 ([handed_off]) is shown; asks_for_me empty; the qa fail on c-c0b35be596 is the likely open item but no message body is in the pack"
+ },
+ {
+  "seat": "engineer.s-32035a77da",
+  "size": "16k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-30023429f7 (design §4.14(a): any model - explicit harness/provider per catalog entry, no prefix sniffing, Pi any provider, catalog in the data dir + Admin -> Models editor); m-549b8adc3a (c-d38bf82b4a: a Help doctor seat started with no --model and ran on the CLI default Opus 4.8 - every spawned role must resolve to an explicit catalog model)."
+ },
+ {
+  "seat": "engineer.s-32035a77da",
+  "size": "40k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-c0b35be596 (s-32035a77da, checked_by qa, fail)"
+ },
+ {
+  "seat": "engineer.s-32035a77da",
+  "size": "40k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_read(id='m-abbb6cd444') - the 3 visible messages are my own; my latest answer m-038e304e68 replies to m-abbb6cd444 (architect), the newest message to me, whose body is not in the pack; asks_for_me empty"
+ },
+ {
+  "seat": "engineer.s-32035a77da",
+  "size": "40k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-30023429f7 (design §4.14(a): any model - explicit harness/provider per catalog entry, no prefix sniffing, Pi any provider, catalog in the data dir + Admin -> Models editor); m-549b8adc3a (c-d38bf82b4a: a Help doctor seat started with no --model and ran on the CLI default Opus 4.8 - every spawned role must resolve to an explicit catalog model). (m-3c93cccc7e is from t-8218a6367e, not the owner.)"
+ },
+ {
+  "seat": "engineer.s-9648fded35",
+  "size": "8k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "s-9648fded35 (checked_by qa, pending): c-d1efb29e94, c-9bf2b47192, c-0f247caf7d, c-eb6dc6172f. t-6129a95a3d: c-c7d47d4f26 (checked_by engineer, pending)."
+ },
+ {
+  "seat": "engineer.s-9648fded35",
+  "size": "8k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_read(id='m-7f1c5a58a2') - newest thread item across my tickets (answer on s-9648fded35, 2026-09-27T03:51Z); pack has id+kind only, no sender/body; asks_for_me empty"
+ },
+ {
+  "seat": "engineer.s-9648fded35",
+  "size": "8k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-3818ff2a47 (t-6129a95a3d: ask the S9 agent to apply a very light 1px border to the active chat window of epic/ticket/topic chats); m-1998f097c0 (c-0f247caf7d: the ruling carried from S8 c-eb38e8c949 - first tag/workflow_dispatch run of the installers workflow). Descriptions truncated; ticket_read(ticket_id='s-9648fded35') for any further citations."
+ },
+ {
+  "seat": "engineer.s-9648fded35",
+  "size": "16k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "s-9648fded35 (checked_by qa, pending): c-d1efb29e94, c-9bf2b47192, c-0f247caf7d, c-eb6dc6172f. t-6129a95a3d: c-c7d47d4f26 (checked_by engineer, pending)."
+ },
+ {
+  "seat": "engineer.s-9648fded35",
+  "size": "16k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_read(id='m-7f1c5a58a2') - newest thread item across my tickets (answer on s-9648fded35, 2026-09-27T03:51Z); pack has id+kind only, no sender/body; asks_for_me empty"
+ },
+ {
+  "seat": "engineer.s-9648fded35",
+  "size": "16k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-3818ff2a47 (t-6129a95a3d: ask the S9 agent to apply a very light 1px border to the active chat window of epic/ticket/topic chats); m-1998f097c0 (c-0f247caf7d: the ruling carried from S8 c-eb38e8c949 - first tag/workflow_dispatch run of the installers workflow). Descriptions truncated; ticket_read(ticket_id='s-9648fded35') for any further citations."
+ },
+ {
+  "seat": "engineer.s-9648fded35",
+  "size": "40k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "s-9648fded35 (checked_by qa, pending): c-d1efb29e94, c-9bf2b47192, c-0f247caf7d, c-eb6dc6172f. t-6129a95a3d: c-c7d47d4f26 (checked_by engineer, pending)."
+ },
+ {
+  "seat": "engineer.s-9648fded35",
+  "size": "40k",
+  "qid": "Q2",
+  "mark": "ANSWERED",
+  "answer": "m-7f1c5a58a2 from architect.epic-7f3d64e6de (answer to my m-d8d31f7d1a, 03:51Z): accepted (whoami 200, SPA signed in as owner); close the seat, no need to rerun the drill now; S21 and S22 still change runtime code and block S9, so the epic-end qa reruns it."
+ },
+ {
+  "seat": "engineer.s-9648fded35",
+  "size": "40k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-3818ff2a47 (t-6129a95a3d: apply a very light 1px border to the active chat window of epic/ticket/topic chats - scrolling with the mouse outside the chat did nothing and the owner didn't know why); m-1998f097c0 (c-0f247caf7d: ruling carried from S8 c-eb38e8c949 - the first installers.yml tag/dispatch run must be green on macOS and Linux with DMG and deb artifacts)."
+ },
+ {
+  "seat": "engineer.s-54a03afc5a",
+  "size": "8k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-50778c655b (s-54a03afc5a, checked_by qa, fail). All others pass (c-9614d28be6, c-95efd1ceff, t-f01372d361 c-140a7b5f2e)."
+ },
+ {
+  "seat": "engineer.s-54a03afc5a",
+  "size": "8k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_query(ticket_id='s-54a03afc5a', since_seq=0) - 20 thread messages omitted; latest listed is m-66f5fed48a (status, 2026-09-26T17:29Z), no sender/body; asks_for_me empty"
+ },
+ {
+  "seat": "engineer.s-54a03afc5a",
+  "size": "8k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-26ffec400f, m-f2ce5f4f14, m-767dd93f62 (the owner's asks behind the S17 product video, design §4.17 v22), m-81bb4cca5e (owner approved the scope); m-ce21682c2a (t-f01372d361: board upload refuses video, so the owner cannot review the S17 cut inline - accept mp4/webm with an inline player). Gists beyond that need ticket_read(ticket_id='s-54a03afc5a')."
+ },
+ {
+  "seat": "engineer.s-54a03afc5a",
+  "size": "16k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-50778c655b (s-54a03afc5a, checked_by qa, fail). All others pass (c-9614d28be6, c-95efd1ceff, t-f01372d361 c-140a7b5f2e)."
+ },
+ {
+  "seat": "engineer.s-54a03afc5a",
+  "size": "16k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_query(ticket_id='s-54a03afc5a', since_seq=0) - 20 thread messages omitted; latest listed is m-66f5fed48a (status, 2026-09-26T17:29Z), no sender/body; asks_for_me empty"
+ },
+ {
+  "seat": "engineer.s-54a03afc5a",
+  "size": "16k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-26ffec400f, m-f2ce5f4f14, m-767dd93f62 (the owner's asks behind the S17 product video, design §4.17 v22), m-81bb4cca5e (owner approved the scope); m-ce21682c2a (t-f01372d361: board upload refuses video, so the owner cannot review the S17 cut inline - accept mp4/webm with an inline player). Gists beyond that need ticket_read(ticket_id='s-54a03afc5a')."
+ },
+ {
+  "seat": "engineer.s-54a03afc5a",
+  "size": "40k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-50778c655b (s-54a03afc5a, checked_by qa, fail). All others pass (c-9614d28be6, c-95efd1ceff, t-f01372d361 c-140a7b5f2e)."
+ },
+ {
+  "seat": "engineer.s-54a03afc5a",
+  "size": "40k",
+  "qid": "Q2",
+  "mark": "ANSWERED",
+  "answer": "No visible message is addressed to me (asks_for_me empty). Latest owner/architect message on my tickets: m-4a1af7db57 from owner on s-54a03afc5a (17:29Z): '[demo] approved. amazing job!' - the final cut is approved; nothing further asked (17 older thread messages omitted)."
+ },
+ {
+  "seat": "engineer.s-54a03afc5a",
+  "size": "40k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-26ffec400f, m-f2ce5f4f14, m-767dd93f62 (the owner's product-video asks behind §4.17 v22: Remotion video, 7 chapters, no host screenshots - 'screenshots of my machine or the tickets I am working on wont be attractive', CC0 music), m-81bb4cca5e (scope approved); m-b42de746e3 (c-9614d28be6: add chapter 2b, cross-human and cross-agent collaboration); m-ce21682c2a (t-f01372d361: board upload refuses video, owner can only review the cut as a zip - play mp4/webm inline)."
+ },
+ {
+  "seat": "engineer.s-461403ebd1",
+  "size": "8k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "All on s-461403ebd1, checked_by qa, pending: c-54afa8a81b, c-e7cba464fc, c-0e2611c3f2, c-5c7afde0e8, c-2c02d34d7f, c-328185ac06"
+ },
+ {
+  "seat": "engineer.s-461403ebd1",
+  "size": "8k",
+  "qid": "Q2",
+  "mark": "FETCH",
+  "answer": "message_read(id='m-08a12a71e5') - the latest thread item (answer, 2026-09-26T17:46Z); pack has id+kind only, no sender/body; asks_for_me empty"
+ },
+ {
+  "seat": "engineer.s-461403ebd1",
+  "size": "8k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-30023429f7 (design §4.14(b): workflow engine as data, in this epic per R11); m-6b6060dd38 (c-5c7afde0e8: guards as data - the workflow definition declares preconditions per transition and gate). Description truncated (+2283 chars): ticket_read(ticket_id='s-461403ebd1') for any further citations."
+ },
+ {
+  "seat": "engineer.s-461403ebd1",
+  "size": "16k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "All on s-461403ebd1, checked_by qa, pending: c-54afa8a81b, c-e7cba464fc, c-0e2611c3f2, c-5c7afde0e8, c-2c02d34d7f, c-328185ac06"
+ },
+ {
+  "seat": "engineer.s-461403ebd1",
+  "size": "16k",
+  "qid": "Q2",
+  "mark": "ANSWERED",
+  "answer": "m-08a12a71e5 from architect.epic-7f3d64e6de to me (answer to m-d6ae00b4b9, 2026-09-26T17:46Z): accepted, including the deviation that the board writes the card file; both leftovers (e.g. the web ROLES list) move to S14's scope. Nothing more to do on S13; it waits for qa."
+ },
+ {
+  "seat": "engineer.s-461403ebd1",
+  "size": "16k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-30023429f7 (design §4.14(b): the workflow engine as data - versioned definitions, tables/caps/checkers/bundles from data, hooks, Standard golden, Lean/Solo presets; in this epic per R11); m-6b6060dd38 (c-5c7afde0e8: guards as data - preconditions per transition and gate declared in the definition, enforced by auto-carry/refusal/hiding). Description tail truncated (+943 chars)."
+ },
+ {
+  "seat": "engineer.s-461403ebd1",
+  "size": "40k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "All on s-461403ebd1, checked_by qa, pending: c-54afa8a81b, c-e7cba464fc, c-0e2611c3f2, c-5c7afde0e8, c-2c02d34d7f, c-328185ac06"
+ },
+ {
+  "seat": "engineer.s-461403ebd1",
+  "size": "40k",
+  "qid": "Q2",
+  "mark": "ANSWERED",
+  "answer": "m-08a12a71e5 from architect.epic-7f3d64e6de to me (answer to my in_review hand-off m-d6ae00b4b9): accepted, including the deviation that the board writes the card file; both leftovers move to S14's scope - the web ROLES list from the API and the full declared tool bundle at the proxy for custom roles. Nothing more to do on S13."
+ },
+ {
+  "seat": "engineer.s-461403ebd1",
+  "size": "40k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-30023429f7 (design §4.14(b): the workflow engine as data - versioned definitions, tables/caps/checkers/bundles from data, hooks, Standard golden, Lean/Solo presets, epic pinning; in this epic per R11); m-6b6060dd38 (c-5c7afde0e8: guards as data - preconditions per transition and gate declared in the definition, enforced by auto-carry/refusal/hiding)."
+ },
+ {
+  "seat": "engineer.t-77c3a55b75",
+  "size": "8k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-e7b96160a1 (t-77c3a55b75, checked_by engineer, pending)"
+ },
+ {
+  "seat": "engineer.t-77c3a55b75",
+  "size": "8k",
+  "qid": "Q2",
+  "mark": "ANSWERED",
+  "answer": "None: my ticket has no thread messages (thread_total 0) and asks_for_me is empty. The instruction is the ticket description itself (architect-created): pass `ask` through rulingFor(), make it the RulingDrawer heading with a fallback to the gate's generated question, show it on the Needs you card, restore a vitest."
+ },
+ {
+  "seat": "engineer.t-77c3a55b75",
+  "size": "8k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-0e6940fe2c: the owner's words 'waiting on me, I don't know what on' - the sign-off ask must be shown so the owner knows what they are being asked (qa finding m-1f76018caa is the trigger, not an owner message)."
+ },
+ {
+  "seat": "engineer.t-77c3a55b75",
+  "size": "16k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-e7b96160a1 (t-77c3a55b75, checked_by engineer, pending)"
+ },
+ {
+  "seat": "engineer.t-77c3a55b75",
+  "size": "16k",
+  "qid": "Q2",
+  "mark": "ANSWERED",
+  "answer": "None: my ticket has no thread messages (thread_total 0) and asks_for_me is empty. The instruction is the ticket description itself (architect-created): pass `ask` through rulingFor(), make it the RulingDrawer heading with a fallback to the gate's generated question, show it on the Needs you card, restore a vitest."
+ },
+ {
+  "seat": "engineer.t-77c3a55b75",
+  "size": "16k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-0e6940fe2c: the owner's words 'waiting on me, I don't know what on' - the sign-off ask must be shown so the owner knows what they are being asked (qa finding m-1f76018caa is the trigger, not an owner message)."
+ },
+ {
+  "seat": "engineer.t-77c3a55b75",
+  "size": "40k",
+  "qid": "Q1",
+  "mark": "ANSWERED",
+  "answer": "c-e7b96160a1 (t-77c3a55b75, checked_by engineer, pending)"
+ },
+ {
+  "seat": "engineer.t-77c3a55b75",
+  "size": "40k",
+  "qid": "Q2",
+  "mark": "ANSWERED",
+  "answer": "None: my ticket has no thread messages (thread_total 0) and asks_for_me is empty. The instruction is the ticket description itself (architect-created): pass `ask` through rulingFor(), make it the RulingDrawer heading with a fallback to the gate's generated question, show it on the Needs you card, restore a vitest."
+ },
+ {
+  "seat": "engineer.t-77c3a55b75",
+  "size": "40k",
+  "qid": "Q3",
+  "mark": "ANSWERED",
+  "answer": "m-0e6940fe2c: the owner's words 'waiting on me, I don't know what on' - the sign-off ask must be shown so the owner knows what they are being asked (qa finding m-1f76018caa is the trigger, not an owner message)."
+ }
+]
