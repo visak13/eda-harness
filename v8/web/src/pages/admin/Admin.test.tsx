@@ -713,6 +713,34 @@ describe("Models editor (S12)", () => {
     expect(screen.getByTestId("model-form-save")).toBeDisabled();
     expect(s.puts).toHaveLength(0);
   });
+
+  it("a role's Default lists only selected-harness models and names a stale default (t-05df836c49)", async () => {
+    const cat = structuredClone(CATALOG);
+    cat.models["gpt-6-astra"] = { harness: "codex", provider: "openai", effort_cap: "high" };
+    cat.role_models = { engineer: ["gpt-6-sol", "claude-opus-5-5"], qa: ["claude-opus-5-5"], adversary: ["gpt-6-astra"] };
+    const s = stateful({ ...cat, selected: ["claude"] });
+    mount("models", s.handlers);
+    const engineer = await screen.findByTestId("role-default-engineer");
+    // the codex default is not offered and not shown as the value: the select waits for a pick
+    expect([...engineer.querySelectorAll("option:not([disabled])")].map((o) => o.getAttribute("value"))).toEqual(["claude-opus-5-5"]);
+    expect(engineer).toHaveValue("");
+    expect(screen.getByTestId("role-default-stale-engineer")).toHaveTextContent("This role's default (GPT-6 Sol) needs codex: select it or pick another.");
+    // a role whose models are all on codex is unavailable, with no invented fallback
+    const adversary = screen.getByTestId("role-default-adversary");
+    expect(adversary).toBeDisabled();
+    expect(adversary.querySelectorAll("option:not([disabled])")).toHaveLength(0);
+    expect(screen.getByTestId("role-default-stale-adversary")).toHaveTextContent("The adversary role is unavailable until codex is selected");
+    // a role whose default is selected shows no warning
+    expect(screen.getByTestId("role-default-qa")).toHaveValue("claude-opus-5-5");
+    expect(screen.queryByTestId("role-default-stale-qa")).toBeNull();
+    // picking a selected model clears the warning and saves it as the default
+    fireEvent.change(engineer, { target: { value: "claude-opus-5-5" } });
+    expect(screen.queryByTestId("role-default-stale-engineer")).toBeNull();
+    fireEvent.click(screen.getByTestId("role-models-save"));
+    await waitFor(() => expect(s.puts).toHaveLength(1));
+    expect(s.puts[0].role_models.engineer).toEqual(["claude-opus-5-5", "gpt-6-sol"]);
+    expect(s.puts[0].role_models.adversary).toEqual(["gpt-6-astra"]);
+  });
 });
 
 // t-20f0718990 (owner m-3136ceca05): Admin UX pass 2 — reading order, scope line, Remote access as a guided

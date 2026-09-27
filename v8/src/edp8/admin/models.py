@@ -74,6 +74,27 @@ def _view(raw: dict[str, Any]) -> dict[str, Any]:
             "selected": list(harness.selected(raw)), "warnings": _warnings(models)}
 
 
+def _unselected_defaults(raw: dict[str, Any], body: CatalogIn, default: str | None) -> list[str]:
+    """t-05df836c49: a PUT may not SET a default (a role's first model, or the catalog default) to a model
+    whose harness is unselected. A stale default the PUT leaves unchanged is not refused: the page warns
+    about it, and refusing would block every other save until the harness is selected."""
+    picked = harness.selected(raw)
+    old_roles = raw.get("role_models") or {}
+
+    def needs(mid: str | None) -> str | None:
+        h = (body.models.get(mid) or {}).get("harness") if mid else None
+        return h if h in harness.HARNESSES and h not in picked else None
+
+    errors = []
+    for role, ids in body.role_models.items():
+        new = ids[0] if ids else None
+        if new != ((old_roles.get(role) or [None])[0]) and (h := needs(new)):
+            errors.append(f"{role}: default {new} needs the {h} harness: select it or pick another")
+    if default != raw.get(model_catalog.DEFAULT_KEY) and (h := needs(default)):
+        errors.append(f"default model {default} needs the {h} harness: select it or pick another")
+    return errors
+
+
 def _catalog() -> dict:
     try:
         return model_catalog.read()
@@ -97,6 +118,7 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
         for mid, row in body.models.items():
             if row.get("harness") == "pi" and not _credential_present(str(row.get("provider") or "")):
                 errors.append(f"{mid}: provider credential missing for {row.get('provider')!r}")
+        errors += _unselected_defaults(raw, body, default)
         if errors:
             # a plain sentence, like every other admin refusal: the UI shows error.message verbatim
             raise HTTPException(422, "; ".join(errors))

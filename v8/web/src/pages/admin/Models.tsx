@@ -260,6 +260,10 @@ function RoleModels({ data, missing, visibleIds, onSave, pending }: {
       <p className={styles.fieldDoc}>Tick the models each role may run on and pick its default. The New Epic dialog offers exactly these.</p>
       {Object.keys(rm).map((role) => {
         const ids = rm[role] ?? [];
+        // t-05df836c49: the Default select offers only models on selected harnesses; a default on an
+        // unselected harness is named in words, never shown as a silent stale value
+        const choices = ids.filter((id) => visibleIds.includes(id));
+        const stale = ids.length > 0 && !visibleIds.includes(ids[0]) ? data.models[ids[0]]?.harness ?? "its harness" : null;
         return (
           <div key={role} className={styles.field} data-testid={`role-models-${role}`}>
             <div className={styles.fieldHead}>
@@ -267,11 +271,19 @@ function RoleModels({ data, missing, visibleIds, onSave, pending }: {
               <span className={`${styles.fieldKey} ${styles.capitalize}`}>{roleLabel(role)}</span>
               <label className={styles.row}>
                 <span className={styles.usage}>Default</span>
-                <select className={ui.select} value={ids[0] ?? ""} disabled={!ids.length} onChange={(e) => setDefault(role, e.target.value)} data-testid={`role-default-${role}`}>
-                  {ids.map((id) => <option key={id} value={id}>{modelLabel(id)}</option>)}
+                <select className={ui.select} value={stale ? "" : ids[0] ?? ""} disabled={!choices.length} onChange={(e) => setDefault(role, e.target.value)} data-testid={`role-default-${role}`}>
+                  {stale ? <option value="" disabled>{choices.length ? "pick a default" : "none available"}</option> : null}
+                  {choices.map((id) => <option key={id} value={id}>{modelLabel(id)}</option>)}
                 </select>
               </label>
               {!ids.length ? <span className={styles.fieldNote}>Pick at least one model: the board refuses an empty role.</span> : null}
+              {stale ? (
+                <span className={styles.fieldNote} role="alert" data-testid={`role-default-stale-${role}`}>
+                  {choices.length
+                    ? `This role's default (${modelLabel(ids[0])}) needs ${stale}: select it or pick another.`
+                    : `The ${roleLabel(role)} role is unavailable until ${[...new Set(ids.map((id) => data.models[id]?.harness ?? stale))].join(" or ")} is selected under Seat harnesses.`}
+                </span>
+              ) : null}
               {ids.some((id) => !visibleIds.includes(id)) ? <span className={styles.usage} data-testid={`role-hidden-${role}`}>also {ids.filter((id) => !visibleIds.includes(id)).map(modelLabel).join(", ")} (unselected harness)</span> : null}
             </div>
             <div className={styles.row}>

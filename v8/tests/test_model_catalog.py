@@ -257,3 +257,36 @@ def test_no_checkout_outside_dev_mode(monkeypatch):
     monkeypatch.setenv("EDP_DEV", "1")
     root = materialise.checkout_root()
     assert root is not None and (root / "models.json").is_file()
+
+
+def test_put_refuses_setting_a_default_on_an_unselected_harness(tmp_path, monkeypatch):
+    """t-05df836c49 (qa m-d757122a72): with codex unselected, a PUT that makes a codex model a role's default
+    (or the catalog default) is refused in words; a stale codex default the PUT leaves alone still saves."""
+    home = tmp_path / "home"
+    home.mkdir()
+    base = {"models": {"claude-opus-5-5": _row(), "claude-fable-5-1": _row(), "gpt-6-astra": _row("codex")},
+            "role_models": {"engineer": ["claude-opus-5-5", "gpt-6-astra"], "adversary": ["gpt-6-astra"]},
+            "default_model": "claude-opus-5-5"}
+    (home / "models.json").write_text(json.dumps(base), encoding="utf-8")
+    monkeypatch.setenv("EDP_AGENT_HOME", str(home))
+    monkeypatch.setenv("EDP8_DATA", str(tmp_path / "data"))
+    monkeypatch.setattr(model_catalog, "codex_windows", lambda refresh=False: {})
+    env = make_env(tmp_path, monkeypatch)
+    monkeypatch.setenv("EDP_HARNESSES", "claude")
+    body = {"models": base["models"], "role_models": {**base["role_models"], "engineer": ["gpt-6-astra", "claude-opus-5-5"]}}
+    r = env.client.put("/v1/admin/models", json=body, headers=ADMIN_H)
+    assert r.status_code == 422
+    assert r.json()["error"]["message"] == "engineer: default gpt-6-astra needs the codex harness: select it or pick another"
+    r = env.client.put("/v1/admin/models", json={**body, "role_models": base["role_models"], "default_model": "gpt-6-astra"},
+                       headers=ADMIN_H)
+    assert r.status_code == 422 and "default model gpt-6-astra needs the codex harness" in r.text
+    # the adversary's stale codex default is unchanged by this PUT: it saves (the page warns instead)
+    body["role_models"]["engineer"] = ["claude-fable-5-1", "claude-opus-5-5", "gpt-6-astra"]
+    r = env.client.put("/v1/admin/models", json=body, headers=ADMIN_H)
+    assert r.status_code == 200, r.text
+    assert r.json()["value"]["role_models"]["adversary"] == ["gpt-6-astra"]
+    # with codex selected the same default is accepted
+    monkeypatch.setenv("EDP_HARNESSES", "claude,codex")
+    body["role_models"]["engineer"] = ["gpt-6-astra", "claude-opus-5-5"]
+    r = env.client.put("/v1/admin/models", json=body, headers=ADMIN_H)
+    assert r.status_code == 200, r.text
