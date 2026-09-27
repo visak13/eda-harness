@@ -1,7 +1,7 @@
 # drill7: drill_installed_seats.ps1 -OnlyResume -Keep (architect m-bfe4344a48, one run). The run was stopped by PID after the
 # resumed seat's transcript was read: its probe waits for whoami(), but a resumed seat proves identity via resume_self()
 # (see drill7-resumed-seat-trace.txt: resume_self/context/record_status ok as engineer.t-e5fe207e39). Kept folder deleted after.
-﻿temp C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26
+﻿temp <repo>\v8\.data\v091-drill-8cb7ce26
 == 1. source: DB copy, tokens, catalogs, one closed seat row, an old claude store with its transcript
 PASS  the copy holds a DB snapshot
    old-store turn said: ok
@@ -16,39 +16,39 @@ PASS  an SPA bundle for the edp8 wheel
    Successfully built [36m[1m.data\v091-drill-8cb7ce26\wheels\edp8-0.9.1-py3-none-any.whl[0m[39m
 PASS  four wheels
    Activate with: [32m.data\v091-drill-8cb7ce26\venv\Scripts\activate[39m
-   repacked 76 distributions into C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\wheelhouse
+   repacked 76 distributions into <repo>\v8\.data\v091-drill-8cb7ce26\wheelhouse
     [32m+[39m [1muvicorn[0m[2m==0.52.4[0m
 PASS  heronry.exe in the private venv
 == 3. private EDP_HOME, spare ports, the real claude harness
    ports board=64784 mcp=64785 pool=64786 broker=64787
 Heronry 0.9.1
    Heronry init
-     dir     config   C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\home
-     dir     secrets  C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\home
-     dir     data     C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\home\.data
-     dir     run      C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\home\.run
-     dir     logs     C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\home\.data\logs
-     dir     backups  C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\home\.data\backups
-     config  C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\home\config.toml
-     secret  admin token C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\home\admin.token
-     secret  tokens C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\home\tokens.json (first human: owner)
-     agents  C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\home\agent-home (61 new, 0 updated, 0 kept)
-     models  C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\home\.data\models.json
-     trust   C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\home\agent-home trusted for claude seats (C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\home\.data\claude-pool\.claude.json)
-     claude  settings C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\home\.data\claude-pool\settings.json (written)
+     dir     config   <repo>\v8\.data\v091-drill-8cb7ce26\home
+     dir     secrets  <repo>\v8\.data\v091-drill-8cb7ce26\home
+     dir     data     <repo>\v8\.data\v091-drill-8cb7ce26\home\.data
+     dir     run      <repo>\v8\.data\v091-drill-8cb7ce26\home\.run
+     dir     logs     <repo>\v8\.data\v091-drill-8cb7ce26\home\.data\logs
+     dir     backups  <repo>\v8\.data\v091-drill-8cb7ce26\home\.data\backups
+     config  <repo>\v8\.data\v091-drill-8cb7ce26\home\config.toml
+     secret  admin token <repo>\v8\.data\v091-drill-8cb7ce26\home\admin.token
+     secret  tokens <repo>\v8\.data\v091-drill-8cb7ce26\home\tokens.json (first human: owner)
+     agents  <repo>\v8\.data\v091-drill-8cb7ce26\home\agent-home (61 new, 0 updated, 0 kept)
+     models  <repo>\v8\.data\v091-drill-8cb7ce26\home\.data\models.json
+     trust   <repo>\v8\.data\v091-drill-8cb7ce26\home\agent-home trusted for claude seats (<repo>\v8\.data\v091-drill-8cb7ce26\home\.data\claude-pool\.claude.json)
+     claude  settings <repo>\v8\.data\v091-drill-8cb7ce26\home\.data\claude-pool\settings.json (written)
      harness claude
    
    NOTICE: Codex is not selected, so the adversary role runs on Fable (claude-fable-5-1). Fable's safety safeguards are strict: an adversarial or security review may be declined or softened. Review its findings before trusting a clean result.
    
    next: heronry doctor, then heronry start
 PASS  init exit 0
-   import from C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\v8
-   into        C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\home  (data C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\home\.data)
+   import from <repo>\v8\.data\v091-drill-8cb7ce26\v8
+   into        <repo>\v8\.data\v091-drill-8cb7ce26\home  (data <repo>\v8\.data\v091-drill-8cb7ce26\home\.data)
    
-     new      board DB                       54.7 MB  -> C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\home\.data\edp8.db
+     new      board DB                       54.7 MB  -> <repo>\v8\.data\v091-drill-8cb7ce26\home\.data\edp8.db
               source holds {'epics': 29, 'tickets': 390, 'participants': 302}
-     replace  tokens.json                     7.9 KB  -> C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\home\tokens.json
-     new      claude transcripts            153.0 KB  -> C:\Projects\Learning\eda-base3\v8\.data\v091-drill-8cb7ce26\home\.data\claude-pool\projects\C--Projects-Learning-eda-base3-v8--data-v091-drill-8cb7ce26-home-agent-home  1 files
+     replace  tokens.json                     7.9 KB  -> <repo>\v8\.data\v091-drill-8cb7ce26\home\tokens.json
+     new      claude transcripts            153.0 KB  -> <repo>\v8\.data\v091-drill-8cb7ce26\home\.data\claude-pool\projects\C--Projects-Learning-eda-base3-v8--data-v091-drill-8cb7ce26-home-agent-home  1 files
    
    imported: {'epics': 29, 'tickets': 390, 'participants': 302}
    done. The source was not modified; `heronry start` runs the imported state.
