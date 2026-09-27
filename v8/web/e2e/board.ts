@@ -8,6 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { hermeticEnv } from "./hermeticEnv";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const WEB_DIR = path.resolve(HERE, "..");
@@ -60,23 +61,6 @@ export interface Seeded {
   epic: string;
 }
 
-/**
- * The spawned board must NEVER reach the fleet's pool/broker or carry the launching seat's identity:
- * a pool shell's env has EDP_POOL_URL set, and with it the test board starts the pool watcher and
- * S22's checker pairing spawns REAL qa/reviewer shells on the fleet pool for seeded test epics
- * (2026-09-08: qa.epic-2b3bea99e0, an epic that exists only in an e2e temp DB, burned a live seat).
- */
-const FLEET_ONLY_ENV = [
-  "EDP_POOL_URL", "EDP8_POOL_WATCH", "EDP_BROKER_URL", "EDP8_BOARD_URL", "EDP8_PUBLIC_URL",
-  "EDP8_TOKEN", "EDP_HANDLE", "EDP8_PARTICIPANT", "EDP_ROLE", "EDP_SPAWN_SESSION_ID", "EDP8_ADMIN_TOKEN",
-  "EDP8_USAGE_CONFIG",
-];
-function hermeticEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const out: NodeJS.ProcessEnv = { ...env };
-  for (const k of FLEET_ONLY_ENV) delete out[k];
-  return out;
-}
-
 /** Spawn a board, wait healthy, seed owner + one epic. Returns base URL + seeded ids. `extraEnv`
  *  (a spec's `boardEnv` option) is applied last — e.g. code-tab.spec.ts points EDP_CODE_PORT at a
  *  dead port for its down-state board. */
@@ -93,11 +77,11 @@ export async function startBoard(extraEnv: Record<string, string> = {}): Promise
     shell: true, // resolve the launcher on PATH (Windows)
     stdio: "inherit",
     env: {
-      ...hermeticEnv(process.env),
+      // Allowlist + a private EDP_HOME/EDP8_HOME/EDP8_RUN_DIR (hermeticEnv.ts): no shell EDP* passes.
+      ...hermeticEnv(process.env, tmpHome),
       EDP8_HOST: "127.0.0.1",
       EDP8_PORT: String(port),
       EDP8_DB: path.join(tmpHome, "edp8.db"),
-      EDP8_HOME: tmpHome,
       EDP8_EMBEDDER: "none",
       EDP8_ADMIN_TOKEN: ADMIN,
       EDP8_LOG: "warning",
