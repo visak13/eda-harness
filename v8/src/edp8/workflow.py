@@ -237,9 +237,19 @@ def _roles_param(ctx: Ctx, p: dict[str, Any]) -> set[str]:
     return roles
 
 
+def agent_in_human_role(wf: Workflow, actor: Any) -> bool:
+    """S11 F2: an agent participant holding a custom role the workflow marks human. The flag is data, so it
+    must never let an agent pass a human's check; built-in roles keep their fleet meaning (owner seats)."""
+    role = str(getattr(actor.role, "value", actor.role))
+    r = wf.roles.get(role)
+    return actor.type != "human" and r is not None and r.human and role not in _BUILTIN_ROLE_IDS
+
+
 def _p_role_in(ctx: Ctx, p: dict[str, Any]) -> Fail:
     if ctx.actor is None:  # a board-authored carry is never refused on the actor
         return None
+    if agent_in_human_role(ctx.wf, ctx.actor):  # S11 F2: a human flag in data never promotes an agent
+        return {"role": ctx.role}
     if ctx.role in _roles_param(ctx, p):
         return None
     if p.get("or_resident") and ctx.wf.is_resident_designer(ctx.actor, ctx.t):
@@ -866,6 +876,10 @@ WHY_FIX: dict[str, tuple[str, str]] = {
                       "make a different (human) role the gate's answerer"),
     "gate_unanswerable": ("no human can answer this gate: it waits forever, and Needs you never shows it",
                           "add a human role (the owner) to the gate's answerers"),
+    "agent_answerer": ("a gate is a human's decision; an agent role among its answerers could approve it",
+                       "remove the role from the gate's answerers, or answer with a human role"),
+    "human_spawnable": ("a spawned seat is always an agent, so a spawnable role marked human would let an agent "
+                        "act as a human (answer gates, sign off)", "untick spawnable, or untick human"),
     "role_without_spawner": ("no seat of this role can ever start, so its tickets are never worked",
                              "add the role to some role's `may_spawn`"),
     "card_missing": ("a spawned seat boots from its card; without one it has no instructions",
@@ -1018,9 +1032,13 @@ def validate(d: WorkflowDef | dict[str, Any]) -> list[dict[str, str]]:
         for k in r.may_create:
             if k not in kinds and k != "topic":
                 err("unknown_kind", f"role {r.id!r} may create {k!r}, which is not a kind")
-    # S14 (c-e9d095f3a3): custom-role permission sets — a bundle, no self-checking, no escalation
+    # S14 (c-e9d095f3a3): custom-role permission sets — a bundle, no self-checking, no escalation.
+    # S11 F2: a custom role's human flag exempts it from nothing but answering gates (the one thing a human
+    # role is for), and a spawned seat is always an agent, so human + spawnable is refused outright.
     for r in d.roles:
-        if r.human:
+        if r.human and r.spawnable:
+            err("human_spawnable", f"role {r.id!r} is marked human but is spawnable (a spawned seat is an agent)")
+        if r.human and r.id in _BUILTIN_ROLE_IDS:
             continue
         if r.spawnable and not r.bundle:
             err("bundle_missing", f"role {r.id!r} has no tool bundle")
@@ -1029,7 +1047,7 @@ def validate(d: WorkflowDef | dict[str, Any]) -> list[dict[str, str]]:
                                  ("is a builder", r.capacity_class == "builder")) if on]
         if r.criterion_checker and doing:
             err("self_check", f"role {r.id!r} verdicts criteria and also {' and '.join(doing)}")
-        if r.gate_answerer:
+        if r.gate_answerer and not r.human:
             err("escalation", f"role {r.id!r} is an agent that answers gates (a human's decision)")
         for tool in r.bundle or []:
             need = TOOL_NEEDS.get(tool)
@@ -1051,6 +1069,9 @@ def validate(d: WorkflowDef | dict[str, Any]) -> list[dict[str, str]]:
             err("gate_without_precondition", f"gate {g.id!r} declares no precondition")
         if not any(by_id[a].human for a in g.answerers if a in by_id):
             err("gate_unanswerable", f"gate {g.id!r} is answered by {g.answerers or 'nobody'}, none of them human")
+        for a in g.answerers:
+            if a in by_id and not by_id[a].human:
+                err("agent_answerer", f"gate {g.id!r} is answered by {a!r}, which is not a human role")
         openers = {r for p in g.requires if p.check == "role_in" and p.phase in ("open", "both")
                    for r in p.params.get("roles") or []}
         if openers & set(g.answerers):

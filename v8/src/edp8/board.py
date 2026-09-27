@@ -1954,6 +1954,8 @@ class Board:
         wf = self.workflow_of(ticket_id)
         g = wf.gates.get(gate.value)
         answerers = set(g.answerers) if g is not None else wf.gate_answerers
+        if actor.type != "human":  # S11 F2: a gate is a person's decision, whatever the role's human flag
+            return BoardError("scope", f"gate {gate} is answered by a human, not an agent ({actor.role})")
         if str(actor.role) not in answerers:
             return BoardError("scope", f"gate {gate} is answered by a human owner, not {actor.role}")
         if not self.open_gates(ticket_id, gate):
