@@ -448,9 +448,16 @@ class Board:
             if kind == TicketKind.topic:
                 t.status = TicketStatus.in_progress  # a topic is open from birth; only the owner's close ends it
             t.epic_id = t.id if kind == TicketKind.epic else self.epic_of(t).id
-            self.store.put("ticket", t)
             if kind == TicketKind.epic:
-                self.workflows.pin(t.id, wf.ref)  # immutable: editing the workflow never moves this epic
+                # R2-C: the epic and its pin commit together, or neither does when the version went away
+                try:
+                    with self.store.transaction():
+                        self.store.put("ticket", t)
+                        self.workflows.pin(t.id, wf.ref, live=True)  # immutable: editing never moves this epic
+                except wflow.WorkflowError as e:
+                    raise BoardError("conflict", e.message, e.hint) from None
+            else:
+                self.store.put("ticket", t)
         self._index("ticket", t.id, self.store._fts_text("ticket", t.model_dump(mode="json")) or t.title)
         self._emit(t.id, EventKind.ticket_created, {"kind": kind, "parent_id": parent_id, "by": actor.id})
         if assignee:

@@ -10,12 +10,16 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 os.environ.setdefault("EDP8_EMBEDDER", "none")
 
 import pytest
 from fastapi.testclient import TestClient
 
+from edp8 import workflow as wflow
 from edp8.board import Board
 from edp8.service import create_app
 from edp8.store import Store
@@ -119,3 +123,101 @@ def test_unknown_or_malformed_refs(client):
     c = client
     assert c.delete("/v1/workflows/nope@3", headers=O).status_code == 404
     assert c.delete("/v1/workflows/no-version", headers=O).status_code == 400
+
+
+# ---- R2-C (adversary m-a300de4933): delete is serialized against publish and epic pinning
+@pytest.fixture
+def env(tmp_path, monkeypatch):
+    monkeypatch.setenv("EDP_AGENT_HOME", str(tmp_path))
+    b = Board(Store(":memory:"), pool=_Pool(), free_mb=lambda: 10_000)
+    c = TestClient(create_app(b, admin_token="t"))
+    assert c.post("/v1/participants", json={"type": "human", "role": "owner", "handle": "owner", "id": "owner"},
+                  headers={"X-Admin": "t"}).json()["ok"]
+    return b, c
+
+
+def _epic(c, ref: str):
+    return c.post("/v1/tickets", json={"kind": "epic", "work_type": "feature", "title": "Pinned during delete",
+                                       "workflow": ref}, headers=O)
+
+
+def _held_delete(b, monkeypatch, ref: str):
+    """Start DELETE ref on a thread and hold it inside its pin check (where the race window used to be)."""
+    entered, resume = threading.Event(), threading.Event()
+    orig = b.workflows.pins
+
+    def paused():
+        got = orig()
+        if threading.current_thread().name.startswith("r2c-delete"):
+            entered.set()
+            assert resume.wait(20)
+        return got
+
+    monkeypatch.setattr(b.workflows, "pins", paused)
+    pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="r2c-delete")
+    task = pool.submit(b.workflows.delete, ref, by="owner")
+    assert entered.wait(10)
+    return pool, task, resume
+
+
+def test_r2c_publish_and_pin_wait_for_a_draft_delete_and_never_pin_it(env, monkeypatch):
+    b, c = env
+    b.workflows.duplicate("standard@1", new_id="race", by="owner")
+    pool, task, resume = _held_delete(b, monkeypatch, "race@1")
+    try:
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="r2c-other") as others:
+            pub = others.submit(b.workflows.publish, "race", 1, by="owner")
+            time.sleep(0.3)
+            assert not pub.done()  # blocked on the lock the delete holds, not interleaved
+            resume.set()
+            assert task.result(timeout=20)["outcome"] == "deleted"
+            with pytest.raises(wflow.WorkflowError):  # the draft is gone: no resurrection as published
+                pub.result(timeout=20)
+    finally:
+        resume.set()
+        pool.shutdown()
+    r = _epic(c, "race@1")
+    assert r.status_code in (400, 404, 409) and "race@1" not in b.workflows.pinned_refs()
+
+
+def test_r2c_an_epic_pin_waits_for_an_archive_and_is_refused(env, monkeypatch):
+    b, c = env
+    b.workflows.duplicate("standard@1", new_id="race", by="owner")
+    b.workflows.publish("race", 1, by="owner")
+    b.workflows.resolve("race@1")  # the epic create resolves before it pins: that step stays unlocked
+    monkeypatch.setattr(b, "_workflow_choice", lambda wf: wf)  # choice ran before the archive (the old window)
+    pool, task, resume = _held_delete(b, monkeypatch, "race@1")
+    try:
+        created = pool.submit(_epic, c, "race@1")
+        time.sleep(0.3)
+        assert not created.done()
+        resume.set()
+        assert task.result(timeout=20)["outcome"] == "archived"
+        r = created.result(timeout=20)
+    finally:
+        resume.set()
+        pool.shutdown()
+    assert r.status_code == 409 and "archived" in r.json()["error"]["message"]
+    assert "race@1" not in b.workflows.pinned_refs()
+    assert not [t for t in b.tickets(kind="epic") if t.title == "Pinned during delete"]  # no pinless epic left
+
+
+def test_r2c_a_pin_that_lands_first_makes_the_delete_refuse_and_the_definition_resolves(env):
+    b, c = env
+    b.workflows.duplicate("standard@1", new_id="race", by="owner")
+    b.workflows.publish("race", 1, by="owner")
+    eid = _epic(c, "race@1").json()["value"]["id"]
+    r = c.delete("/v1/workflows/race@1", headers=O)
+    assert r.status_code == 409 and eid in r.json()["error"]["message"]
+    assert b.workflows.pin_of(eid) == "race@1"
+    assert type(b.workflows)(b.store).resolve("race@1").d.ref == "race@1"  # a fresh registry resolves the pin
+
+
+def test_r2c_restore_of_an_archived_version_then_pin_is_allowed(env):
+    b, c = env
+    b.workflows.duplicate("standard@1", new_id="race", by="owner")
+    b.workflows.publish("race", 1, by="owner")
+    assert b.workflows.delete("race@1", by="owner")["outcome"] == "archived"
+    assert b.workflows.restore("race@1")["outcome"] == "restored"
+    eid = _epic(c, "race@1").json()["value"]["id"]
+    assert b.workflows.pin_of(eid) == "race@1"

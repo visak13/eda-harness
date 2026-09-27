@@ -1420,7 +1420,14 @@ class WorkflowRegistry:
             raise WorkflowError("invalid", f"{d.ref} does not publish: {problem['message']}",
                                 "run the dry run (POST /v1/workflows/dryrun) and fix the stalled step", [problem])
         d = d.model_copy(update={"published": True})
-        self._put(d, by)
+        # R2-C (m-a300de4933): validation ran unlocked, so re-read the draft and write under the store lock,
+        # the lock delete checks under: a draft deleted or replaced meanwhile is not resurrected or skipped
+        with self.store._lock, self.store._conn:
+            cur = self._row(wf_id, version)
+            if cur is None or cur.published or cur.model_copy(update={"published": True}) != d:
+                raise WorkflowError("conflict", f"{d.ref} changed while it was being published",
+                                    "reload it and publish again")
+            self._put(d, by)
         return d
 
     def delete(self, wf_ref: str, *, by: str) -> dict[str, Any]:
@@ -1430,13 +1437,16 @@ class WorkflowRegistry:
         if wf_id in BUILTIN_BUILDERS:
             raise WorkflowError("immutable", f"{wf_id} is a built-in preset and cannot be deleted",
                                 "presets always stay; delete a copy you made instead")
-        d = self.get(wf_id, ver)
-        pinned = self.pins().get(d.ref, [])
-        if pinned:
-            raise WorkflowError("conflict", f"{d.ref} is pinned by {len(pinned)} epic"
-                                f"{'' if len(pinned) == 1 else 's'}: {', '.join(pinned)}",
-                                "an epic keeps the version it was created on; delete it once those epics are gone")
+        # R2-C (m-a300de4933): the state check, the pin check and the write are one step under the store lock,
+        # the lock publish and epic pinning write under, so no publish + pin lands between the check and the
+        # delete (a pinned definition must always resolve)
         with self.store._lock, self.store._conn:
+            d = self.get(wf_id, ver)
+            pinned = self.pins().get(d.ref, [])
+            if pinned:
+                raise WorkflowError("conflict", f"{d.ref} is pinned by {len(pinned)} epic"
+                                    f"{'' if len(pinned) == 1 else 's'}: {', '.join(pinned)}",
+                                    "an epic keeps the version it was created on; delete it once those epics are gone")
             if not d.published:
                 self.store._conn.execute("DELETE FROM workflow_defs WHERE id=? AND version=?", (d.id, d.version))
                 outcome = "deleted"
@@ -1460,10 +1470,21 @@ class WorkflowRegistry:
         return {"ref": d.ref, "outcome": "restored"}
 
     # ---- epic pins
-    def pin(self, epic_id: str, wf_ref: str) -> None:
-        with self.store._lock, self.store._conn:
-            self.store._conn.execute("INSERT OR IGNORE INTO workflow_pins (epic_id, ref, pinned_at) VALUES (?,?,?)",
-                                     (epic_id, wf_ref, datetime.now(UTC).isoformat()))
+    def pin(self, epic_id: str, wf_ref: str, *, live: bool = False) -> None:
+        """`live` (an epic's creation): the version must still be published and not archived, checked under the
+        store lock delete holds for its check-and-write (R2-C), so a pin never lands on a deleted definition."""
+        with self.store._lock:
+            if live:
+                wf_id, ver = parse_ref(wf_ref)
+                if wf_id not in BUILTIN_BUILDERS:
+                    row = self.store._conn.execute("SELECT published, COALESCE(archived, 0) FROM workflow_defs "
+                                                   "WHERE id=? AND version=?", (wf_id, ver)).fetchone()
+                    if not row or not row[0] or row[1]:
+                        raise WorkflowError("conflict", f"{wf_ref} was deleted or archived while the epic was "
+                                            "being created", "pick a published version and create the epic again")
+            with self.store._conn:
+                self.store._conn.execute("INSERT OR IGNORE INTO workflow_pins (epic_id, ref, pinned_at) "
+                                         "VALUES (?,?,?)", (epic_id, wf_ref, datetime.now(UTC).isoformat()))
 
     def pin_of(self, epic_id: str) -> str | None:
         with self.store._lock:
