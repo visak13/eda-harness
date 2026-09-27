@@ -422,6 +422,9 @@
 }
 
 /* Admin → Services (S21 steer m-9bdc981a53): compact columns that read left to right, one line of actions. */
+.svcTable th {
+  white-space: nowrap;
+}
 .svcTable td {
   overflow-wrap: normal;
 }
