@@ -13,6 +13,15 @@ function healthWord(r: ServiceRow): string {
   return r.health ?? r.state;
 }
 
+/** Start when down, Stop/Restart when up. Nothing to start without a code-server installed (S21), and a port
+ *  another program holds is never ours to stop. */
+function canRun(r: ServiceRow, verb: "start" | "stop" | "restart"): boolean {
+  if (r.state === "not_installed" || r.state === "foreign") return false;
+  if (verb === "start") return r.state !== "up";
+  if (verb === "stop") return r.state === "up";
+  return true;
+}
+
 function UpdatesBanner(): React.JSX.Element | null {
   const q = useQuery({ queryKey: ["admin", "updates"], queryFn: getUpdates, retry: false, staleTime: 60_000 });
   const act = useServiceAction();
@@ -88,7 +97,7 @@ function ServicesTable(): React.JSX.Element {
                     <div className={styles.actions}>
                       {(["start", "stop", "restart"] as const).map((verb) => (
                         <button key={verb} type="button" className={`${ui.button} ${styles.small}`} data-testid={`service-${r.service}-${verb}`}
-                          disabled={act.pending || (verb === "start" && r.state === "up") || (verb === "stop" && r.state !== "up")}
+                          disabled={act.pending || !canRun(r, verb)}
                           onClick={() => act.run({ svc: r.service, verb, force })}>
                           {verb[0].toUpperCase() + verb.slice(1)}
                         </button>

@@ -29,6 +29,10 @@ button.action:disabled { cursor: progress; opacity: 0.7; }
 .command { margin: 12px 0 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font: 14px Consolas, "Cascadia Mono", monospace; }
 .retry { min-height: 36px; padding: 0 16px; border: 1.5px solid var(--strongline); border-radius: 8px; background: var(--accentwash); color: var(--ink); font: inherit; font-weight: 650; cursor: pointer; }
 .back { margin: 0 0 12px; }
+.stateActions { display: flex; flex-wrap: wrap; gap: 8px; }
+.primary { background: var(--accent); color: var(--buttonink); border-color: var(--accent); }
+.primary:disabled { cursor: progress; opacity: 0.7; }
+.startError { margin: 12px 0 0; color: var(--danger); }
 @media (max-width: 767px) {
   .strip { padding-right: 60px; gap: 8px; }
   .where, .invalid { display: none; }

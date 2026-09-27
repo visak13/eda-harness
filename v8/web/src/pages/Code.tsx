@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { serviceAction } from "../api/admin";
 import { getCodeFaq, getCodeStatus, mintCodeSession, resetCodeLayout } from "../api/endpoints";
 import { PageHeader } from "../components/PageHeader";
 import { Markdown } from "../components/Markdown";
 import { Icon } from "../components/Icon";
 import { usePageFrame } from "../components/PageFrame";
 import { copyProps } from "../copy/pages";
+import { useIsAdmin } from "./admin/Admin";
 import { embedUrl, guardBase, isLoopbackHost, lineLabel, loginUrl, parseCodeLink } from "./codeLink";
 import styles from "./Code.module.css";
 
@@ -37,6 +39,13 @@ export function CodePage({ hostname = window.location.hostname }: { hostname?: s
   const status = useQuery({ queryKey: ["code", "status"], queryFn: getCodeStatus, retry: false, refetchOnWindowFocus: false });
   const local = isLoopbackHost(hostname);
   const s = status.data;
+  // S21: an admin starts the code server from here, through the same Admin → Services route (the supervisor
+  // runs `heronry start code`); everyone else sees the command to run on the board host
+  const { admin } = useIsAdmin();
+  const start = useMutation({
+    mutationFn: () => serviceAction("code-server", "start"),
+    onSuccess: () => { void status.refetch(); },
+  });
   const src = s ? embedUrl(guardBase(s.url, hostname), link, s.default_folder) : null;
   // the guard answers only these two names, and its SameSite=Strict cookie needs the same one as the page
   const guardHost = ["localhost", "127.0.0.1"].includes(hostname.toLowerCase());
@@ -100,17 +109,38 @@ export function CodePage({ hostname = window.location.hostname }: { hostname?: s
       </State>
     );
   } else if (!s.running) {
+    const missing = s.installed === false;
+    const canStart = admin && !s.foreign && !missing;
     body = (
-      <State testid="code-down" title="Code service is not running">
+      <State testid="code-down" title={missing ? "code-server is not installed" : "Code service is not running"}>
         {s.foreign ? (
-          <p data-testid="code-foreign">Port {s.port} is used by another Heronry's code-server or another program, not this one's. Pick a free port under Admin → Settings → VS Code in the browser port, or start this one's from the repo root on the board host:</p>
+          <p data-testid="code-foreign">Port {s.port} is used by another Heronry's code-server or another program, not this one's. Pick a free port under Admin → Settings → VS Code in the browser port, then start this one's on the board host:</p>
+        ) : missing ? (
+          <>
+            <p data-testid="code-not-installed">The Code tab embeds code-server, and the board host has none yet. Install it there:</p>
+            <pre className={styles.command} data-testid="code-install-hint"><code>{s.install_hint}</code></pre>
+            <p>Then start it:</p>
+          </>
         ) : (
-          <p>code-server is not answering on port {s.port}. Start it from the repo root on the board host:</p>
+          <p>code-server is not running on port {s.port}. {canStart ? "Start it here, or run this on the board host:" : "An admin can start it from this tab or Admin → Services; on the board host, run:"}</p>
         )}
         <pre className={styles.command} data-testid="code-start-command"><code>{s.start_command}</code></pre>
-        <button type="button" className={styles.retry} data-testid="code-retry" onClick={() => void status.refetch()} {...copyProps("code", "retry")}>
-          {status.isFetching ? "Checking…" : "Retry"}
-        </button>
+        <div className={styles.stateActions}>
+          {canStart ? (
+            <button type="button" className={`${styles.retry} ${styles.primary}`} data-testid="code-start" disabled={start.isPending}
+              onClick={() => start.mutate()} {...copyProps("code", "start")}>
+              {start.isPending ? "Starting…" : "Start code server"}
+            </button>
+          ) : null}
+          <button type="button" className={styles.retry} data-testid="code-retry" onClick={() => void status.refetch()} {...copyProps("code", "retry")}>
+            {status.isFetching ? "Checking…" : "Retry"}
+          </button>
+        </div>
+        {start.error ? (
+          <p className={styles.startError} role="alert" data-testid="code-start-error">
+            {start.error instanceof Error ? start.error.message : "The code server did not start."}
+          </p>
+        ) : null}
       </State>
     );
   } else if (session?.error !== undefined) {

@@ -14,13 +14,20 @@ import { CodeFaqPage, CodePage } from "./Code";
 const ok = (value: unknown) => HttpResponse.json({ ok: true, value, hint: "" });
 const STATUS: CodeStatus = {
   port: 9555, url: "http://127.0.0.1:9555/", running: true, version: "4.138.0",
-  default_folder: "C:\\Work\\Learning\\eda-base3\\v8", start_command: ".\\edp.ps1 start code",
+  default_folder: "C:\\Work\\Learning\\eda-base3\\v8", start_command: "heronry start code", installed: true,
 };
 
-function mount(path = "/code", status: Partial<CodeStatus> | "error" = {}, hostname = "127.0.0.1", mint: "ok" | "forbidden" = "ok") {
+function mount(path = "/code", status: Partial<CodeStatus> | "error" = {}, hostname = "127.0.0.1", mint: "ok" | "forbidden" = "ok",
+  admin = false) {
   let calls = 0;
   let mints = 0;
-  server.use(http.get("/v1/code", () => {
+  const starts: string[] = [];
+  server.use(http.get("/v1/whoami", () => ok({ participant: { id: "owner", handle: "owner", role: "owner", admin }, admin })),
+    http.post("/v1/admin/services/:svc/:verb", ({ params }) => {
+      starts.push(`${String(params.svc)}/${String(params.verb)}`);
+      return ok({ ok: true, service: "code", state: "started" });
+    }),
+    http.get("/v1/code", () => {
     calls += 1;
     return status === "error"
       ? HttpResponse.json({ ok: false, error: { code: "http", message: "board down" }, hint: "" }, { status: 502 })
@@ -42,7 +49,7 @@ function mount(path = "/code", status: Partial<CodeStatus> | "error" = {}, hostn
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  return { calls: () => calls, mints: () => mints, client };
+  return { calls: () => calls, mints: () => mints, client, starts };
 }
 
 /** The frame loads the guard's login URL; `next` is the embed URL the guard redirects to. */
@@ -86,7 +93,9 @@ describe("CodePage", () => {
   it("down: says the service is not running, names the start command, and Retry asks again — no frame", async () => {
     const m = mount("/code", { running: false, version: null });
     expect(await screen.findByTestId("code-down")).toHaveTextContent("Code service is not running");
-    expect(screen.getByTestId("code-start-command")).toHaveTextContent(".\\edp.ps1 start code");
+    expect(screen.getByTestId("code-start-command")).toHaveTextContent("heronry start code");
+    expect(screen.getByTestId("code-start-command")).not.toHaveTextContent("edp.ps1");
+    expect(screen.queryByTestId("code-start")).toBeNull(); // not an admin: the command only
     expect(screen.queryByTestId("code-frame")).toBeNull();
     expect(screen.queryByTestId("code-newwindow")).toBeNull();
     expect(screen.getByTestId("code-state")).toHaveTextContent("not running");
@@ -94,6 +103,31 @@ describe("CodePage", () => {
     const before = m.calls();
     fireEvent.click(screen.getByTestId("code-retry"));
     await waitFor(() => expect(m.calls()).toBeGreaterThan(before));
+  });
+
+  it("S21 down, admin: Start runs the code-server service through Admin → Services and asks again", async () => {
+    const m = mount("/code", { running: false, version: null }, "127.0.0.1", "ok", true);
+    fireEvent.click(await screen.findByTestId("code-start"));
+    await waitFor(() => expect(m.starts).toEqual(["code-server/start"]));
+    const before = m.calls();
+    await waitFor(() => expect(m.calls()).toBeGreaterThan(before - 1));
+    expect(screen.getByTestId("code-start-command")).toHaveTextContent("heronry start code");
+  });
+
+  it("S21 down, admin: a refused start is said in the tab", async () => {
+    mount("/code", { running: false, version: null }, "127.0.0.1", "ok", true);
+    server.use(http.post("/v1/admin/services/:svc/:verb", () =>
+      HttpResponse.json({ ok: false, error: { code: "conflict", message: "port 9555 is held by pid 7; leaving it alone" }, hint: "" }, { status: 409 })));
+    fireEvent.click(await screen.findByTestId("code-start"));
+    expect(await screen.findByTestId("code-start-error")).toHaveTextContent("leaving it alone");
+  });
+
+  it("S21 not installed: the install command for this OS, then the start command; no Start even for an admin", async () => {
+    mount("/code", { running: false, version: null, installed: false, install_hint: "brew install code-server" }, "127.0.0.1", "ok", true);
+    expect(await screen.findByTestId("code-down")).toHaveTextContent("code-server is not installed");
+    expect(screen.getByTestId("code-install-hint")).toHaveTextContent("brew install code-server");
+    expect(screen.getByTestId("code-start-command")).toHaveTextContent("heronry start code");
+    expect(screen.queryByTestId("code-start")).toBeNull();
   });
 
   it("foreign: another home's code-server on the port is named, never framed (S8 m-baed3c1589)", async () => {

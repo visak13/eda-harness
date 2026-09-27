@@ -20,6 +20,11 @@ export interface ServiceRow {
   last_restart_reason?: string | null;
   managed?: boolean;
   note?: string | null;
+  /** the code-server row (S21): whether one is installed, how to install it, and whether `heronry start` starts it */
+  installed?: boolean;
+  install_hint?: string | null;
+  autostart?: boolean;
+  reason?: string | null;
 }
 
 export interface ServicesView {

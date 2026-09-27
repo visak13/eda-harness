@@ -692,7 +692,11 @@ export interface CodeStatus {
   foreign?: boolean;
   version: string | null;
   default_folder: string;
+  /** S21: `heronry start code`, the same command on every OS */
   start_command: string;
+  /** S21: a code-server is there to start; when not, install_hint is the official install command for this OS */
+  installed?: boolean;
+  install_hint?: string | null;
 }
 
 /** POST /v1/code/session (s-17c13096e5): a one-time, short-lived login token for the code guard,

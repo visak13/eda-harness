@@ -25,7 +25,8 @@ const SERVICES = {
   services: [
     { service: "board", state: "up", health: "up", pid: 11, port: 9400, uptime: "1h", rev: "abcdef123", managed: true },
     { service: "pool", state: "up", health: "up", pid: 12, port: 9301, uptime: "1h", managed: true },
-    { service: "code-server", state: "down", port: 9410, managed: false, note: "started by its own scripts" },
+    { service: "code-server", state: "down", port: 9410, managed: true, installed: true, autostart: false,
+      note: "optional: starts only when you start it" },
   ],
   supervisor: { running: true, control: true },
 };
@@ -285,11 +286,24 @@ describe("Services", () => {
     expect(screen.getByTestId("update-refusal")).toHaveTextContent("dev mode");
   });
 
-  it("unmanaged code-server has no buttons; the supervisor being down is said", async () => {
+  it("S21: the code-server row starts through the supervisor like the others; the supervisor being down is said", async () => {
     mount("services", [http.get("/v1/admin/services", () => ok({ ...SERVICES, supervisor: { running: false, control: false } }))]);
     const row = await screen.findByTestId("service-code-server");
-    expect(within(row).queryByRole("button")).toBeNull();
+    expect(within(row).getByTestId("service-code-server-start")).toBeEnabled();
+    expect(within(row).getByTestId("service-code-server-stop")).toBeDisabled();
+    expect(within(row).queryByText("not managed here")).toBeNull();
     expect(screen.getByTestId("supervisor-down")).toHaveTextContent("not running");
+  });
+
+  it("S21: a missing code-server says how to install it and offers nothing to start", async () => {
+    const rows = SERVICES.services.map((r) => r.service === "code-server"
+      ? { ...r, state: "not_installed", health: "not installed", installed: false, install_hint: "npm install -g code-server",
+          note: "code-server is not installed. Install it: npm install -g code-server" } : r);
+    mount("services", [http.get("/v1/admin/services", () => ok({ ...SERVICES, services: rows }))]);
+    const row = await screen.findByTestId("service-code-server");
+    expect(row).toHaveTextContent("npm install -g code-server");
+    expect(row).toHaveTextContent("not installed");
+    for (const verb of ["start", "stop", "restart"]) expect(within(row).getByTestId(`service-code-server-${verb}`)).toBeDisabled();
   });
 });
 
