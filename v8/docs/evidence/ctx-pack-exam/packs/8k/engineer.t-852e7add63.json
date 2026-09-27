@@ -1,0 +1,86 @@
+{
+ "participant": {
+  "id": "engineer.t-852e7add63",
+  "created_at": "2026-09-26T23:48:20.228966Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "engineer",
+  "handle": "engineer.t-852e7add63",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "t-852e7add63",
+    "kind": "task",
+    "status": "in_review",
+    "assignee": "engineer.t-852e7add63",
+    "parent_id": "s-1a029fd6bb",
+    "design_ref": "design-e963c656f5",
+    "title": "Attention v34: only real asks count, a human's reply clears, every waiting item is reachable, drop the rail \"Waiting on you\" entry and the comment dot, Dismiss,… (+14 chars)",
+    "description": "Owner rulings m-8aa6439a77 on m-14333c915c, design-e963c656f5 v34 §4.18. Measured: the owner's list had 21 items on the epic, 18 of them FYI statuses from the a… (+1763 chars)"
+   },
+   "chain": [
+    {
+     "id": "t-852e7add63",
+     "kind": "task",
+     "status": "in_review"
+    },
+    {
+     "id": "s-1a029fd6bb",
+     "kind": "story",
+     "status": "done"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-acc5077a9c",
+     "text": "Items 1–8 of t-852e7add63 are covered by pytest and vitest (0 failures in the touched suites), and s20-attention.spec pa… (+208 chars)",
+     "check": "command",
+     "checked_by": "engineer",
+     "verdict": "pass",
+     "evidence_ref": "report-4f2c15a7ae"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43",
+    "note-77650963fe note v2",
+    "report-4f2c15a7ae report v2"
+   ],
+   "children": [],
+   "links": [
+    "t-852e7add63 designed_by note-77650963fe",
+    "t-852e7add63 evidence_for report-4f2c15a7ae"
+   ],
+   "thread": [
+    {
+     "id": "m-52867eb241",
+     "kind": "status",
+     "created_at": "2026-09-27T01:42:48.505046Z"
+    }
+   ],
+   "thread_total": 10,
+   "recall_count": 8
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='t-852e7add63') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzMxMi40MTY0NzEsIm1ldGFkYXRhIjoiNjllZGYxNmM2ZmYxNzVjZjU3NzA1NzkwNGI3OGMyZmYzOTY0ODllMGE3M2Q2YWRhZDg1OGE1YjUxNjUzMTVmYSIsInAiOiI0MDJhNTU5YTg0ODA4NzQ4ZjFlNTI3NGIzMTc3ZDBhMzQzYzM4YjEyODZlOTFkYjViMmQ1Mzg1Y2IyZTFhNDhmIiwicm9sZSI6ImVuZ2luZWVyIiwicm9vdHMiOiI2N2UwZGFlYTI2MTJiY2FmNzc5MzU3MzExNWVmMzExZGIzN2M1ZmE2ZGMzNzFkZjAxMTUxNTI3ODljMjBkNjVmIiwic2NvcGUiOiI3NDIzNGU5OGFmZTc0OThmYjVkYWYxZjM2YWMyZDc4YWNjMzM5NDY0Zjk1MDcwM2I4YzAxOTg5MmY5ODJiOTBiIiwic2VxIjoyMzc2NSwidGhyb3VnaCI6bnVsbCwidiI6MX35YmkBGE-lJ-wOYyt1i0LvnYuVcO3HDmtUhlZikoTmVQ==",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=8000 bytes (verbose=False); snapshot is 2575 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "epic_words": "context(verbose=True) or ticket_read(<epic id>) for the owner's full words",
+  "description": "ticket_read(ticket_id=<id>, include='') for the full description",
+  "compact": "criteria/docs/children/links are refs; ticket_read(ticket_id=<id>) or criterion_query(ticket_id=<id>) for rows, lookup(scope=<epic>) for recall",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

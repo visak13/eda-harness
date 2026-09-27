@@ -1,0 +1,131 @@
+{
+ "participant": {
+  "id": "engineer.s-32035a77da",
+  "created_at": "2026-09-26T19:54:59.647353Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "engineer",
+  "handle": "engineer.s-32035a77da",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "s-32035a77da",
+    "kind": "story",
+    "status": "in_progress",
+    "assignee": "engineer.s-32035a77da",
+    "parent_id": "epic-7f3d64e6de",
+    "design_ref": "design-e963c656f5",
+    "title": "S12 any model: explicit harness/provider per catalog entry, no prefix sniffing (board/pool/web), Pi any provider, models in data dir + Admin → Models editor",
+    "description": "Design design-e963c656f5 §4.14(a) (owner m-30023429f7).\n\nBuild:\n- Every `models.json` seat or catalog entry carries `harness: claude|codex|pi` and `provider`. E… (+1624 chars)"
+   },
+   "chain": [
+    {
+     "id": "s-32035a77da",
+     "kind": "story",
+     "status": "in_progress"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-00abcfd9bc",
+     "text": "No prefix sniffing remains: grep for `startswith(\"gpt`, `is_gpt_id`, `is_pi_model`, `is_codex_model`, `openai/` routing… (+289 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pass",
+     "evidence_ref": "report-ec72642c09"
+    },
+    {
+     "id": "c-c0b35be596",
+     "text": "Catalog migration: this host's current models.json migrates to the new schema with every role catalog, default and effor… (+319 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "fail",
+     "evidence_ref": "report-ec72642c09"
+    },
+    {
+     "id": "c-41c6d5f0f9",
+     "text": "Admin → Models on a private instance (screenshots): add a Pi model with a provider, set it as a role's default, run test… (+146 chars)",
+     "check": "look",
+     "checked_by": "qa",
+     "verdict": "pass",
+     "evidence_ref": "report-ec72642c09"
+    },
+    {
+     "id": "c-d38bf82b4a",
+     "text": "Every spawned role resolves to an explicit catalog model, so no seat launches a harness without a model (owner m-549b8ad… (+410 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pass",
+     "evidence_ref": "report-ec72642c09"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43",
+    "note-eb224aae0f note v4",
+    "report-ec72642c09 report v2"
+   ],
+   "children": [
+    "t-186b964fb1 in_review",
+    "t-96df382440 in_review",
+    "t-05df836c49 in_progress"
+   ],
+   "links": [
+    "s-32035a77da blocks s-42a72db3dd",
+    "s-32035a77da blocks s-9648fded35",
+    "s-32035a77da evidence_for note-eb224aae0f",
+    "s-32035a77da evidence_for report-ec72642c09",
+    "s-ec73f74ea9 blocks s-32035a77da",
+    "s-733de6e29f blocks s-32035a77da",
+    "s-e6b4fa59d5 blocks s-32035a77da"
+   ],
+   "blockers": [
+    {
+     "id": "s-ec73f74ea9",
+     "status": "in_review",
+     "title": "S1 settings and paths core: one registry in edp-contracts, platformdirs dirs, ag"
+    },
+    {
+     "id": "s-733de6e29f",
+     "status": "done",
+     "title": "S4 codex bridge → codex seats: remove consult, cards spawn codex adversary/build"
+    },
+    {
+     "id": "s-e6b4fa59d5",
+     "status": "done",
+     "title": "S6 admin SPA: Admin → Services, Settings (all groups), Teammates, Remote access,"
+    }
+   ],
+   "thread": [
+    {
+     "id": "m-9e4c512ff6",
+     "kind": "status",
+     "created_at": "2026-09-26T22:32:46.501095Z"
+    }
+   ],
+   "thread_total": 26,
+   "recall_count": 8
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='s-32035a77da') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzMxNy4yMTM2NzU1LCJtZXRhZGF0YSI6ImQ1MjNhNGI3YTQyZDI5ZjNkYjUxNGEzNTg5NTA0YmQxNjBlODI0MWRmOWRiOTlkOWFhYmM0M2JkODY3OWVkMDgiLCJwIjoiMmJmZDU2MzMyMTQzMTk5ZjVhNDJiOTdiODYxYjkzOGQ1Y2YzZmE0MmYyM2FhZTg2YjRiYmFkMTk1NmFmNTRiZCIsInJvbGUiOiJlbmdpbmVlciIsInJvb3RzIjoiYTQwOWMzMmEyNTI5YjAxOGIzNmU5YjdlODVjZGExMjQ0YjFmNWExNjBiY2EwOTQyNzQ3Y2RiODRmM2Q3Y2I2YiIsInNjb3BlIjoiNzQyMzRlOThhZmU3NDk4ZmI1ZGFmMWYzNmFjMmQ3OGFjYzMzOTQ2NGY5NTA3MDNiOGMwMTk4OTJmOTgyYjkwYiIsInNlcSI6MjM3NjUsInRocm91Z2giOm51bGwsInYiOjF9-WoHLXDvbryKIuivpNl0bny118VSOgy0Ggv3UGJPRLc=",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=8000 bytes (verbose=False); snapshot is 4006 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "epic_words": "context(verbose=True) or ticket_read(<epic id>) for the owner's full words",
+  "description": "ticket_read(ticket_id=<id>, include='') for the full description",
+  "compact": "criteria/docs/children/links are refs; ticket_read(ticket_id=<id>) or criterion_query(ticket_id=<id>) for rows, lookup(scope=<epic>) for recall",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

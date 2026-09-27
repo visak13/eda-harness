@@ -1,0 +1,984 @@
+{
+ "participant": {
+  "id": "qa.epic-7f3d64e6de",
+  "created_at": "2026-09-27T07:41:17.544399Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "qa",
+  "handle": "qa.epic-7f3d64e6de",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "epic-7f3d64e6de",
+    "kind": "epic",
+    "status": "in_progress",
+    "design_ref": "design-e963c656f5",
+    "title": "Productize the app. Make it as installable and independent of machine or OS"
+   },
+   "chain": [
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-7f77c6c523",
+     "text": "Install and run from the release artifacts: on Windows (hands-on), the MSI and, separately, `install.ps1`, each followed… (+230 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending"
+    },
+    {
+     "id": "c-8093e35929",
+     "text": "Machine independence: the installed app runs outside any checkout. No `parents[N]` repo-layout derivation, no raw env re… (+255 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending"
+    },
+    {
+     "id": "c-14348c35e8",
+     "text": "Codex seats: the consult tools are gone from every bundle and `consult(` is absent from the agent home. The qa and adver… (+256 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending"
+    },
+    {
+     "id": "c-7b1702f845",
+     "text": "Operable from the UI on the live dogfooded install: an admin, with no shell, restarts the board and the pool from Admin… (+307 chars)",
+     "check": "look",
+     "checked_by": "qa",
+     "verdict": "pending"
+    },
+    {
+     "id": "c-fc3b301a80",
+     "text": "Configurable workflow: the whole pre-existing test suite is green under the Standard workflow (golden). Lean and Solo pr… (+145 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending"
+    },
+    {
+     "id": "c-f8f4c89758",
+     "text": "Release and dogfood: a tag v0.9.0 produces a draft GitHub Release, which the owner publishes, with wheels, sdist, vsix,… (+303 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43",
+    "strategyhl-86b4805322 strategy_hl v1",
+    "strategyhl-d76b06a3dd strategy_hl v1",
+    "strategyll-2d9045f5a0 strategy_ll v1",
+    "strategyll-3b8f4033e0 strategy_ll v2"
+   ],
+   "children": [
+    "s-ec73f74ea9 in_review",
+    "s-733de6e29f done",
+    "s-edd2eda8f6 done",
+    "s-b7ec13d748 in_review",
+    "s-870e401942 in_review",
+    "s-8c6c81f596 done",
+    "s-e6b4fa59d5 done",
+    "s-5b508d7608 done",
+    "s-6dcf78f803 done",
+    "s-32035a77da in_progress",
+    "s-461403ebd1 in_review",
+    "s-42a72db3dd in_progress",
+    "s-9648fded35 in_review",
+    "s-226d9db7ec done",
+    "s-b153dc54eb done",
+    "s-1dccea48b5 done",
+    "s-6d5fdf783a in_review",
+    "s-ca39f10643 in_progress",
+    "s-54a03afc5a in_review",
+    "s-6c2cbbc3e8 done",
+    "s-d8a2452ae9 done",
+    "s-1a029fd6bb done",
+    "s-0cfebd3862 in_review",
+    "s-967481b62a done",
+    "s-da61d38c5e in_progress"
+   ],
+   "links": [
+    "epic-7f3d64e6de produced art-71bad5407f",
+    "epic-7f3d64e6de produced art-03ac75d66e",
+    "epic-7f3d64e6de produced art-49c25890e3",
+    "epic-7f3d64e6de produced art-c6ebf6f153",
+    "epic-7f3d64e6de produced art-a26206c6cd",
+    "epic-7f3d64e6de produced art-1e28857706",
+    "epic-7f3d64e6de uses_strategy strategyhl-86b4805322",
+    "epic-7f3d64e6de uses_strategy strategyhl-d76b06a3dd",
+    "epic-7f3d64e6de uses_strategy strategyll-2d9045f5a0",
+    "epic-7f3d64e6de uses_strategy strategyll-3b8f4033e0",
+    "epic-7f3d64e6de produced art-38623a0cf2",
+    "epic-7f3d64e6de produced art-eb690830bf",
+    "epic-7f3d64e6de produced art-b3bc8315eb",
+    "epic-7f3d64e6de produced art-8e8b327a27",
+    "epic-7f3d64e6de produced art-9f2bf7512a",
+    "epic-7f3d64e6de produced art-8b1c1cbdc5",
+    "epic-7f3d64e6de produced art-34c17c0714",
+    "epic-7f3d64e6de produced art-144e2ae27e",
+    "epic-7f3d64e6de produced art-f29e7ce0df",
+    "epic-7f3d64e6de produced art-5e869e7937",
+    "epic-7f3d64e6de produced art-e48f0a97d7",
+    "epic-7f3d64e6de produced art-fddcc29837",
+    "epic-7f3d64e6de produced art-a960aec4a4",
+    "epic-7f3d64e6de produced art-f949847b14",
+    "epic-7f3d64e6de produced art-67c765ca99",
+    "epic-7f3d64e6de produced art-b88cb22c41",
+    "epic-7f3d64e6de produced art-678346d6e2",
+    "epic-7f3d64e6de produced art-6f20b5e6f0",
+    "epic-7f3d64e6de produced art-c941250fb0",
+    "epic-7f3d64e6de produced art-f3e09b0f79",
+    "epic-7f3d64e6de produced art-ea7f34a703",
+    "epic-7f3d64e6de produced art-b9ab0ce31b"
+   ],
+   "open_gates": [
+    "acceptance"
+   ],
+   "thread": [
+    {
+     "id": "m-98c7821acc",
+     "kind": "answer",
+     "created_at": "2026-09-27T08:14:50.979781Z"
+    }
+   ],
+   "thread_total": 317,
+   "recall_count": 0
+  },
+  {
+   "ticket": {
+    "id": "s-ec73f74ea9",
+    "kind": "story",
+    "status": "in_review",
+    "assignee": "engineer.s-ec73f74ea9",
+    "parent_id": "epic-7f3d64e6de",
+    "design_ref": "design-e963c656f5",
+    "title": "S1 settings and paths core: one registry in edp-contracts, platformdirs dirs, agent home as package data, no parents[N]; spike = installed wheel boots outside t… (+7 chars)",
+    "description": "Design design-e963c656f5 §4.2, §4.8 registry bullets, OCAK A1.\n\nBuild:\n1. `edp_contracts.settings`: every knob declared once. Each declaration has key, env name… (+1376 chars)"
+   },
+   "chain": [
+    {
+     "id": "s-ec73f74ea9",
+     "kind": "story",
+     "status": "in_review"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-c19f9c4936",
+     "text": "Spike: wheels built with `uv build` for edp8, edp-pool, edp-broker and edp-contracts install into a fresh venv in a temp… (+164 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-a26280b5b7"
+    },
+    {
+     "id": "c-3722df2267",
+     "text": "The registry test passes and is meaningful. It scans the `src/` trees of edp8, edp-pool, edp-broker and edp-contracts, f… (+214 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-a26280b5b7"
+    },
+    {
+     "id": "c-0dd1b51f61",
+     "text": "No repo-layout derivation remains: `grep -rn \"parents\\[\" src/` across the four packages returns 0 path-derivation hits (… (+192 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-a26280b5b7"
+    },
+    {
+     "id": "c-6d8e6fe660",
+     "text": "Agent home materialisation works as specified. From package data it writes cards, skills, guides, output-styles/edp-ters… (+222 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-a26280b5b7"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43",
+    "note-190762979d note v1",
+    "strategyhl-5af811e7bd strategy_hl v2",
+    "strategyhl-86b4805322 strategy_hl v1"
+   ],
+   "children": [
+    "t-bdd34121ee in_review"
+   ],
+   "links": [
+    "s-ec73f74ea9 blocks s-b7ec13d748",
+    "s-ec73f74ea9 blocks s-870e401942",
+    "s-ec73f74ea9 blocks s-32035a77da",
+    "s-ec73f74ea9 blocks s-461403ebd1",
+    "s-ec73f74ea9 designed_by note-190762979d",
+    "s-ec73f74ea9 uses_strategy strategyhl-5af811e7bd",
+    "s-ec73f74ea9 uses_strategy strategyhl-86b4805322",
+    "report-a26280b5b7 evidence_for s-ec73f74ea9"
+   ],
+   "thread": [
+    {
+     "id": "m-82388dfb90",
+     "kind": "steer",
+     "created_at": "2026-09-26T16:54:31.804681Z"
+    }
+   ],
+   "thread_total": 23,
+   "recall_count": 0
+  },
+  {
+   "ticket": {
+    "id": "s-b7ec13d748",
+    "kind": "story",
+    "status": "in_review",
+    "assignee": "engineer.s-b7ec13d748",
+    "parent_id": "epic-7f3d64e6de",
+    "design_ref": "design-e963c656f5",
+    "title": "S2 cross-platform process layer: PTY abstraction, psutil tree-kill, python supervisor, headless POSIX, PATH tool lookup",
+    "description": "Design design-e963c656f5 §4.3 (R1: all 3 OSes, hands-on verification on Windows only, and CI covers Linux and macOS).\n\nBuild:\n- A `pty` abstraction in edp-pool:… (+1397 chars)"
+   },
+   "chain": [
+    {
+     "id": "s-b7ec13d748",
+     "kind": "story",
+     "status": "in_review"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-d7bd67f704",
+     "text": "`grep -rnE \"taskkill|Win32_Process|powershell\" src/` across edp8 and edp-pool returns 0 hits outside declared Windows-on… (+219 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-70007952a4"
+    },
+    {
+     "id": "c-ac06d82a6e",
+     "text": "A private pool on a free port spawns a stub-harness seat through the PTY abstraction on Windows (transcript), and the sa… (+199 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-70007952a4"
+    },
+    {
+     "id": "c-85355907fe",
+     "text": "The supervisor restarts a stubbed dead service with `sys.executable` (no shell) on Windows and in Linux CI. Tool lookup… (+153 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-70007952a4"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43",
+    "strategyll-2d9045f5a0 strategy_ll v1",
+    "strategyll-3b8f4033e0 strategy_ll v2",
+    "note-25d82f285c note v3"
+   ],
+   "children": [
+    "t-8218a6367e done",
+    "t-f42af1ca59 in_review"
+   ],
+   "links": [
+    "s-b7ec13d748 blocks s-870e401942",
+    "s-b7ec13d748 uses_strategy strategyll-2d9045f5a0",
+    "s-b7ec13d748 uses_strategy strategyll-3b8f4033e0",
+    "s-b7ec13d748 designed_by note-25d82f285c",
+    "s-ec73f74ea9 blocks s-b7ec13d748",
+    "s-1dccea48b5 blocks s-b7ec13d748",
+    "report-70007952a4 evidence_for s-b7ec13d748"
+   ],
+   "blockers": [
+    {
+     "id": "s-ec73f74ea9",
+     "status": "in_review",
+     "title": "S1 settings and paths core: one registry in edp-contracts, platformdirs dirs, ag"
+    },
+    {
+     "id": "s-1dccea48b5",
+     "status": "done",
+     "title": "ll-craft: cross-platform process control in Python — PTY (pywinpty vs ptyprocess"
+    }
+   ],
+   "thread": [
+    {
+     "id": "m-43098efba7",
+     "kind": "status",
+     "created_at": "2026-09-26T17:34:23.613066Z"
+    }
+   ],
+   "thread_total": 4,
+   "recall_count": 0
+  },
+  {
+   "ticket": {
+    "id": "s-870e401942",
+    "kind": "story",
+    "status": "in_review",
+    "assignee": "engineer.s-870e401942",
+    "parent_id": "epic-7f3d64e6de",
+    "design_ref": "design-e963c656f5",
+    "title": "S3 the CLI launcher: init/start/stop/restart/status/doctor/update/import/gui/version + install.ps1/install.sh; legacy scripts become wrappers",
+    "description": "Design design-e963c656f5 §4.4, §4.10 (app row), §4.13 (import).\n\nThe CLI name is the brand constant `heronry` from the S1 registry (edp8/brand.py, S7 landed).… (+2002 chars)"
+   },
+   "chain": [
+    {
+     "id": "s-870e401942",
+     "kind": "story",
+     "status": "in_review"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-5fb36ba3db",
+     "text": "This runs from an installed wheel in a temp HOME outside the repo on Windows (and in CI on ubuntu and macos): `<cli> ini… (+292 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-09f9e69004"
+    },
+    {
+     "id": "c-3753f0a63a",
+     "text": "`<cli> import --from <copy of v8>`, run against a COPY of this host's v8 state: the dry run prints a diff; the real run… (+196 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-09f9e69004"
+    },
+    {
+     "id": "c-2d2dfd8976",
+     "text": "`<cli> update` against a local fake-release fixture backs up the DB to backups/, stops, upgrades, starts, and the board… (+265 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-09f9e69004"
+    },
+    {
+     "id": "c-9a2a84d019",
+     "text": "Update safety (design §4.14(e) 4): before stopping anything, `update` runs the S13 `check_compat()` against the new vers… (+248 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-09f9e69004"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43",
+    "strategyhl-86b4805322 strategy_hl v1",
+    "strategyhl-5af811e7bd strategy_hl v2",
+    "strategyll-3b8f4033e0 strategy_ll v2",
+    "note-57cb359275 note v2"
+   ],
+   "children": [
+    "t-596660619c in_review",
+    "t-08612be1b0 in_review",
+    "t-86f4ae3569 in_review",
+    "t-caf9b4b96e in_review",
+    "t-df9f2730b9 in_review"
+   ],
+   "links": [
+    "s-870e401942 blocks s-8c6c81f596",
+    "s-870e401942 blocks s-6dcf78f803",
+    "s-870e401942 uses_strategy strategyhl-86b4805322",
+    "s-870e401942 uses_strategy strategyhl-5af811e7bd",
+    "s-870e401942 uses_strategy strategyll-3b8f4033e0",
+    "s-870e401942 designed_by note-57cb359275",
+    "s-ec73f74ea9 blocks s-870e401942",
+    "s-b7ec13d748 blocks s-870e401942",
+    "s-b153dc54eb blocks s-870e401942",
+    "report-09f9e69004 evidence_for s-870e401942"
+   ],
+   "blockers": [
+    {
+     "id": "s-ec73f74ea9",
+     "status": "in_review",
+     "title": "S1 settings and paths core: one registry in edp-contracts, platformdirs dirs, ag"
+    },
+    {
+     "id": "s-b7ec13d748",
+     "status": "in_review",
+     "title": "S2 cross-platform process layer: PTY abstraction, psutil tree-kill, python super"
+    },
+    {
+     "id": "s-b153dc54eb",
+     "status": "done",
+     "title": "hl-craft: shipping a multi-service Python+SPA app cross-platform — packaging, de"
+    }
+   ],
+   "thread": [
+    {
+     "id": "m-f9917ae521",
+     "kind": "status",
+     "created_at": "2026-09-26T18:38:22.795867Z"
+    }
+   ],
+   "thread_total": 10,
+   "recall_count": 0
+  },
+  {
+   "ticket": {
+    "id": "s-461403ebd1",
+    "kind": "story",
+    "status": "in_review",
+    "assignee": "engineer.s-461403ebd1",
+    "parent_id": "epic-7f3d64e6de",
+    "design_ref": "design-e963c656f5",
+    "title": "S13 workflow engine as data: versioned workflow definitions, tables/caps/checkers/bundles from data, hook registry, Standard = today (golden), Lean/Solo presets… (+21 chars)",
+    "description": "Design design-e963c656f5 §4.14(b) (owner m-30023429f7; R11: in this epic). This is the deepest refactor; refactor in steps, with the full suite green at every c… (+2283 chars)"
+   },
+   "chain": [
+    {
+     "id": "s-461403ebd1",
+     "kind": "story",
+     "status": "in_review"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-54afa8a81b",
+     "text": "Golden: with the Standard workflow as default, the ENTIRE pre-existing edp8 pytest suite passes with no test edited exce… (+140 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-4bdc854f61"
+    },
+    {
+     "id": "c-e7cba464fc",
+     "text": "Data drives behaviour: TRANSITIONS, creators/authors/checkers, bundles, spawnable roles, caps, checker map and gate answ… (+273 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-4bdc854f61"
+    },
+    {
+     "id": "c-0e2611c3f2",
+     "text": "Presets and lint: a Lean epic (owner → engineer → qa) and a Solo epic (owner → engineer, owner checks) each walk to done… (+245 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-4bdc854f61"
+    },
+    {
+     "id": "c-5c7afde0e8",
+     "text": "Guards as data (owner m-6b6060dd38): the workflow definition declares preconditions per transition and gate, and the boa… (+378 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-4bdc854f61"
+    },
+    {
+     "id": "c-2c02d34d7f",
+     "text": "Capacity and cards as data (design §4.14(d)):\n- Every workflow role declares `capacity_class` (builder, planner or check… (+533 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-4bdc854f61"
+    },
+    {
+     "id": "c-328185ac06",
+     "text": "Kernel vs policy (design §4.14(e) 1, 2 and 4):\n- Every spawned role's card is the locked kernel preamble followed by the… (+659 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-4bdc854f61"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43",
+    "note-192632d6e1 note v2"
+   ],
+   "children": [
+    "t-e355a990f7 in_review",
+    "t-c2401d98c6 in_review",
+    "t-3662743f1f in_review",
+    "t-f9a64739de in_review",
+    "t-cd4712c855 in_progress"
+   ],
+   "links": [
+    "s-461403ebd1 blocks s-42a72db3dd",
+    "s-461403ebd1 designed_by note-192632d6e1",
+    "s-461403ebd1 blocks s-d8a2452ae9",
+    "s-ec73f74ea9 blocks s-461403ebd1"
+   ],
+   "blockers": [
+    {
+     "id": "s-ec73f74ea9",
+     "status": "in_review",
+     "title": "S1 settings and paths core: one registry in edp-contracts, platformdirs dirs, ag"
+    }
+   ],
+   "thread": [
+    {
+     "id": "m-08a12a71e5",
+     "kind": "answer",
+     "created_at": "2026-09-26T17:46:20.575999Z"
+    }
+   ],
+   "thread_total": 10,
+   "recall_count": 0
+  },
+  {
+   "ticket": {
+    "id": "s-9648fded35",
+    "kind": "story",
+    "status": "in_review",
+    "assignee": "engineer.s-9648fded35",
+    "parent_id": "epic-7f3d64e6de",
+    "design_ref": "design-e963c656f5",
+    "title": "S9 publish + dogfood: HEAD purge + PII scan, Apache-2.0, version sync, Dependabot, 3-OS CI + install smoke, tag release (wheels/sdist/vsix/installers), README;… (+12 chars)",
+    "description": "Design design-e963c656f5 §4.5, §4.10 (libraries), §4.13. Rulings: R1 (Windows hands-on only), R3 (the repo stays; GitHub Releases only), R6 (dogfood), R9 (HEAD… (+1890 chars)"
+   },
+   "chain": [
+    {
+     "id": "s-9648fded35",
+     "kind": "story",
+     "status": "in_review"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-d1efb29e94",
+     "text": "At HEAD, gitleaks is clean and a grep of all tracked files for the user-profile path, `C:\\Projects`, the owner's usernam… (+277 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-17428174b0"
+    },
+    {
+     "id": "c-9bf2b47192",
+     "text": "CI is green on windows, macos and ubuntu for the four pytest suites, vitest and the install smoke (build wheels → `uv to… (+337 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-17428174b0"
+    },
+    {
+     "id": "c-2051e1dbf4",
+     "text": "README quickstart: a GUI install and a cmd install, ≤5 steps each per OS; unsigned-installer steps; what each service is… (+266 chars)",
+     "check": "verdict",
+     "checked_by": "qa",
+     "verdict": "pass",
+     "evidence_ref": "report-17428174b0"
+    },
+    {
+     "id": "c-0f247caf7d",
+     "text": "Carried from S8 (c-eb38e8c949, ruling on m-1998f097c0): the first tag or workflow_dispatch run of `.github/workflows/ins… (+228 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-17428174b0"
+    },
+    {
+     "id": "c-eb6dc6172f",
+     "text": "`uv lock --check` passes at the release commit, for the repo and every workspace member. uv.lock currently lags pyprojec… (+212 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-17428174b0"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43",
+    "strategyhl-d76b06a3dd strategy_hl v1"
+   ],
+   "children": [
+    "t-6129a95a3d in_review"
+   ],
+   "links": [
+    "s-9648fded35 uses_strategy strategyhl-d76b06a3dd",
+    "s-733de6e29f blocks s-9648fded35",
+    "s-6dcf78f803 blocks s-9648fded35",
+    "s-edd2eda8f6 blocks s-9648fded35",
+    "s-32035a77da blocks s-9648fded35",
+    "s-42a72db3dd blocks s-9648fded35",
+    "s-ca39f10643 blocks s-9648fded35",
+    "s-6c2cbbc3e8 blocks s-9648fded35",
+    "s-d8a2452ae9 blocks s-9648fded35",
+    "s-1a029fd6bb blocks s-9648fded35",
+    "s-0cfebd3862 blocks s-9648fded35",
+    "report-17428174b0 evidence_for s-9648fded35",
+    "s-967481b62a blocks s-9648fded35",
+    "s-da61d38c5e blocks s-9648fded35"
+   ],
+   "blockers": [
+    {
+     "id": "s-733de6e29f",
+     "status": "done",
+     "title": "S4 codex bridge → codex seats: remove consult, cards spawn codex adversary/build"
+    },
+    {
+     "id": "s-6dcf78f803",
+     "status": "done",
+     "title": "S8 desktop app + installers: pywebview+tray, Briefcase MSI/DMG/deb"
+    },
+    {
+     "id": "s-edd2eda8f6",
+     "status": "done",
+     "title": "S10 board UI: empty band under the composer when the top bar is collapsed (relea"
+    },
+    {
+     "id": "s-32035a77da",
+     "status": "in_progress",
+     "title": "S12 any model: explicit harness/provider per catalog entry, no prefix sniffing ("
+    },
+    {
+     "id": "s-42a72db3dd",
+     "status": "in_progress",
+     "title": "S14 Design tab /ui/design: workflow list/versions/presets, pipeline view, role p"
+    },
+    {
+     "id": "s-ca39f10643",
+     "status": "in_progress",
+     "title": "S16 lifecycle skills (/epic, /ticket) + design sign-off parity (board guards, VS"
+    },
+    {
+     "id": "s-6c2cbbc3e8",
+     "status": "done",
+     "title": "S18 README as the storefront: hero loop, Download/Website, per-OS install"
+    },
+    {
+     "id": "s-d8a2452ae9",
+     "status": "done",
+     "title": "S19 Help agent + diagnostics: read-only doctor seat, approval-gated fixes, --bun"
+    },
+    {
+     "id": "s-1a029fd6bb",
+     "status": "done",
+     "title": "S20 attention trail: highlight the path to what needs you (epic → tab → section "
+    },
+    {
+     "id": "s-0cfebd3862",
+     "status": "in_review",
+     "title": "S21 code server as an optional managed service: heronry start/stop code on every"
+    },
+    {
+     "id": "s-967481b62a",
+     "status": "done",
+     "title": "S22 performance pass: profile the board API, SSE feed and SPA render; fix the to"
+    },
+    {
+     "id": "s-da61d38c5e",
+     "status": "in_progress",
+     "title": "S23 agent-friendly tool layer: audit every MCP tool across all roles for token w"
+    }
+   ],
+   "thread": [
+    {
+     "id": "m-7f1c5a58a2",
+     "kind": "answer",
+     "created_at": "2026-09-27T03:51:19.191779Z"
+    }
+   ],
+   "thread_total": 33,
+   "recall_count": 0
+  },
+  {
+   "ticket": {
+    "id": "s-6d5fdf783a",
+    "kind": "story",
+    "status": "in_review",
+    "assignee": "engineer.s-6d5fdf783a",
+    "parent_id": "epic-7f3d64e6de",
+    "design_ref": "design-e963c656f5",
+    "title": "S15 project site on GitHub Pages: MkDocs Material, downloads from Releases, branding, setup guide, docs, generated reference, Pages deploy",
+    "description": "Design design-e963c656f5 §4.15 (owner m-3ab3753664).\n\nBuild:\n- `docs/site/` with MkDocs Material: the brand palette, logo and favicon from S7, light and dark, s… (+891 chars)"
+   },
+   "chain": [
+    {
+     "id": "s-6d5fdf783a",
+     "kind": "story",
+     "status": "in_review"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-dc617c014b",
+     "text": "`mkdocs build --strict` passes with no broken links. The reference pages are generated at build: a test adds a dummy set… (+182 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "note-f8bf657ca4"
+    },
+    {
+     "id": "c-cbbe11fb55",
+     "text": "The built site served locally (screenshots in light and dark) shows the brand hero; Download buttons pointing at the rel… (+309 chars)",
+     "check": "look",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "note-f8bf657ca4"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43",
+    "strategyhl-d76b06a3dd strategy_hl v1"
+   ],
+   "children": [
+    "t-afb4f288ee ready"
+   ],
+   "links": [
+    "s-6d5fdf783a uses_strategy strategyhl-d76b06a3dd",
+    "s-5b508d7608 blocks s-6d5fdf783a",
+    "s-42a72db3dd blocks s-6d5fdf783a",
+    "s-6dcf78f803 blocks s-6d5fdf783a",
+    "s-54a03afc5a blocks s-6d5fdf783a",
+    "note-f8bf657ca4 evidence_for s-6d5fdf783a"
+   ],
+   "blockers": [
+    {
+     "id": "s-5b508d7608",
+     "status": "done",
+     "title": "S7 rebrand to Heronry: art into tree, icon set, WCAG AA theme, brand applied"
+    },
+    {
+     "id": "s-42a72db3dd",
+     "status": "in_progress",
+     "title": "S14 Design tab /ui/design: workflow list/versions/presets, pipeline view, role p"
+    },
+    {
+     "id": "s-6dcf78f803",
+     "status": "done",
+     "title": "S8 desktop app + installers: pywebview+tray, Briefcase MSI/DMG/deb"
+    },
+    {
+     "id": "s-54a03afc5a",
+     "status": "in_review",
+     "title": "S17 product video: Remotion, generated scenes, 7 chapters, CC0 music"
+    }
+   ],
+   "thread": [
+    {
+     "id": "m-8498ec7a59",
+     "kind": "status",
+     "created_at": "2026-09-27T01:58:51.809003Z"
+    }
+   ],
+   "thread_total": 6,
+   "recall_count": 0
+  },
+  {
+   "ticket": {
+    "id": "s-54a03afc5a",
+    "kind": "story",
+    "status": "in_review",
+    "assignee": "engineer.s-54a03afc5a",
+    "parent_id": "epic-7f3d64e6de",
+    "design_ref": "design-e963c656f5",
+    "title": "S17 product video: Remotion, generated scenes, 7 chapters, CC0 music",
+    "description": "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+   },
+   "chain": [
+    {
+     "id": "s-54a03afc5a",
+     "kind": "story",
+     "status": "in_review"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-9614d28be6",
+     "text": "Storyboard checkpoint: a storyboard doc exists with one still or frame sketch and a caption per chapter, 8 chapters in t… (+321 chars)",
+     "check": "look",
+     "checked_by": "qa",
+     "verdict": "pass",
+     "evidence_ref": "note-98653d1d8a"
+    },
+    {
+     "id": "c-95efd1ceff",
+     "text": "`docs/video/` renders `heronry-demo.mp4` with one command. ffprobe shows 1920x1080 video, a 60–95 s duration and an audi… (+439 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pass",
+     "evidence_ref": "report-c56da9b2ad"
+    },
+    {
+     "id": "c-50778c655b",
+     "text": "Final-cut checkpoint: the MP4 is uploaded as a video artifact that plays inline on the board (task t-f01372d361). Until… (+443 chars)",
+     "check": "look",
+     "checked_by": "qa",
+     "verdict": "fail",
+     "evidence_ref": "note-98653d1d8a"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43",
+    "note-15fe404328 note v1",
+    "report-c56da9b2ad report v1"
+   ],
+   "children": [
+    "t-11be48a9d3 done",
+    "t-f01372d361 in_review",
+    "t-d606b5d93f ready"
+   ],
+   "links": [
+    "s-54a03afc5a blocks s-6c2cbbc3e8",
+    "s-54a03afc5a blocks s-6d5fdf783a",
+    "s-54a03afc5a blocks s-226d9db7ec",
+    "s-54a03afc5a designed_by note-15fe404328",
+    "s-54a03afc5a produced art-2be3c41101",
+    "s-54a03afc5a produced art-37f707bb87",
+    "s-54a03afc5a produced art-26fe0a51a2",
+    "s-54a03afc5a produced art-9ab4e08b68",
+    "s-54a03afc5a produced art-6492311487",
+    "s-54a03afc5a produced art-02b38e3f07",
+    "s-54a03afc5a produced art-35592c1d75",
+    "s-54a03afc5a produced art-c6e48b480a",
+    "s-54a03afc5a produced art-b7ce5ef9aa",
+    "s-54a03afc5a produced art-2c50436eef",
+    "s-54a03afc5a produced art-4f382c68e5",
+    "s-54a03afc5a produced art-a1e70de796",
+    "s-54a03afc5a produced art-13a5bd15b0",
+    "s-54a03afc5a produced art-cd73fe5f31",
+    "s-54a03afc5a produced art-7e7ac729dc",
+    "s-54a03afc5a produced art-4f22d36e7a",
+    "s-54a03afc5a produced art-94a691e135",
+    "s-54a03afc5a produced art-60a2c2b185",
+    "s-54a03afc5a produced art-57e9e2787d",
+    "s-54a03afc5a produced art-1f7f52c6d2",
+    "s-54a03afc5a produced art-4562a067fa",
+    "s-54a03afc5a produced art-a77e5640c8",
+    "s-54a03afc5a produced art-c555778d1b",
+    "s-54a03afc5a produced art-3892c48fa8",
+    "s-54a03afc5a produced art-353cb3a5ba",
+    "s-54a03afc5a produced art-2d2a271011",
+    "s-54a03afc5a produced art-19a62c7fae",
+    "s-54a03afc5a produced art-478c608ba9",
+    "s-54a03afc5a produced art-33b5dce956",
+    "s-54a03afc5a produced art-8442f07820",
+    "s-54a03afc5a produced art-0b0c69637b",
+    "s-54a03afc5a produced art-76c5477e15",
+    "s-54a03afc5a evidence_for report-c56da9b2ad",
+    "note-98653d1d8a evidence_for s-54a03afc5a"
+   ],
+   "thread": [
+    {
+     "id": "m-66f5fed48a",
+     "kind": "status",
+     "created_at": "2026-09-26T17:29:28.046677Z"
+    }
+   ],
+   "thread_total": 20,
+   "recall_count": 0
+  },
+  {
+   "ticket": {
+    "id": "s-0cfebd3862",
+    "kind": "story",
+    "status": "in_review",
+    "assignee": "engineer.s-0cfebd3862",
+    "parent_id": "epic-7f3d64e6de",
+    "design_ref": "design-e963c656f5",
+    "title": "S21 code server as an optional managed service: heronry start/stop code on every OS, Admin → Services controls, tray item, Code tab hint",
+    "description": "Owner m-1f39866c96: \"the admin UI and heronry context menu both dont provide option to start the code server. how does one start it then?\" The architect's answe… (+2516 chars)"
+   },
+   "chain": [
+    {
+     "id": "s-0cfebd3862",
+     "kind": "story",
+     "status": "in_review"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-0b7b0506e6",
+     "text": "An installed wheel on a private home (spare ports) runs `heronry start code`: the guard and code-server come up loopback… (+328 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-296ef85bd9"
+    },
+    {
+     "id": "c-b73a4537db",
+     "text": "An admin with no shell starts, stops and restarts the code server from Admin → Services and from the tray menu. The Code… (+229 chars)",
+     "check": "look",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-296ef85bd9"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43",
+    "strategyll-3b8f4033e0 strategy_ll v2",
+    "strategyhl-86b4805322 strategy_hl v1",
+    "note-309fbd1fd4 note v1"
+   ],
+   "children": [],
+   "links": [
+    "s-0cfebd3862 uses_strategy strategyll-3b8f4033e0",
+    "s-0cfebd3862 uses_strategy strategyhl-86b4805322",
+    "s-0cfebd3862 blocks s-9648fded35",
+    "s-0cfebd3862 designed_by note-309fbd1fd4",
+    "report-296ef85bd9 evidence_for s-0cfebd3862"
+   ],
+   "thread": [
+    {
+     "id": "m-0cb48eb775",
+     "kind": "status",
+     "created_at": "2026-09-27T04:15:08.553721Z"
+    }
+   ],
+   "thread_total": 9,
+   "recall_count": 0
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='epic-7f3d64e6de') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzI5OS44MDk2NTExLCJtZXRhZGF0YSI6IjM1ZjZjYzMxYjIyYjgwMzQzZDhkODE2NDgwMGZmNjlmNWQ1ZjAxODQ3NjYxNTAzNzNkMjc5ZGNlOWU5OWM3ODciLCJwIjoiNTkzODc3MjI0NTIwN2M0YzZiNGJkNzExNzIyMDc2NTBhYjgxM2NlNTIzNWEyYjVkYTVlODYwOTMyMDkzY2JmNCIsInJvbGUiOiJxYSIsInJvb3RzIjoiY2VjYjZjNmQ0MTlkMWI4MTE1MmY0YzM0Mjc1NmFhMDYxYWY4ZjAzNjY0NmU3ODQ3MjcxMjY0NGJhNmIyZmQ3OSIsInNjb3BlIjoiNzQyMzRlOThhZmU3NDk4ZmI1ZGFmMWYzNmFjMmQ3OGFjYzMzOTQ2NGY5NTA3MDNiOGMwMTk4OTJmOTgyYjkwYiIsInNlcSI6MjM3NjUsInRocm91Z2giOm51bGwsInYiOjF96FNVI53UYtM12z1fwXjJnM5_iKj4d6FxbT0O5M0sBeI=",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=8000 bytes (verbose=False); snapshot is 28378 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "epic_words": "context(verbose=True) or ticket_read(<epic id>) for the owner's full words",
+  "description": "ticket_read(ticket_id=<id>, include='') for the full description",
+  "compact": "criteria/docs/children/links are refs; ticket_read(ticket_id=<id>) or criterion_query(ticket_id=<id>) for rows, lookup(scope=<epic>) for recall",
+  "full_snapshot": "context(verbose=True)",
+  "still_over_budget": "the per-ticket records/criteria/asks alone exceed the budget; nothing summary-level was dropped — narrow with context(ticket_id=<id>) or raise EDP8_CONTEXT_BUDGET_B"
+ }
+}

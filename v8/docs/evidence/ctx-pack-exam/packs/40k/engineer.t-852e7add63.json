@@ -1,0 +1,248 @@
+{
+ "participant": {
+  "id": "engineer.t-852e7add63",
+  "created_at": "2026-09-26T23:48:20.228966Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "engineer",
+  "handle": "engineer.t-852e7add63",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "t-852e7add63",
+    "created_at": "2026-09-26T23:47:51.147833Z",
+    "created_by": "architect.epic-7f3d64e6de",
+    "kind": "task",
+    "work_type": "bug",
+    "title": "Attention v34: only real asks count, a human's reply clears, every waiting item is reachable, drop the rail \"Waiting on you\" entry and the comment dot, Dismiss, stale cleanup",
+    "words": null,
+    "parent_id": "s-1a029fd6bb",
+    "status": "in_review",
+    "assignee": "engineer.t-852e7add63",
+    "design_ref": "design-e963c656f5",
+    "description": "Owner rulings m-8aa6439a77 on m-14333c915c, design-e963c656f5 v34 §4.18. Measured: the owner's list had 21 items on the epic, 18 of them FYI statuses from the architect; the epic page highlighted only 3, and the rest could not be found.\n1. **attention.py / board.inbox:** an item counts only if it is a question or steer, a status with status in blocked/failed/deferred, or a deviation to a human. A plain status, note or finding never counts (narrows t-9e9ba3a6e5).\n2. **Clearing:** any later message from the human on the same ticket, addressed to the asker or with reply_to set to the ask, resolves it. Case: the owner answered the S8 ask m-584a1c342d with m-f5f30e92bb (to the engineer, no reply_to), and it stayed highlighted.\n3. **Reachability:** the Conversation loads back to the oldest waiting message, or shows an \"N earlier waiting\" bar at the thread top whose items load and scroll to each one. The Work drawer's ticket highlight must lead to the message on the ticket page.\n4. **Remove** the rail \"Waiting on you\" entry and its AnchoredPanel (AppShell), and update the notification fallback copy that names it.\n5. **In-thread marker:** keep the large highlight. Remove the AttentionDot from the comment, and restyle the tag as the quiet caption used for \"For your information\".\n6. **Dismiss:** per item (a server-side dismissal, so it clears everywhere), plus \"Dismiss all updates\" on the epic.\n7. **One-off cleanup:** a script, or a migration, that resolves the pre-v34 items the new rule no longer counts. Report before/after counts for the owner.\n8. **Markdown:** the message renderer accepts a GFM table that starts right after a paragraph line; fixture m-14333c915c must render as a table.\nTests: pytest (rule, clearing, dismiss, cleanup), vitest (panels, marker), and ONE Playwright spec (s20-attention) run alone with ≥1.5 GB free RAM. Rebuild the SPA from PowerShell; the architect deploys. No consult.",
+    "tags": [],
+    "epic_id": "epic-7f3d64e6de",
+    "topic_config": null
+   },
+   "words": "Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and need to publish this on Git as a distributable.",
+   "words_header": "words recorded 2026-09-26; phase: in_progress; governed by design-e963c656f5 v43",
+   "workflow": "standard@1",
+   "chain": [
+    {
+     "id": "t-852e7add63",
+     "kind": "task",
+     "title": "Attention v34: only real asks count, a human's reply clears, every waiting item is reachable, drop the rail \"Waiting on you\" entry and the comment dot, Dismiss, stale cleanup",
+     "status": "in_review",
+     "design_ref": "design-e963c656f5"
+    },
+    {
+     "id": "s-1a029fd6bb",
+     "kind": "story",
+     "title": "S20 attention trail: highlight the path to what needs you (epic → tab → section → item) instead of a Needs you page",
+     "status": "done",
+     "design_ref": "design-e963c656f5"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "title": "Productize the app. Make it as installable and independent of machine or OS",
+     "status": "in_progress",
+     "design_ref": "design-e963c656f5"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-acc5077a9c",
+     "created_at": "2026-09-26T23:48:08.388624Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "t-852e7add63",
+     "text": "Items 1–8 of t-852e7add63 are covered by pytest and vitest (0 failures in the touched suites), and s20-attention.spec passes run alone. On the live board after deploy, the owner's attention count for epic-7f3d64e6de lists only real asks, the before and after counts are in the report, and the rail has no \"Waiting on you\" entry.",
+     "check": "command",
+     "checked_by": "engineer",
+     "evidence_ref": "report-4f2c15a7ae",
+     "evidence_version": 2,
+     "verdict": "pass"
+    }
+   ],
+   "docs": [
+    {
+     "id": "design-e963c656f5",
+     "doc_type": "design",
+     "title": "Productize EDP: installable on any machine/OS, published on GitHub; codex bridge → codex seats",
+     "version": 43,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# Productize EDP — design (epic-7f3d64e6de)\n\n## 1. Words (verbatim)\nEpic: \"Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and ne… (+99 chars)",
+     "full": "doc_read(id)",
+     "relation": "design_ref"
+    },
+    {
+     "id": "note-77650963fe",
+     "doc_type": "note",
+     "title": "Plan: t-852e7add63 Attention v34",
+     "version": 2,
+     "scope": "t-852e7add63",
+     "tags": [],
+     "status": "active",
+     "summary": "# Plan: t-852e7add63 — Attention v34 (design-e963c656f5 v34 §4.18; owner m-8aa6439a77; steer m-4ed69369cb)\n\n## Strategy\nOne rule stays in one place: `board.inbox` + `board.ask_resolved` (server) feed… (+100 chars)",
+     "full": "doc_read(id)",
+     "relation": "designed_by"
+    },
+    {
+     "id": "report-4f2c15a7ae",
+     "doc_type": "report",
+     "title": "Report: t-852e7add63 Attention v34",
+     "version": 2,
+     "scope": "t-852e7add63",
+     "tags": [],
+     "status": "active",
+     "summary": "# Report: t-852e7add63 — Attention v34 (design-e963c656f5 v34 §4.18; owner m-8aa6439a77, m-1a09573d3d; steers m-4ed69369cb, m-1015209853)\n\n**Verdict:** items 1–8 are built. \"Dismiss all updates\" is dr… (+100 chars)",
+     "full": "doc_read(id)",
+     "relation": "evidence_for"
+    }
+   ],
+   "strategy_links": true,
+   "children": [],
+   "blockers": [],
+   "open_gates": [],
+   "thread": [
+    {
+     "id": "m-a622286d53",
+     "created_at": "2026-09-27T01:42:40.920416Z",
+     "created_by": "engineer.t-852e7add63",
+     "ticket_id": "t-852e7add63",
+     "to": "architect.epic-7f3d64e6de",
+     "kind": "answer",
+     "text": "All four points are built as steered, and note-77650963fe v2 matches.\n- \"Dismiss all updates\" is not built; Dismiss is per message only.\n- Dismiss posts no message. test_dismiss_clears_every_surface_a… (+234 chars)",
+     "reply_to": "m-1015209853",
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 22261
+    },
+    {
+     "id": "m-f1f191bbe3",
+     "created_at": "2026-09-27T01:42:44.264121Z",
+     "created_by": "engineer.t-852e7add63",
+     "ticket_id": "t-852e7add63",
+     "to": "architect.epic-7f3d64e6de",
+     "kind": "answer",
+     "text": "t-852e7add63 is in_review. The evidence for c-acc5077a9c is report-4f2c15a7ae v2, which I checked as pass since the criterion is engineer-checked.\n- The report carries your live before/after (20 → 0,… (+430 chars)",
+     "reply_to": "m-6f35504905",
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 22263
+    },
+    {
+     "id": "m-52867eb241",
+     "created_at": "2026-09-27T01:42:48.505046Z",
+     "created_by": "engineer.t-852e7add63",
+     "ticket_id": "t-852e7add63",
+     "to": null,
+     "kind": "status",
+     "text": "[done] t-852e7add63 is in_review with evidence report-4f2c15a7ae. Commits are 0c226dd, 7911e35 and 025a625, and the owner's count on the epic went from 20 to 0 live.",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": "done",
+     "artifacts": [],
+     "seq": 22265
+    }
+   ],
+   "thread_seq": 22265,
+   "thread_total": 10,
+   "links": [
+    {
+     "id": "lk-58bcacef0e",
+     "created_at": "2026-09-26T23:51:42.486664Z",
+     "created_by": "engineer.t-852e7add63",
+     "from_id": "t-852e7add63",
+     "to_id": "note-77650963fe",
+     "relation": "designed_by"
+    },
+    {
+     "id": "lk-62cebeeeb9",
+     "created_at": "2026-09-27T01:42:29.829398Z",
+     "created_by": "engineer.t-852e7add63",
+     "from_id": "t-852e7add63",
+     "to_id": "report-4f2c15a7ae",
+     "relation": "evidence_for"
+    }
+   ],
+   "recall": {
+    "items": [
+     {
+      "id": "clm-168f3095a3",
+      "type": "claim",
+      "text": "c-acc5077a9c pass: Items 1–8 are covered by pytest and vitest, and the touched suites pass (the vitest load timeout passes when run alone). s20-attention.spec…"
+     },
+     {
+      "id": "clm-1c14c15210",
+      "type": "claim",
+      "text": "c-c0bdff80eb pass: test_admin_access.py (13 passed) covers the full ask, admin approve and one-time claim path. A second claim, a wrong code and the rate limit…"
+     },
+     {
+      "id": "dec-8800199e5a",
+      "type": "decision",
+      "text": "Briefcase service re-entry passes on Windows: services start as `heronry.exe --heronry-service <svc>` (console stub); bundled() is structural since Briefcase s…"
+     },
+     {
+      "id": "dec-9213fad42c",
+      "type": "decision",
+      "text": "Update guards (app update and harness update) treat active, starting, parked and resuming seats as live and refuse without --force; a parked shell is alive (ed…"
+     },
+     {
+      "id": "clm-cfe640deb9",
+      "type": "claim",
+      "text": "c-31ceadf3b2 pass: Every item was checked against screenshots from a private instance (shots 01-09 plus the walk's results.json). vitest covers each item: 59/5…"
+     },
+     {
+      "id": "clm-cacad64022",
+      "type": "claim",
+      "text": "c-23d14e607b pass: 41d7a7c: permanent test passes (25 expired → list 0, new ask 200, claim answers expired); test_admin_access + teammates + attention 43 passe…"
+     },
+     {
+      "id": "clm-acaf4eb01b",
+      "type": "claim",
+      "text": "c-de4fa3e6e6 pass: cold re-run 19/19, bytes 6.19M->540,665; literal calls 301->339 from newly reachable goals and widened scope; like-for-like 45->43, no task…"
+     },
+     {
+      "id": "clm-c9d92b82ba",
+      "type": "claim",
+      "text": "c-e8ce8bad0e pass: qa: at dd42458 test_bundle_zip_has_every_section_and_no_plant failed with KeyError 'ui.settings_file' (key made internal/unlisted by 182107c…"
+     }
+    ],
+    "receipt": {
+     "question": "Attention v34: only real asks count, a human's reply clears, every waiting item…",
+     "returned": 8,
+     "cut": 13,
+     "cap": 8,
+     "more": "lookup(scope=<ticket>, question=…) for the full pack"
+    }
+   },
+   "thread_omitted": 7
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='t-852e7add63') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzMxMy43MjM5OTY5LCJtZXRhZGF0YSI6IjY5ZWRmMTZjNmZmMTc1Y2Y1NzcwNTc5MDRiNzhjMmZmMzk2NDg5ZTBhNzNkNmFkYWQ4NThhNWI1MTY1MzE1ZmEiLCJwIjoiNDAyYTU1OWE4NDgwODc0OGYxZTUyNzRiMzE3N2QwYTM0M2MzOGIxMjg2ZTkxZGI1YjJkNTM4NWNiMmUxYTQ4ZiIsInJvbGUiOiJlbmdpbmVlciIsInJvb3RzIjoiNjdlMGRhZWEyNjEyYmNhZjc3OTM1NzMxMTVlZjMxMWRiMzdjNWZhNmRjMzcxZGYwMTE1MTUyNzg5YzIwZDY1ZiIsInNjb3BlIjoiNzQyMzRlOThhZmU3NDk4ZmI1ZGFmMWYzNmFjMmQ3OGFjYzMzOTQ2NGY5NTA3MDNiOGMwMTk4OTJmOTgyYjkwYiIsInNlcSI6MjM3NjUsInRocm91Z2giOm51bGwsInYiOjF9UrkGNXxfsuK75xONbyciNs1BVlbFLYg-JCazZWcaN7A=",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=40000 bytes (verbose=False); snapshot is 10964 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

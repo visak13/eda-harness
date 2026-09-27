@@ -1,0 +1,367 @@
+{
+ "participant": {
+  "id": "engineer.s-32035a77da",
+  "created_at": "2026-09-26T19:54:59.647353Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "engineer",
+  "handle": "engineer.s-32035a77da",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "s-32035a77da",
+    "created_at": "2026-09-26T14:41:57.000934Z",
+    "created_by": "architect.epic-7f3d64e6de",
+    "kind": "story",
+    "work_type": "feature",
+    "title": "S12 any model: explicit harness/provider per catalog entry, no prefix sniffing (board/pool/web), Pi any provider, models in data dir + Admin → Models editor",
+    "words": null,
+    "parent_id": "epic-7f3d64e6de",
+    "status": "in_progress",
+    "assignee": "engineer.s-32035a77da",
+    "design_ref": "design-e963c656f5",
+    "description": "Design design-e963c656f5 §4.14(a) (owner m-30023429f7).\n\nBuild:\n- Every `models.json` seat or catalog entry carries `harness: claude|codex|pi` and `provider`. Effort caps and window are per entry as data (replacing the `_uncapped` prefix logic).\n- Remove prefix sniffing everywhere; routing reads the entry's harness:\n  - board: `seat_choice.py` `is_gpt_id` :66, `codex/` rewrite :63, `is_pi_seat` :187\n  - pool: `pi_launcher.py:109` `is_pi_model`, `codex_launcher.py:54` `is_codex_model`, CompositeSpawner\n  - web: `iconPaths.ts:101` `modelProvider`, `SeatPicks.tsx` `isClaudeModel`\n- Pi accepts any `provider/model`. Provider credentials (API keys, base URLs) are secret settings in the registry and are injected into the Pi seat env. `pi_seat/run.py:61` has no hardcoded default beyond the catalog's.\n- The catalog lives in the data dir (the package ships defaults and they are materialised). Admin API: GET/PUT the catalog with validation (a known harness, the harness installed or warned, the provider credential present). `unknown_model` validates against the edited catalog.\n- **Admin → Models tab** (inside S6's Admin shell, which is now in_review): add, edit and remove models; per-role catalogs and defaults; effort caps; a \"test spawn\" button that runs a stub prompt on a private seat. The catalog is filtered to the harnesses selected at init (§4.11).\n- Migrating this host's `models.json` preserves today's catalog exactly, with harness fields inferred once by a migration script.\n- **Also yours:** edp-pool's existing codex launcher tests have failing model-default assertions (reported by t-8218a6367e, m-3c93cccc7e). Fix them as part of moving the defaults into the catalog.\n\nPrivate boards and pools only. Never restart fleet services; the architect does. No consult.",
+    "tags": [],
+    "epic_id": "epic-7f3d64e6de",
+    "topic_config": null
+   },
+   "words": "Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and need to publish this on Git as a distributable.",
+   "words_header": "words recorded 2026-09-26; phase: in_progress; governed by design-e963c656f5 v43",
+   "workflow": "standard@1",
+   "chain": [
+    {
+     "id": "s-32035a77da",
+     "kind": "story",
+     "title": "S12 any model: explicit harness/provider per catalog entry, no prefix sniffing (board/pool/web), Pi any provider, models in data dir + Admin → Models editor",
+     "status": "in_progress",
+     "design_ref": "design-e963c656f5"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "title": "Productize the app. Make it as installable and independent of machine or OS",
+     "status": "in_progress",
+     "design_ref": "design-e963c656f5"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-00abcfd9bc",
+     "created_at": "2026-09-26T14:42:19.000807Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-32035a77da",
+     "text": "No prefix sniffing remains: grep for `startswith(\"gpt`, `is_gpt_id`, `is_pi_model`, `is_codex_model`, `openai/` routing and `modelProvider` prefix logic across board, pool and web returns 0 routing hits. Routing tests show that a catalog entry `{id:\"my-model\", harness:\"pi\", provider:\"openrouter\"}` routes to Pi, `{harness:\"codex\"}` routes to codex, and `{harness:\"claude\"}` routes to claude, whatever the id.",
+     "check": "command",
+     "checked_by": "qa",
+     "evidence_ref": "report-ec72642c09",
+     "evidence_version": 2,
+     "verdict": "pass"
+    },
+    {
+     "id": "c-c0b35be596",
+     "created_at": "2026-09-26T14:42:21.108832Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-32035a77da",
+     "text": "Catalog migration: this host's current models.json migrates to the new schema with every role catalog, default and effort cap preserved (a test compares resolve() for every role before and after). The admin catalog PUT rejects an unknown harness and a missing provider credential. A Pi seat with a non-OpenAI provider spawns on a private pool with its credential injected from the secret setting (the transcript shows the provider in use).",
+     "check": "command",
+     "checked_by": "qa",
+     "evidence_ref": "report-ec72642c09",
+     "evidence_version": 2,
+     "verdict": "fail"
+    },
+    {
+     "id": "c-41c6d5f0f9",
+     "created_at": "2026-09-26T14:42:22.561242Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-32035a77da",
+     "text": "Admin → Models on a private instance (screenshots): add a Pi model with a provider, set it as a role's default, run test spawn and see a stub reply, then remove it. The catalog is filtered to the selected harnesses, and New Epic's SeatPicks shows the edited catalog.",
+     "check": "look",
+     "checked_by": "qa",
+     "evidence_ref": "report-ec72642c09",
+     "evidence_version": 2,
+     "verdict": "pass"
+    },
+    {
+     "id": "c-d38bf82b4a",
+     "created_at": "2026-09-26T20:48:41.873320Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-32035a77da",
+     "text": "Every spawned role resolves to an explicit catalog model, so no seat launches a harness without a model (owner m-549b8adc3a: a Help doctor seat started with no `--model` and ran on the CLI's own default, Opus 4.8). The shipped catalog lists `doctor`. A role absent from `role_models` (including a S13 custom role) falls back to the catalog's default model, never to a bare harness launch. A test spawns doctor, a custom role and an unlisted role through the pool adapter and asserts each spawn argv carries `--model <catalog id>`.",
+     "check": "command",
+     "checked_by": "qa",
+     "evidence_ref": "report-ec72642c09",
+     "evidence_version": 2,
+     "verdict": "pass"
+    }
+   ],
+   "docs": [
+    {
+     "id": "design-e963c656f5",
+     "doc_type": "design",
+     "title": "Productize EDP: installable on any machine/OS, published on GitHub; codex bridge → codex seats",
+     "version": 43,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# Productize EDP — design (epic-7f3d64e6de)\n\n## 1. Words (verbatim)\nEpic: \"Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and ne… (+99 chars)",
+     "full": "doc_read(id)",
+     "relation": "design_ref"
+    },
+    {
+     "id": "note-eb224aae0f",
+     "doc_type": "note",
+     "title": "Plan: S12 explicit model catalog and Admin Models",
+     "version": 4,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# Plan — S12\n\n## Strategy and why\nUse refactor-in-steps for the catalog/routing seam: characterize the current role resolution, migrate schema and storage without dropping defaults, then change each c… (+99 chars)",
+     "full": "doc_read(id)",
+     "relation": "evidence_for"
+    },
+    {
+     "id": "report-ec72642c09",
+     "doc_type": "report",
+     "title": "Report: S12 model catalog and routing verification",
+     "version": 2,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# S12 verification report\n\n## Criteria → evidence (cold re-run 2026-09-27 by engineer.s-32035a77da)\n\n| Criterion | Check (re-runnable) | Result |\n|---|---|---|\n| c-00abcfd9bc no prefix sniffing | `git… (+100 chars)",
+     "full": "doc_read(id)",
+     "relation": "evidence_for"
+    }
+   ],
+   "strategy_links": true,
+   "children": [
+    {
+     "id": "t-186b964fb1",
+     "kind": "task",
+     "title": "Build Admin Models editor and SeatPicks integration",
+     "status": "in_review",
+     "work_type": "creative",
+     "assignee": "engineer.t-186b964fb1",
+     "assignee_role": "engineer",
+     "criteria": "2/2",
+     "tags": []
+    },
+    {
+     "id": "t-96df382440",
+     "kind": "task",
+     "title": "A board started on a home without `init` serves an empty model catalog; materialise it on board start",
+     "status": "in_review",
+     "work_type": "bug",
+     "assignee": "engineer.t-96df382440",
+     "assignee_role": "engineer",
+     "criteria": "1/1",
+     "tags": []
+    },
+    {
+     "id": "t-05df836c49",
+     "kind": "task",
+     "title": "S12-T Admin → Models: a role's Default select offers models from unselected harnesses (the Adversary default shows a codex model while codex is off)",
+     "status": "in_progress",
+     "work_type": "bug",
+     "assignee": "engineer.t-05df836c49",
+     "assignee_role": "engineer",
+     "criteria": "0/1",
+     "tags": []
+    }
+   ],
+   "blockers": [
+    {
+     "id": "s-ec73f74ea9",
+     "status": "in_review",
+     "title": "S1 settings and paths core: one registry in edp-contracts, platformdirs dirs, ag"
+    },
+    {
+     "id": "s-733de6e29f",
+     "status": "done",
+     "title": "S4 codex bridge → codex seats: remove consult, cards spawn codex adversary/build"
+    },
+    {
+     "id": "s-e6b4fa59d5",
+     "status": "done",
+     "title": "S6 admin SPA: Admin → Services, Settings (all groups), Teammates, Remote access,"
+    }
+   ],
+   "open_gates": [],
+   "thread": [
+    {
+     "id": "m-05b0ad6d03",
+     "created_at": "2026-09-26T22:32:32.196286Z",
+     "created_by": "engineer.s-32035a77da",
+     "ticket_id": "s-32035a77da",
+     "to": "architect.epic-7f3d64e6de",
+     "kind": "answer",
+     "text": "This is done (9ad92c7): the Codex window now comes from `codex debug models` (272,000, recorded in report-ec72642c09 v2), with no invented numbers.\n- A row with no compaction set shows \"Codex default… (+259 chars)",
+     "reply_to": "m-ab7426f038",
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 21662
+    },
+    {
+     "id": "m-038e304e68",
+     "created_at": "2026-09-26T22:32:34.182947Z",
+     "created_by": "engineer.s-32035a77da",
+     "ticket_id": "s-32035a77da",
+     "to": "architect.epic-7f3d64e6de",
+     "kind": "answer",
+     "text": "I rebuilt state from the ticket, the reports and git, and the four items are done (m-5bae91408c). I committed by path only. The hunks I touched in the shared pool files were coordinated in m-101d33355… (+59 chars)",
+     "reply_to": "m-abbb6cd444",
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 21664
+    },
+    {
+     "id": "m-9e4c512ff6",
+     "created_at": "2026-09-26T22:32:46.501095Z",
+     "created_by": "engineer.s-32035a77da",
+     "ticket_id": "s-32035a77da",
+     "to": null,
+     "kind": "status",
+     "text": "[handed_off]",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": "handed_off",
+     "artifacts": [],
+     "seq": 21666
+    }
+   ],
+   "thread_seq": 21666,
+   "thread_total": 26,
+   "links": [
+    {
+     "id": "lk-055d9f8cd4",
+     "created_at": "2026-09-26T14:43:16.135631Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-32035a77da",
+     "to_id": "s-42a72db3dd",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-d05e3286bd",
+     "created_at": "2026-09-26T14:43:24.183275Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-32035a77da",
+     "to_id": "s-9648fded35",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-567af0a125",
+     "created_at": "2026-09-26T19:56:51.156570Z",
+     "created_by": "engineer.s-32035a77da",
+     "from_id": "s-32035a77da",
+     "to_id": "note-eb224aae0f",
+     "relation": "evidence_for"
+    },
+    {
+     "id": "lk-aa5ea925f7",
+     "created_at": "2026-09-26T20:12:32.910275Z",
+     "created_by": "engineer.s-32035a77da",
+     "from_id": "s-32035a77da",
+     "to_id": "report-ec72642c09",
+     "relation": "evidence_for"
+    },
+    {
+     "id": "lk-417102ec6b",
+     "created_at": "2026-09-26T14:43:12.456392Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-ec73f74ea9",
+     "to_id": "s-32035a77da",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-5b34250803",
+     "created_at": "2026-09-26T14:43:13.133333Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-733de6e29f",
+     "to_id": "s-32035a77da",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-25ec444ffe",
+     "created_at": "2026-09-26T14:43:13.888071Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-e6b4fa59d5",
+     "to_id": "s-32035a77da",
+     "relation": "blocks"
+    }
+   ],
+   "recall": {
+    "items": [
+     {
+      "id": "clm-4b6198540a",
+      "type": "claim",
+      "text": "c-0adbdbc4c1 pass: b249d90: pytest 13/13 (subprocess run() on a fresh home serves models > 0, <home>/.data/models.json written); s14-design.spec.ts alone 4/4 o…"
+     },
+     {
+      "id": "dec-9c292f88a4",
+      "type": "decision",
+      "text": "Admin = a human with the explicit admin flag or handle == EDP8_OWNER (init human); /v1/admin/* needs X-Participant + a matching tokens.json X-Token, refuses X-…"
+     },
+     {
+      "id": "dec-b528f42ac5",
+      "type": "decision",
+      "text": "A service's identity is home_id = sha256(resolved data dir)[:16] on its health route; the launcher acts on a listener only if it reports this id or is a pid th…"
+     },
+     {
+      "id": "dec-30be75475f",
+      "type": "decision",
+      "text": "heronry import is a dry run by default (--apply writes). It refuses dev mode unless --force, and refuses while the target board runs. The admin token goes to a…"
+     },
+     {
+      "id": "clm-776be99d8f",
+      "type": "claim",
+      "text": "c-26d7518deb pass: qa dd42458: harness-choice tests pass (adversary resolves to Fable without codex); pi-seat.md present; opencode launcher and test removed."
+     },
+     {
+      "id": "clm-059376f4db",
+      "type": "claim",
+      "text": "c-6dbe9730e0 pass: PASS: 12 state × harness continuations, explicit missing-token result, single SPA API, and focused suites re-run cold."
+     },
+     {
+      "id": "clm-db50b829ec",
+      "type": "claim",
+      "text": "c-d612d57e08 pass: tests/test_resume_harness.py 10 passed (real composite stack); private-pool real codex drill: HEAD opens claude.exe, fix 4c5056b thread-resu…"
+     },
+     {
+      "id": "dec-dcfd044b13",
+      "type": "decision",
+      "text": "No more LLM adversary seats on epic-7f3d64e6de. Round-2 fixes are verified by the committed regression tests and the adversary's probes run as plain pytest, pl…"
+     }
+    ],
+    "receipt": {
+     "question": "S12 any model: explicit harness/provider per catalog entry, no prefix sniffing…",
+     "returned": 8,
+     "cut": 15,
+     "cap": 8,
+     "more": "lookup(scope=<ticket>, question=…) for the full pack"
+    }
+   },
+   "thread_omitted": 23
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='s-32035a77da') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzMxOC4yMjI2Mjc5LCJtZXRhZGF0YSI6ImQ1MjNhNGI3YTQyZDI5ZjNkYjUxNGEzNTg5NTA0YmQxNjBlODI0MWRmOWRiOTlkOWFhYmM0M2JkODY3OWVkMDgiLCJwIjoiMmJmZDU2MzMyMTQzMTk5ZjVhNDJiOTdiODYxYjkzOGQ1Y2YzZmE0MmYyM2FhZTg2YjRiYmFkMTk1NmFmNTRiZCIsInJvbGUiOiJlbmdpbmVlciIsInJvb3RzIjoiYTQwOWMzMmEyNTI5YjAxOGIzNmU5YjdlODVjZGExMjQ0YjFmNWExNjBiY2EwOTQyNzQ3Y2RiODRmM2Q3Y2I2YiIsInNjb3BlIjoiNzQyMzRlOThhZmU3NDk4ZmI1ZGFmMWYzNmFjMmQ3OGFjYzMzOTQ2NGY5NTA3MDNiOGMwMTk4OTJmOTgyYjkwYiIsInNlcSI6MjM3NjUsInRocm91Z2giOm51bGwsInYiOjF9cmHcnrpsaSqLNjMQTdejeTxGbDDM_dZBmlGew7OAG8s=",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=40000 bytes (verbose=False); snapshot is 14788 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

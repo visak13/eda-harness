@@ -1,0 +1,627 @@
+{
+ "participant": {
+  "id": "engineer.s-9648fded35",
+  "created_at": "2026-09-27T01:44:20.432757Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "engineer",
+  "handle": "engineer.s-9648fded35",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "s-9648fded35",
+    "created_at": "2026-09-26T14:42:44.036714Z",
+    "created_by": "architect.epic-7f3d64e6de",
+    "kind": "story",
+    "work_type": "chore",
+    "title": "S9 publish + dogfood: HEAD purge + PII scan, Apache-2.0, version sync, Dependabot, 3-OS CI + install smoke, tag release (wheels/sdist/vsix/installers), README; host cutover",
+    "words": null,
+    "parent_id": "epic-7f3d64e6de",
+    "status": "in_review",
+    "assignee": "engineer.s-9648fded35",
+    "design_ref": "design-e963c656f5",
+    "description": "Design design-e963c656f5 §4.5, §4.10 (libraries), §4.13. Rulings: R1 (Windows hands-on only), R3 (the repo stays; GitHub Releases only), R6 (dogfood), R9 (HEAD purge, no history rewrite), R10 (unsigned).\n\nBuild:\n1. **Purge at HEAD** (`git rm` by path): the §4.1 exclusions not needed for the app, `.shadows`, `.sol-run*`, `claude/.memory`, `.sol_review_*`, `docs/evidence` logs with user paths, `tests/pi_ext/oracle_traces` with user paths (regenerate them path-neutral), provenance JSON with user paths, `update-claude.bat`, `v8/.data/kg-poc`, and `edp-pool/.claude-pool/settings.json`. Harden `.gitignore`.\n2. **Blocking CI PII/secret scan:** gitleaks, plus a grep for the user-profile path, `C:\\Projects`, the owner's username and email.\n3. **Licence and versions:** Apache-2.0 on all packages and the extension, NOTICE kept. One version (0.9.0) across the four packages, the web app and the extension. Add CHANGELOG.md.\n4. **Dependabot:** uv/pip, npm (web, vscode-ext) and github-actions.\n5. **CI matrix** on windows, macos and ubuntu: the four pytest suites, vitest, and an install smoke (build wheels → `uv tool install` → `<cli> init` → start → health and /ui → stub seat spawn → stop).\n6. **Release workflow on tag `v*`:** attach wheels, sdist, vsix, and S8's MSI/DMG/AppImage/deb to a GitHub Release with CHANGELOG notes. The owner pushes the tag; seats never push publicly.\n7. **README quickstart:** GUI install and cmd install, each ≤5 steps per OS; unsigned-installer steps (SmartScreen, Gatekeeper); what each service is for; harness choice (claude and/or codex, Pi guide, Fable adversary risk); the update model; \"verified on Windows; macOS/Linux community-tested, report issues\"; troubleshooting.\n8. **Dogfood (§4.13):** after the owner tags v0.9.0, the owner cuts this host over (stop the old services → `<cli> import --from v8` → start the installed release → seats resume). This story prepares the runbook and verifies it on a COPY first. The cutover itself is the owner's action.\n\nCommit by path; stage only your paths. No consult.",
+    "tags": [],
+    "epic_id": "epic-7f3d64e6de",
+    "topic_config": null
+   },
+   "words": "Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and need to publish this on Git as a distributable.",
+   "words_header": "words recorded 2026-09-26; phase: in_progress; governed by design-e963c656f5 v43",
+   "workflow": "standard@1",
+   "chain": [
+    {
+     "id": "s-9648fded35",
+     "kind": "story",
+     "title": "S9 publish + dogfood: HEAD purge + PII scan, Apache-2.0, version sync, Dependabot, 3-OS CI + install smoke, tag release (wheels/sdist/vsix/installers), README; host cutover",
+     "status": "in_review",
+     "design_ref": "design-e963c656f5"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "title": "Productize the app. Make it as installable and independent of machine or OS",
+     "status": "in_progress",
+     "design_ref": "design-e963c656f5"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-d1efb29e94",
+     "created_at": "2026-09-26T14:42:55.348463Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-9648fded35",
+     "text": "At HEAD, gitleaks is clean and a grep of all tracked files for the user-profile path, `C:\\Projects`, the owner's username and email returns 0. The CI scan step is blocking: it fails on a planted hit in a throwaway branch (run link). Licences are Apache-2.0 everywhere, including the extension. All packages, the web app and the extension report 0.9.0. CHANGELOG.md and the Dependabot config exist.",
+     "check": "command",
+     "checked_by": "qa",
+     "evidence_ref": "report-17428174b0",
+     "evidence_version": null,
+     "verdict": "pending"
+    },
+    {
+     "id": "c-9bf2b47192",
+     "created_at": "2026-09-26T14:42:57.134579Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-9648fded35",
+     "text": "CI is green on windows, macos and ubuntu for the four pytest suites, vitest and the install smoke (build wheels → `uv tool install` with `--with` for the sibling wheels → init → start → /v1/health 200 and /ui → stub seat spawn → stop, with no process left), with run links. A tag on a fork or a dry-run release workflow produces a **draft** Release with wheels, sdist, vsix, MSI, DMG and .deb attached, plus SHA256SUMS and CHANGELOG notes (design v18 §4.5).",
+     "check": "command",
+     "checked_by": "qa",
+     "evidence_ref": "report-17428174b0",
+     "evidence_version": null,
+     "verdict": "pending"
+    },
+    {
+     "id": "c-2051e1dbf4",
+     "created_at": "2026-09-26T14:42:58.655772Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-9648fded35",
+     "text": "README quickstart: a GUI install and a cmd install, ≤5 steps each per OS; unsigned-installer steps; what each service is for; harness choice with the Pi guide and the Fable adversary risk; the update model; the Windows-verified/community-tested notice; troubleshooting. The dogfood cutover runbook is verified end-to-end on a COPY of this host's state (transcript), ready for the owner.",
+     "check": "verdict",
+     "checked_by": "qa",
+     "evidence_ref": "report-17428174b0",
+     "evidence_version": 2,
+     "verdict": "pass"
+    },
+    {
+     "id": "c-0f247caf7d",
+     "created_at": "2026-09-26T23:08:05.347412Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-9648fded35",
+     "text": "Carried from S8 (c-eb38e8c949, ruling on m-1998f097c0): the first tag or workflow_dispatch run of `.github/workflows/installers.yml` after the owner's push is green on macOS and Linux. It shows the DMG and deb artifacts, `drill_bundle_posix.sh` logs with 0 survivors, and `lipo -archs` listing x86_64 arm64. The run link is quoted in the S9 report.",
+     "check": "command",
+     "checked_by": "qa",
+     "evidence_ref": "report-17428174b0",
+     "evidence_version": null,
+     "verdict": "pending"
+    },
+    {
+     "id": "c-eb6dc6172f",
+     "created_at": "2026-09-27T00:04:19.706056Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-9648fded35",
+     "text": "`uv lock --check` passes at the release commit, for the repo and every workspace member. uv.lock currently lags pyproject.toml (pystray, nh3, markdown, found by t-cf72f6962f m-819bee2c22), and this host blocks PyPI from seat shells (os error 10013). Refresh it on a networked run (CI or an owner shell) and commit it before the tag.",
+     "check": "command",
+     "checked_by": "qa",
+     "evidence_ref": "report-17428174b0",
+     "evidence_version": null,
+     "verdict": "pending"
+    }
+   ],
+   "docs": [
+    {
+     "id": "design-e963c656f5",
+     "doc_type": "design",
+     "title": "Productize EDP: installable on any machine/OS, published on GitHub; codex bridge → codex seats",
+     "version": 43,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# Productize EDP — design (epic-7f3d64e6de)\n\n## 1. Words (verbatim)\nEpic: \"Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and ne… (+99 chars)",
+     "full": "doc_read(id)",
+     "relation": "design_ref"
+    },
+    {
+     "id": "strategyhl-d76b06a3dd",
+     "doc_type": "strategy_hl",
+     "title": "strategy_hl (3/3): Heronry release engineering — 3-OS CI + install smoke, tag→draft release with attached artefacts, SHA256SUMS + attestations, unsigned-installer UX, Dependabot, gitleaks + PII gate, HEAD purge vs history rewrite",
+     "version": 1,
+     "scope": "epic-7f3d64e6de",
+     "tags": [
+      "hl-craft",
+      "release-engineering",
+      "github-actions",
+      "dependabot",
+      "gitleaks",
+      "unsigned-installers"
+     ],
+     "status": "active",
+     "summary": "# strategy_hl 3/3 — release engineering (epic-7f3d64e6de: S9, with S3/S8/S15 inputs)\n\nExtends part 1 (`strategyhl-5af811e7bd`). Legend as there: **[measured]** · **[docs]** cited · **[assumed]** + spi… (+100 chars)",
+     "full": "doc_read(id)",
+     "relation": "uses_strategy"
+    }
+   ],
+   "strategy_links": true,
+   "children": [
+    {
+     "id": "t-6129a95a3d",
+     "kind": "task",
+     "title": "Chat panes: a light 1px border shows which chat is the scroll area (epic, ticket and topic chats)",
+     "status": "in_review",
+     "work_type": "bug",
+     "assignee": "engineer.s-9648fded35",
+     "assignee_role": "engineer",
+     "criteria": "0/1",
+     "tags": []
+    }
+   ],
+   "blockers": [
+    {
+     "id": "s-733de6e29f",
+     "status": "done",
+     "title": "S4 codex bridge → codex seats: remove consult, cards spawn codex adversary/build"
+    },
+    {
+     "id": "s-6dcf78f803",
+     "status": "done",
+     "title": "S8 desktop app + installers: pywebview+tray, Briefcase MSI/DMG/deb"
+    },
+    {
+     "id": "s-edd2eda8f6",
+     "status": "done",
+     "title": "S10 board UI: empty band under the composer when the top bar is collapsed (relea"
+    },
+    {
+     "id": "s-32035a77da",
+     "status": "in_progress",
+     "title": "S12 any model: explicit harness/provider per catalog entry, no prefix sniffing ("
+    },
+    {
+     "id": "s-42a72db3dd",
+     "status": "in_progress",
+     "title": "S14 Design tab /ui/design: workflow list/versions/presets, pipeline view, role p"
+    },
+    {
+     "id": "s-ca39f10643",
+     "status": "in_progress",
+     "title": "S16 lifecycle skills (/epic, /ticket) + design sign-off parity (board guards, VS"
+    },
+    {
+     "id": "s-6c2cbbc3e8",
+     "status": "done",
+     "title": "S18 README as the storefront: hero loop, Download/Website, per-OS install"
+    },
+    {
+     "id": "s-d8a2452ae9",
+     "status": "done",
+     "title": "S19 Help agent + diagnostics: read-only doctor seat, approval-gated fixes, --bun"
+    },
+    {
+     "id": "s-1a029fd6bb",
+     "status": "done",
+     "title": "S20 attention trail: highlight the path to what needs you (epic → tab → section "
+    },
+    {
+     "id": "s-0cfebd3862",
+     "status": "in_review",
+     "title": "S21 code server as an optional managed service: heronry start/stop code on every"
+    },
+    {
+     "id": "s-967481b62a",
+     "status": "done",
+     "title": "S22 performance pass: profile the board API, SSE feed and SPA render; fix the to"
+    },
+    {
+     "id": "s-da61d38c5e",
+     "status": "in_progress",
+     "title": "S23 agent-friendly tool layer: audit every MCP tool across all roles for token w"
+    }
+   ],
+   "open_gates": [],
+   "thread": [
+    {
+     "id": "m-d8d31f7d1a",
+     "created_at": "2026-09-27T03:51:10.182305Z",
+     "created_by": "engineer.s-9648fded35",
+     "ticket_id": "s-9648fded35",
+     "to": "architect.epic-7f3d64e6de",
+     "kind": "answer",
+     "text": "The cutover drill rerun on a COPY finished end to end with one FAIL, and that FAIL is a bug in the drill's own check, not in the procedure (c-2051e1dbf4).\n- It ran once, in the foreground, starting wi… (+1002 chars)",
+     "reply_to": "m-171b180f13",
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 22981
+    },
+    {
+     "id": "m-200c8c681d",
+     "created_at": "2026-09-27T03:51:15.698261Z",
+     "created_by": "engineer.s-9648fded35",
+     "ticket_id": "s-9648fded35",
+     "to": null,
+     "kind": "status",
+     "text": "[done] S9: seat-side work is done. The run-6 drill on the COPY ran end to end; its only FAIL was the drill's own check reading the wrong envelope key, fixed in b8b2f05. The report (report-17428174b0 v… (+132 chars)",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": "done",
+     "artifacts": [],
+     "seq": 22983
+    },
+    {
+     "id": "m-7f1c5a58a2",
+     "created_at": "2026-09-27T03:51:19.191779Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-9648fded35",
+     "to": "engineer.s-9648fded35",
+     "kind": "answer",
+     "text": "Accepted. whoami returned 200, and the SPA signed in as owner. Close the seat; there's no need to run the drill again now. S21 and S22 still change runtime code and block S9, so the epic-end qa reruns… (+211 chars)",
+     "reply_to": "m-d8d31f7d1a",
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 22986
+    }
+   ],
+   "thread_seq": 22986,
+   "thread_total": 33,
+   "links": [
+    {
+     "id": "lk-b148be6a65",
+     "created_at": "2026-09-26T15:40:07.772421Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-9648fded35",
+     "to_id": "strategyhl-d76b06a3dd",
+     "relation": "uses_strategy"
+    },
+    {
+     "id": "lk-3e6d083d3d",
+     "created_at": "2026-09-26T14:43:22.086789Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-733de6e29f",
+     "to_id": "s-9648fded35",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-fac033f5e7",
+     "created_at": "2026-09-26T14:43:22.783262Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-6dcf78f803",
+     "to_id": "s-9648fded35",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-705e6c77d8",
+     "created_at": "2026-09-26T14:43:23.411766Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-edd2eda8f6",
+     "to_id": "s-9648fded35",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-d05e3286bd",
+     "created_at": "2026-09-26T14:43:24.183275Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-32035a77da",
+     "to_id": "s-9648fded35",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-ed658e9e12",
+     "created_at": "2026-09-26T14:43:24.979919Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-42a72db3dd",
+     "to_id": "s-9648fded35",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-a4c940ac5d",
+     "created_at": "2026-09-26T15:28:52.797405Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-ca39f10643",
+     "to_id": "s-9648fded35",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-76ee7d8d73",
+     "created_at": "2026-09-26T16:18:07.571788Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-6c2cbbc3e8",
+     "to_id": "s-9648fded35",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-3258908293",
+     "created_at": "2026-09-26T16:54:22.938359Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-d8a2452ae9",
+     "to_id": "s-9648fded35",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-85ea9cc6cb",
+     "created_at": "2026-09-26T21:36:03.708260Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-1a029fd6bb",
+     "to_id": "s-9648fded35",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-ee30f8b54f",
+     "created_at": "2026-09-27T03:22:50.734711Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-0cfebd3862",
+     "to_id": "s-9648fded35",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-e20e474d97",
+     "created_at": "2026-09-27T03:37:58.436569Z",
+     "created_by": "engineer.s-9648fded35",
+     "from_id": "report-17428174b0",
+     "to_id": "s-9648fded35",
+     "relation": "evidence_for"
+    },
+    {
+     "id": "lk-f056696f13",
+     "created_at": "2026-09-27T03:46:06.543563Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-967481b62a",
+     "to_id": "s-9648fded35",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-24cb01c5f3",
+     "created_at": "2026-09-27T03:58:08.069087Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-da61d38c5e",
+     "to_id": "s-9648fded35",
+     "relation": "blocks"
+    }
+   ],
+   "recall": {
+    "items": [
+     {
+      "id": "dec-4baed2cceb",
+      "type": "decision",
+      "text": "S11 starts now, per owner m-b841864899, instead of after S9/S15. Targets 1-4, 6 and 7 are reviewed at the current HEAD. Target 5 (PII/secrets) runs after S9's…"
+     },
+     {
+      "id": "dec-aaccaefe56",
+      "type": "decision",
+      "text": "S8 c-eb38e8c949 is judged on the Windows evidence (report-66985e8a85); the macOS DMG/Linux deb run link moves to S9 as c-0f247caf7d."
+     },
+     {
+      "id": "dec-b4f7f536be",
+      "type": "decision",
+      "text": "The installers pin uv 0.9.11, reusing a newer uv on PATH, verify every wheel against SHA256SUMS before installing, run uv tool install --force idempotently (sk…"
+     },
+     {
+      "id": "clm-bc02049aa3",
+      "type": "claim",
+      "text": "c-eb38e8c949 pass: qa: judged on Windows evidence per dec-aaccaefe56 (macOS/Linux run link moved to S9 c-0f247caf7d); VS Code mismatch test 4/4 re-run pass; ex…"
+     },
+     {
+      "id": "clm-08e3352738",
+      "type": "claim",
+      "text": "c-2bd90dbc7b pass: qa: judged from report-66985e8a85 logs/screenshots and owner words m-4374562b09, m-15bffd9e63; drill 23/23. Per dec-aaccaefe56 the Windows M…"
+     },
+     {
+      "id": "dec-074486e913",
+      "type": "decision",
+      "text": "Deviation accepted: Deviation on c-eb38e8c949: the macOS DMG and Linux deb legs have no run link yet. The workflow `.github/workflows/installers.yml` (666b6cd)…"
+     },
+     {
+      "id": "dec-ebd5683a0e",
+      "type": "decision",
+      "text": "update runs as: verify SHA256SUMS, refuse a downgrade, compat check, live-seat guard, DB backup, stop, then a detached stdlib helper installs, starts and healt…"
+     },
+     {
+      "id": "clm-f38c8126e7",
+      "type": "claim",
+      "text": "c-94b7f53694 pass: aaaa280: new card/button test green (HEAD renderer gives '<p>Flow: a </p>'); sanitiser 17 passed; related suites 326 passed; stored-doc scan…"
+     }
+    ],
+    "receipt": {
+     "question": "S9 publish + dogfood: HEAD purge + PII scan, Apache-2.0, version sync, Dependab…",
+     "returned": 8,
+     "cut": 16,
+     "cap": 8,
+     "more": "lookup(scope=<ticket>, question=…) for the full pack"
+    }
+   },
+   "thread_omitted": 30
+  },
+  {
+   "ticket": {
+    "id": "t-6129a95a3d",
+    "created_at": "2026-09-27T02:55:03.752289Z",
+    "created_by": "architect.epic-7f3d64e6de",
+    "kind": "task",
+    "work_type": "bug",
+    "title": "Chat panes: a light 1px border shows which chat is the scroll area (epic, ticket and topic chats)",
+    "words": null,
+    "parent_id": "s-9648fded35",
+    "status": "in_review",
+    "assignee": "engineer.s-9648fded35",
+    "design_ref": null,
+    "description": "Owner m-3818ff2a47 (verbatim): \"please can you ask the agent working on s9 to apply a very light 1px border to the active chat window of epics/tickets/topic chats? When I tried to scroll and mouse was out of chat it didnt scroll and I was left wondering why\".\n\nBuild:\n- The scrollable conversation pane in the epic, ticket and topic chat views gets a very light 1px border from a theme token (a subtle border token; add one if none exists). It must look right in dark and light and pass AA non-text contrast only where required; \"very light\" is the owner's word, so keep it subtle.\n- Apply it to the scroll container itself, so the border marks exactly where the wheel scrolls. Keep any existing focus ring on top.\n- Also consider (report either way): wheel events over the chat header/empty margins can scroll the same pane. Report whether that is cheap and safe, but don't do it unless it is trivial.\n\nTests: vitest asserting the pane has the border class/token in all three views. Build into a PRIVATE outDir, and attach a private-instance screenshot of dark and light. The architect deploys the shared dist. Commit by path with trailers.",
+    "tags": [],
+    "epic_id": "epic-7f3d64e6de",
+    "topic_config": null
+   },
+   "words": "Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and need to publish this on Git as a distributable.",
+   "words_header": "words recorded 2026-09-26; phase: in_progress; governed by design-e963c656f5 v43",
+   "workflow": "standard@1",
+   "chain": [
+    {
+     "id": "t-6129a95a3d",
+     "kind": "task",
+     "title": "Chat panes: a light 1px border shows which chat is the scroll area (epic, ticket and topic chats)",
+     "status": "in_review",
+     "design_ref": null
+    },
+    {
+     "id": "s-9648fded35",
+     "kind": "story",
+     "title": "S9 publish + dogfood: HEAD purge + PII scan, Apache-2.0, version sync, Dependabot, 3-OS CI + install smoke, tag release (wheels/sdist/vsix/installers), README; host cutover",
+     "status": "in_review",
+     "design_ref": "design-e963c656f5"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "title": "Productize the app. Make it as installable and independent of machine or OS",
+     "status": "in_progress",
+     "design_ref": "design-e963c656f5"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-c7d47d4f26",
+     "created_at": "2026-09-27T02:55:07.108287Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "t-6129a95a3d",
+     "text": "The epic, ticket and topic chat scroll panes carry a subtle 1px theme-token border in both dark and light. A vitest checks all three views, and a private-instance screenshot shows dark and light.",
+     "check": "command",
+     "checked_by": "engineer",
+     "evidence_ref": "report-f061acb087",
+     "evidence_version": null,
+     "verdict": "pending"
+    }
+   ],
+   "docs": [
+    {
+     "id": "design-e963c656f5",
+     "doc_type": "design",
+     "title": "Productize EDP: installable on any machine/OS, published on GitHub; codex bridge → codex seats",
+     "version": 43,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# Productize EDP — design (epic-7f3d64e6de)\n\n## 1. Words (verbatim)\nEpic: \"Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and ne… (+99 chars)",
+     "full": "doc_read(id)",
+     "relation": "epic design_ref"
+    }
+   ],
+   "strategy_links": true,
+   "children": [],
+   "blockers": [],
+   "open_gates": [],
+   "thread": [
+    {
+     "id": "m-06c1f5e68a",
+     "created_at": "2026-09-27T03:07:40.622978Z",
+     "created_by": "engineer.s-9648fded35",
+     "ticket_id": "t-6129a95a3d",
+     "to": "architect.epic-7f3d64e6de",
+     "kind": "status",
+     "text": "The chat border landed in 3e7ddc2 and is ready for you to deploy the SPA.\n- **Epic and ticket chats:** the thread's scroll container (Conversation `.messages`) gets a `1px solid var(--line)` border wi… (+841 chars)",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 22743
+    },
+    {
+     "id": "m-c8ec28d5e6",
+     "created_at": "2026-09-27T03:08:04.172190Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "t-6129a95a3d",
+     "to": "engineer.s-9648fded35",
+     "kind": "note",
+     "text": "3e7ddc2 is deployed: the SPA is rebuilt into the shared dist, and the live /ui CSS carries the rule. Move t-6129a95a3d to in_review with evidence, then go on to R2-E and R2-D (m-e506bab509).",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 22749
+    }
+   ],
+   "thread_seq": 22749,
+   "thread_total": 2,
+   "links": [
+    {
+     "id": "lk-a1678f3163",
+     "created_at": "2026-09-27T03:25:15.728890Z",
+     "created_by": "engineer.s-9648fded35",
+     "from_id": "report-f061acb087",
+     "to_id": "t-6129a95a3d",
+     "relation": "evidence_for"
+    }
+   ],
+   "recall": {
+    "items": [
+     {
+      "id": "clm-5b4801ee89",
+      "type": "claim",
+      "text": "c-729834c66e fail: F2: standard 2 unmet for 7 creates (criterion_create, message_send, record_decision/claim/lesson, topic_propose, propose_fix), scored not_me…"
+     },
+     {
+      "id": "clm-f85f77c4f4",
+      "type": "claim",
+      "text": "c-7942213d3f pass: Commits d554bfe and 4a8122a. The pytest signout test and vitest SignOut.test.tsx (2) pass: the cookie is expired, and the next whoami, with…"
+     },
+     {
+      "id": "dec-ccd214db3d",
+      "type": "decision",
+      "text": "An exception to dec-dcfd044b13: one gpt-6-astra adversary seat (high effort) re-audits S23's tool layer after T4, for usability only, with no security probing."
+     },
+     {
+      "id": "clm-ed07a6f0bd",
+      "type": "claim",
+      "text": "c-0d74e3f300 pass: Verified against the report: the cause is Zen + zenMode.restore=true, reproduced in step 2 (art-518d73374a); the settings-seed live test pas…"
+     },
+     {
+      "id": "dec-7990daf420",
+      "type": "decision",
+      "text": "adversarial gate on s-226d9db7ec answered by owner: We close here. Something went wrong with this ticket context. We made good progress. Lets fix what we can a…"
+     },
+     {
+      "id": "dec-b528f42ac5",
+      "type": "decision",
+      "text": "A service's identity is home_id = sha256(resolved data dir)[:16] on its health route; the launcher acts on a listener only if it reports this id or is a pid th…"
+     },
+     {
+      "id": "les-e968c2d4f9",
+      "type": "lesson",
+      "text": "On Windows, code-server served over a --socket named pipe kills every extension host (it hands each client socket to the extension host via child_process.send,…"
+     },
+     {
+      "id": "les-d9c7687d0f",
+      "type": "lesson",
+      "text": "A viewer-generation guard ends a viewer only on a 401 or a change of stored creds. A resource 403 stays in the tab that raised it. A write already in flight co…"
+     }
+    ],
+    "receipt": {
+     "question": "Chat panes: a light 1px border shows which chat is the scroll area (epic, ticke…",
+     "returned": 8,
+     "cut": 10,
+     "cap": 8,
+     "more": "lookup(scope=<ticket>, question=…) for the full pack"
+    }
+   }
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='s-9648fded35') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzMyMi40NTczNTg2LCJtZXRhZGF0YSI6IjIyNzRlMzEyOWEwNTkxMTU4Y2M3YzM1NmYzZGVhNjJiMDViYjU5ZjQ3N2IwMGUyYWFkNGM1NDEyMTgxODNkN2UiLCJwIjoiNzU1ZmVmZmQ0Y2RlYjAwZWRiZmIzNzNmOGIyZWNiMDNkMjBjOWVkZmViNzI4MjAzMThhMDAwZjVhZTA0OTQwZCIsInJvbGUiOiJlbmdpbmVlciIsInJvb3RzIjoiNTRlMWM3MjAyMGFlZDIxZTc3MzVkZjMzOGQ2NTc1M2EwNDAxY2MxZmIwNmY5MzA2NzdlNzM3NGI0ZmIxMjA2ZCIsInNjb3BlIjoiNzQyMzRlOThhZmU3NDk4ZmI1ZGFmMWYzNmFjMmQ3OGFjYzMzOTQ2NGY5NTA3MDNiOGMwMTk4OTJmOTgyYjkwYiIsInNlcSI6MjM3NjUsInRocm91Z2giOm51bGwsInYiOjF9mEgWYropW20_y9BYEhmJ-M0GVwVnHD4RRA0oNV3V_u4=",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=40000 bytes (verbose=False); snapshot is 24766 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

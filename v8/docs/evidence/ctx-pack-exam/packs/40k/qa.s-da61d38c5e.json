@@ -1,0 +1,312 @@
+{
+ "participant": {
+  "id": "qa.s-da61d38c5e",
+  "created_at": "2026-09-27T05:38:54.622281Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "qa",
+  "handle": "qa.s-da61d38c5e",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "s-da61d38c5e",
+    "created_at": "2026-09-27T03:57:45.974560Z",
+    "created_by": "architect.epic-7f3d64e6de",
+    "kind": "story",
+    "work_type": "feature",
+    "title": "S23 agent-friendly tool layer: audit every MCP tool across all roles for token waste, fix to the owner's tool standards, independent verification",
+    "words": null,
+    "parent_id": "epic-7f3d64e6de",
+    "status": "in_progress",
+    "assignee": null,
+    "design_ref": "design-e963c656f5",
+    "description": "Owner m-79f8b9a5dc, verbatim: \"yes, lets do this now. also, I recommend this exercise: a fresh shell just uses all tools across all shells and reports what is wasting tokens (recommend astra high) and a shell fixes it (recomment opus 5.5). then when everything is fixed a opus 5.5 shell verifies this all. just for this one ticket.\"\n\n**Owner's tool standards (the acceptance bar):**\n1. Every tool properly advertises what it does, what objects and enums it is linked to, and what skills it is linked to.\n2. Idempotent where possible.\n3. Tool output is clear, with no guesswork for the agent.\n4. The schema is clear to an agent.\n5. The describe tool tells the agent what a linked object means.\n6. In short: the tool layer is agent-friendly and token-efficient, both in usage and in its output.\n\n**Known misses (architect session, pain p-7fc6b2a2, p-a05affa0):**\n- There is no artifact_read: reading an image took 5 calls plus a token-file read.\n- message_read takes `id`, not `message_id`.\n- ticket_create silently drops `words` and `body`, and needs `kind` plus a `work_type` enum.\n- criterion_create: `check` (the enum) vs `checkable`.\n- doc_edit: `edits` of old_text/new_text plus `expected_version`, with no append op.\n- describe needs `type`.\n- lookup needs `scope`.\n- context_delta has no cursor recovery after a restart.\n- reap: the scope check uses the session's recorded ticket_id, which spawn derived from participant_id, so the architect cannot reap its own adversary seat.\n- participants and doc_read return 70–90 KB in a single line (the result overflows).\n\n**Three seats in sequence, one per task:**\n- **T1 audit (gpt-6-astra, high effort):**\n  - On a PRIVATE board (spare ports, private home, copy of the fleet DB), exercise EVERY tool in EVERY role bundle (architect, engineer, qa, adversary, sme, owner, doctor), in-process via bundles.invoke with each role (see the tokened-seat direct-caller approach). Do realistic tasks, not just schema reads.\n  - Record calls-to-goal, argument misses, error clarity, output bytes and overflow, missing tools, non-idempotent calls, and missing enum/object/skill advertisement.\n  - Output: an audit doc with a ranked table (tool, problem, standard violated, token cost estimate, proposed fix).\n  - This is a usability audit only: no security probing.\n- **T2 fix (claude-opus-5-5):** implement the ranked fixes.\n  - Add artifact_read (inline image or text, size-capped).\n  - Every validation error names the accepted args and enum values, and suggests the nearest arg for a misspelling.\n  - Descriptions link objects, enums and skills.\n  - Oversized outputs get paging or summaries with byte caps.\n  - Fix the reap scope bug and the ticket_create dropped fields.\n  - Keep the bundles backward compatible (aliases for old names are fine).\n  - Add a tool-contract test that asserts every tool meets standards 1, 4 and 5 mechanically.\n- **T3 verify (claude-opus-5-5 qa, owner-sanctioned for this ticket only):** re-run the T1 task script cold against the fixed tools, and report before/after calls and bytes per task, plus every standard pass or fail per tool.\n\n**Rules:**\n- Private board only; no fleet restarts (the architect deploys, and MCP changes need a proxy respawn).\n- No token files read by seats; the private board mints its own.\n- Commit by path with trailers.",
+    "tags": [],
+    "epic_id": "epic-7f3d64e6de",
+    "topic_config": null
+   },
+   "words": "Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and need to publish this on Git as a distributable.",
+   "words_header": "words recorded 2026-09-26; phase: in_progress; governed by design-e963c656f5 v43",
+   "workflow": "standard@1",
+   "chain": [
+    {
+     "id": "s-da61d38c5e",
+     "kind": "story",
+     "title": "S23 agent-friendly tool layer: audit every MCP tool across all roles for token waste, fix to the owner's tool standards, independent verification",
+     "status": "in_progress",
+     "design_ref": "design-e963c656f5"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "title": "Productize the app. Make it as installable and independent of machine or OS",
+     "status": "in_progress",
+     "design_ref": "design-e963c656f5"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-1e44b92059",
+     "created_at": "2026-09-27T03:58:03.529580Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-da61d38c5e",
+     "text": "An audit doc ranks every tool-layer problem found by exercising every tool in every role bundle on a private board: calls-to-goal, argument misses, output bytes, missing tools, idempotency, advertisement gaps. Every item is fixed or explicitly deferred with a reason.",
+     "check": "verdict",
+     "checked_by": "qa",
+     "evidence_ref": "report-6971109e05",
+     "evidence_version": 2,
+     "verdict": "pass"
+    },
+    {
+     "id": "c-729834c66e",
+     "created_at": "2026-09-27T03:58:05.870149Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-da61d38c5e",
+     "text": "Owner standards hold for every tool, and a tool-contract test checks them mechanically:\n- the description names its linked objects, enums and skills;\n- the schema has no ambiguous args;\n- validation errors list accepted args and enum values;\n- outputs stay under a byte cap or page;\n- describe explains every linked object;\n- create/update calls are idempotent where possible.\n\nartifact_read returns an image in 1 call, and the architect can reap a seat it spawned with a custom participant_id.",
+     "check": "command",
+     "checked_by": "qa",
+     "evidence_ref": "report-6971109e05",
+     "evidence_version": 2,
+     "verdict": "pass"
+    },
+    {
+     "id": "c-de4fa3e6e6",
+     "created_at": "2026-09-27T03:58:07.465554Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-da61d38c5e",
+     "text": "An independent Opus verification seat re-runs the audit's task script cold against the fixed tools and reports a before/after table: calls and bytes per task, and pass/fail per standard per tool. Total calls-to-goal and total output bytes both drop, and no task regresses.",
+     "check": "command",
+     "checked_by": "qa",
+     "evidence_ref": "report-6971109e05",
+     "evidence_version": 2,
+     "verdict": "fail"
+    },
+    {
+     "id": "c-1b76522c14",
+     "created_at": "2026-09-27T04:08:09.078530Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-da61d38c5e",
+     "text": "No workarounds (owner m-538d9896ab): every framework task found in the agent home's cards, skills and guides runs through MCP tools alone. Those tasks include reading attachments, filing pain records, reading tokens, restarting and resuming seats, and cursor recovery. In tool_audit.py, every task shows workarounds-needed=0. A grep of the agent home finds no remaining curl, REST, `python -m`/scripts, tokens.json or .data read instruction for a board task, except those listed in the audit doc as owner-only host operations, each with a reason.",
+     "check": "command",
+     "checked_by": "qa",
+     "evidence_ref": "report-6971109e05",
+     "evidence_version": 2,
+     "verdict": "pass"
+    },
+    {
+     "id": "c-2c16f5ebf0",
+     "created_at": "2026-09-27T05:02:48.407548Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-da61d38c5e",
+     "text": "No information loss (owner m-891b9f42bd).\n- **Paging parity:** a test pages each bounded tool (ticket_query, doc_query, session_query, link_query, participants, message_query, events_query, context) to the end on a copy of the fleet DB. The pages add up to exactly the same records and fields as the pre-S23 unbounded result: no row dropped, no field silently removed. Each capped reply names its continuation.\n- **Description compaction** keeps every fact the old description carried: its purpose, when to call it, each enum value and the linked object. A test diffs the old and new facts per tool.\n- **Outcomes:** every realistic task in tool_audit.py reaches the same outcome as before, with fewer or equal bytes.",
+     "check": "command",
+     "checked_by": "qa",
+     "evidence_ref": "report-6971109e05",
+     "evidence_version": 2,
+     "verdict": "fail"
+    }
+   ],
+   "docs": [
+    {
+     "id": "design-e963c656f5",
+     "doc_type": "design",
+     "title": "Productize EDP: installable on any machine/OS, published on GitHub; codex bridge → codex seats",
+     "version": 43,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# Productize EDP — design (epic-7f3d64e6de)\n\n## 1. Words (verbatim)\nEpic: \"Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and ne… (+99 chars)",
+     "full": "doc_read(id)",
+     "relation": "design_ref"
+    }
+   ],
+   "strategy_links": true,
+   "children": [
+    {
+     "id": "t-eb7bd77ef5",
+     "kind": "task",
+     "title": "S23-T1 tool-layer usability audit: exercise every tool in every role bundle on a private board, ranked token-waste report",
+     "status": "done",
+     "work_type": "review",
+     "assignee": "engineer.t-eb7bd77ef5",
+     "assignee_role": "engineer",
+     "criteria": "1/1",
+     "tags": []
+    },
+    {
+     "id": "t-0f43dff835",
+     "kind": "task",
+     "title": "S23-T2 fix the tool layer: bounded/paged output, strict schemas, linked descriptions, describe coverage, idempotent creates, and the missing framework tools",
+     "status": "in_review",
+     "work_type": "feature",
+     "assignee": "engineer.t-0f43dff835",
+     "assignee_role": "engineer",
+     "criteria": "1/1",
+     "tags": []
+    },
+    {
+     "id": "t-6873ed09d0",
+     "kind": "task",
+     "title": "S23-T4 fix T3 findings F1-F4: message_query resume hint, idempotent creates, guide kinds, participants type filter",
+     "status": "in_review",
+     "work_type": "bug",
+     "assignee": "engineer.t-6873ed09d0",
+     "assignee_role": "engineer",
+     "criteria": "1/1",
+     "tags": []
+    },
+    {
+     "id": "t-91393f0b57",
+     "kind": "task",
+     "title": "S23-T5 Astra re-audit of the tool layer after T4: cold tool_audit.py, owner standards, no-loss, F1-F4 closed",
+     "status": "in_review",
+     "work_type": "review",
+     "assignee": "adversary.t-91393f0b57",
+     "assignee_role": "adversary",
+     "criteria": "0/1",
+     "tags": []
+    },
+    {
+     "id": "t-5b432d6bd0",
+     "kind": "task",
+     "title": "S23-T6 fix T5 findings N1-N5; N6 recorded as UI-only by design",
+     "status": "in_review",
+     "work_type": "bug",
+     "assignee": "engineer.t-5b432d6bd0",
+     "assignee_role": "engineer",
+     "criteria": "1/1",
+     "tags": []
+    }
+   ],
+   "blockers": [],
+   "open_gates": [],
+   "thread": [
+    {
+     "id": "m-6cc4b4e352",
+     "created_at": "2026-09-27T05:38:52.034718Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-da61d38c5e",
+     "to": "qa",
+     "kind": "steer",
+     "text": "S23-T3 brief for the owner-sanctioned Opus verify seat (m-79f8b9a5dc). This covers THIS story only; you don't verdict any other ticket.\n**Scope:** verdict S23's five qa criteria (c-1e44b92059, c-72983… (+1547 chars)",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 23164
+    },
+    {
+     "id": "m-359ed07eab",
+     "created_at": "2026-09-27T05:48:04.947083Z",
+     "created_by": "qa.s-da61d38c5e",
+     "ticket_id": "s-da61d38c5e",
+     "to": "architect.epic-7f3d64e6de",
+     "kind": "answer",
+     "text": "S23-T3 qa: FAIL on 2 of 5 criteria (report-6971109e05). The cold audit reproduces T2 exactly (19/19 tasks, 6.19M → 540,665 B, workarounds 0), but two owner-word gaps remain.\n\n- **F1 (high, introduced… (+1621 chars)",
+     "reply_to": "m-6cc4b4e352",
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 23197
+    },
+    {
+     "id": "m-99a046a575",
+     "created_at": "2026-09-27T05:50:09.856290Z",
+     "created_by": "qa.s-da61d38c5e",
+     "ticket_id": "s-da61d38c5e",
+     "to": null,
+     "kind": "status",
+     "text": "[reviewed] S23 qa: 3 pass, 2 fail (F1 message_query hint skips messages; F2 7 creates not idempotent). Report report-6971109e05; findings to the architect (m-359ed07eab); 2 lessons harvested",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": "reviewed",
+     "artifacts": [],
+     "seq": 23208
+    }
+   ],
+   "thread_seq": 23208,
+   "thread_total": 3,
+   "links": [
+    {
+     "id": "lk-24cb01c5f3",
+     "created_at": "2026-09-27T03:58:08.069087Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-da61d38c5e",
+     "to_id": "s-9648fded35",
+     "relation": "blocks"
+    }
+   ],
+   "recall": {
+    "items": [
+     {
+      "id": "clm-d311c4bcdb",
+      "type": "claim",
+      "text": "c-2c16f5ebf0 fail: F1: capped message_query keeps the REST hint last_seq (past the fitted page); following it skipped 5 epic messages live (19764-19785). Parit…"
+     },
+     {
+      "id": "clm-08c97bb7dd",
+      "type": "claim",
+      "text": "c-1b76522c14 pass: workarounds 0 on all 19 tasks; independent grep hits are prohibitions, owner host ops or descriptive only"
+     },
+     {
+      "id": "clm-acaf4eb01b",
+      "type": "claim",
+      "text": "c-de4fa3e6e6 pass: cold re-run 19/19, bytes 6.19M->540,665; literal calls 301->339 from newly reachable goals and widened scope; like-for-like 45->43, no task…"
+     },
+     {
+      "id": "clm-5b4801ee89",
+      "type": "claim",
+      "text": "c-729834c66e fail: F2: standard 2 unmet for 7 creates (criterion_create, message_send, record_decision/claim/lesson, topic_propose, propose_fix), scored not_me…"
+     },
+     {
+      "id": "clm-7554bae729",
+      "type": "claim",
+      "text": "c-1e44b92059 pass: T1 ranks waste+gaps; T2 closes every row fixed or ruled out with reason; idempotency ? cells judged under c-729834c66e"
+     },
+     {
+      "id": "dec-ccd214db3d",
+      "type": "decision",
+      "text": "An exception to dec-dcfd044b13: one gpt-6-astra adversary seat (high effort) re-audits S23's tool layer after T4, for usability only, with no security probing."
+     },
+     {
+      "id": "clm-242435f70c",
+      "type": "claim",
+      "text": "c-351a67ba62 pass: Pass: cold private-board run exited 0 with 265/265 bundle pairs; report v3 has ranked waste and coverage tables plus six-standard 65-tool ma…"
+     },
+     {
+      "id": "clm-4695fef283",
+      "type": "claim",
+      "text": "c-06d100621c pass: Verified on commit 9999a66 per report-a6e1f2eddc. N1–N6 each have a test (34 pass; 19 of them fail on the pre-fix source). tool_audit.py pas…"
+     }
+    ],
+    "receipt": {
+     "question": "S23 agent-friendly tool layer: audit every MCP tool across all roles for token…",
+     "returned": 8,
+     "cut": 20,
+     "cap": 8,
+     "more": "lookup(scope=<ticket>, question=…) for the full pack"
+    }
+   }
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='s-da61d38c5e') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzMwMi4wNzg0ODE0LCJtZXRhZGF0YSI6ImU5OWE2Y2EyY2QwZWRmYWQwYzRkMmUxNzY1M2U4ODhhMDZmNmNiYThmOTE2NWMzNTRhODNmODBlMDhiYzI4ODMiLCJwIjoiZjQ5M2EwYTZiMjMxYjZkNjllMDkxNmZjOGE1ZTcwODc4ZWExYWFhZmRkOTlkMTFlZDdjYTBhY2U0YzdlZDk4ZCIsInJvbGUiOiJxYSIsInJvb3RzIjoiODExNTBiYWRlZTFiYzMzNGRhYjM3ZmFiYTA3YTlmMjFiMTE2ODU3YWE4Zjg0NTZjMzAyYjZlMjk1ZTlmNzAyMiIsInNjb3BlIjoiNzQyMzRlOThhZmU3NDk4ZmI1ZGFmMWYzNmFjMmQ3OGFjYzMzOTQ2NGY5NTA3MDNiOGMwMTk4OTJmOTgyYjkwYiIsInNlcSI6MjM3NjUsInRocm91Z2giOm51bGwsInYiOjF92Fj8GE1PUP8Qg0GfVpHdZkOhvsCi_mHpTwNDBuurEUE=",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=40000 bytes (verbose=False); snapshot is 15386 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

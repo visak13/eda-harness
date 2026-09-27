@@ -1,0 +1,135 @@
+{
+ "participant": {
+  "id": "engineer.s-461403ebd1",
+  "created_at": "2026-09-26T16:42:20.259168Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "engineer",
+  "handle": "engineer.s-461403ebd1",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "s-461403ebd1",
+    "kind": "story",
+    "status": "in_review",
+    "assignee": "engineer.s-461403ebd1",
+    "parent_id": "epic-7f3d64e6de",
+    "design_ref": "design-e963c656f5",
+    "title": "S13 workflow engine as data: versioned workflow definitions, tables/caps/checkers/bundles from data, hook registry, Standard = today (golden), Lean/Solo presets… (+21 chars)",
+    "description": "Design design-e963c656f5 §4.14(b) (owner m-30023429f7; R11: in this epic). This is the deepest refactor; refactor in steps, with the full suite green at every c… (+2283 chars)"
+   },
+   "chain": [
+    {
+     "id": "s-461403ebd1",
+     "kind": "story",
+     "status": "in_review"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-54afa8a81b",
+     "text": "Golden: with the Standard workflow as default, the ENTIRE pre-existing edp8 pytest suite passes with no test edited exce… (+140 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-4bdc854f61"
+    },
+    {
+     "id": "c-e7cba464fc",
+     "text": "Data drives behaviour: TRANSITIONS, creators/authors/checkers, bundles, spawnable roles, caps, checker map and gate answ… (+273 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-4bdc854f61"
+    },
+    {
+     "id": "c-0e2611c3f2",
+     "text": "Presets and lint: a Lean epic (owner → engineer → qa) and a Solo epic (owner → engineer, owner checks) each walk to done… (+245 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-4bdc854f61"
+    },
+    {
+     "id": "c-5c7afde0e8",
+     "text": "Guards as data (owner m-6b6060dd38): the workflow definition declares preconditions per transition and gate, and the boa… (+378 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-4bdc854f61"
+    },
+    {
+     "id": "c-2c02d34d7f",
+     "text": "Capacity and cards as data (design §4.14(d)):\n- Every workflow role declares `capacity_class` (builder, planner or check… (+533 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-4bdc854f61"
+    },
+    {
+     "id": "c-328185ac06",
+     "text": "Kernel vs policy (design §4.14(e) 1, 2 and 4):\n- Every spawned role's card is the locked kernel preamble followed by the… (+659 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-4bdc854f61"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43",
+    "note-192632d6e1 note v2"
+   ],
+   "children": [
+    "t-e355a990f7 in_review",
+    "t-c2401d98c6 in_review",
+    "t-3662743f1f in_review",
+    "t-f9a64739de in_review",
+    "t-cd4712c855 in_progress"
+   ],
+   "links": [
+    "s-461403ebd1 blocks s-42a72db3dd",
+    "s-461403ebd1 designed_by note-192632d6e1",
+    "s-461403ebd1 blocks s-d8a2452ae9",
+    "s-ec73f74ea9 blocks s-461403ebd1"
+   ],
+   "blockers": [
+    {
+     "id": "s-ec73f74ea9",
+     "status": "in_review",
+     "title": "S1 settings and paths core: one registry in edp-contracts, platformdirs dirs, ag"
+    }
+   ],
+   "thread": [
+    {
+     "id": "m-08a12a71e5",
+     "kind": "answer",
+     "created_at": "2026-09-26T17:46:20.575999Z"
+    }
+   ],
+   "thread_total": 10,
+   "recall_count": 8
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='s-461403ebd1') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzMyNy45Mjk1MTEzLCJtZXRhZGF0YSI6IjdkYjJlN2JmMjAwNjQyN2Q5MTNhODRmYTAwNDA3MzEwNmUxYTczMDE2YWE3YTdlMjAzOTEzZDljZWRmODQzZWUiLCJwIjoiOWU5YTJlY2NjNDQ0NDhkZGZiOWY5Y2E2YTM5ODI3YTU3NTYzNDdiYTkzMmEwZjBmZWQ4ZmE1ZmIyNmFjY2Y3YiIsInJvbGUiOiJlbmdpbmVlciIsInJvb3RzIjoiZWEyYTExYjU5MWJhM2VmOGUxYTlmN2YwZTJmZGEzZWNlM2ZjOWZlYjM4NGIyNWQ4Yzk1YTUyZTNlNjZjZDcwNiIsInNjb3BlIjoiNzQyMzRlOThhZmU3NDk4ZmI1ZGFmMWYzNmFjMmQ3OGFjYzMzOTQ2NGY5NTA3MDNiOGMwMTk4OTJmOTgyYjkwYiIsInNlcSI6MjM3NjUsInRocm91Z2giOm51bGwsInYiOjF9GQT7JqAE6sHIrONS0bu-ZztsW5chqVKw3D9kkafAJ2I=",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=8000 bytes (verbose=False); snapshot is 4222 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "epic_words": "context(verbose=True) or ticket_read(<epic id>) for the owner's full words",
+  "description": "ticket_read(ticket_id=<id>, include='') for the full description",
+  "compact": "criteria/docs/children/links are refs; ticket_read(ticket_id=<id>) or criterion_query(ticket_id=<id>) for rows, lookup(scope=<epic>) for recall",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

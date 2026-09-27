@@ -1,0 +1,115 @@
+{
+ "participant": {
+  "id": "qa.s-da61d38c5e",
+  "created_at": "2026-09-27T05:38:54.622281Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "qa",
+  "handle": "qa.s-da61d38c5e",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "s-da61d38c5e",
+    "kind": "story",
+    "status": "in_progress",
+    "parent_id": "epic-7f3d64e6de",
+    "design_ref": "design-e963c656f5",
+    "title": "S23 agent-friendly tool layer: audit every MCP tool across all roles for token waste, fix to the owner's tool standards, independent verification",
+    "description": "Owner m-79f8b9a5dc, verbatim: \"yes, lets do this now. also, I recommend this exercise: a fresh shell just uses all tools across all shells and reports what is w… (+3161 chars)"
+   },
+   "chain": [
+    {
+     "id": "s-da61d38c5e",
+     "kind": "story",
+     "status": "in_progress"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-1e44b92059",
+     "text": "An audit doc ranks every tool-layer problem found by exercising every tool in every role bundle on a private board: call… (+147 chars)",
+     "check": "verdict",
+     "checked_by": "qa",
+     "verdict": "pass",
+     "evidence_ref": "report-6971109e05"
+    },
+    {
+     "id": "c-729834c66e",
+     "text": "Owner standards hold for every tool, and a tool-contract test checks them mechanically:\n- the description names its link… (+374 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pass",
+     "evidence_ref": "report-6971109e05"
+    },
+    {
+     "id": "c-de4fa3e6e6",
+     "text": "An independent Opus verification seat re-runs the audit's task script cold against the fixed tools and reports a before/… (+152 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "fail",
+     "evidence_ref": "report-6971109e05"
+    },
+    {
+     "id": "c-1b76522c14",
+     "text": "No workarounds (owner m-538d9896ab): every framework task found in the agent home's cards, skills and guides runs throug… (+426 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pass",
+     "evidence_ref": "report-6971109e05"
+    },
+    {
+     "id": "c-2c16f5ebf0",
+     "text": "No information loss (owner m-891b9f42bd).\n- **Paging parity:** a test pages each bounded tool (ticket_query, doc_query,… (+596 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "fail",
+     "evidence_ref": "report-6971109e05"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43"
+   ],
+   "children": [
+    "t-eb7bd77ef5 done",
+    "t-0f43dff835 in_review",
+    "t-6873ed09d0 in_review",
+    "t-91393f0b57 in_review",
+    "t-5b432d6bd0 in_review"
+   ],
+   "links": [
+    "s-da61d38c5e blocks s-9648fded35"
+   ],
+   "thread": [
+    {
+     "id": "m-99a046a575",
+     "kind": "status",
+     "created_at": "2026-09-27T05:50:09.856290Z"
+    }
+   ],
+   "thread_total": 3,
+   "recall_count": 8
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='s-da61d38c5e') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzMwMS4wODY5MjMxLCJtZXRhZGF0YSI6ImU5OWE2Y2EyY2QwZWRmYWQwYzRkMmUxNzY1M2U4ODhhMDZmNmNiYThmOTE2NWMzNTRhODNmODBlMDhiYzI4ODMiLCJwIjoiZjQ5M2EwYTZiMjMxYjZkNjllMDkxNmZjOGE1ZTcwODc4ZWExYWFhZmRkOTlkMTFlZDdjYTBhY2U0YzdlZDk4ZCIsInJvbGUiOiJxYSIsInJvb3RzIjoiODExNTBiYWRlZTFiYzMzNGRhYjM3ZmFiYTA3YTlmMjFiMTE2ODU3YWE4Zjg0NTZjMzAyYjZlMjk1ZTlmNzAyMiIsInNjb3BlIjoiNzQyMzRlOThhZmU3NDk4ZmI1ZGFmMWYzNmFjMmQ3OGFjYzMzOTQ2NGY5NTA3MDNiOGMwMTk4OTJmOTgyYjkwYiIsInNlcSI6MjM3NjUsInRocm91Z2giOm51bGwsInYiOjF9Xyz4Bevzvod-5XDFFnDxniayEFIi7EnLNTgy9rI-tHc=",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=8000 bytes (verbose=False); snapshot is 3506 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "epic_words": "context(verbose=True) or ticket_read(<epic id>) for the owner's full words",
+  "description": "ticket_read(ticket_id=<id>, include='') for the full description",
+  "compact": "criteria/docs/children/links are refs; ticket_read(ticket_id=<id>) or criterion_query(ticket_id=<id>) for rows, lookup(scope=<epic>) for recall",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

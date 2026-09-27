@@ -1,0 +1,116 @@
+{
+ "participant": {
+  "id": "engineer.t-cd4712c855",
+  "created_at": "2026-09-27T07:52:20.976127Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "engineer",
+  "handle": "engineer.t-cd4712c855",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "t-cd4712c855",
+    "kind": "task",
+    "status": "in_progress",
+    "assignee": "engineer.t-cd4712c855",
+    "parent_id": "s-461403ebd1",
+    "title": "S13-T purge the reviewer role everywhere; human/owner roles are non-agent and can never be launched (owner m-da9a2ae62f)",
+    "description": "Owner, verbatim (m-da9a2ae62f): \"reviewer role is removed. please remove it from everywhere. from code, from role cards and wherever else it is mentioned. i don… (+2408 chars)"
+   },
+   "chain": [
+    {
+     "id": "t-cd4712c855",
+     "kind": "task",
+     "status": "in_progress"
+    },
+    {
+     "id": "s-461403ebd1",
+     "kind": "story",
+     "status": "in_review"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-c7976fb9c1",
+     "text": "\"reviewer\" no longer exists as a role in code, workflow definitions (a new version), SPA, cards, skills, guides or the s… (+279 chars)",
+     "check": "command",
+     "checked_by": "engineer",
+     "verdict": "pending"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43"
+   ],
+   "children": [],
+   "links": [],
+   "thread": [
+    {
+     "id": "m-a3a8943c39",
+     "kind": "steer",
+     "created_at": "2026-09-27T08:13:56.273128Z"
+    }
+   ],
+   "thread_total": 6,
+   "recall_count": 8
+  }
+ ],
+ "asks_for_me": [
+  {
+   "id": "m-a416afb63b",
+   "created_at": "2026-09-27T07:58:28.185803Z",
+   "created_by": "architect.epic-7f3d64e6de",
+   "ticket_id": "t-cd4712c855",
+   "to": "engineer.t-cd4712c855",
+   "kind": "steer",
+   "text": "This is in scope for you, from qa's m-dbf4b571de. `tests/test_skill_tool_scope.py` fails at HEAD because its `SEAT_ROLES` lists \"owner\" as a seat role. So shared-host-rules.md:17 (`record_status`) is checked against the owner's tools.\n- **Why it's yours:** the owner is a human and not a seat, which is exactly your non-agent rule. Take \"owner\" out of the seat-role sets the tests and code use for launchable or carded roles. The owner may keep its human MCP tool bundle, since a human's client calls tools, but it is not a seat role.\n- **Done when:** that test passes, without adding a roles comment to the guide.",
+   "reply_to": null,
+   "document_context": null,
+   "code_context": null,
+   "quotes": [],
+   "status": null,
+   "artifacts": [],
+   "from_type": "agent",
+   "from_role": "architect",
+   "answer_with": "message_send(ticket_id='t-cd4712c855', kind='answer', to='architect.epic-7f3d64e6de', reply_to='m-a416afb63b')"
+  },
+  {
+   "id": "m-a3a8943c39",
+   "created_at": "2026-09-27T08:13:56.273128Z",
+   "created_by": "architect.epic-7f3d64e6de",
+   "ticket_id": "t-cd4712c855",
+   "to": "engineer.t-cd4712c855",
+   "kind": "steer",
+   "text": "More in your scope, from qa m-d757122a72 (S12 c-c0b35be596 fails). Migration resolve() parity shows 4 diffs, all for role `owner`:\n- **Old behaviour:** the legacy pool binding `roles.owner=judgment` gave claude-opus-4-8.\n- **New behaviour:** migrate() drops it, and default_model() returns claude-fable-5-1. The board's resolve (seat_choice.py:236-237) skips the legacy `roles` binding, while the pool's seat_model_for honours it.\n- **Neither answer is right:** under the owner's ruling, owner has NO seat model.\n**Fix it the non-agent way:**\n1. migrate() drops any legacy `roles` binding for a human role (owner, human, expert), and keeps any other legacy binding as a role_models row, so non-human parity holds.\n2. `resolve()` and `seat_model_for` for a human role raise your non-agent refusal instead of returning a model.\n3. The parity test loads the REAL pre-migration file (`git show cb84bba^:v8/models.json`, saved as a fixture with no PII), iterates role_models ∪ roles, and asserts equality for every agent role and a refusal for owner.\nInclude this in your commit and name c-c0b35be596 in your report, so qa can re-judge S12.",
+   "reply_to": null,
+   "document_context": null,
+   "code_context": null,
+   "quotes": [],
+   "status": null,
+   "artifacts": [],
+   "from_type": "agent",
+   "from_role": "architect",
+   "answer_with": "message_send(ticket_id='t-cd4712c855', kind='answer', to='architect.epic-7f3d64e6de', reply_to='m-a3a8943c39')"
+  }
+ ],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='t-cd4712c855') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6ImFjZTU1Y2M3ZmU3NDc2NzUyNGRmMzAyY2YxOWRhZmZmYTc5YzU1MTdkOTdhZmMyZTQ4YTVhNzBiMTk4MGNlYjIiLCJhdCI6MTc5MDQ5NzMwNy42MDMyMywibWV0YWRhdGEiOiI5MDhkNTgyZTVjNDE4Mjk4ZTg2YTRhNzc4MDVjZjcwOGNkM2ZkY2IwZmQxYWQwZDdkNjliYmUzMDg3NGY4MzNkIiwicCI6IjQ4MDNkYjIwMTdmZTNkNzc5ZmE0MTY5YTU2YjcyY2UzOTcwMTVjMWU1N2U5MGM2MmJkMTkwNzliZDA3ODg0OTkiLCJyb2xlIjoiZW5naW5lZXIiLCJyb290cyI6IjE4ZTYxZjZiYTg1M2Y3ZDFlOGFmNDFlOTY2MzY3ZmUxZDU3Y2YzYjc2MmI3MDc2NzM5M2NlYTQwNDJkM2MzZTUiLCJzY29wZSI6Ijc0MjM0ZTk4YWZlNzQ5OGZiNWRhZjFmMzZhYzJkNzhhY2MzMzk0NjRmOTUwNzAzYjhjMDE5ODkyZjk4MmI5MGIiLCJzZXEiOjIzNzY1LCJ0aHJvdWdoIjpudWxsLCJ2IjoxfVbNyelus4VKVwyOPoo6d9g4d6-VTjpMOi2eWtw7xJAb",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=8000 bytes (verbose=False); snapshot is 5043 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "epic_words": "context(verbose=True) or ticket_read(<epic id>) for the owner's full words",
+  "description": "ticket_read(ticket_id=<id>, include='') for the full description",
+  "compact": "criteria/docs/children/links are refs; ticket_read(ticket_id=<id>) or criterion_query(ticket_id=<id>) for rows, lookup(scope=<epic>) for recall",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

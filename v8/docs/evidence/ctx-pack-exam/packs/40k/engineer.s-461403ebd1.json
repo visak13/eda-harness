@@ -1,0 +1,367 @@
+{
+ "participant": {
+  "id": "engineer.s-461403ebd1",
+  "created_at": "2026-09-26T16:42:20.259168Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "engineer",
+  "handle": "engineer.s-461403ebd1",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "s-461403ebd1",
+    "created_at": "2026-09-26T14:42:07.521804Z",
+    "created_by": "architect.epic-7f3d64e6de",
+    "kind": "story",
+    "work_type": "feature",
+    "title": "S13 workflow engine as data: versioned workflow definitions, tables/caps/checkers/bundles from data, hook registry, Standard = today (golden), Lean/Solo presets, epics pin a version",
+    "words": null,
+    "parent_id": "epic-7f3d64e6de",
+    "status": "in_review",
+    "assignee": "engineer.s-461403ebd1",
+    "design_ref": "design-e963c656f5",
+    "description": "Design design-e963c656f5 §4.14(b) (owner m-30023429f7; R11: in this epic). This is the deepest refactor; refactor in steps, with the full suite green at every commit.\n\nBuild:\n- **Workflow definition** (JSON schema, stored on the board, versioned and immutable once published):\n  - roles: id, card markdown, default model/harness/effort, tool bundle, may_spawn, may_create kinds, criterion author/checker, gate answerer\n  - ticket kinds, statuses and the transitions table\n  - the checker map by kind and work_type\n  - caps\n  - gates\n  - hooks: named built-in behaviours with params and on/off\n- **Data-driven tables:** move `schemas.py` TRANSITIONS :763, TICKET_CREATORS, CRITERION_AUTHORS/CHECKERS, DOC_AUTHORS :783-800, `bundles.py` ROLE_BUNDLES :2240, `service.py` SPAWNABLE_ROLES :269, the `board.py` caps :102-104, `checker_for` :986 and HUMAN_GATE_ANSWERERS :97 behind a `Workflow` object resolved per epic.\n- **Hook registry:** the Python behaviours today become named hooks that the definition switches and parameterises:\n  - `epic_auto_advance` (:336-371)\n  - `release_cascade` (:728-823)\n  - `criteria_auto_done` (:1190)\n  - `signoff_before_start` (:652)\n  - `evidence_before_review` (:661)\n  - `acceptance_pairs_checker(role)` (:870/:1712/:1906)\n  - `resident_designer(role)` (:700/:1544)\n  - `review_story_last(role)` (:2066)\n  - `knowledge_tickets(checked_by)`\n  - `one_checker_per_epic(role)`\n  - `quick_task` paths\n  No user code runs. The `Role` enum stays as the built-in ids, and custom role ids are validated against the epic's workflow. The web `ROLES` list comes from the API.\n- **Standard workflow** reproduces today byte-for-byte in behaviour: it is the default, and the WHOLE existing pytest suite passes under it unchanged (golden).\n- **Presets:** Lean (owner → engineer → qa) and Solo (owner → engineer, owner checks), each with an end-to-end test of a tiny epic walking to done.\n- **Epic pinning:** an epic pins `workflow:<id>@<ver>` at creation. Editing or publishing a new version never changes a running epic. Existing epics pin Standard@1 by migration.\n- **API:** list, get, validate (the lint: every status reachable, every kind has a checker, a spawner exists per role, cards exist, hooks' params are valid), publish version, duplicate.\n\nThe card prose conventions (hl/ll-craft, one qa, adversary last) become hook-backed where the board can enforce them. Otherwise they stay in the Standard cards. No consult.",
+    "tags": [],
+    "epic_id": "epic-7f3d64e6de",
+    "topic_config": null
+   },
+   "words": "Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and need to publish this on Git as a distributable.",
+   "words_header": "words recorded 2026-09-26; phase: in_progress; governed by design-e963c656f5 v43",
+   "workflow": "standard@1",
+   "chain": [
+    {
+     "id": "s-461403ebd1",
+     "kind": "story",
+     "title": "S13 workflow engine as data: versioned workflow definitions, tables/caps/checkers/bundles from data, hook registry, Standard = today (golden), Lean/Solo presets, epics pin a version",
+     "status": "in_review",
+     "design_ref": "design-e963c656f5"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "title": "Productize the app. Make it as installable and independent of machine or OS",
+     "status": "in_progress",
+     "design_ref": "design-e963c656f5"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-54afa8a81b",
+     "created_at": "2026-09-26T14:42:24.188325Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-461403ebd1",
+     "text": "Golden: with the Standard workflow as default, the ENTIRE pre-existing edp8 pytest suite passes with no test edited except import paths (a diff of tests/ in the report proves it). Every existing epic in a copy of this host's DB pins Standard@1 after migration.",
+     "check": "command",
+     "checked_by": "qa",
+     "evidence_ref": "report-4bdc854f61",
+     "evidence_version": null,
+     "verdict": "pending"
+    },
+    {
+     "id": "c-e7cba464fc",
+     "created_at": "2026-09-26T14:42:26.298874Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-461403ebd1",
+     "text": "Data drives behaviour: TRANSITIONS, creators/authors/checkers, bundles, spawnable roles, caps, checker map and gate answerers are read from the epic's workflow (a grep shows the old constants removed or only as the Standard definition's source). A test changes a cap and a checker in a duplicated workflow and shows that an epic pinned to it behaves differently while a Standard epic does not.",
+     "check": "command",
+     "checked_by": "qa",
+     "evidence_ref": "report-4bdc854f61",
+     "evidence_version": null,
+     "verdict": "pending"
+    },
+    {
+     "id": "c-0e2611c3f2",
+     "created_at": "2026-09-26T14:42:28.117770Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-461403ebd1",
+     "text": "Presets and lint: a Lean epic (owner → engineer → qa) and a Solo epic (owner → engineer, owner checks) each walk to done in an end-to-end test on a private board. Validate rejects a definition with an unreachable status, a kind without a checker, a role without a spawner and an unknown hook, each with a named error. A published version is immutable (PUT refused).",
+     "check": "command",
+     "checked_by": "qa",
+     "evidence_ref": "report-4bdc854f61",
+     "evidence_version": null,
+     "verdict": "pending"
+    },
+    {
+     "id": "c-5c7afde0e8",
+     "created_at": "2026-09-26T15:33:16.241326Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-461403ebd1",
+     "text": "Guards as data (owner m-6b6060dd38): the workflow definition declares preconditions per transition and gate, and the board enforces them from data by auto-carry, refusal with the missing piece named, and hiding unanswerable gates. A pytest shows that a custom role and transition in a test workflow get auto-carry and refusal with no code change, and that the S16 guards are expressed as Standard's declared preconditions (golden unchanged). The workflow lint flags a gate that has no precondition.",
+     "check": "command",
+     "checked_by": "qa",
+     "evidence_ref": "report-4bdc854f61",
+     "evidence_version": null,
+     "verdict": "pending"
+    },
+    {
+     "id": "c-2c02d34d7f",
+     "created_at": "2026-09-26T16:48:28.460406Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-461403ebd1",
+     "text": "Capacity and cards as data (design §4.14(d)):\n- Every workflow role declares `capacity_class` (builder, planner or checker) or its own `max_concurrent`.\n- The pool enforces class and role caps from the spawn's resolved workflow role, so a custom role in a test workflow is capped with no pool code change; the Standard caps are unchanged (golden).\n- At spawn the seat's role card is materialised from the epic's pinned workflow version: a test edits a card in a new version, and a new epic's seat gets the new card while a running epic's seat keeps the old one.\n- The `/epic` and `/ticket` skills render their lifecycle section from the pinned workflow.",
+     "check": "command",
+     "checked_by": "qa",
+     "evidence_ref": "report-4bdc854f61",
+     "evidence_version": null,
+     "verdict": "pending"
+    },
+    {
+     "id": "c-328185ac06",
+     "created_at": "2026-09-26T16:53:55.468696Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-461403ebd1",
+     "text": "Kernel vs policy (design §4.14(e) 1, 2 and 4):\n- Every spawned role's card is the locked kernel preamble followed by the role card, and the tool bundle always includes the kernel tools. A test with a custom role whose card and bundle omit them still boots with both.\n- The validator refuses to publish on each invariant: an unreachable or dead-end status, a kind with no non-doer checker, a role with no spawner, a gate no human can answer, self-approval, a cap below 1, or a stripped kernel part. There is one test per invariant, and each refusal text carries what is wrong, why it matters and the fix.\n- Workflow definitions carry `schema_version`, with a forward-migration registry and a `check_compat()` that migrates and validates every published workflow in a scratch copy.",
+     "check": "command",
+     "checked_by": "qa",
+     "evidence_ref": "report-4bdc854f61",
+     "evidence_version": null,
+     "verdict": "pending"
+    }
+   ],
+   "docs": [
+    {
+     "id": "design-e963c656f5",
+     "doc_type": "design",
+     "title": "Productize EDP: installable on any machine/OS, published on GitHub; codex bridge → codex seats",
+     "version": 43,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# Productize EDP — design (epic-7f3d64e6de)\n\n## 1. Words (verbatim)\nEpic: \"Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and ne… (+99 chars)",
+     "full": "doc_read(id)",
+     "relation": "design_ref"
+    },
+    {
+     "id": "note-192632d6e1",
+     "doc_type": "note",
+     "title": "Plan: S13 workflow engine as data",
+     "version": 2,
+     "scope": "s-461403ebd1",
+     "tags": [],
+     "status": "active",
+     "summary": "# Plan: S13 workflow engine as data (s-461403ebd1)\n\n## Strategy: refactor-in-steps (why)\nThe story says it: the deepest refactor in the codebase, full suite green at every commit. Each step\nmoves one… (+100 chars)",
+     "full": "doc_read(id)",
+     "relation": "designed_by"
+    }
+   ],
+   "strategy_links": true,
+   "children": [
+    {
+     "id": "t-e355a990f7",
+     "kind": "task",
+     "title": "S11 F2 (HIGH): a custom role marked human=true but spawnable lets an agent answer a human gate",
+     "status": "in_review",
+     "work_type": "bug",
+     "assignee": "engineer.t-e355a990f7",
+     "assignee_role": "engineer",
+     "criteria": "1/1",
+     "tags": []
+    },
+    {
+     "id": "t-c2401d98c6",
+     "kind": "task",
+     "title": "S11 F6: long workflow ids make published role-card versions overwrite each other",
+     "status": "in_review",
+     "work_type": "bug",
+     "assignee": "engineer.t-c2401d98c6",
+     "assignee_role": "engineer",
+     "criteria": "1/1",
+     "tags": []
+    },
+    {
+     "id": "t-3662743f1f",
+     "kind": "task",
+     "title": "R2-C: workflow DELETE races publish + epic pin (deletes a pinned definition)",
+     "status": "in_review",
+     "work_type": "bug",
+     "assignee": "engineer.t-3662743f1f",
+     "assignee_role": "engineer",
+     "criteria": "1/1",
+     "tags": []
+    },
+    {
+     "id": "t-f9a64739de",
+     "kind": "task",
+     "title": "R2-C2: a stale workflow save overwrites a published, pinned version (save not serialized with publish)",
+     "status": "in_review",
+     "work_type": "bug",
+     "assignee": "engineer.t-f9a64739de",
+     "assignee_role": "engineer",
+     "criteria": "1/1",
+     "tags": []
+    },
+    {
+     "id": "t-cd4712c855",
+     "kind": "task",
+     "title": "S13-T purge the reviewer role everywhere; human/owner roles are non-agent and can never be launched (owner m-da9a2ae62f)",
+     "status": "in_progress",
+     "work_type": "bug",
+     "assignee": "engineer.t-cd4712c855",
+     "assignee_role": "engineer",
+     "criteria": "0/1",
+     "tags": []
+    }
+   ],
+   "blockers": [
+    {
+     "id": "s-ec73f74ea9",
+     "status": "in_review",
+     "title": "S1 settings and paths core: one registry in edp-contracts, platformdirs dirs, ag"
+    }
+   ],
+   "open_gates": [],
+   "thread": [
+    {
+     "id": "m-d6ae00b4b9",
+     "created_at": "2026-09-26T17:45:58.000012Z",
+     "created_by": "engineer.s-461403ebd1",
+     "ticket_id": "s-461403ebd1",
+     "to": "architect.epic-7f3d64e6de",
+     "kind": "answer",
+     "text": "S13 is in_review. c-2c02d34d7f, c-328185ac06 and the other four criteria have evidence in report-4bdc854f61 v2, landed as d7c6b06 and 61018ab.\n\n- **Capacity:** every preset role declares `capacity_cla… (+1350 chars)",
+     "reply_to": "m-a214c6b1ec",
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 20817
+    },
+    {
+     "id": "m-f83b6197bd",
+     "created_at": "2026-09-26T17:46:01.364799Z",
+     "created_by": "engineer.s-461403ebd1",
+     "ticket_id": "s-461403ebd1",
+     "to": null,
+     "kind": "status",
+     "text": "[handed_off] S13 in_review. Commits d7c6b06 and 61018ab on main; evidence on all 6 criteria in report-4bdc854f61 v2. Full suite: 1699 passed, only the 6 baseline env failures. Live effect needs owner… (+77 chars)",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": "handed_off",
+     "artifacts": [],
+     "seq": 20819
+    },
+    {
+     "id": "m-08a12a71e5",
+     "created_at": "2026-09-26T17:46:20.575999Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-461403ebd1",
+     "to": "engineer.s-461403ebd1",
+     "kind": "answer",
+     "text": "Accepted, including the deviation that the board writes the card file. Both leftovers move to S14's scope: the web ROLES list from the API, and the full declared tool bundle at the proxy for custom ro… (+113 chars)",
+     "reply_to": "m-d6ae00b4b9",
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 20823
+    }
+   ],
+   "thread_seq": 20823,
+   "thread_total": 10,
+   "links": [
+    {
+     "id": "lk-97fd845391",
+     "created_at": "2026-09-26T14:43:15.408335Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-461403ebd1",
+     "to_id": "s-42a72db3dd",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-7a0cc56dac",
+     "created_at": "2026-09-26T16:44:55.646934Z",
+     "created_by": "engineer.s-461403ebd1",
+     "from_id": "s-461403ebd1",
+     "to_id": "note-192632d6e1",
+     "relation": "designed_by"
+    },
+    {
+     "id": "lk-29ab25d0a0",
+     "created_at": "2026-09-26T16:54:21.310563Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-461403ebd1",
+     "to_id": "s-d8a2452ae9",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-a977e8563c",
+     "created_at": "2026-09-26T14:43:14.618787Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-ec73f74ea9",
+     "to_id": "s-461403ebd1",
+     "relation": "blocks"
+    }
+   ],
+   "recall": {
+    "items": [
+     {
+      "id": "clm-11f2746437",
+      "type": "claim",
+      "text": "c-d0e7e90b95 pass: pytest tests/test_workflow_delete.py passes 10 of 10. It covers: a draft is deleted, an unpinned published version is archived and restorabl…"
+     },
+     {
+      "id": "clm-242435f70c",
+      "type": "claim",
+      "text": "c-351a67ba62 pass: Pass: cold private-board run exited 0 with 265/265 bundle pairs; report v3 has ranked waste and coverage tables plus six-standard 65-tool ma…"
+     },
+     {
+      "id": "clm-4b6198540a",
+      "type": "claim",
+      "text": "c-0adbdbc4c1 pass: b249d90: pytest 13/13 (subprocess run() on a fresh home serves models > 0, <home>/.data/models.json written); s14-design.spec.ts alone 4/4 o…"
+     },
+     {
+      "id": "clm-ef1bde15be",
+      "type": "claim",
+      "text": "c-8e2c25f9bb pass: Verified: 14/14 in test_workflow_delete.py; the s11-r2 probe fails as required."
+     },
+     {
+      "id": "clm-9a0c708a6e",
+      "type": "claim",
+      "text": "c-71e31b277a pass: qa dd42458: test_brand 8 pass; --version prints Heronry 0.9.0; no user-facing product 'EDP' left; names come from the S1 registry."
+     },
+     {
+      "id": "dec-b4f7f536be",
+      "type": "decision",
+      "text": "The installers pin uv 0.9.11, reusing a newer uv on PATH, verify every wheel against SHA256SUMS before installing, run uv tool install --force idempotently (sk…"
+     },
+     {
+      "id": "dec-074486e913",
+      "type": "decision",
+      "text": "Deviation accepted: Deviation on c-eb38e8c949: the macOS DMG and Linux deb legs have no run link yet. The workflow `.github/workflows/installers.yml` (666b6cd)…"
+     },
+     {
+      "id": "dec-30be75475f",
+      "type": "decision",
+      "text": "heronry import is a dry run by default (--apply writes). It refuses dev mode unless --force, and refuses while the target board runs. The admin token goes to a…"
+     }
+    ],
+    "receipt": {
+     "question": "S13 workflow engine as data: versioned workflow definitions, tables/caps/checke…",
+     "returned": 8,
+     "cut": 15,
+     "cap": 8,
+     "more": "lookup(scope=<ticket>, question=…) for the full pack"
+    }
+   },
+   "thread_omitted": 7
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='s-461403ebd1') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzMyOS4wNzM1MDk3LCJtZXRhZGF0YSI6IjdkYjJlN2JmMjAwNjQyN2Q5MTNhODRmYTAwNDA3MzEwNmUxYTczMDE2YWE3YTdlMjAzOTEzZDljZWRmODQzZWUiLCJwIjoiOWU5YTJlY2NjNDQ0NDhkZGZiOWY5Y2E2YTM5ODI3YTU3NTYzNDdiYTkzMmEwZjBmZWQ4ZmE1ZmIyNmFjY2Y3YiIsInJvbGUiOiJlbmdpbmVlciIsInJvb3RzIjoiZWEyYTExYjU5MWJhM2VmOGUxYTlmN2YwZTJmZGEzZWNlM2ZjOWZlYjM4NGIyNWQ4Yzk1YTUyZTNlNjZjZDcwNiIsInNjb3BlIjoiNzQyMzRlOThhZmU3NDk4ZmI1ZGFmMWYzNmFjMmQ3OGFjYzMzOTQ2NGY5NTA3MDNiOGMwMTk4OTJmOTgyYjkwYiIsInNlcSI6MjM3NjUsInRocm91Z2giOm51bGwsInYiOjF9tZQrUdYwGvDcVOQwEBO7K6KqyeVgw86VGIoMWn4Pkbw=",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=40000 bytes (verbose=False); snapshot is 16747 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

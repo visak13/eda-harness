@@ -1,0 +1,242 @@
+{
+ "participant": {
+  "id": "engineer.s-9648fded35",
+  "created_at": "2026-09-27T01:44:20.432757Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "engineer",
+  "handle": "engineer.s-9648fded35",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "s-9648fded35",
+    "kind": "story",
+    "status": "in_review",
+    "assignee": "engineer.s-9648fded35",
+    "parent_id": "epic-7f3d64e6de",
+    "design_ref": "design-e963c656f5",
+    "title": "S9 publish + dogfood: HEAD purge + PII scan, Apache-2.0, version sync, Dependabot, 3-OS CI + install smoke, tag release (wheels/sdist/vsix/installers), README;… (+12 chars)",
+    "description": "Design design-e963c656f5 §4.5, §4.10 (libraries), §4.13. Rulings: R1 (Windows hands-on only), R3 (the repo stays; GitHub Releases only), R6 (dogfood), R9 (HEAD… (+1890 chars)"
+   },
+   "chain": [
+    {
+     "id": "s-9648fded35",
+     "kind": "story",
+     "status": "in_review"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-d1efb29e94",
+     "text": "At HEAD, gitleaks is clean and a grep of all tracked files for the user-profile path, `C:\\Projects`, the owner's usernam… (+277 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-17428174b0"
+    },
+    {
+     "id": "c-9bf2b47192",
+     "text": "CI is green on windows, macos and ubuntu for the four pytest suites, vitest and the install smoke (build wheels → `uv to… (+337 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-17428174b0"
+    },
+    {
+     "id": "c-2051e1dbf4",
+     "text": "README quickstart: a GUI install and a cmd install, ≤5 steps each per OS; unsigned-installer steps; what each service is… (+266 chars)",
+     "check": "verdict",
+     "checked_by": "qa",
+     "verdict": "pass",
+     "evidence_ref": "report-17428174b0"
+    },
+    {
+     "id": "c-0f247caf7d",
+     "text": "Carried from S8 (c-eb38e8c949, ruling on m-1998f097c0): the first tag or workflow_dispatch run of `.github/workflows/ins… (+228 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-17428174b0"
+    },
+    {
+     "id": "c-eb6dc6172f",
+     "text": "`uv lock --check` passes at the release commit, for the repo and every workspace member. uv.lock currently lags pyprojec… (+212 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending",
+     "evidence_ref": "report-17428174b0"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43",
+    "strategyhl-d76b06a3dd strategy_hl v1"
+   ],
+   "children": [
+    "t-6129a95a3d in_review"
+   ],
+   "links": [
+    "s-9648fded35 uses_strategy strategyhl-d76b06a3dd",
+    "s-733de6e29f blocks s-9648fded35",
+    "s-6dcf78f803 blocks s-9648fded35",
+    "s-edd2eda8f6 blocks s-9648fded35",
+    "s-32035a77da blocks s-9648fded35",
+    "s-42a72db3dd blocks s-9648fded35",
+    "s-ca39f10643 blocks s-9648fded35",
+    "s-6c2cbbc3e8 blocks s-9648fded35",
+    "s-d8a2452ae9 blocks s-9648fded35",
+    "s-1a029fd6bb blocks s-9648fded35",
+    "s-0cfebd3862 blocks s-9648fded35",
+    "report-17428174b0 evidence_for s-9648fded35",
+    "s-967481b62a blocks s-9648fded35",
+    "s-da61d38c5e blocks s-9648fded35"
+   ],
+   "blockers": [
+    {
+     "id": "s-733de6e29f",
+     "status": "done",
+     "title": "S4 codex bridge → codex seats: remove consult, cards spawn codex adversary/build"
+    },
+    {
+     "id": "s-6dcf78f803",
+     "status": "done",
+     "title": "S8 desktop app + installers: pywebview+tray, Briefcase MSI/DMG/deb"
+    },
+    {
+     "id": "s-edd2eda8f6",
+     "status": "done",
+     "title": "S10 board UI: empty band under the composer when the top bar is collapsed (relea"
+    },
+    {
+     "id": "s-32035a77da",
+     "status": "in_progress",
+     "title": "S12 any model: explicit harness/provider per catalog entry, no prefix sniffing ("
+    },
+    {
+     "id": "s-42a72db3dd",
+     "status": "in_progress",
+     "title": "S14 Design tab /ui/design: workflow list/versions/presets, pipeline view, role p"
+    },
+    {
+     "id": "s-ca39f10643",
+     "status": "in_progress",
+     "title": "S16 lifecycle skills (/epic, /ticket) + design sign-off parity (board guards, VS"
+    },
+    {
+     "id": "s-6c2cbbc3e8",
+     "status": "done",
+     "title": "S18 README as the storefront: hero loop, Download/Website, per-OS install"
+    },
+    {
+     "id": "s-d8a2452ae9",
+     "status": "done",
+     "title": "S19 Help agent + diagnostics: read-only doctor seat, approval-gated fixes, --bun"
+    },
+    {
+     "id": "s-1a029fd6bb",
+     "status": "done",
+     "title": "S20 attention trail: highlight the path to what needs you (epic → tab → section "
+    },
+    {
+     "id": "s-0cfebd3862",
+     "status": "in_review",
+     "title": "S21 code server as an optional managed service: heronry start/stop code on every"
+    },
+    {
+     "id": "s-967481b62a",
+     "status": "done",
+     "title": "S22 performance pass: profile the board API, SSE feed and SPA render; fix the to"
+    },
+    {
+     "id": "s-da61d38c5e",
+     "status": "in_progress",
+     "title": "S23 agent-friendly tool layer: audit every MCP tool across all roles for token w"
+    }
+   ],
+   "thread": [
+    {
+     "id": "m-7f1c5a58a2",
+     "kind": "answer",
+     "created_at": "2026-09-27T03:51:19.191779Z"
+    }
+   ],
+   "thread_total": 33,
+   "recall_count": 8
+  },
+  {
+   "ticket": {
+    "id": "t-6129a95a3d",
+    "kind": "task",
+    "status": "in_review",
+    "assignee": "engineer.s-9648fded35",
+    "parent_id": "s-9648fded35",
+    "title": "Chat panes: a light 1px border shows which chat is the scroll area (epic, ticket and topic chats)",
+    "description": "Owner m-3818ff2a47 (verbatim): \"please can you ask the agent working on s9 to apply a very light 1px border to the active chat window of epics/tickets/topic cha… (+981 chars)"
+   },
+   "chain": [
+    {
+     "id": "t-6129a95a3d",
+     "kind": "task",
+     "status": "in_review"
+    },
+    {
+     "id": "s-9648fded35",
+     "kind": "story",
+     "status": "in_review"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-c7d47d4f26",
+     "text": "The epic, ticket and topic chat scroll panes carry a subtle 1px theme-token border in both dark and light. A vitest chec… (+75 chars)",
+     "check": "command",
+     "checked_by": "engineer",
+     "verdict": "pending",
+     "evidence_ref": "report-f061acb087"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43"
+   ],
+   "children": [],
+   "links": [
+    "report-f061acb087 evidence_for t-6129a95a3d"
+   ],
+   "thread": [
+    {
+     "id": "m-c8ec28d5e6",
+     "kind": "note",
+     "created_at": "2026-09-27T03:08:04.172190Z"
+    }
+   ],
+   "thread_total": 2,
+   "recall_count": 8
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='s-9648fded35') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzMyMS40MzkzNjA5LCJtZXRhZGF0YSI6IjIyNzRlMzEyOWEwNTkxMTU4Y2M3YzM1NmYzZGVhNjJiMDViYjU5ZjQ3N2IwMGUyYWFkNGM1NDEyMTgxODNkN2UiLCJwIjoiNzU1ZmVmZmQ0Y2RlYjAwZWRiZmIzNzNmOGIyZWNiMDNkMjBjOWVkZmViNzI4MjAzMThhMDAwZjVhZTA0OTQwZCIsInJvbGUiOiJlbmdpbmVlciIsInJvb3RzIjoiNTRlMWM3MjAyMGFlZDIxZTc3MzVkZjMzOGQ2NTc1M2EwNDAxY2MxZmIwNmY5MzA2NzdlNzM3NGI0ZmIxMjA2ZCIsInNjb3BlIjoiNzQyMzRlOThhZmU3NDk4ZmI1ZGFmMWYzNmFjMmQ3OGFjYzMzOTQ2NGY5NTA3MDNiOGMwMTk4OTJmOTgyYjkwYiIsInNlcSI6MjM3NjUsInRocm91Z2giOm51bGwsInYiOjF9XSnjxSbMsvnENsiHfZ5-tL8B273l4sEosQI6t7W1qwI=",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=16000 bytes (verbose=False); snapshot is 6930 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "epic_words": "context(verbose=True) or ticket_read(<epic id>) for the owner's full words",
+  "description": "ticket_read(ticket_id=<id>, include='') for the full description",
+  "compact": "criteria/docs/children/links are refs; ticket_read(ticket_id=<id>) or criterion_query(ticket_id=<id>) for rows, lookup(scope=<epic>) for recall",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

@@ -1,0 +1,207 @@
+{
+ "participant": {
+  "id": "engineer.t-8e1ac0c445",
+  "created_at": "2026-09-27T07:06:49.534846Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "engineer",
+  "handle": "engineer.t-8e1ac0c445",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "t-8e1ac0c445",
+    "created_at": "2026-09-27T07:06:40.739717Z",
+    "created_by": "architect.epic-7f3d64e6de",
+    "kind": "task",
+    "work_type": "chore",
+    "title": "S18-T README cleanup (owner m-8fe09cecd4): See it work shows all 7 video chapters; drop Why this architecture, How it works in one screen, and the Antivirus section",
+    "words": null,
+    "parent_id": "s-6c2cbbc3e8",
+    "status": "in_review",
+    "assignee": "engineer.t-8e1ac0c445",
+    "design_ref": null,
+    "description": "The owner reviewed the root README.md (m-8fe09cecd4): \"it looks like a mess\". Up to \"See it work\" it is fine. Change the README as follows:\n\n1. **\"See it work\" has half the chapters.** It shows 3 stills (pool, context, board), but the product video (S17, s-54a03afc5a) has 7 chapters. Show one still per chapter, all 7, in video order, each with the chapter's title and a one- or two-line caption.\n   - Take each still from the rendered video's own frames or its Remotion scene at the chapter's key frame, in the Heronry palette with invented demo data.\n   - Save them under docs/readme/storefront/ as still-N-<slug>.png, sized for GitHub, with each file ideally ≤ 300 KB.\n   - Keep the intro line (\"drawn in code … none is a screenshot\").\n2. **Delete \"## Why this architecture\" entirely**, including its four `docs/readme/why/*.png` images (they predate the rebrand). `git rm` the images if nothing else references them; grep the tree, site and docs first. Keep the linked docs (memory-layer.md, self-improvement.md, harnesses.md); link them from \"## More\" if they aren't linked there already.\n3. **Delete \"## How it works in one screen\" entirely.** The presentation and the app already show the roles.\n4. **Delete the \"**Antivirus.**\" block** under Heronry Desktop: the paragraph, the exclusions table and the controlled-folder paragraph. Also delete the Troubleshooting row \"The antivirus removed the app\". The owner's reason: the flag came from our agent's improper screenshot helper, and the antivirus never blocked the app. Keep any SmartScreen/Gatekeeper \"unsigned installer\" note that belongs to the install steps; that is a different, real prompt.\n5. **Apply the same removals to the project site** (S15, MkDocs) and the docs wherever the same text or images appear, so README and site agree.\n6. **Check:**\n   - every remaining README link and image resolves (a link check);\n   - the PII gate passes (`python .github/scripts/pii_gate.py`);\n   - `mkdocs build --strict` passes if the site changed;\n   - the rendered README reads top to bottom with no orphaned references to removed sections.\n\n**Rules:** commit by path with both trailers; no fleet restarts. Report a before/after outline plus the 7 stills as the evidence (artifact_upload the stills), then record_status and close_self.",
+    "tags": [],
+    "epic_id": "epic-7f3d64e6de",
+    "topic_config": null
+   },
+   "words": "Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and need to publish this on Git as a distributable.",
+   "words_header": "words recorded 2026-09-26; phase: in_progress; governed by design-e963c656f5 v43",
+   "workflow": "standard@1",
+   "chain": [
+    {
+     "id": "t-8e1ac0c445",
+     "kind": "task",
+     "title": "S18-T README cleanup (owner m-8fe09cecd4): See it work shows all 7 video chapters; drop Why this architecture, How it works in one screen, and the Antivirus section",
+     "status": "in_review",
+     "design_ref": null
+    },
+    {
+     "id": "s-6c2cbbc3e8",
+     "kind": "story",
+     "title": "S18 README as the storefront: hero loop, Download/Website, per-OS install",
+     "status": "done",
+     "design_ref": "design-e963c656f5"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "title": "Productize the app. Make it as installable and independent of machine or OS",
+     "status": "in_progress",
+     "design_ref": "design-e963c656f5"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-4fa2c43f82",
+     "created_at": "2026-09-27T07:06:45.090719Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "t-8e1ac0c445",
+     "text": "README.md has these changes:\n- \"See it work\" shows 7 stills, one per video chapter and in video order.\n- \"Why this architecture\", \"How it works in one screen\" and the Antivirus block, including its troubleshooting row, are gone from the README and the site.\n- The unreferenced why/*.png images are removed.\nThe link check, PII gate and `mkdocs build --strict` pass.",
+     "check": "command",
+     "checked_by": "engineer",
+     "evidence_ref": "report-9942787f8b",
+     "evidence_version": 3,
+     "verdict": "pass"
+    }
+   ],
+   "docs": [
+    {
+     "id": "design-e963c656f5",
+     "doc_type": "design",
+     "title": "Productize EDP: installable on any machine/OS, published on GitHub; codex bridge → codex seats",
+     "version": 43,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# Productize EDP — design (epic-7f3d64e6de)\n\n## 1. Words (verbatim)\nEpic: \"Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and ne… (+99 chars)",
+     "full": "doc_read(id)",
+     "relation": "epic design_ref"
+    }
+   ],
+   "strategy_links": true,
+   "children": [],
+   "blockers": [],
+   "open_gates": [],
+   "thread": [
+    {
+     "id": "m-1b216601eb",
+     "created_at": "2026-09-27T07:36:23.475646Z",
+     "created_by": "engineer.t-8e1ac0c445",
+     "ticket_id": "t-8e1ac0c445",
+     "to": "architect.epic-7f3d64e6de",
+     "kind": "answer",
+     "text": "The site preview is running at 127.0.0.1:8010 with 9f3cd43 and the release fixture (mkdocs serve, pid 28260, live-reload on). Each URL below returned 200:\n- Home: http://127.0.0.1:8010/\n- Video: http:… (+276 chars)",
+     "reply_to": "m-a24428d7a3",
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 23413
+    },
+    {
+     "id": "m-2010f29927",
+     "created_at": "2026-09-27T07:36:25.802436Z",
+     "created_by": "engineer.t-8e1ac0c445",
+     "ticket_id": "t-8e1ac0c445",
+     "to": "architect.epic-7f3d64e6de",
+     "kind": "answer",
+     "text": "Done: 9f3cd43 is committed, the site preview is up on :8010 (Home, Video and Download all 200), and the task is going to in_review. Details are in my replies to m-ec8b74e0fa and m-a24428d7a3. Owner st… (+139 chars)",
+     "reply_to": "m-4ff3d73691",
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 23415
+    },
+    {
+     "id": "m-8771c45ae0",
+     "created_at": "2026-09-27T07:36:34.275846Z",
+     "created_by": "engineer.t-8e1ac0c445",
+     "ticket_id": "t-8e1ac0c445",
+     "to": null,
+     "kind": "status",
+     "text": "[done] 9f3cd43 is committed: README video slot above the intro, MP4 committed, See it work and Watch the video removed. The site preview on :8010 returns 200 for Home, Video and Download; t-8e1ac0c445… (+14 chars)",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": "done",
+     "artifacts": [],
+     "seq": 23418
+    }
+   ],
+   "thread_seq": 23418,
+   "thread_total": 13,
+   "links": [],
+   "recall": {
+    "items": [
+     {
+      "id": "clm-885e2d16e2",
+      "type": "claim",
+      "text": "c-4fa2c43f82 pass: Re-verified on 9f3cd43: tests 21 passed, links 0 broken, PII clean on committed paths, mkdocs --strict exit 0."
+     },
+     {
+      "id": "clm-8b08f0b297",
+      "type": "claim",
+      "text": "c-4fa2c43f82 pass: Pass. The \"7 stills\" line is superseded by owner steer m-317c088ba9: See it work is now the video plus the 7 chapters in video order. Every…"
+     },
+     {
+      "id": "clm-11f2746437",
+      "type": "claim",
+      "text": "c-d0e7e90b95 pass: pytest tests/test_workflow_delete.py passes 10 of 10. It covers: a draft is deleted, an unpinned published version is archived and restorabl…"
+     },
+     {
+      "id": "clm-1c14c15210",
+      "type": "claim",
+      "text": "c-c0bdff80eb pass: test_admin_access.py (13 passed) covers the full ask, admin approve and one-time claim path. A second claim, a wrong code and the rate limit…"
+     },
+     {
+      "id": "les-0cf8cd98f8",
+      "type": "lesson",
+      "text": "On a RAM-contested host, render Remotion outputs in the foreground one at a time (MP4, then Hero, then stills at --concurrency=1, about 1 GB each). A backgroun…"
+     },
+     {
+      "id": "les-54dd63c2df",
+      "type": "lesson",
+      "text": "A tool that fits a REST batch into a smaller page must drop or recompute every REST-derived hint and continuation (e.g. \"last_seq=N; pass it as since_seq\"), an…"
+     },
+     {
+      "id": "dec-dcfd044b13",
+      "type": "decision",
+      "text": "No more LLM adversary seats on epic-7f3d64e6de. Round-2 fixes are verified by the committed regression tests and the adversary's probes run as plain pytest, pl…"
+     },
+     {
+      "id": "dec-9213fad42c",
+      "type": "decision",
+      "text": "Update guards (app update and harness update) treat active, starting, parked and resuming seats as live and refuse without --force; a parked shell is alive (ed…"
+     }
+    ],
+    "receipt": {
+     "question": "S18-T README cleanup (owner m-8fe09cecd4): See it work shows all 7 video chapte…",
+     "returned": 8,
+     "cut": 8,
+     "cap": 8,
+     "more": "lookup(scope=<ticket>, question=…) for the full pack"
+    }
+   },
+   "thread_omitted": 10
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='t-8e1ac0c445') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzMwNi41ODk0NDYzLCJtZXRhZGF0YSI6IjIzNDZjNDEyZGMzZWMzMTRhYjA5M2EwNjNkMTU2YmM5YjA2ODA5MDdhNzYxYjUwYmYxNWNhNzA2ZTIzYTA0NjQiLCJwIjoiMGFlMWRkNWIxNzUwYjEzNzk0MmE5OWFhMWQ5NTVkMjI0NGQ4MmNjNjBiZjAxOWMxNTJlNzk5MDQ0YTM1OGZiZCIsInJvbGUiOiJlbmdpbmVlciIsInJvb3RzIjoiMGMwMDlhZDBjNmNmM2RkOWEzMDVjNGQwYTg4Yzg1NDcwOTM1MzkwNjM2OTNhYjU3ZjI4MWRmOWMyNzQyYjM0OCIsInNjb3BlIjoiNzQyMzRlOThhZmU3NDk4ZmI1ZGFmMWYzNmFjMmQ3OGFjYzMzOTQ2NGY5NTA3MDNiOGMwMTk4OTJmOTgyYjkwYiIsInNlcSI6MjM3NjUsInRocm91Z2giOm51bGwsInYiOjF9IElOFJKoGxMw4NDBQj29gwR1fBgVlU3AtCpT39M4DFU=",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=40000 bytes (verbose=False); snapshot is 9980 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

@@ -1,0 +1,193 @@
+{
+ "participant": {
+  "id": "engineer.s-54a03afc5a",
+  "created_at": "2026-09-26T16:18:24.718227Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "engineer",
+  "handle": "engineer.s-54a03afc5a",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "s-54a03afc5a",
+    "kind": "story",
+    "status": "in_review",
+    "assignee": "engineer.s-54a03afc5a",
+    "parent_id": "epic-7f3d64e6de",
+    "design_ref": "design-e963c656f5",
+    "title": "S17 product video: Remotion, generated scenes, 7 chapters, CC0 music",
+    "description": "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+   },
+   "chain": [
+    {
+     "id": "s-54a03afc5a",
+     "kind": "story",
+     "status": "in_review"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-9614d28be6",
+     "text": "Storyboard checkpoint: a storyboard doc exists with one still or frame sketch and a caption per chapter, 8 chapters in t… (+321 chars)",
+     "check": "look",
+     "checked_by": "qa",
+     "verdict": "pass",
+     "evidence_ref": "note-98653d1d8a"
+    },
+    {
+     "id": "c-95efd1ceff",
+     "text": "`docs/video/` renders `heronry-demo.mp4` with one command. ffprobe shows 1920x1080 video, a 60–95 s duration and an audi… (+439 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pass",
+     "evidence_ref": "report-c56da9b2ad"
+    },
+    {
+     "id": "c-50778c655b",
+     "text": "Final-cut checkpoint: the MP4 is uploaded as a video artifact that plays inline on the board (task t-f01372d361). Until… (+443 chars)",
+     "check": "look",
+     "checked_by": "qa",
+     "verdict": "fail",
+     "evidence_ref": "note-98653d1d8a"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43",
+    "note-15fe404328 note v1",
+    "report-c56da9b2ad report v1"
+   ],
+   "children": [
+    "t-11be48a9d3 done",
+    "t-f01372d361 in_review",
+    "t-d606b5d93f ready"
+   ],
+   "links": [
+    "s-54a03afc5a blocks s-6c2cbbc3e8",
+    "s-54a03afc5a blocks s-6d5fdf783a",
+    "s-54a03afc5a blocks s-226d9db7ec",
+    "s-54a03afc5a designed_by note-15fe404328",
+    "s-54a03afc5a produced art-2be3c41101",
+    "s-54a03afc5a produced art-37f707bb87",
+    "s-54a03afc5a produced art-26fe0a51a2",
+    "s-54a03afc5a produced art-9ab4e08b68",
+    "s-54a03afc5a produced art-6492311487",
+    "s-54a03afc5a produced art-02b38e3f07",
+    "s-54a03afc5a produced art-35592c1d75",
+    "s-54a03afc5a produced art-c6e48b480a",
+    "s-54a03afc5a produced art-b7ce5ef9aa",
+    "s-54a03afc5a produced art-2c50436eef",
+    "s-54a03afc5a produced art-4f382c68e5",
+    "s-54a03afc5a produced art-a1e70de796",
+    "s-54a03afc5a produced art-13a5bd15b0",
+    "s-54a03afc5a produced art-cd73fe5f31",
+    "s-54a03afc5a produced art-7e7ac729dc",
+    "s-54a03afc5a produced art-4f22d36e7a",
+    "s-54a03afc5a produced art-94a691e135",
+    "s-54a03afc5a produced art-60a2c2b185",
+    "s-54a03afc5a produced art-57e9e2787d",
+    "s-54a03afc5a produced art-1f7f52c6d2",
+    "s-54a03afc5a produced art-4562a067fa",
+    "s-54a03afc5a produced art-a77e5640c8",
+    "s-54a03afc5a produced art-c555778d1b",
+    "s-54a03afc5a produced art-3892c48fa8",
+    "s-54a03afc5a produced art-353cb3a5ba",
+    "s-54a03afc5a produced art-2d2a271011",
+    "s-54a03afc5a produced art-19a62c7fae",
+    "s-54a03afc5a produced art-478c608ba9",
+    "s-54a03afc5a produced art-33b5dce956",
+    "s-54a03afc5a produced art-8442f07820",
+    "s-54a03afc5a produced art-0b0c69637b",
+    "s-54a03afc5a produced art-76c5477e15",
+    "s-54a03afc5a evidence_for report-c56da9b2ad",
+    "note-98653d1d8a evidence_for s-54a03afc5a"
+   ],
+   "thread": [
+    {
+     "id": "m-66f5fed48a",
+     "kind": "status",
+     "created_at": "2026-09-26T17:29:28.046677Z"
+    }
+   ],
+   "thread_total": 20,
+   "recall_count": 8
+  },
+  {
+   "ticket": {
+    "id": "t-f01372d361",
+    "kind": "task",
+    "status": "in_review",
+    "assignee": "engineer.s-54a03afc5a",
+    "parent_id": "s-54a03afc5a",
+    "design_ref": "design-e963c656f5",
+    "title": "Board plays video artifacts: accept mp4/webm upload, inline player",
+    "description": "From m-ce21682c2a: the board's upload refuses video (\"allowed: images, pdf, text, markdown, json, log, zip, svg\"), so the owner can only review the S17 cut as a… (+900 chars)"
+   },
+   "chain": [
+    {
+     "id": "t-f01372d361",
+     "kind": "task",
+     "status": "in_review"
+    },
+    {
+     "id": "s-54a03afc5a",
+     "kind": "story",
+     "status": "in_review"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-140a7b5f2e",
+     "text": "pytest shows:\n- an mp4/webm upload is accepted by magic bytes, and a spoofed extension is refused;\n- `/content` returns… (+165 chars)",
+     "check": "command",
+     "checked_by": "engineer",
+     "verdict": "pass",
+     "evidence_ref": "report-62a5857a59"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43",
+    "report-62a5857a59 report v1"
+   ],
+   "children": [],
+   "links": [
+    "t-f01372d361 evidence_for report-62a5857a59"
+   ],
+   "thread": [
+    {
+     "id": "m-18a7d018e0",
+     "kind": "status",
+     "created_at": "2026-09-26T16:51:15.941540Z"
+    }
+   ],
+   "thread_total": 1,
+   "recall_count": 8
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='s-54a03afc5a') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzMyNS41MjY2MjE2LCJtZXRhZGF0YSI6IjNlYTYwZjhlZTZhNGZkYjZjNDU4ZmYwOTRiODRmNTRiZWEyN2I0OWJhOTJhNmJmMTAzNGZmYWRjYmU5NmNlYzIiLCJwIjoiNDYzNGViNGViYmUzNGQ5Yjk4MjExMTRkMGNhNWRkYzYwZDJkNTA1MTczOTkzMDQ0ZDI1NzBkODBhMWNmYjkzOSIsInJvbGUiOiJlbmdpbmVlciIsInJvb3RzIjoiNTQwNjgwMTM3NGUzZmFmMmY0YTFkZDJiMmIwOWM4YTQ5Yjg2ZjJlYTFhMWNjYjJlNWYxZjk1MmE0NzkzOTYwZCIsInNjb3BlIjoiNzQyMzRlOThhZmU3NDk4ZmI1ZGFmMWYzNmFjMmQ3OGFjYzMzOTQ2NGY5NTA3MDNiOGMwMTk4OTJmOTgyYjkwYiIsInNlcSI6MjM3NjUsInRocm91Z2giOm51bGwsInYiOjF9KVYdtMF5voWaXpLDxVndB2H-GFBmDV8JSdqNAd_l2rU=",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=16000 bytes (verbose=False); snapshot is 5673 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "epic_words": "context(verbose=True) or ticket_read(<epic id>) for the owner's full words",
+  "description": "ticket_read(ticket_id=<id>, include='') for the full description",
+  "compact": "criteria/docs/children/links are refs; ticket_read(ticket_id=<id>) or criterion_query(ticket_id=<id>) for rows, lookup(scope=<epic>) for recall",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

@@ -1,0 +1,244 @@
+{
+ "participant": {
+  "id": "engineer.t-cd4712c855",
+  "created_at": "2026-09-27T07:52:20.976127Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "engineer",
+  "handle": "engineer.t-cd4712c855",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "t-cd4712c855",
+    "created_at": "2026-09-27T07:52:09.291064Z",
+    "created_by": "architect.epic-7f3d64e6de",
+    "kind": "task",
+    "work_type": "bug",
+    "title": "S13-T purge the reviewer role everywhere; human/owner roles are non-agent and can never be launched (owner m-da9a2ae62f)",
+    "words": null,
+    "parent_id": "s-461403ebd1",
+    "status": "in_progress",
+    "assignee": "engineer.t-cd4712c855",
+    "design_ref": null,
+    "description": "Owner, verbatim (m-da9a2ae62f): \"reviewer role is removed. please remove it from everywhere. from code, from role cards and wherever else it is mentioned. i dont want it to appear again ever. ensure that human role is non-agent and our app complies with that. no way anyone can launch the owner role.\"\n\n**A. Purge \"reviewer\" as a role.** `git grep -il reviewer` finds about 67 files: v8/src/edp8 (store, board, service, workflow_design, schemas, avatar_templates, ui, ruleset), v8/web/src (types, client, Composer, DocView, Seats/Design/Epic tests, workflow fixtures), guides, skills, docs/site concepts.md and elsewhere.\n- Remove the role from the role enums, bundles, workflow definitions and presets (Standard included), checker lists, avatar templates, spawn paths, SPA pickers and role lists, cards, guides, skills and the site/docs.\n- The checker for a verdict is qa (or owner). Anything that routed to reviewer goes to qa.\n- Plain English \"review\" or \"code review\" in prose may stay only where it doesn't name a role.\n- Workflow data: bump published definitions the lawful way (a new version, not an in-place edit of a published pin). Existing DB rows that name reviewer.* participants are history: don't rewrite them. The app must not offer, spawn or accept the role going forward.\n- **Guard:** add a test that fails if \"reviewer\" reappears as a role anywhere: in the role registry, workflow schema validation, the spawn enum, the SPA role list, or a card under .claude/commands. The owner said \"i dont want it to appear again ever\".\n\n**B. Humans are non-agent.**\n- owner, human and any human role can never be spawned or launched as a seat by any path: MCP spawn, REST, the pool, the SPA (Seats/Design role panels), CLI, the workflow editor (a custom role can't be marked human+agent), or the doctor/help agent.\n- Enforce it server-side at the board AND pool, with a clear refusal message.\n- Tests prove every path refuses.\n- Grep for any .claude/commands/owner.md or similar card and remove it.\n\n**Checks:**\n- pytest for the touched areas. Use the .venv python, not `uv run`, which locks board.exe.\n- web unit tests (vitest) for touched components. Don't run the full e2e: it OOMs this host.\n- tool_audit.py stays 19/19.\n- PII gate.\nReport a before/after grep count and the list of refusal paths tested.\n\n**Rules:** commit by path with both trailers; no fleet restarts (the architect restarts after); rebuild the SPA from PowerShell only if web changed (Git Bash mangles EDP8_WEB_BASE). The epic-end qa is running, so post on the epic thread when this lands.",
+    "tags": [],
+    "epic_id": "epic-7f3d64e6de",
+    "topic_config": null
+   },
+   "words": "Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and need to publish this on Git as a distributable.",
+   "words_header": "words recorded 2026-09-26; phase: in_progress; governed by design-e963c656f5 v43",
+   "workflow": "standard@1",
+   "chain": [
+    {
+     "id": "t-cd4712c855",
+     "kind": "task",
+     "title": "S13-T purge the reviewer role everywhere; human/owner roles are non-agent and can never be launched (owner m-da9a2ae62f)",
+     "status": "in_progress",
+     "design_ref": null
+    },
+    {
+     "id": "s-461403ebd1",
+     "kind": "story",
+     "title": "S13 workflow engine as data: versioned workflow definitions, tables/caps/checkers/bundles from data, hook registry, Standard = today (golden), Lean/Solo presets, epics pin a version",
+     "status": "in_review",
+     "design_ref": "design-e963c656f5"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "title": "Productize the app. Make it as installable and independent of machine or OS",
+     "status": "in_progress",
+     "design_ref": "design-e963c656f5"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-c7976fb9c1",
+     "created_at": "2026-09-27T07:52:16.583712Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "t-cd4712c855",
+     "text": "\"reviewer\" no longer exists as a role in code, workflow definitions (a new version), SPA, cards, skills, guides or the site. A guard test fails if it reappears as a role. Every launch path refuses owner and human roles: MCP spawn, REST, pool, SPA, CLI, workflow editor and doctor, each covered by a test. pytest and vitest pass for the touched areas, tool_audit stays 19/19, and the PII gate passes.",
+     "check": "command",
+     "checked_by": "engineer",
+     "evidence_ref": null,
+     "evidence_version": null,
+     "verdict": "pending"
+    }
+   ],
+   "docs": [
+    {
+     "id": "design-e963c656f5",
+     "doc_type": "design",
+     "title": "Productize EDP: installable on any machine/OS, published on GitHub; codex bridge → codex seats",
+     "version": 43,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# Productize EDP — design (epic-7f3d64e6de)\n\n## 1. Words (verbatim)\nEpic: \"Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and ne… (+99 chars)",
+     "full": "doc_read(id)",
+     "relation": "epic design_ref"
+    }
+   ],
+   "strategy_links": true,
+   "children": [],
+   "blockers": [],
+   "open_gates": [],
+   "thread": [
+    {
+     "id": "m-a416afb63b",
+     "created_at": "2026-09-27T07:58:28.185803Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "t-cd4712c855",
+     "to": "engineer.t-cd4712c855",
+     "kind": "steer",
+     "text": "This is in scope for you, from qa's m-dbf4b571de. `tests/test_skill_tool_scope.py` fails at HEAD because its `SEAT_ROLES` lists \"owner\" as a seat role. So shared-host-rules.md:17 (`record_status`) is… (+414 chars)",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 23603
+    },
+    {
+     "id": "m-6be4a97bdf",
+     "created_at": "2026-09-27T07:58:44.053193Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "t-cd4712c855",
+     "to": "engineer.t-cd4712c855",
+     "kind": "answer",
+     "text": "Go with A. The owner said \"no way anyone can launch the owner role\", and B leaves exactly that door open.\n- **owner.bat / start-v8.bat:** drop the owner claude shell. Keep them as service starters, or… (+657 chars)",
+     "reply_to": "m-3943271481",
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 23605
+    },
+    {
+     "id": "m-a3a8943c39",
+     "created_at": "2026-09-27T08:13:56.273128Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "t-cd4712c855",
+     "to": "engineer.t-cd4712c855",
+     "kind": "steer",
+     "text": "More in your scope, from qa m-d757122a72 (S12 c-c0b35be596 fails). Migration resolve() parity shows 4 diffs, all for role `owner`:\n- **Old behaviour:** the legacy pool binding `roles.owner=judgment` g… (+935 chars)",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 23704
+    }
+   ],
+   "thread_seq": 23704,
+   "thread_total": 6,
+   "links": [],
+   "recall": {
+    "items": [
+     {
+      "id": "dec-4baed2cceb",
+      "type": "decision",
+      "text": "S11 starts now, per owner m-b841864899, instead of after S9/S15. Targets 1-4, 6 and 7 are reviewed at the current HEAD. Target 5 (PII/secrets) runs after S9's…"
+     },
+     {
+      "id": "dec-9c292f88a4",
+      "type": "decision",
+      "text": "Admin = a human with the explicit admin flag or handle == EDP8_OWNER (init human); /v1/admin/* needs X-Participant + a matching tokens.json X-Token, refuses X-…"
+     },
+     {
+      "id": "dec-ccd214db3d",
+      "type": "decision",
+      "text": "An exception to dec-dcfd044b13: one gpt-6-astra adversary seat (high effort) re-audits S23's tool layer after T4, for usability only, with no security probing."
+     },
+     {
+      "id": "dec-aaccaefe56",
+      "type": "decision",
+      "text": "S8 c-eb38e8c949 is judged on the Windows evidence (report-66985e8a85); the macOS DMG/Linux deb run link moves to S9 as c-0f247caf7d."
+     },
+     {
+      "id": "dec-b74c51b811",
+      "type": "decision",
+      "text": "First-run sign-in: `heronry start` opens /ui/setup?code= (a one-time keep_token invite for the init human, via the Teammates invite store) until POST /v1/admin…"
+     },
+     {
+      "id": "dec-0e40835b5e",
+      "type": "decision",
+      "text": "heronry stop goes through the supervisor control port when present, else kill_tree on the recorded pid chain. A pool stop with --keep-seats kills only the pool…"
+     },
+     {
+      "id": "les-fe5710310c",
+      "type": "lesson",
+      "text": "spawn(role=adversary, ticket_id=s-226d9db7ec, participant_id=adversary.s-226d9db7ec-r2) recorded the session ticket_id as s-226d9db7ec-r2 (derived from the par…"
+     },
+     {
+      "id": "les-b1fa61c4c4",
+      "type": "lesson",
+      "text": "tokens.json keeps humans and the `agents` map in one namespace, so any human handle minted at the top level must be checked against reserved keys (agents, owne…"
+     }
+    ],
+    "receipt": {
+     "question": "S13-T purge the reviewer role everywhere; human/owner roles are non-agent and c…",
+     "returned": 8,
+     "cut": 9,
+     "cap": 8,
+     "more": "lookup(scope=<ticket>, question=…) for the full pack"
+    }
+   },
+   "thread_omitted": 3
+  }
+ ],
+ "asks_for_me": [
+  {
+   "id": "m-a416afb63b",
+   "created_at": "2026-09-27T07:58:28.185803Z",
+   "created_by": "architect.epic-7f3d64e6de",
+   "ticket_id": "t-cd4712c855",
+   "to": "engineer.t-cd4712c855",
+   "kind": "steer",
+   "text": "This is in scope for you, from qa's m-dbf4b571de. `tests/test_skill_tool_scope.py` fails at HEAD because its `SEAT_ROLES` lists \"owner\" as a seat role. So shared-host-rules.md:17 (`record_status`) is checked against the owner's tools.\n- **Why it's yours:** the owner is a human and not a seat, which is exactly your non-agent rule. Take \"owner\" out of the seat-role sets the tests and code use for launchable or carded roles. The owner may keep its human MCP tool bundle, since a human's client calls tools, but it is not a seat role.\n- **Done when:** that test passes, without adding a roles comment to the guide.",
+   "reply_to": null,
+   "document_context": null,
+   "code_context": null,
+   "quotes": [],
+   "status": null,
+   "artifacts": [],
+   "from_type": "agent",
+   "from_role": "architect",
+   "answer_with": "message_send(ticket_id='t-cd4712c855', kind='answer', to='architect.epic-7f3d64e6de', reply_to='m-a416afb63b')"
+  },
+  {
+   "id": "m-a3a8943c39",
+   "created_at": "2026-09-27T08:13:56.273128Z",
+   "created_by": "architect.epic-7f3d64e6de",
+   "ticket_id": "t-cd4712c855",
+   "to": "engineer.t-cd4712c855",
+   "kind": "steer",
+   "text": "More in your scope, from qa m-d757122a72 (S12 c-c0b35be596 fails). Migration resolve() parity shows 4 diffs, all for role `owner`:\n- **Old behaviour:** the legacy pool binding `roles.owner=judgment` gave claude-opus-4-8.\n- **New behaviour:** migrate() drops it, and default_model() returns claude-fable-5-1. The board's resolve (seat_choice.py:236-237) skips the legacy `roles` binding, while the pool's seat_model_for honours it.\n- **Neither answer is right:** under the owner's ruling, owner has NO seat model.\n**Fix it the non-agent way:**\n1. migrate() drops any legacy `roles` binding for a human role (owner, human, expert), and keeps any other legacy binding as a role_models row, so non-human parity holds.\n2. `resolve()` and `seat_model_for` for a human role raise your non-agent refusal instead of returning a model.\n3. The parity test loads the REAL pre-migration file (`git show cb84bba^:v8/models.json`, saved as a fixture with no PII), iterates role_models ∪ roles, and asserts equality for every agent role and a refusal for owner.\nInclude this in your commit and name c-c0b35be596 in your report, so qa can re-judge S12.",
+   "reply_to": null,
+   "document_context": null,
+   "code_context": null,
+   "quotes": [],
+   "status": null,
+   "artifacts": [],
+   "from_type": "agent",
+   "from_role": "architect",
+   "answer_with": "message_send(ticket_id='t-cd4712c855', kind='answer', to='architect.epic-7f3d64e6de', reply_to='m-a3a8943c39')"
+  }
+ ],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='t-cd4712c855') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6ImFjZTU1Y2M3ZmU3NDc2NzUyNGRmMzAyY2YxOWRhZmZmYTc5YzU1MTdkOTdhZmMyZTQ4YTVhNzBiMTk4MGNlYjIiLCJhdCI6MTc5MDQ5NzMwOC42Mjc4ODEsIm1ldGFkYXRhIjoiOTA4ZDU4MmU1YzQxODI5OGU4NmE0YTc3ODA1Y2Y3MDhjZDNmZGNiMGZkMWFkMGQ3ZDY5YmJlMzA4NzRmODMzZCIsInAiOiI0ODAzZGIyMDE3ZmUzZDc3OWZhNDE2OWE1NmI3MmNlMzk3MDE1YzFlNTdlOTBjNjJiZDE5MDc5YmQwNzg4NDk5Iiwicm9sZSI6ImVuZ2luZWVyIiwicm9vdHMiOiIxOGU2MWY2YmE4NTNmN2QxZThhZjQxZTk2NjM2N2ZlMWQ1N2NmM2I3NjJiNzA3NjczOTNjZWE0MDQyZDNjM2U1Iiwic2NvcGUiOiI3NDIzNGU5OGFmZTc0OThmYjVkYWYxZjM2YWMyZDc4YWNjMzM5NDY0Zjk1MDcwM2I4YzAxOTg5MmY5ODJiOTBiIiwic2VxIjoyMzc2NSwidGhyb3VnaCI6bnVsbCwidiI6MX1t7kk3oJXXrwyxTqXIssMYx7JxgP6LnYUP2LrlhFHhWQ==",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=40000 bytes (verbose=False); snapshot is 13050 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

@@ -1,0 +1,765 @@
+{
+ "participant": {
+  "id": "engineer.s-54a03afc5a",
+  "created_at": "2026-09-26T16:18:24.718227Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "engineer",
+  "handle": "engineer.s-54a03afc5a",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "s-54a03afc5a",
+    "created_at": "2026-09-26T16:17:32.023782Z",
+    "created_by": "architect.epic-7f3d64e6de",
+    "kind": "story",
+    "work_type": "creative",
+    "title": "S17 product video: Remotion, generated scenes, 7 chapters, CC0 music",
+    "words": null,
+    "parent_id": "epic-7f3d64e6de",
+    "status": "in_review",
+    "assignee": "engineer.s-54a03afc5a",
+    "design_ref": "design-e963c656f5",
+    "description": "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remotion-dev/skills` for the seat). The project lives in `docs/video/`, outside every shipped package. It renders an MP4 and also plays live through `@remotion/player` (the S15 site embeds it). Add a NOTICE/README line on the Remotion licence: free for individuals and companies of 3 or fewer people.\n\n**No host screenshots** (owner: \"screenshots of my machine or the tickets I am working on wont be attractive\"):\n- Every scene is motion graphics drawn in code in the Heronry palette (`v8/assets/brand/heronry/palettes.json`; S7 has committed the assets).\n- Illustrated art comes from a spawned codex seat (image_gen per guides/codex-images.md), in the Heronry and board-avatar cartoon style. The style references are `v8/assets/brand/heronry/` and `web/src/components/agentAvatars.ts`.\n- Any board UI is a stylised mock with invented demo data. No real names, paths or ticket ids anywhere.\n\n**Chapters, in this order (60–90 s):**\n1. The pool spawns seats (claude, codex, pi) as live shells.\n2. The broker carries messages between seats.\n3. Reactive subscriptions: seats sleep on their feed and wake only on what concerns them.\n4. Context engineering: a bounded context pack, context_delta cursors, recall, and linked strategy docs.\n5. The self-improving memory loop: pain → lesson → harvest → recall into the next seat.\n6. One epic walking the board automatically: drafted → designed → signed_off → in_progress → in_review → done \"auto: all verdicts passed\".\n7. Close: the Heronry logo, the tagline and the download link.\n\nRead the real code for each mechanism so the story it tells is true: edp-pool, edp-broker, edp8 feed_driver/context/context_delta, the pain, harvest and learn skills, and board.py transitions.\n\n**Music:** a no-copyright track (CC0 / public domain, e.g. FreePD, or a no-attribution licence). Record the source URL and licence in `docs/video/CREDITS.md`. If the seat cannot download a track, ask the owner to drop one in; do not synthesize.\n\n**Owner checkpoints are two `demo` gates on this story.**\n1. Write the storyboard doc (one still or frame sketch per chapter plus captions and a code pointer per chapter). Then `gate_open(demo)` with a note carrying the direct `/ui/doc/<id>` link and \"press Approve on the demo card\". Wait for the answer before rendering the full cut.\n2. Build and render. Upload the MP4 and the hero loop as artifacts. Then `gate_open(demo)` again with the artifact links.\n\n**Outputs:**\n- `heronry-demo.mp4` (1080p)\n- `hero.webp`, a ≤8 s loop, with a gif fallback\n- `poster.png`\n- 3 stills for the README (S18)\n\nCommit the sources by path. Keep large renders out of git (attach them to the Release in S9) unless they are under 5 MB. Keep the full web e2e suite off this host. No consult.",
+    "tags": [],
+    "epic_id": "epic-7f3d64e6de",
+    "topic_config": null
+   },
+   "words": "Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and need to publish this on Git as a distributable.",
+   "words_header": "words recorded 2026-09-26; phase: in_progress; governed by design-e963c656f5 v43",
+   "workflow": "standard@1",
+   "chain": [
+    {
+     "id": "s-54a03afc5a",
+     "kind": "story",
+     "title": "S17 product video: Remotion, generated scenes, 7 chapters, CC0 music",
+     "status": "in_review",
+     "design_ref": "design-e963c656f5"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "title": "Productize the app. Make it as installable and independent of machine or OS",
+     "status": "in_progress",
+     "design_ref": "design-e963c656f5"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-9614d28be6",
+     "created_at": "2026-09-26T16:17:45.998216Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-54a03afc5a",
+     "text": "Storyboard checkpoint: a storyboard doc exists with one still or frame sketch and a caption per chapter, 8 chapters in the §4.17 v24 order (including 2b, cross-human and cross-agent collaboration, per owner m-b42de746e3). The owner approved it through a `demo` gate on this story, opened by the engineer with a direct link, before the full cut was rendered. Every scene is generated (no host screenshots, no real names, paths or ticket ids).",
+     "check": "look",
+     "checked_by": "qa",
+     "evidence_ref": "note-98653d1d8a",
+     "evidence_version": 5,
+     "verdict": "pass"
+    },
+    {
+     "id": "c-95efd1ceff",
+     "created_at": "2026-09-26T16:17:48.658433Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-54a03afc5a",
+     "text": "`docs/video/` renders `heronry-demo.mp4` with one command. ffprobe shows 1920x1080 video, a 60–95 s duration and an audio stream. It also renders the ≤8 s `hero.webp` loop (with a gif fallback), `poster.png` and 3 README stills. `@remotion/player` plays the same composition in a page that S15 can embed. `docs/video/CREDITS.md` names the music source URL and a CC0, public-domain or no-attribution licence, plus the Remotion licence note. The PII grep (user-profile path, `C:\\Projects`, owner username and email) over `docs/video/` and the renders returns 0.",
+     "check": "command",
+     "checked_by": "qa",
+     "evidence_ref": "report-c56da9b2ad",
+     "evidence_version": 1,
+     "verdict": "pass"
+    },
+    {
+     "id": "c-50778c655b",
+     "created_at": "2026-09-26T16:17:50.568747Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-54a03afc5a",
+     "text": "Final-cut checkpoint: the MP4 is uploaded as a video artifact that plays inline on the board (task t-f01372d361). Until that task is live after the owner's board restart, a zip of the MP4 plus an inline animated-webp preview is acceptable. The hero loop is uploaded as an image artifact. The owner approved the cut through a second `demo` gate on this story. Each chapter's claim matches the code, with a pointer per chapter (for example pool spawn → edp-pool spawner, the wake → feed_driver, auto-done → board.py criteria_auto_done) listed in the storyboard doc.",
+     "check": "look",
+     "checked_by": "qa",
+     "evidence_ref": "note-98653d1d8a",
+     "evidence_version": 5,
+     "verdict": "fail"
+    }
+   ],
+   "docs": [
+    {
+     "id": "design-e963c656f5",
+     "doc_type": "design",
+     "title": "Productize EDP: installable on any machine/OS, published on GitHub; codex bridge → codex seats",
+     "version": 43,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# Productize EDP — design (epic-7f3d64e6de)\n\n## 1. Words (verbatim)\nEpic: \"Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and ne… (+99 chars)",
+     "full": "doc_read(id)",
+     "relation": "design_ref"
+    },
+    {
+     "id": "note-15fe404328",
+     "doc_type": "note",
+     "title": "Plan: S17 product video (Remotion, 7 chapters, CC0 music)",
+     "version": 1,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# Plan: S17 product video\n\nStory s-54a03afc5a · design-e963c656f5 §4.17 · criteria c-9614d28be6 (storyboard gate), c-95efd1ceff (renders/command), c-50778c655b (final-cut gate).\n\n## Strategy and why\n-… (+100 chars)",
+     "full": "doc_read(id)",
+     "relation": "designed_by"
+    },
+    {
+     "id": "report-c56da9b2ad",
+     "doc_type": "report",
+     "title": "Evidence: S17 renders, player and PII grep",
+     "version": 1,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# Evidence: S17 renders, player and PII grep (c-95efd1ceff)\n\nSources were committed by path in 960c721, c1a4def, a8d0a79, 22de652 and c9d687c. Renders go to `docs/video/out/`, which is git-ignored; th… (+100 chars)",
+     "full": "doc_read(id)",
+     "relation": "evidence_for"
+    }
+   ],
+   "strategy_links": true,
+   "children": [
+    {
+     "id": "t-11be48a9d3",
+     "kind": "task",
+     "title": "S17 art: 6 chapter illustrations in the Heronry cartoon style (image_gen)",
+     "status": "done",
+     "work_type": "creative",
+     "assignee": "engineer.t-11be48a9d3",
+     "assignee_role": "engineer",
+     "criteria": "1/1",
+     "tags": []
+    },
+    {
+     "id": "t-f01372d361",
+     "kind": "task",
+     "title": "Board plays video artifacts: accept mp4/webm upload, inline player",
+     "status": "in_review",
+     "work_type": "feature",
+     "assignee": "engineer.s-54a03afc5a",
+     "assignee_role": "engineer",
+     "criteria": "1/1",
+     "tags": []
+    },
+    {
+     "id": "t-d606b5d93f",
+     "kind": "task",
+     "title": "S17-T video claim fix: chapter 4 says the context pack is 40 KB by default; the code default is 8 KB. Re-render and replace every cut",
+     "status": "ready",
+     "work_type": "bug",
+     "assignee": "engineer.t-d606b5d93f",
+     "assignee_role": "engineer",
+     "criteria": "0/1",
+     "tags": []
+    }
+   ],
+   "blockers": [],
+   "open_gates": [],
+   "thread": [
+    {
+     "id": "m-1b340274e4",
+     "created_at": "2026-09-26T17:24:48.370948Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "ticket_id": "s-54a03afc5a",
+     "to": "owner",
+     "kind": "note",
+     "text": "The final cut is ready for review, and it plays right here in the thread. Demo gate #2 opens next: press Approve on the demo card, or reply with changes.\n\n- **art-2d2a271011**: heronry-demo.mp4. 1920x… (+498 chars)",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [
+      "art-2d2a271011",
+      "art-19a62c7fae",
+      "art-478c608ba9",
+      "art-33b5dce956",
+      "art-8442f07820",
+      "art-0b0c69637b",
+      "art-76c5477e15"
+     ],
+     "seq": 20737
+    },
+    {
+     "id": "m-4a1af7db57",
+     "created_at": "2026-09-26T17:29:03.421575Z",
+     "created_by": "owner",
+     "ticket_id": "s-54a03afc5a",
+     "to": null,
+     "kind": "answer",
+     "text": "[demo] approved. amazing job!",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 20746
+    },
+    {
+     "id": "m-66f5fed48a",
+     "created_at": "2026-09-26T17:29:28.046677Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "ticket_id": "s-54a03afc5a",
+     "to": null,
+     "kind": "status",
+     "text": "[done] S17 is in_review. The owner approved both demo gates. The final cut art-2d2a271011 plays inline (1080p, 89 s, CC0 music), with the hero, poster and stills uploaded, the player page built, and t… (+163 chars)",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": "done",
+     "artifacts": [],
+     "seq": 20757
+    }
+   ],
+   "thread_seq": 20757,
+   "thread_total": 20,
+   "links": [
+    {
+     "id": "lk-a6496ff5e7",
+     "created_at": "2026-09-26T16:18:06.047115Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-54a03afc5a",
+     "to_id": "s-6c2cbbc3e8",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-d9f81ac1c1",
+     "created_at": "2026-09-26T16:18:08.337425Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-54a03afc5a",
+     "to_id": "s-6d5fdf783a",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-fa1ed2380b",
+     "created_at": "2026-09-26T16:18:09.089075Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-54a03afc5a",
+     "to_id": "s-226d9db7ec",
+     "relation": "blocks"
+    },
+    {
+     "id": "lk-6c7944138a",
+     "created_at": "2026-09-26T16:20:59.194992Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "note-15fe404328",
+     "relation": "designed_by"
+    },
+    {
+     "id": "lk-8999970a78",
+     "created_at": "2026-09-26T16:31:45.109969Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-2be3c41101",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-1fc04c7fa6",
+     "created_at": "2026-09-26T16:31:45.113980Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-37f707bb87",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-cc2ff803ce",
+     "created_at": "2026-09-26T16:31:45.116524Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-26fe0a51a2",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-c2034c1728",
+     "created_at": "2026-09-26T16:31:45.118731Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-9ab4e08b68",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-a644c9bceb",
+     "created_at": "2026-09-26T16:31:45.122123Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-6492311487",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-5006d8cf4d",
+     "created_at": "2026-09-26T16:31:45.123785Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-02b38e3f07",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-0d368ad153",
+     "created_at": "2026-09-26T16:31:45.127825Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-35592c1d75",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-a232dbb6ed",
+     "created_at": "2026-09-26T16:38:26.645204Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-c6e48b480a",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-6922359a53",
+     "created_at": "2026-09-26T16:38:26.656017Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-b7ce5ef9aa",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-182561f01c",
+     "created_at": "2026-09-26T16:38:26.666082Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-2c50436eef",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-602461deea",
+     "created_at": "2026-09-26T16:38:26.676639Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-4f382c68e5",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-bf4828759b",
+     "created_at": "2026-09-26T16:38:26.683681Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-a1e70de796",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-4134f4481d",
+     "created_at": "2026-09-26T16:38:26.697165Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-13a5bd15b0",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-ec6305890b",
+     "created_at": "2026-09-26T16:38:26.708892Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-cd73fe5f31",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-78e58929fc",
+     "created_at": "2026-09-26T16:38:26.718939Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-7e7ac729dc",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-13ed8c29b1",
+     "created_at": "2026-09-26T16:38:26.728018Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-4f22d36e7a",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-f007df17f1",
+     "created_at": "2026-09-26T16:38:26.738862Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-94a691e135",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-d46290efe7",
+     "created_at": "2026-09-26T16:38:26.745562Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-60a2c2b185",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-2aac3e5464",
+     "created_at": "2026-09-26T16:38:26.750829Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-57e9e2787d",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-74a77eb804",
+     "created_at": "2026-09-26T16:38:26.756694Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-1f7f52c6d2",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-4708f81159",
+     "created_at": "2026-09-26T16:38:26.762223Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-4562a067fa",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-a0ebbeaf73",
+     "created_at": "2026-09-26T16:38:26.766711Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-a77e5640c8",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-f95ea9f74e",
+     "created_at": "2026-09-26T16:38:26.772182Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-c555778d1b",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-3a349763d3",
+     "created_at": "2026-09-26T16:41:23.548693Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-3892c48fa8",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-1b51858a53",
+     "created_at": "2026-09-26T16:58:12.384977Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-353cb3a5ba",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-04c66bac8c",
+     "created_at": "2026-09-26T17:24:48.357619Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-2d2a271011",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-66c2ab28e3",
+     "created_at": "2026-09-26T17:24:48.359524Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-19a62c7fae",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-325bf1b475",
+     "created_at": "2026-09-26T17:24:48.361636Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-478c608ba9",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-4d33e11f8e",
+     "created_at": "2026-09-26T17:24:48.363092Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-33b5dce956",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-33c40dcd57",
+     "created_at": "2026-09-26T17:24:48.365011Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-8442f07820",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-1493ce2c53",
+     "created_at": "2026-09-26T17:24:48.366944Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-0b0c69637b",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-2f05c60cfb",
+     "created_at": "2026-09-26T17:24:48.369065Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "art-76c5477e15",
+     "relation": "produced"
+    },
+    {
+     "id": "lk-abdaeb3bee",
+     "created_at": "2026-09-26T17:25:11.663570Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "s-54a03afc5a",
+     "to_id": "report-c56da9b2ad",
+     "relation": "evidence_for"
+    },
+    {
+     "id": "lk-e045988177",
+     "created_at": "2026-09-26T16:31:36.396806Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "note-98653d1d8a",
+     "to_id": "s-54a03afc5a",
+     "relation": "evidence_for"
+    }
+   ],
+   "recall": {
+    "items": [
+     {
+      "id": "dec-e395d889af",
+      "type": "decision",
+      "text": "demo gate on s-54a03afc5a answered by owner: approved. amazing job!"
+     },
+     {
+      "id": "dec-46681ea436",
+      "type": "decision",
+      "text": "demo gate on s-54a03afc5a answered by owner: approved. this is fire, yo"
+     },
+     {
+      "id": "clm-8b08f0b297",
+      "type": "claim",
+      "text": "c-4fa2c43f82 pass: Pass. The \"7 stills\" line is superseded by owner steer m-317c088ba9: See it work is now the video plus the 7 chapters in video order. Every…"
+     },
+     {
+      "id": "clm-9a0c708a6e",
+      "type": "claim",
+      "text": "c-71e31b277a pass: qa dd42458: test_brand 8 pass; --version prints Heronry 0.9.0; no user-facing product 'EDP' left; names come from the S1 registry."
+     },
+     {
+      "id": "clm-5b4801ee89",
+      "type": "claim",
+      "text": "c-729834c66e fail: F2: standard 2 unmet for 7 creates (criterion_create, message_send, record_decision/claim/lesson, topic_propose, propose_fix), scored not_me…"
+     },
+     {
+      "id": "dec-4baed2cceb",
+      "type": "decision",
+      "text": "S11 starts now, per owner m-b841864899, instead of after S9/S15. Targets 1-4, 6 and 7 are reviewed at the current HEAD. Target 5 (PII/secrets) runs after S9's…"
+     },
+     {
+      "id": "clm-ea55994347",
+      "type": "claim",
+      "text": "c-93775a0071 pass: Audit 19/19 passes, with 0 workarounds; the largest default call is 7,987 B. Every Waste and Coverage row is fixed or ruled out. The contrac…"
+     },
+     {
+      "id": "les-0cf8cd98f8",
+      "type": "lesson",
+      "text": "On a RAM-contested host, render Remotion outputs in the foreground one at a time (MP4, then Hero, then stills at --concurrency=1, about 1 GB each). A backgroun…"
+     }
+    ],
+    "receipt": {
+     "question": "S17 product video: Remotion, generated scenes, 7 chapters, CC0 music",
+     "returned": 8,
+     "cut": 6,
+     "cap": 8,
+     "more": "lookup(scope=<ticket>, question=…) for the full pack"
+    }
+   },
+   "thread_omitted": 17
+  },
+  {
+   "ticket": {
+    "id": "t-f01372d361",
+    "created_at": "2026-09-26T16:38:49.590235Z",
+    "created_by": "architect.epic-7f3d64e6de",
+    "kind": "task",
+    "work_type": "feature",
+    "title": "Board plays video artifacts: accept mp4/webm upload, inline player",
+    "words": null,
+    "parent_id": "s-54a03afc5a",
+    "status": "in_review",
+    "assignee": "engineer.s-54a03afc5a",
+    "design_ref": "design-e963c656f5",
+    "description": "From m-ce21682c2a: the board's upload refuses video (\"allowed: images, pdf, text, markdown, json, log, zip, svg\"), so the owner can only review the S17 cut as a zip to download and unpack. Owners review demo gates in the board, so the board must play video inline.\n\n- `/v1/artifacts/upload` accepts `video/mp4` and `video/webm`, detected from magic bytes (ftyp / EBML), within the existing size cap. Raise the cap only if 100 MB does not fit a 90 s 1080p render; state the cap you choose.\n- `/v1/artifacts/<id>/content` serves the correct Content-Type and supports HTTP Range requests, so the browser can seek.\n- The SPA renders a video artifact as `<video controls preload=\"metadata\">` wherever image artifacts render inline (thread attachments, doc markdown `![](…/content)`, the gate card). VS Code renders a link.\n- Tests: pytest for upload acceptance and rejection (a renamed .exe posing as .mp4 is refused), Range 206, and Content-Type; vitest for the player render.\n\nThe change goes live on the owner's board restart; say so in the hand-off. No consult.",
+    "tags": [],
+    "epic_id": "epic-7f3d64e6de",
+    "topic_config": null
+   },
+   "words": "Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and need to publish this on Git as a distributable.",
+   "words_header": "words recorded 2026-09-26; phase: in_progress; governed by design-e963c656f5 v43",
+   "workflow": "standard@1",
+   "chain": [
+    {
+     "id": "t-f01372d361",
+     "kind": "task",
+     "title": "Board plays video artifacts: accept mp4/webm upload, inline player",
+     "status": "in_review",
+     "design_ref": "design-e963c656f5"
+    },
+    {
+     "id": "s-54a03afc5a",
+     "kind": "story",
+     "title": "S17 product video: Remotion, generated scenes, 7 chapters, CC0 music",
+     "status": "in_review",
+     "design_ref": "design-e963c656f5"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "title": "Productize the app. Make it as installable and independent of machine or OS",
+     "status": "in_progress",
+     "design_ref": "design-e963c656f5"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-140a7b5f2e",
+     "created_at": "2026-09-26T16:38:52.715303Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "t-f01372d361",
+     "text": "pytest shows:\n- an mp4/webm upload is accepted by magic bytes, and a spoofed extension is refused;\n- `/content` returns 206 on a Range request, with the video Content-Type.\nvitest shows a video artifact renders as `<video controls>` in the thread, in doc markdown and on the gate card.",
+     "check": "command",
+     "checked_by": "engineer",
+     "evidence_ref": "report-62a5857a59",
+     "evidence_version": 1,
+     "verdict": "pass"
+    }
+   ],
+   "docs": [
+    {
+     "id": "design-e963c656f5",
+     "doc_type": "design",
+     "title": "Productize EDP: installable on any machine/OS, published on GitHub; codex bridge → codex seats",
+     "version": 43,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# Productize EDP — design (epic-7f3d64e6de)\n\n## 1. Words (verbatim)\nEpic: \"Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and ne… (+99 chars)",
+     "full": "doc_read(id)",
+     "relation": "design_ref"
+    },
+    {
+     "id": "report-62a5857a59",
+     "doc_type": "report",
+     "title": "Evidence: the board plays video (t-f01372d361)",
+     "version": 1,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# Evidence: the board plays video (t-f01372d361)\n\nCommit **7ec959a**. It goes live when the owner restarts the board. The running :9400 board still refuses video until then.\n\n## What changed\n- **Uploa… (+100 chars)",
+     "full": "doc_read(id)",
+     "relation": "evidence_for"
+    }
+   ],
+   "strategy_links": true,
+   "children": [],
+   "blockers": [],
+   "open_gates": [],
+   "thread": [
+    {
+     "id": "m-18a7d018e0",
+     "created_at": "2026-09-26T16:51:15.941540Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "ticket_id": "t-f01372d361",
+     "to": "architect.epic-7f3d64e6de",
+     "kind": "status",
+     "text": "Board video support is built and committed in 7ec959a. It goes live on the owner's board restart; the running :9400 board still refuses video until then.\n- Upload: mp4/webm are detected from their fil… (+748 chars)",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 20552
+    }
+   ],
+   "thread_seq": 20552,
+   "thread_total": 1,
+   "links": [
+    {
+     "id": "lk-b12a7556ad",
+     "created_at": "2026-09-26T16:51:08.940937Z",
+     "created_by": "engineer.s-54a03afc5a",
+     "from_id": "t-f01372d361",
+     "to_id": "report-62a5857a59",
+     "relation": "evidence_for"
+    }
+   ],
+   "recall": {
+    "items": [
+     {
+      "id": "clm-9f228391ed",
+      "type": "claim",
+      "text": "c-140a7b5f2e pass: pytest 44 passed/1 skipped (uploads + policy suites); vitest ArtifactVideo 4 passed, web full 1193 passed; vscode attachments 20 passed; com…"
+     },
+     {
+      "id": "clm-8b08f0b297",
+      "type": "claim",
+      "text": "c-4fa2c43f82 pass: Pass. The \"7 stills\" line is superseded by owner steer m-317c088ba9: See it work is now the video plus the 7 chapters in video order. Every…"
+     },
+     {
+      "id": "clm-c03c4e995f",
+      "type": "claim",
+      "text": "c-351a67ba62 pass: Pass: report v4 adds the fleet artifact_upload host-policy refusal (p-312d8e99) to the ranked coverage gaps; 265/265 private-board role/tool…"
+     },
+     {
+      "id": "dec-074486e913",
+      "type": "decision",
+      "text": "Deviation accepted: Deviation on c-eb38e8c949: the macOS DMG and Linux deb legs have no run link yet. The workflow `.github/workflows/installers.yml` (666b6cd)…"
+     },
+     {
+      "id": "dec-b528f42ac5",
+      "type": "decision",
+      "text": "A service's identity is home_id = sha256(resolved data dir)[:16] on its health route; the launcher acts on a listener only if it reports this id or is a pid th…"
+     },
+     {
+      "id": "clm-242435f70c",
+      "type": "claim",
+      "text": "c-351a67ba62 pass: Pass: cold private-board run exited 0 with 265/265 bundle pairs; report v3 has ranked waste and coverage tables plus six-standard 65-tool ma…"
+     },
+     {
+      "id": "clm-76eaad90db",
+      "type": "claim",
+      "text": "c-7f14d19e39 pass: vitest 3/3 on a fleet-like env; theme.spec.ts 3/3 from this seat shell with all 26 EDP* vars set (launcher via EDP8_BOARD_CMD because the de…"
+     },
+     {
+      "id": "clm-c283673fb5",
+      "type": "claim",
+      "text": "c-204b0b7f34 pass: All three vitest checks pass: error card with the rail working, restart banner, Design with pinned_by absent. pytest confirms the board serv…"
+     }
+    ],
+    "receipt": {
+     "question": "Board plays video artifacts: accept mp4/webm upload, inline player",
+     "returned": 8,
+     "cut": 14,
+     "cap": 8,
+     "more": "lookup(scope=<ticket>, question=…) for the full pack"
+    }
+   }
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='s-54a03afc5a') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzMyNi41NjA4ODY0LCJtZXRhZGF0YSI6IjNlYTYwZjhlZTZhNGZkYjZjNDU4ZmYwOTRiODRmNTRiZWEyN2I0OWJhOTJhNmJmMTAzNGZmYWRjYmU5NmNlYzIiLCJwIjoiNDYzNGViNGViYmUzNGQ5Yjk4MjExMTRkMGNhNWRkYzYwZDJkNTA1MTczOTkzMDQ0ZDI1NzBkODBhMWNmYjkzOSIsInJvbGUiOiJlbmdpbmVlciIsInJvb3RzIjoiNTQwNjgwMTM3NGUzZmFmMmY0YTFkZDJiMmIwOWM4YTQ5Yjg2ZjJlYTFhMWNjYjJlNWYxZjk1MmE0NzkzOTYwZCIsInNjb3BlIjoiNzQyMzRlOThhZmU3NDk4ZmI1ZGFmMWYzNmFjMmQ3OGFjYzMzOTQ2NGY5NTA3MDNiOGMwMTk4OTJmOTgyYjkwYiIsInNlcSI6MjM3NjUsInRocm91Z2giOm51bGwsInYiOjF9LJhloD4nZLY4wgL329Q9WBhoy_d7KNQbtXD3cnyAZMw=",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=40000 bytes (verbose=False); snapshot is 27504 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

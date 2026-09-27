@@ -1,0 +1,156 @@
+{
+ "participant": {
+  "id": "engineer.t-77c3a55b75",
+  "created_at": "2026-09-27T08:13:12.190226Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "engineer",
+  "handle": "engineer.t-77c3a55b75",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "t-77c3a55b75",
+    "created_at": "2026-09-27T08:13:02.848596Z",
+    "created_by": "architect.epic-7f3d64e6de",
+    "kind": "task",
+    "work_type": "bug",
+    "title": "S16-T render the sign-off ask: the board serves signoff_ask as `ask`, but no web component shows it (qa m-1f76018caa, owner m-0e6940fe2c)",
+    "words": null,
+    "parent_id": "s-ca39f10643",
+    "status": "in_progress",
+    "assignee": "engineer.t-77c3a55b75",
+    "design_ref": null,
+    "description": "qa finding m-1f76018caa (fail on c-017559b2a9):\n- `signoff_ask` is served as `ask` (views.py:553 and :585), but no component renders it.\n- Ticket.tsx `rulingFor()` (l.249) drops it, and RulingDrawer never shows it.\n- The vitest covering it went away with Decisions.tsx in S20 (c6c8743).\nThis breaks the owner's words, m-0e6940fe2c: \"waiting on me, I don't know what on\".\n\n**Fix:**\n1. Pass `ask` through `rulingFor()`.\n2. Make it the RulingDrawer heading, in plain words, with a fallback to the gate's generated question from 0df23fa (t-cfd8462f9d) when `ask` is empty.\n3. Show the same text on the Needs you card.\n4. Restore a vitest: a gate or ruling with an `ask` renders that text as the heading, and one without an ask renders the generated question, never a blank.\n\n**Checks:**\n- vitest for the touched components (don't run the full e2e);\n- pytest for views if touched (.venv python);\n- PII gate.\n\n**Rules:**\n- Commit by path with both trailers.\n- t-cd4712c855 is also editing web/src right now: stage your own hunks from a fresh HEAD.\n- Don't rebuild the shared SPA dist; the architect rebuilds and restarts once.\n- Post on the epic thread when it lands.",
+    "tags": [],
+    "epic_id": "epic-7f3d64e6de",
+    "topic_config": null
+   },
+   "words": "Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and need to publish this on Git as a distributable.",
+   "words_header": "words recorded 2026-09-26; phase: in_progress; governed by design-e963c656f5 v43",
+   "workflow": "standard@1",
+   "chain": [
+    {
+     "id": "t-77c3a55b75",
+     "kind": "task",
+     "title": "S16-T render the sign-off ask: the board serves signoff_ask as `ask`, but no web component shows it (qa m-1f76018caa, owner m-0e6940fe2c)",
+     "status": "in_progress",
+     "design_ref": null
+    },
+    {
+     "id": "s-ca39f10643",
+     "kind": "story",
+     "title": "S16 lifecycle skills (/epic, /ticket) + design sign-off parity (board guards, VS Code)",
+     "status": "in_progress",
+     "design_ref": "design-e963c656f5"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "title": "Productize the app. Make it as installable and independent of machine or OS",
+     "status": "in_progress",
+     "design_ref": "design-e963c656f5"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-e7b96160a1",
+     "created_at": "2026-09-27T08:13:06.842619Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "t-77c3a55b75",
+     "text": "The RulingDrawer heading and the Needs you card show the served `ask`, falling back to the gate's generated question when it is empty, and never render blank. `rulingFor()` passes `ask` through, and a restored vitest covers both cases. vitest for the touched components and the PII gate pass.",
+     "check": "command",
+     "checked_by": "engineer",
+     "evidence_ref": null,
+     "evidence_version": null,
+     "verdict": "pending"
+    }
+   ],
+   "docs": [
+    {
+     "id": "design-e963c656f5",
+     "doc_type": "design",
+     "title": "Productize EDP: installable on any machine/OS, published on GitHub; codex bridge → codex seats",
+     "version": 43,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# Productize EDP — design (epic-7f3d64e6de)\n\n## 1. Words (verbatim)\nEpic: \"Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and ne… (+99 chars)",
+     "full": "doc_read(id)",
+     "relation": "epic design_ref"
+    }
+   ],
+   "strategy_links": true,
+   "children": [],
+   "blockers": [],
+   "open_gates": [],
+   "thread": [],
+   "thread_seq": 0,
+   "thread_total": 0,
+   "links": [],
+   "recall": {
+    "items": [
+     {
+      "id": "clm-c283673fb5",
+      "type": "claim",
+      "text": "c-204b0b7f34 pass: All three vitest checks pass: error card with the rail working, restart banner, Design with pinned_by absent. pytest confirms the board serv…"
+     },
+     {
+      "id": "clm-cacad64022",
+      "type": "claim",
+      "text": "c-23d14e607b pass: 41d7a7c: permanent test passes (25 expired → list 0, new ask 200, claim answers expired); test_admin_access + teammates + attention 43 passe…"
+     },
+     {
+      "id": "clm-1c14c15210",
+      "type": "claim",
+      "text": "c-c0bdff80eb pass: test_admin_access.py (13 passed) covers the full ask, admin approve and one-time claim path. A second claim, a wrong code and the rate limit…"
+     },
+     {
+      "id": "clm-4ff3290fb7",
+      "type": "claim",
+      "text": "c-190f5c6276 pass: qa dd42458: approve/reject fix tests pass; web tests 69 pass."
+     },
+     {
+      "id": "clm-4b6198540a",
+      "type": "claim",
+      "text": "c-0adbdbc4c1 pass: b249d90: pytest 13/13 (subprocess run() on a fresh home serves models > 0, <home>/.data/models.json written); s14-design.spec.ts alone 4/4 o…"
+     },
+     {
+      "id": "les-8b994ab56b",
+      "type": "lesson",
+      "text": "A localhost guard that injects the owner's credential serves every local principal: the codex read-only sandbox fetched a file through 127.0.0.1:9410 with no c…"
+     },
+     {
+      "id": "les-7d5e7adac8",
+      "type": "lesson",
+      "text": "gate_open(design_signoff) on epic-52edacd059 refused: 'the epic has 22 open stories (> 8); design_signoff is refused', although the owner already answered the…"
+     },
+     {
+      "id": "dec-dcfd044b13",
+      "type": "decision",
+      "text": "No more LLM adversary seats on epic-7f3d64e6de. Round-2 fixes are verified by the committed regression tests and the adversary's probes run as plain pytest, pl…"
+     }
+    ],
+    "receipt": {
+     "question": "S16-T render the sign-off ask: the board serves signoff_ask as `ask`, but no we…",
+     "returned": 8,
+     "cut": 9,
+     "cap": 8,
+     "more": "lookup(scope=<ticket>, question=…) for the full pack"
+    }
+   }
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='t-77c3a55b75') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzMzMC45MzY1NzIzLCJtZXRhZGF0YSI6ImI4MmIyN2VjOWU5OWI5YzkxOTJkM2JiN2Y3NWVlMWNhMDNiOWI3MDEzMjJlYzdlYzcyMjgyYTlhMjBiY2M5ZWYiLCJwIjoiNGU2ODgwYTE3NzYwYjZkMjY5NmQzM2M3MjA3OTZjNTliMGQ3MDNhZTdkZjA3N2U3ZDk4NTVhM2Y2ZWI5NWVmNCIsInJvbGUiOiJlbmdpbmVlciIsInJvb3RzIjoiZjk4NDFlMDY0YWY1MzQ5Njg3Njk5OWQxMzgxMzk3N2I4ODc3NTAyNDRkNmYxZWU1OTcxYTU3Y2UyOTRhNjcyOSIsInNjb3BlIjoiNzQyMzRlOThhZmU3NDk4ZmI1ZGFmMWYzNmFjMmQ3OGFjYzMzOTQ2NGY5NTA3MDNiOGMwMTk4OTJmOTgyYjkwYiIsInNlcSI6MjM3NjUsInRocm91Z2giOm51bGwsInYiOjF9h44hv6fwVwv8JOgF6OH0Q0_0MQCakhp6cJyU_z71ScI=",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=16000 bytes (verbose=False); snapshot is 6980 bytes",
+  "doc_summaries": "doc_read(id) for the full body",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

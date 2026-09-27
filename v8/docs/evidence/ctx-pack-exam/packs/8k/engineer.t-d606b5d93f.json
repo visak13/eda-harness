@@ -1,0 +1,98 @@
+{
+ "participant": {
+  "id": "engineer.t-d606b5d93f",
+  "created_at": "2026-09-27T07:59:06.864506Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "engineer",
+  "handle": "engineer.t-d606b5d93f",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "t-d606b5d93f",
+    "kind": "task",
+    "status": "ready",
+    "assignee": "engineer.t-d606b5d93f",
+    "parent_id": "s-54a03afc5a",
+    "title": "S17-T video claim fix: chapter 4 says the context pack is 40 KB by default; the code default is 8 KB. Re-render and replace every cut",
+    "description": "qa finding m-dbf4b571de (fail on c-50778c655b): Ch4Context.tsx:37 and :47 say the context pack is \"40 KB by default\", but bundles.py:602 sets the default to 8_0… (+1401 chars)"
+   },
+   "chain": [
+    {
+     "id": "t-d606b5d93f",
+     "kind": "task",
+     "status": "ready"
+    },
+    {
+     "id": "s-54a03afc5a",
+     "kind": "story",
+     "status": "in_review"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-03438d22fe",
+     "text": "Chapter 4 states the 8 KB default read from bundles.py, and every chapter's claim matches its code pointer in the storyb… (+268 chars)",
+     "check": "command",
+     "checked_by": "engineer",
+     "verdict": "pending"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43"
+   ],
+   "children": [],
+   "links": [],
+   "thread": [
+    {
+     "id": "m-c9abfa3828",
+     "kind": "steer",
+     "created_at": "2026-09-27T08:01:42.689466Z"
+    }
+   ],
+   "thread_total": 1,
+   "recall_count": 8
+  }
+ ],
+ "asks_for_me": [
+  {
+   "id": "m-c9abfa3828",
+   "created_at": "2026-09-27T08:01:42.689466Z",
+   "created_by": "architect.epic-7f3d64e6de",
+   "ticket_id": "t-d606b5d93f",
+   "to": "engineer.t-d606b5d93f",
+   "kind": "steer",
+   "text": "Two additions:\n1. `guides/context-refresh.md:9` also says \"default 40 KB\". Fix it to 8 KB in the same commit.\n2. The source comment at Ch4Context.tsx:2 also says 40 KB; fix it too.\nThe owner asked whether 40 KB was required. The ruling (m-093790d260 thread) is that 8 KB stays the default, set in S23-T2 8f40bc0. Every place that states it says 8 KB.",
+   "reply_to": null,
+   "document_context": null,
+   "code_context": null,
+   "quotes": [],
+   "status": null,
+   "artifacts": [],
+   "from_type": "agent",
+   "from_role": "architect",
+   "answer_with": "message_send(ticket_id='t-d606b5d93f', kind='answer', to='architect.epic-7f3d64e6de', reply_to='m-c9abfa3828')"
+  }
+ ],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='t-d606b5d93f') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjhmNDQ1YWIwN2JjNmYwOTlmZWM1YjM0M2U1OGI4ZWVjNjVhY2Q4MTlhZWI2NGZjOTYxMTczYzk3YjAwMjgzYzQiLCJhdCI6MTc5MDQ5NzMwOS44OTgwNjcsIm1ldGFkYXRhIjoiZmJiNGMxZjA3NTlhOWM0NGVjZDlmZGRlODE3NjJjMTU0MjQxYTgyNGM5NmI4NWFjY2MxNzZmYzQ1NGM4ZjdlMyIsInAiOiIzMTU5ZmE3ZGE5MDI3MjQyYzZiMzM2N2QzYTMyNDRmMTBlYjE0MTM4NDczODMxZDU3MGJhOWQwYjg2ZDJlYWU2Iiwicm9sZSI6ImVuZ2luZWVyIiwicm9vdHMiOiJmYjI1ZDUxOWZmNzI5NGYxYTk1ZGUyYWJiOTgyNTdjYmExODAwNjJjZjVlNGI3ZTk1MDBiYzNjNWMxY2Q3MGI2Iiwic2NvcGUiOiI3NDIzNGU5OGFmZTc0OThmYjVkYWYxZjM2YWMyZDc4YWNjMzM5NDY0Zjk1MDcwM2I4YzAxOTg5MmY5ODJiOTBiIiwic2VxIjoyMzc2NSwidGhyb3VnaCI6bnVsbCwidiI6MX05wR1nUq5IeNbp7bgVHCjilvhuzDyfPdzVurxeMhJgAA==",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=8000 bytes (verbose=False); snapshot is 3143 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "epic_words": "context(verbose=True) or ticket_read(<epic id>) for the owner's full words",
+  "description": "ticket_read(ticket_id=<id>, include='') for the full description",
+  "compact": "criteria/docs/children/links are refs; ticket_read(ticket_id=<id>) or criterion_query(ticket_id=<id>) for rows, lookup(scope=<epic>) for recall",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

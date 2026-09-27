@@ -1,0 +1,338 @@
+[
+ {
+  "seat": "architect.epic-7f3d64e6de",
+  "8k": {
+   "bytes": 12701,
+   "tokens": 3175,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  },
+  "16k": {
+   "bytes": 12508,
+   "tokens": 3127,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  },
+  "40k": {
+   "bytes": 37937,
+   "tokens": 9484,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  }
+ },
+ {
+  "seat": "qa.epic-7f3d64e6de",
+  "8k": {
+   "bytes": 29267,
+   "tokens": 7317,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  },
+  "16k": {
+   "bytes": 29268,
+   "tokens": 7317,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  },
+  "40k": {
+   "bytes": 29074,
+   "tokens": 7268,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  }
+ },
+ {
+  "seat": "qa.s-da61d38c5e",
+  "8k": {
+   "bytes": 4200,
+   "tokens": 1050,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  },
+  "16k": {
+   "bytes": 12506,
+   "tokens": 3126,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  },
+  "40k": {
+   "bytes": 15749,
+   "tokens": 3937,
+   "Q1": "in_pack",
+   "Q2": "in_pack",
+   "Q3": "one_fetch"
+  }
+ },
+ {
+  "seat": "sme.s-1dccea48b5",
+  "8k": {
+   "bytes": 6526,
+   "tokens": 1632,
+   "Q1": "in_pack",
+   "Q2": "n/a",
+   "Q3": "in_pack"
+  },
+  "16k": {
+   "bytes": 8376,
+   "tokens": 2094,
+   "Q1": "in_pack",
+   "Q2": "n/a",
+   "Q3": "in_pack"
+  },
+  "40k": {
+   "bytes": 8376,
+   "tokens": 2094,
+   "Q1": "in_pack",
+   "Q2": "n/a",
+   "Q3": "in_pack"
+  }
+ },
+ {
+  "seat": "engineer.t-8e1ac0c445",
+  "8k": {
+   "bytes": 6521,
+   "tokens": 1630,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  },
+  "16k": {
+   "bytes": 10342,
+   "tokens": 2586,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  },
+  "40k": {
+   "bytes": 10342,
+   "tokens": 2586,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  }
+ },
+ {
+  "seat": "engineer.t-cd4712c855",
+  "8k": {
+   "bytes": 5737,
+   "tokens": 1434,
+   "Q1": "in_pack",
+   "Q2": "in_pack",
+   "Q3": "one_fetch"
+  },
+  "16k": {
+   "bytes": 13413,
+   "tokens": 3353,
+   "Q1": "in_pack",
+   "Q2": "in_pack",
+   "Q3": "one_fetch"
+  },
+  "40k": {
+   "bytes": 13413,
+   "tokens": 3353,
+   "Q1": "in_pack",
+   "Q2": "in_pack",
+   "Q3": "one_fetch"
+  }
+ },
+ {
+  "seat": "engineer.t-d606b5d93f",
+  "8k": {
+   "bytes": 3837,
+   "tokens": 959,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "in_pack"
+  },
+  "16k": {
+   "bytes": 9316,
+   "tokens": 2329,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "in_pack"
+  },
+  "40k": {
+   "bytes": 9316,
+   "tokens": 2329,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "in_pack"
+  }
+ },
+ {
+  "seat": "engineer.t-852e7add63",
+  "8k": {
+   "bytes": 3269,
+   "tokens": 817,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  },
+  "16k": {
+   "bytes": 11327,
+   "tokens": 2832,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  },
+  "40k": {
+   "bytes": 11327,
+   "tokens": 2832,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  }
+ },
+ {
+  "seat": "engineer.t-20f0718990",
+  "8k": {
+   "bytes": 3083,
+   "tokens": 771,
+   "Q1": "in_pack",
+   "Q2": "n/a",
+   "Q3": "one_fetch"
+  },
+  "16k": {
+   "bytes": 11265,
+   "tokens": 2816,
+   "Q1": "in_pack",
+   "Q2": "n/a",
+   "Q3": "one_fetch"
+  },
+  "40k": {
+   "bytes": 11265,
+   "tokens": 2816,
+   "Q1": "in_pack",
+   "Q2": "n/a",
+   "Q3": "one_fetch"
+  }
+ },
+ {
+  "seat": "engineer.s-32035a77da",
+  "8k": {
+   "bytes": 4700,
+   "tokens": 1175,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  },
+  "16k": {
+   "bytes": 13266,
+   "tokens": 3316,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  },
+  "40k": {
+   "bytes": 15151,
+   "tokens": 3788,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  }
+ },
+ {
+  "seat": "engineer.s-9648fded35",
+  "8k": {
+   "bytes": 7624,
+   "tokens": 1906,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "in_pack"
+  },
+  "16k": {
+   "bytes": 7625,
+   "tokens": 1906,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "in_pack"
+  },
+  "40k": {
+   "bytes": 25129,
+   "tokens": 6282,
+   "Q1": "in_pack",
+   "Q2": "in_pack",
+   "Q3": "in_pack"
+  }
+ },
+ {
+  "seat": "engineer.s-54a03afc5a",
+  "8k": {
+   "bytes": 6367,
+   "tokens": 1592,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  },
+  "16k": {
+   "bytes": 6368,
+   "tokens": 1592,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  },
+  "40k": {
+   "bytes": 27867,
+   "tokens": 6967,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  }
+ },
+ {
+  "seat": "engineer.s-461403ebd1",
+  "8k": {
+   "bytes": 4916,
+   "tokens": 1229,
+   "Q1": "in_pack",
+   "Q2": "one_fetch",
+   "Q3": "one_fetch"
+  },
+  "16k": {
+   "bytes": 14603,
+   "tokens": 3651,
+   "Q1": "in_pack",
+   "Q2": "in_pack",
+   "Q3": "one_fetch"
+  },
+  "40k": {
+   "bytes": 17110,
+   "tokens": 4278,
+   "Q1": "in_pack",
+   "Q2": "in_pack",
+   "Q3": "one_fetch"
+  }
+ },
+ {
+  "seat": "engineer.t-77c3a55b75",
+  "8k": {
+   "bytes": 6172,
+   "tokens": 1543,
+   "Q1": "in_pack",
+   "Q2": "n/a",
+   "Q3": "one_fetch"
+  },
+  "16k": {
+   "bytes": 7181,
+   "tokens": 1795,
+   "Q1": "in_pack",
+   "Q2": "n/a",
+   "Q3": "one_fetch"
+  },
+  "40k": {
+   "bytes": 7181,
+   "tokens": 1795,
+   "Q1": "in_pack",
+   "Q2": "n/a",
+   "Q3": "one_fetch"
+  }
+ }
+]

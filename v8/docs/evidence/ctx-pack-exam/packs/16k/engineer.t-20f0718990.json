@@ -1,0 +1,218 @@
+{
+ "participant": {
+  "id": "engineer.t-20f0718990",
+  "created_at": "2026-09-26T21:35:23.428328Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "engineer",
+  "handle": "engineer.t-20f0718990",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "t-20f0718990",
+    "created_at": "2026-09-26T21:34:58.124187Z",
+    "created_by": "architect.epic-7f3d64e6de",
+    "kind": "task",
+    "work_type": "bug",
+    "title": "Admin UX pass 2: Remote access and Integrations as guided setups, Seats & models explains itself, task order, Admin vs Settings",
+    "words": null,
+    "parent_id": "s-e6b4fa59d5",
+    "status": "in_review",
+    "assignee": "engineer.t-20f0718990",
+    "design_ref": "note-848f8d2a2b",
+    "description": "Owner walkthrough, part 2 (m-3136ceca05). Part 1 (Settings and Teammates) is t-5dd0cc18ea; coordinate with it on shared files and don't overlap.\n\n1. **Remote access** is a guided setup, not a bare form.\n   - A numbered walkthrough: what Remote access is for (teammates, or your own phone or laptop reaching this board), then install Tailscale (per-OS link), sign in, and let this page detect it (`tailscale status`).\n   - Turn on `tailscale serve` from here and show the resulting URL, then the one-line public-mode switch.\n   - Each step shows done or not done, detected live.\n   - Add a visual guide: diagrams or annotated screenshots per step. The owner allows a codex seat for image generation; spawn one only for the visuals and keep them in `assets/guides/`.\n   - A link to a `guides/remote-access.md` guide with the same steps.\n2. **Integrations:** for every integration, say in one line what it lets Heronry do, what you need (account or key), where to get it (link), and what changes once it's connected. Add a status line: not set up, connected (tested), or error with a reason. Hide or disable options that need another step first, and name that step.\n3. **Seats & models:**\n   - A greyed model and seat combination must say why on hover and focus, and in visible text next to it: \"harness not installed\", \"not in this role's catalog\", \"effort above this model's cap\" and so on.\n   - The doctor seat shows a \"?\" icon because it has no avatar or role icon; give `doctor` a proper role icon and name (\"Help\").\n   - Every role the board knows renders with its icon; add a test over the full role list.\n4. **Reading order:** order every Admin tab and its sections the way a person works through them, top to bottom: first run and essentials first, then day-to-day, then advanced. Tabs: Services, Models, Teammates, Remote access, Integrations, Settings (advanced last). Write the order down in `web/src/pages/admin/README.md` so future tabs follow it.\n5. **Admin vs Settings:**\n   - Admin is for the whole install (services, models, people, access, integrations, instance settings) and is only for admins.\n   - Settings is only your personal preferences (theme, avatar, notifications, your own shortcuts).\n   - Make each page say so in one line at the top. Move any instance-wide control that sits on the personal Settings page to Admin, and any personal one out of Admin.\n   - If after this Settings has fewer than 3 items, fold it into the account menu and remove the page. Report which you did.\n\nCommit by path with both trailers. Use vitest and private-instance screenshots (the s6_walk recipe); don't run the full web e2e suite.",
+    "tags": [],
+    "epic_id": "epic-7f3d64e6de",
+    "topic_config": null
+   },
+   "words": "Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and need to publish this on Git as a distributable.",
+   "words_header": "words recorded 2026-09-26; phase: in_progress; governed by design-e963c656f5 v43",
+   "workflow": "standard@1",
+   "chain": [
+    {
+     "id": "t-20f0718990",
+     "kind": "task",
+     "title": "Admin UX pass 2: Remote access and Integrations as guided setups, Seats & models explains itself, task order, Admin vs Settings",
+     "status": "in_review",
+     "design_ref": "note-848f8d2a2b"
+    },
+    {
+     "id": "s-e6b4fa59d5",
+     "kind": "story",
+     "title": "S6 admin SPA: Admin → Services, Settings (all groups), Teammates, Remote access, Integrations, Models shell; /ui/setup first-run wizard",
+     "status": "done",
+     "design_ref": "design-e963c656f5"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "title": "Productize the app. Make it as installable and independent of machine or OS",
+     "status": "in_progress",
+     "design_ref": "design-e963c656f5"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-4d995b67f2",
+     "created_at": "2026-09-26T21:35:02.548393Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "t-20f0718990",
+     "text": "Screenshots from a private instance, with vitest, show Admin UX pass 2 (owner m-3136ceca05).\n- **Remote access:** a numbered Tailscale setup with live done/not-done per step and a visual guide.\n- **Integrations:** every item says what it does, what it needs and where to get it, with a tested status.\n- **Seats & models:** every greyed combination shows its reason in visible text. The doctor seat renders as \"Help\" with an icon, and a test covers every role's icon.\n- **Order:** Admin tabs and sections follow the documented task order in web/src/pages/admin/README.md.\n- **Admin vs Settings:** each page states its scope in one line, with no instance-wide control on personal Settings.",
+     "check": "look",
+     "checked_by": "engineer",
+     "evidence_ref": "report-67626cbf28",
+     "evidence_version": 1,
+     "verdict": "pass"
+    }
+   ],
+   "docs": [
+    {
+     "id": "design-e963c656f5",
+     "doc_type": "design",
+     "title": "Productize EDP: installable on any machine/OS, published on GitHub; codex bridge → codex seats",
+     "version": 43,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# Productize EDP — design (epic-7f3d64e6de)\n\n## 1. Words (verbatim)\nEpic: \"Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and ne… (+99 chars)",
+     "full": "doc_read(id)",
+     "relation": "epic design_ref"
+    },
+    {
+     "id": "note-848f8d2a2b",
+     "doc_type": "note",
+     "title": "Plan: Admin UX pass 2 (t-20f0718990)",
+     "version": 1,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# Plan: Admin UX pass 2 (t-20f0718990, owner m-3136ceca05)\n\nSPA-only, apart from one board fix (doctor bot avatar). No shared files with part 1 (t-5dd0cc18ea, committed 182107c): Teammates.tsx and Set… (+99 chars)",
+     "full": "doc_read(id)",
+     "relation": "design_ref"
+    }
+   ],
+   "strategy_links": true,
+   "children": [],
+   "blockers": [],
+   "open_gates": [],
+   "thread": [
+    {
+     "id": "m-49077e6bf5",
+     "created_at": "2026-09-26T22:03:55.829937Z",
+     "created_by": "engineer.t-20f0718990",
+     "ticket_id": "t-20f0718990",
+     "to": null,
+     "kind": "status",
+     "text": "[deferred] [resumed] re-arming wake plane; 0 open ask(s) to answer first",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": "deferred",
+     "artifacts": [],
+     "seq": 21435
+    },
+    {
+     "id": "m-dae3d1e56f",
+     "created_at": "2026-09-26T22:24:07.557572Z",
+     "created_by": "engineer.t-20f0718990",
+     "ticket_id": "t-20f0718990",
+     "to": "architect.epic-7f3d64e6de",
+     "kind": "status",
+     "text": "t-20f0718990 is in_review. Admin UX pass 2 shipped in e5f514e, 54226ea, ce85981 and d274508. Criterion c-4d995b67f2 passes against report-67626cbf28 (11 private-instance shots, vitest admin 70/70, pyt… (+616 chars)",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 21576
+    },
+    {
+     "id": "m-c4d9b91527",
+     "created_at": "2026-09-26T22:24:11.472761Z",
+     "created_by": "engineer.t-20f0718990",
+     "ticket_id": "t-20f0718990",
+     "to": null,
+     "kind": "status",
+     "text": "[done] t-20f0718990 is in_review and c-4d995b67f2 passes (report-67626cbf28). Settings stays a page. The fleet board needs a restart before the tailnet guide route and running_public go live.",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": "done",
+     "artifacts": [],
+     "seq": 21578
+    }
+   ],
+   "thread_seq": 21578,
+   "thread_total": 3,
+   "links": [],
+   "recall": {
+    "items": [
+     {
+      "id": "clm-06c8ca52cc",
+      "type": "claim",
+      "text": "c-4d995b67f2 pass: Looked at shots 01-11 from the private walk plus results.json. The two defects the walk surfaced are fixed in ce85981 and d274508. vitest ad…"
+     },
+     {
+      "id": "clm-1c14c15210",
+      "type": "claim",
+      "text": "c-c0bdff80eb pass: test_admin_access.py (13 passed) covers the full ask, admin approve and one-time claim path. A second claim, a wrong code and the rate limit…"
+     },
+     {
+      "id": "clm-cacad64022",
+      "type": "claim",
+      "text": "c-23d14e607b pass: 41d7a7c: permanent test passes (25 expired → list 0, new ask 200, claim answers expired); test_admin_access + teammates + attention 43 passe…"
+     },
+     {
+      "id": "dec-9c292f88a4",
+      "type": "decision",
+      "text": "Admin = a human with the explicit admin flag or handle == EDP8_OWNER (init human); /v1/admin/* needs X-Participant + a matching tokens.json X-Token, refuses X-…"
+     },
+     {
+      "id": "clm-cfe640deb9",
+      "type": "claim",
+      "text": "c-31ceadf3b2 pass: Every item was checked against screenshots from a private instance (shots 01-09 plus the walk's results.json). vitest covers each item: 59/5…"
+     },
+     {
+      "id": "dec-30be75475f",
+      "type": "decision",
+      "text": "heronry import is a dry run by default (--apply writes). It refuses dev mode unless --force, and refuses while the target board runs. The admin token goes to a…"
+     },
+     {
+      "id": "dec-b74c51b811",
+      "type": "decision",
+      "text": "First-run sign-in: `heronry start` opens /ui/setup?code= (a one-time keep_token invite for the init human, via the Teammates invite store) until POST /v1/admin…"
+     },
+     {
+      "id": "clm-c9d92b82ba",
+      "type": "claim",
+      "text": "c-e8ce8bad0e pass: qa: at dd42458 test_bundle_zip_has_every_section_and_no_plant failed with KeyError 'ui.settings_file' (key made internal/unlisted by 182107c…"
+     }
+    ],
+    "receipt": {
+     "question": "Admin UX pass 2: Remote access and Integrations as guided setups, Seats & model…",
+     "returned": 8,
+     "cut": 16,
+     "cap": 8,
+     "more": "lookup(scope=<ticket>, question=…) for the full pack"
+    }
+   }
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='t-20f0718990') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzMxNS41MzMzNzUzLCJtZXRhZGF0YSI6ImEyNDYyMmMxNWM1MzYwOGYyOTI4NGNkYmI5YmY2ZjliOGI0YTlhYTE3MDEzNTI0MDQ3MWUyYjZjMzI3NWE1YTMiLCJwIjoiNzYwMWI0ZTQzMmQ4ODRkZDFiYTZhMzIxNzllZjhhZTNhNjU4M2FmMGNhN2JjZGY5YzQ0YTQ3NzdkZWNiOWY3ZSIsInJvbGUiOiJlbmdpbmVlciIsInJvb3RzIjoiMjAwZTJhN2E4YWViMDllMTVkYjViZjhjNTI2ZTQ4OGI5N2M1Yjk4ZTFmMjRhOWI1N2JmNzMzMzZjZjNkOTMyNyIsInNjb3BlIjoiNzQyMzRlOThhZmU3NDk4ZmI1ZGFmMWYzNmFjMmQ3OGFjYzMzOTQ2NGY5NTA3MDNiOGMwMTk4OTJmOTgyYjkwYiIsInNlcSI6MjM3NjUsInRocm91Z2giOm51bGwsInYiOjF9NLc6KJPPq8jN1ADy4W3CqqHYYo1E-w0WzdxcxQxrepk=",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=16000 bytes (verbose=False); snapshot is 10902 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

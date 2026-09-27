@@ -1,0 +1,159 @@
+{
+ "participant": {
+  "id": "engineer.t-8e1ac0c445",
+  "created_at": "2026-09-27T07:06:49.534846Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "engineer",
+  "handle": "engineer.t-8e1ac0c445",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "t-8e1ac0c445",
+    "created_at": "2026-09-27T07:06:40.739717Z",
+    "created_by": "architect.epic-7f3d64e6de",
+    "kind": "task",
+    "work_type": "chore",
+    "title": "S18-T README cleanup (owner m-8fe09cecd4): See it work shows all 7 video chapters; drop Why this architecture, How it works in one screen, and the Antivirus section",
+    "words": null,
+    "parent_id": "s-6c2cbbc3e8",
+    "status": "in_review",
+    "assignee": "engineer.t-8e1ac0c445",
+    "design_ref": null,
+    "description": "The owner reviewed the root README.md (m-8fe09cecd4): \"it looks like a mess\". Up to \"See it work\" it is fine. Change the README as follows:\n\n1. **\"See it work\" has half the chapters.** It shows 3 stills (pool, context, board), but the product video (S17, s-54a03afc5a) has 7 chapters. Show one still per chapter, all 7, in video order, each with the chapter's title and a one- or two-line caption.\n   - Take each still from the rendered video's own frames or its Remotion scene at the chapter's key frame, in the Heronry palette with invented demo data.\n   - Save them under docs/readme/storefront/ a… (+1694 chars)",
+    "tags": [],
+    "epic_id": "epic-7f3d64e6de",
+    "topic_config": null
+   },
+   "words": "Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and need to publish this on Git as a distributable.",
+   "words_header": "words recorded 2026-09-26; phase: in_progress; governed by design-e963c656f5 v43",
+   "workflow": "standard@1",
+   "chain": [
+    {
+     "id": "t-8e1ac0c445",
+     "kind": "task",
+     "title": "S18-T README cleanup (owner m-8fe09cecd4): See it work shows all 7 video chapters; drop Why this architecture, How it works in one screen, and the Antivirus section",
+     "status": "in_review",
+     "design_ref": null
+    },
+    {
+     "id": "s-6c2cbbc3e8",
+     "kind": "story",
+     "title": "S18 README as the storefront: hero loop, Download/Website, per-OS install",
+     "status": "done",
+     "design_ref": "design-e963c656f5"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "title": "Productize the app. Make it as installable and independent of machine or OS",
+     "status": "in_progress",
+     "design_ref": "design-e963c656f5"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-4fa2c43f82",
+     "created_at": "2026-09-27T07:06:45.090719Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "t-8e1ac0c445",
+     "text": "README.md has these changes:\n- \"See it work\" shows 7 stills, one per video chapter and in video order.\n- \"Why this architecture\", \"How it works in one screen\" and the Antivirus block, including its troubleshooting row, are gone from the README and the site.\n- The unreferenced why/*.png images are removed.\nThe link check, PII gate and `mkdocs build --strict` pass.",
+     "check": "command",
+     "checked_by": "engineer",
+     "evidence_ref": "report-9942787f8b",
+     "evidence_version": 3,
+     "verdict": "pass"
+    }
+   ],
+   "docs": [
+    {
+     "id": "design-e963c656f5",
+     "doc_type": "design",
+     "title": "Productize EDP: installable on any machine/OS, published on GitHub; codex bridge → codex seats",
+     "version": 43,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "… (+299 chars)",
+     "full": "doc_read(id)",
+     "relation": "epic design_ref"
+    }
+   ],
+   "strategy_links": true,
+   "children": [],
+   "blockers": [],
+   "open_gates": [],
+   "thread": [],
+   "thread_seq": 23418,
+   "thread_total": 13,
+   "links": [],
+   "recall": {
+    "items": [
+     {
+      "id": "clm-885e2d16e2",
+      "type": "claim",
+      "text": "c-4fa2c43f82 pass: Re-verified on 9f3cd43: tests 21 passed, links 0 broken, PII clean on committed p… (+29 chars)"
+     },
+     {
+      "id": "clm-8b08f0b297",
+      "type": "claim",
+      "text": "c-4fa2c43f82 pass: Pass. The \"7 stills\" line is superseded by owner steer m-317c088ba9: See it work… (+59 chars)"
+     },
+     {
+      "id": "clm-11f2746437",
+      "type": "claim",
+      "text": "c-d0e7e90b95 pass: pytest tests/test_workflow_delete.py passes 10 of 10. It covers: a draft is delet… (+60 chars)"
+     },
+     {
+      "id": "clm-1c14c15210",
+      "type": "claim",
+      "text": "c-c0bdff80eb pass: test_admin_access.py (13 passed) covers the full ask, admin approve and one-time… (+60 chars)"
+     },
+     {
+      "id": "les-0cf8cd98f8",
+      "type": "lesson",
+      "text": "On a RAM-contested host, render Remotion outputs in the foreground one at a time (MP4, then Hero, th… (+60 chars)"
+     },
+     {
+      "id": "les-54dd63c2df",
+      "type": "lesson",
+      "text": "A tool that fits a REST batch into a smaller page must drop or recompute every REST-derived hint and… (+60 chars)"
+     },
+     {
+      "id": "dec-dcfd044b13",
+      "type": "decision",
+      "text": "No more LLM adversary seats on epic-7f3d64e6de. Round-2 fixes are verified by the committed regressi… (+60 chars)"
+     },
+     {
+      "id": "dec-9213fad42c",
+      "type": "decision",
+      "text": "Update guards (app update and harness update) treat active, starting, parked and resuming seats as l… (+60 chars)"
+     }
+    ],
+    "receipt": {
+     "question": "S18-T README cleanup (owner m-8fe09cecd4): See it work shows all 7 video chapte…",
+     "returned": 8,
+     "cut": 8,
+     "cap": 8,
+     "more": "lookup(scope=<ticket>, question=…) for the full pack"
+    }
+   },
+   "thread_omitted": 13
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='t-8e1ac0c445') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzMwNS41NDMyNzQsIm1ldGFkYXRhIjoiMjM0NmM0MTJkYzNlYzMxNGFiMDkzYTA2M2QxNTZiYzliMDY4MDkwN2E3NjFiNTBiZjE1Y2E3MDZlMjNhMDQ2NCIsInAiOiIwYWUxZGQ1YjE3NTBiMTM3OTQyYTk5YWExZDk1NWQyMjQ0ZDgyY2M2MGJmMDE5YzE1MmU3OTkwNDRhMzU4ZmJkIiwicm9sZSI6ImVuZ2luZWVyIiwicm9vdHMiOiIwYzAwOWFkMGM2Y2YzZGQ5YTMwNWM0ZDBhODhjODU0NzA5MzUzOTA2MzY5M2FiNTdmMjgxZGY5YzI3NDJiMzQ4Iiwic2NvcGUiOiI3NDIzNGU5OGFmZTc0OThmYjVkYWYxZjM2YWMyZDc4YWNjMzM5NDY0Zjk1MDcwM2I4YzAxOTg5MmY5ODJiOTBiIiwic2VxIjoyMzc2NSwidGhyb3VnaCI6bnVsbCwidiI6MX0bnp3nYC1OkJguZ6u5i5Xva-wPwtigSN8x5PgGBy0h7Q==",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=8000 bytes (verbose=False); snapshot is 6077 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "description": "ticket_read(ticket_id=<id>, include='') for the full description",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

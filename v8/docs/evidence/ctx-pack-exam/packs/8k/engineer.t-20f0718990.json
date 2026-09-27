@@ -1,0 +1,82 @@
+{
+ "participant": {
+  "id": "engineer.t-20f0718990",
+  "created_at": "2026-09-26T21:35:23.428328Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "engineer",
+  "handle": "engineer.t-20f0718990",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "t-20f0718990",
+    "kind": "task",
+    "status": "in_review",
+    "assignee": "engineer.t-20f0718990",
+    "parent_id": "s-e6b4fa59d5",
+    "design_ref": "note-848f8d2a2b",
+    "title": "Admin UX pass 2: Remote access and Integrations as guided setups, Seats & models explains itself, task order, Admin vs Settings",
+    "description": "Owner walkthrough, part 2 (m-3136ceca05). Part 1 (Settings and Teammates) is t-5dd0cc18ea; coordinate with it on shared files and don't overlap.\n\n1. **Remote ac… (+2480 chars)"
+   },
+   "chain": [
+    {
+     "id": "t-20f0718990",
+     "kind": "task",
+     "status": "in_review"
+    },
+    {
+     "id": "s-e6b4fa59d5",
+     "kind": "story",
+     "status": "done"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-4d995b67f2",
+     "text": "Screenshots from a private instance, with vitest, show Admin UX pass 2 (owner m-3136ceca05).\n- **Remote access:** a numb… (+567 chars)",
+     "check": "look",
+     "checked_by": "engineer",
+     "verdict": "pass",
+     "evidence_ref": "report-67626cbf28"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43",
+    "note-848f8d2a2b note v1"
+   ],
+   "children": [],
+   "links": [],
+   "thread": [
+    {
+     "id": "m-c4d9b91527",
+     "kind": "status",
+     "created_at": "2026-09-26T22:24:11.472761Z"
+    }
+   ],
+   "thread_total": 3,
+   "recall_count": 8
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='t-20f0718990') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzMxNS4wMzg1NzQyLCJtZXRhZGF0YSI6ImEyNDYyMmMxNWM1MzYwOGYyOTI4NGNkYmI5YmY2ZjliOGI0YTlhYTE3MDEzNTI0MDQ3MWUyYjZjMzI3NWE1YTMiLCJwIjoiNzYwMWI0ZTQzMmQ4ODRkZDFiYTZhMzIxNzllZjhhZTNhNjU4M2FmMGNhN2JjZGY5YzQ0YTQ3NzdkZWNiOWY3ZSIsInJvbGUiOiJlbmdpbmVlciIsInJvb3RzIjoiMjAwZTJhN2E4YWViMDllMTVkYjViZjhjNTI2ZTQ4OGI5N2M1Yjk4ZTFmMjRhOWI1N2JmNzMzMzZjZjNkOTMyNyIsInNjb3BlIjoiNzQyMzRlOThhZmU3NDk4ZmI1ZGFmMWYzNmFjMmQ3OGFjYzMzOTQ2NGY5NTA3MDNiOGMwMTk4OTJmOTgyYjkwYiIsInNlcSI6MjM3NjUsInRocm91Z2giOm51bGwsInYiOjF9gKofqh3-9nwYIbJtMyH_69LC1njbJ7sUKzFduKN8D2Q=",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=8000 bytes (verbose=False); snapshot is 2389 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "epic_words": "context(verbose=True) or ticket_read(<epic id>) for the owner's full words",
+  "description": "ticket_read(ticket_id=<id>, include='') for the full description",
+  "compact": "criteria/docs/children/links are refs; ticket_read(ticket_id=<id>) or criterion_query(ticket_id=<id>) for rows, lookup(scope=<epic>) for recall",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

@@ -1,0 +1,309 @@
+[
+ {
+  "seat": "architect.epic-7f3d64e6de",
+  "role": "architect",
+  "tickets": [
+   "s-226d9db7ec",
+   "t-e967ec72b5",
+   "t-9e9ba3a6e5",
+   "epic-7f3d64e6de"
+  ],
+  "questions": [
+   {
+    "qid": "Q1",
+    "text": "List every criterion on your ticket(s) that is NOT yet pass: its id, its ticket, who checks it (checked_by) and its current verdict."
+   },
+   {
+    "qid": "Q2",
+    "text": "What is the most recent message addressed to you (or, if none, the latest architect/owner message on your ticket): its id, who sent it, and what it tells you to do?"
+   },
+   {
+    "qid": "Q3",
+    "text": "Which owner message ids does your work trace to (cited in your ticket descriptions or criteria), and what did the owner ask in each? Answer \"none cited\" if there are none."
+   }
+  ]
+ },
+ {
+  "seat": "qa.epic-7f3d64e6de",
+  "role": "qa",
+  "tickets": [
+   "epic-7f3d64e6de",
+   "s-ec73f74ea9",
+   "s-b7ec13d748",
+   "s-870e401942",
+   "s-461403ebd1",
+   "s-9648fded35",
+   "s-6d5fdf783a",
+   "s-54a03afc5a",
+   "s-0cfebd3862"
+  ],
+  "questions": [
+   {
+    "qid": "Q1",
+    "text": "List every criterion on your ticket(s) that is NOT yet pass: its id, its ticket, who checks it (checked_by) and its current verdict."
+   },
+   {
+    "qid": "Q2",
+    "text": "What is the most recent message addressed to you (or, if none, the latest architect/owner message on your ticket): its id, who sent it, and what it tells you to do?"
+   },
+   {
+    "qid": "Q3",
+    "text": "Which owner message ids does your work trace to (cited in your ticket descriptions or criteria), and what did the owner ask in each? Answer \"none cited\" if there are none."
+   }
+  ]
+ },
+ {
+  "seat": "qa.s-da61d38c5e",
+  "role": "qa",
+  "tickets": [
+   "s-da61d38c5e"
+  ],
+  "questions": [
+   {
+    "qid": "Q1",
+    "text": "List every criterion on your ticket(s) that is NOT yet pass: its id, its ticket, who checks it (checked_by) and its current verdict."
+   },
+   {
+    "qid": "Q2",
+    "text": "What is the most recent message addressed to you (or, if none, the latest architect/owner message on your ticket): its id, who sent it, and what it tells you to do?"
+   },
+   {
+    "qid": "Q3",
+    "text": "Which owner message ids does your work trace to (cited in your ticket descriptions or criteria), and what did the owner ask in each? Answer \"none cited\" if there are none."
+   }
+  ]
+ },
+ {
+  "seat": "sme.s-1dccea48b5",
+  "role": "sme",
+  "tickets": [
+   "s-1dccea48b5"
+  ],
+  "questions": [
+   {
+    "qid": "Q1",
+    "text": "List every criterion on your ticket(s) that is NOT yet pass: its id, its ticket, who checks it (checked_by) and its current verdict."
+   },
+   {
+    "qid": "Q2",
+    "text": "What is the most recent message addressed to you (or, if none, the latest architect/owner message on your ticket): its id, who sent it, and what it tells you to do?"
+   },
+   {
+    "qid": "Q3",
+    "text": "Which owner message ids does your work trace to (cited in your ticket descriptions or criteria), and what did the owner ask in each? Answer \"none cited\" if there are none."
+   }
+  ]
+ },
+ {
+  "seat": "engineer.t-8e1ac0c445",
+  "role": "engineer",
+  "tickets": [
+   "t-8e1ac0c445"
+  ],
+  "questions": [
+   {
+    "qid": "Q1",
+    "text": "List every criterion on your ticket(s) that is NOT yet pass: its id, its ticket, who checks it (checked_by) and its current verdict."
+   },
+   {
+    "qid": "Q2",
+    "text": "What is the most recent message addressed to you (or, if none, the latest architect/owner message on your ticket): its id, who sent it, and what it tells you to do?"
+   },
+   {
+    "qid": "Q3",
+    "text": "Which owner message ids does your work trace to (cited in your ticket descriptions or criteria), and what did the owner ask in each? Answer \"none cited\" if there are none."
+   }
+  ]
+ },
+ {
+  "seat": "engineer.t-cd4712c855",
+  "role": "engineer",
+  "tickets": [
+   "t-cd4712c855"
+  ],
+  "questions": [
+   {
+    "qid": "Q1",
+    "text": "List every criterion on your ticket(s) that is NOT yet pass: its id, its ticket, who checks it (checked_by) and its current verdict."
+   },
+   {
+    "qid": "Q2",
+    "text": "What is the most recent message addressed to you (or, if none, the latest architect/owner message on your ticket): its id, who sent it, and what it tells you to do?"
+   },
+   {
+    "qid": "Q3",
+    "text": "Which owner message ids does your work trace to (cited in your ticket descriptions or criteria), and what did the owner ask in each? Answer \"none cited\" if there are none."
+   }
+  ]
+ },
+ {
+  "seat": "engineer.t-d606b5d93f",
+  "role": "engineer",
+  "tickets": [
+   "t-d606b5d93f"
+  ],
+  "questions": [
+   {
+    "qid": "Q1",
+    "text": "List every criterion on your ticket(s) that is NOT yet pass: its id, its ticket, who checks it (checked_by) and its current verdict."
+   },
+   {
+    "qid": "Q2",
+    "text": "What is the most recent message addressed to you (or, if none, the latest architect/owner message on your ticket): its id, who sent it, and what it tells you to do?"
+   },
+   {
+    "qid": "Q3",
+    "text": "Which owner message ids does your work trace to (cited in your ticket descriptions or criteria), and what did the owner ask in each? Answer \"none cited\" if there are none."
+   }
+  ]
+ },
+ {
+  "seat": "engineer.t-852e7add63",
+  "role": "engineer",
+  "tickets": [
+   "t-852e7add63"
+  ],
+  "questions": [
+   {
+    "qid": "Q1",
+    "text": "List every criterion on your ticket(s) that is NOT yet pass: its id, its ticket, who checks it (checked_by) and its current verdict."
+   },
+   {
+    "qid": "Q2",
+    "text": "What is the most recent message addressed to you (or, if none, the latest architect/owner message on your ticket): its id, who sent it, and what it tells you to do?"
+   },
+   {
+    "qid": "Q3",
+    "text": "Which owner message ids does your work trace to (cited in your ticket descriptions or criteria), and what did the owner ask in each? Answer \"none cited\" if there are none."
+   }
+  ]
+ },
+ {
+  "seat": "engineer.t-20f0718990",
+  "role": "engineer",
+  "tickets": [
+   "t-20f0718990"
+  ],
+  "questions": [
+   {
+    "qid": "Q1",
+    "text": "List every criterion on your ticket(s) that is NOT yet pass: its id, its ticket, who checks it (checked_by) and its current verdict."
+   },
+   {
+    "qid": "Q2",
+    "text": "What is the most recent message addressed to you (or, if none, the latest architect/owner message on your ticket): its id, who sent it, and what it tells you to do?"
+   },
+   {
+    "qid": "Q3",
+    "text": "Which owner message ids does your work trace to (cited in your ticket descriptions or criteria), and what did the owner ask in each? Answer \"none cited\" if there are none."
+   }
+  ]
+ },
+ {
+  "seat": "engineer.s-32035a77da",
+  "role": "engineer",
+  "tickets": [
+   "s-32035a77da"
+  ],
+  "questions": [
+   {
+    "qid": "Q1",
+    "text": "List every criterion on your ticket(s) that is NOT yet pass: its id, its ticket, who checks it (checked_by) and its current verdict."
+   },
+   {
+    "qid": "Q2",
+    "text": "What is the most recent message addressed to you (or, if none, the latest architect/owner message on your ticket): its id, who sent it, and what it tells you to do?"
+   },
+   {
+    "qid": "Q3",
+    "text": "Which owner message ids does your work trace to (cited in your ticket descriptions or criteria), and what did the owner ask in each? Answer \"none cited\" if there are none."
+   }
+  ]
+ },
+ {
+  "seat": "engineer.s-9648fded35",
+  "role": "engineer",
+  "tickets": [
+   "s-9648fded35",
+   "t-6129a95a3d"
+  ],
+  "questions": [
+   {
+    "qid": "Q1",
+    "text": "List every criterion on your ticket(s) that is NOT yet pass: its id, its ticket, who checks it (checked_by) and its current verdict."
+   },
+   {
+    "qid": "Q2",
+    "text": "What is the most recent message addressed to you (or, if none, the latest architect/owner message on your ticket): its id, who sent it, and what it tells you to do?"
+   },
+   {
+    "qid": "Q3",
+    "text": "Which owner message ids does your work trace to (cited in your ticket descriptions or criteria), and what did the owner ask in each? Answer \"none cited\" if there are none."
+   }
+  ]
+ },
+ {
+  "seat": "engineer.s-54a03afc5a",
+  "role": "engineer",
+  "tickets": [
+   "s-54a03afc5a",
+   "t-f01372d361"
+  ],
+  "questions": [
+   {
+    "qid": "Q1",
+    "text": "List every criterion on your ticket(s) that is NOT yet pass: its id, its ticket, who checks it (checked_by) and its current verdict."
+   },
+   {
+    "qid": "Q2",
+    "text": "What is the most recent message addressed to you (or, if none, the latest architect/owner message on your ticket): its id, who sent it, and what it tells you to do?"
+   },
+   {
+    "qid": "Q3",
+    "text": "Which owner message ids does your work trace to (cited in your ticket descriptions or criteria), and what did the owner ask in each? Answer \"none cited\" if there are none."
+   }
+  ]
+ },
+ {
+  "seat": "engineer.s-461403ebd1",
+  "role": "engineer",
+  "tickets": [
+   "s-461403ebd1"
+  ],
+  "questions": [
+   {
+    "qid": "Q1",
+    "text": "List every criterion on your ticket(s) that is NOT yet pass: its id, its ticket, who checks it (checked_by) and its current verdict."
+   },
+   {
+    "qid": "Q2",
+    "text": "What is the most recent message addressed to you (or, if none, the latest architect/owner message on your ticket): its id, who sent it, and what it tells you to do?"
+   },
+   {
+    "qid": "Q3",
+    "text": "Which owner message ids does your work trace to (cited in your ticket descriptions or criteria), and what did the owner ask in each? Answer \"none cited\" if there are none."
+   }
+  ]
+ },
+ {
+  "seat": "engineer.t-77c3a55b75",
+  "role": "engineer",
+  "tickets": [
+   "t-77c3a55b75"
+  ],
+  "questions": [
+   {
+    "qid": "Q1",
+    "text": "List every criterion on your ticket(s) that is NOT yet pass: its id, its ticket, who checks it (checked_by) and its current verdict."
+   },
+   {
+    "qid": "Q2",
+    "text": "What is the most recent message addressed to you (or, if none, the latest architect/owner message on your ticket): its id, who sent it, and what it tells you to do?"
+   },
+   {
+    "qid": "Q3",
+    "text": "Which owner message ids does your work trace to (cited in your ticket descriptions or criteria), and what did the owner ask in each? Answer \"none cited\" if there are none."
+   }
+  ]
+ }
+]

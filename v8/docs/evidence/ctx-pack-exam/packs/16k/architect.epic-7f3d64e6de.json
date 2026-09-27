@@ -1,0 +1,432 @@
+{
+ "participant": {
+  "id": "architect.epic-7f3d64e6de",
+  "created_at": "2026-09-26T13:52:06.451830Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "architect",
+  "handle": "architect.epic-7f3d64e6de",
+  "location": null,
+  "model": "claude-opus-5-5",
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "s-226d9db7ec",
+    "kind": "story",
+    "status": "done",
+    "assignee": "architect.epic-7f3d64e6de",
+    "parent_id": "epic-7f3d64e6de",
+    "design_ref": "design-e963c656f5",
+    "title": "S11 adversarial review of the whole epic: admin API + update path + workflow engine first, then installers, PII, codex seat parity",
+    "description": "Design design-e963c656f5 §5 S11. One bounded adversarial round over everything S1–S14 shipped, by an adversary seat on the epic's adversary model (codex gpt-6-a… (+739 chars)"
+   },
+   "chain": [
+    {
+     "id": "s-226d9db7ec",
+     "kind": "story",
+     "status": "done"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-71ef961a78",
+     "text": "One adversarial round is recorded as a report on this ticket. It covers all seven targets in the brief, each finding wit… (+133 chars)",
+     "check": "verdict",
+     "checked_by": "qa",
+     "verdict": "pass",
+     "evidence_ref": "report-e9afb6ef70"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43"
+   ],
+   "children": [],
+   "links": [
+    "s-54a03afc5a blocks s-226d9db7ec",
+    "s-6c2cbbc3e8 blocks s-226d9db7ec",
+    "s-d8a2452ae9 blocks s-226d9db7ec",
+    "s-1a029fd6bb blocks s-226d9db7ec"
+   ],
+   "blockers": [
+    {
+     "id": "s-54a03afc5a",
+     "status": "in_review",
+     "title": "S17 product video: Remotion, generated scenes, 7 chapters, CC0 music"
+    },
+    {
+     "id": "s-6c2cbbc3e8",
+     "status": "done",
+     "title": "S18 README as the storefront: hero loop, Download/Website, per-OS install"
+    },
+    {
+     "id": "s-d8a2452ae9",
+     "status": "done",
+     "title": "S19 Help agent + diagnostics: read-only doctor seat, approval-gated fixes, --bun"
+    },
+    {
+     "id": "s-1a029fd6bb",
+     "status": "done",
+     "title": "S20 attention trail: highlight the path to what needs you (epic → tab → section "
+    },
+    {
+     "id": "s-ec73f74ea9",
+     "status": "in_review",
+     "title": "S1 settings and paths core: one registry in edp-contracts, platformdirs dirs, ag"
+    },
+    {
+     "id": "s-733de6e29f",
+     "status": "done",
+     "title": "S4 codex bridge → codex seats: remove consult, cards spawn codex adversary/build"
+    },
+    {
+     "id": "s-edd2eda8f6",
+     "status": "done",
+     "title": "S10 board UI: empty band under the composer when the top bar is collapsed (relea"
+    },
+    {
+     "id": "s-b7ec13d748",
+     "status": "in_review",
+     "title": "S2 cross-platform process layer: PTY abstraction, psutil tree-kill, python super"
+    },
+    {
+     "id": "s-870e401942",
+     "status": "in_review",
+     "title": "S3 the CLI launcher: init/start/stop/restart/status/doctor/update/import/gui/ver"
+    },
+    {
+     "id": "s-8c6c81f596",
+     "status": "done",
+     "title": "S5 admin backend: admin tier, settings API, service control via supervisor, team"
+    },
+    {
+     "id": "s-e6b4fa59d5",
+     "status": "done",
+     "title": "S6 admin SPA: Admin → Services, Settings (all groups), Teammates, Remote access,"
+    },
+    {
+     "id": "s-5b508d7608",
+     "status": "done",
+     "title": "S7 rebrand to Heronry: art into tree, icon set, WCAG AA theme, brand applied"
+    },
+    {
+     "id": "s-6dcf78f803",
+     "status": "done",
+     "title": "S8 desktop app + installers: pywebview+tray, Briefcase MSI/DMG/deb"
+    },
+    {
+     "id": "s-32035a77da",
+     "status": "in_progress",
+     "title": "S12 any model: explicit harness/provider per catalog entry, no prefix sniffing ("
+    },
+    {
+     "id": "s-461403ebd1",
+     "status": "in_review",
+     "title": "S13 workflow engine as data: versioned workflow definitions, tables/caps/checker"
+    },
+    {
+     "id": "s-42a72db3dd",
+     "status": "in_progress",
+     "title": "S14 Design tab /ui/design: workflow list/versions/presets, pipeline view, role p"
+    },
+    {
+     "id": "s-9648fded35",
+     "status": "in_review",
+     "title": "S9 publish + dogfood: HEAD purge + PII scan, Apache-2.0, version sync, Dependabo"
+    },
+    {
+     "id": "s-b153dc54eb",
+     "status": "done",
+     "title": "hl-craft: shipping a multi-service Python+SPA app cross-platform — packaging, de"
+    },
+    {
+     "id": "s-1dccea48b5",
+     "status": "done",
+     "title": "ll-craft: cross-platform process control in Python — PTY (pywinpty vs ptyprocess"
+    },
+    {
+     "id": "s-6d5fdf783a",
+     "status": "in_review",
+     "title": "S15 project site on GitHub Pages: MkDocs Material, downloads from Releases, bran"
+    },
+    {
+     "id": "s-ca39f10643",
+     "status": "in_progress",
+     "title": "S16 lifecycle skills (/epic, /ticket) + design sign-off parity (board guards, VS"
+    },
+    {
+     "id": "s-0cfebd3862",
+     "status": "in_review",
+     "title": "S21 code server as an optional managed service: heronry start/stop code on every"
+    },
+    {
+     "id": "s-967481b62a",
+     "status": "done",
+     "title": "S22 performance pass: profile the board API, SSE feed and SPA render; fix the to"
+    },
+    {
+     "id": "s-da61d38c5e",
+     "status": "in_progress",
+     "title": "S23 agent-friendly tool layer: audit every MCP tool across all roles for token w"
+    }
+   ],
+   "thread": [
+    {
+     "id": "m-cc7f9f04f8",
+     "kind": "answer",
+     "created_at": "2026-09-27T03:36:09.393415Z"
+    }
+   ],
+   "thread_total": 54,
+   "recall_count": 0
+  },
+  {
+   "ticket": {
+    "id": "t-e967ec72b5",
+    "kind": "task",
+    "status": "in_review",
+    "assignee": "architect.epic-7f3d64e6de",
+    "parent_id": "s-5b508d7608",
+    "title": "Serve web/public files (brand icons) instead of the SPA fallback",
+    "description": "Owner m-20ec2c5207 (art-b3bc8315eb): no favicon and no rail logo. dist/brand/* was built, but webapp/serve.py mounts only /ui/assets, so /ui/brand/favicon.ico r… (+279 chars)"
+   },
+   "chain": [
+    {
+     "id": "t-e967ec72b5",
+     "kind": "task",
+     "status": "in_review"
+    },
+    {
+     "id": "s-5b508d7608",
+     "kind": "story",
+     "status": "done"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-aa16fab6d3",
+     "text": "pytest tests/test_webapp_serve.py passes (8). On the live board, GET /ui/brand/favicon.ico returns image/x-icon and /ui/… (+84 chars)",
+     "check": "command",
+     "checked_by": "engineer",
+     "verdict": "pending",
+     "evidence_ref": "note-516d697631"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43"
+   ],
+   "children": [],
+   "links": [],
+   "thread": [
+    {
+     "id": "m-5fbae0a2d4",
+     "kind": "status",
+     "created_at": "2026-09-26T17:16:24.944552Z"
+    }
+   ],
+   "thread_total": 1,
+   "recall_count": 0
+  },
+  {
+   "ticket": {
+    "id": "t-9e9ba3a6e5",
+    "kind": "task",
+    "status": "dropped",
+    "assignee": "architect.epic-7f3d64e6de",
+    "parent_id": "s-5b508d7608",
+    "title": "Needs you: a status/finding/deviation sent to a human waits there until they reply",
+    "description": "Owner m-bf83c16da7 reported that m-d98c7b57c9 (the S17 \"Blocked: pick one\" message, kind=status, to=owner) never reached Needs you. Board.inbox listed only ques… (+405 chars)"
+   },
+   "chain": [
+    {
+     "id": "t-9e9ba3a6e5",
+     "kind": "task",
+     "status": "dropped"
+    },
+    {
+     "id": "s-5b508d7608",
+     "kind": "story",
+     "status": "done"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [],
+   "docs": [
+    "design-e963c656f5 design v43"
+   ],
+   "children": [],
+   "links": [],
+   "thread": [],
+   "thread_total": 0,
+   "recall_count": 0
+  },
+  {
+   "ticket": {
+    "id": "epic-7f3d64e6de",
+    "kind": "epic",
+    "status": "in_progress",
+    "design_ref": "design-e963c656f5",
+    "title": "Productize the app. Make it as installable and independent of machine or OS"
+   },
+   "chain": [
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "status": "in_progress"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-7f77c6c523",
+     "text": "Install and run from the release artifacts: on Windows (hands-on), the MSI and, separately, `install.ps1`, each followed… (+230 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending"
+    },
+    {
+     "id": "c-8093e35929",
+     "text": "Machine independence: the installed app runs outside any checkout. No `parents[N]` repo-layout derivation, no raw env re… (+255 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending"
+    },
+    {
+     "id": "c-14348c35e8",
+     "text": "Codex seats: the consult tools are gone from every bundle and `consult(` is absent from the agent home. The qa and adver… (+256 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending"
+    },
+    {
+     "id": "c-7b1702f845",
+     "text": "Operable from the UI on the live dogfooded install: an admin, with no shell, restarts the board and the pool from Admin… (+307 chars)",
+     "check": "look",
+     "checked_by": "qa",
+     "verdict": "pending"
+    },
+    {
+     "id": "c-fc3b301a80",
+     "text": "Configurable workflow: the whole pre-existing test suite is green under the Standard workflow (golden). Lean and Solo pr… (+145 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending"
+    },
+    {
+     "id": "c-f8f4c89758",
+     "text": "Release and dogfood: a tag v0.9.0 produces a draft GitHub Release, which the owner publishes, with wheels, sdist, vsix,… (+303 chars)",
+     "check": "command",
+     "checked_by": "qa",
+     "verdict": "pending"
+    }
+   ],
+   "docs": [
+    "design-e963c656f5 design v43",
+    "strategyhl-86b4805322 strategy_hl v1",
+    "strategyhl-d76b06a3dd strategy_hl v1",
+    "strategyll-2d9045f5a0 strategy_ll v1",
+    "strategyll-3b8f4033e0 strategy_ll v2"
+   ],
+   "children": [
+    "s-ec73f74ea9 in_review",
+    "s-733de6e29f done",
+    "s-edd2eda8f6 done",
+    "s-b7ec13d748 in_review",
+    "s-870e401942 in_review",
+    "s-8c6c81f596 done",
+    "s-e6b4fa59d5 done",
+    "s-5b508d7608 done",
+    "s-6dcf78f803 done",
+    "s-32035a77da in_progress",
+    "s-461403ebd1 in_review",
+    "s-42a72db3dd in_progress",
+    "s-9648fded35 in_review",
+    "s-226d9db7ec done",
+    "s-b153dc54eb done",
+    "s-1dccea48b5 done",
+    "s-6d5fdf783a in_review",
+    "s-ca39f10643 in_progress",
+    "s-54a03afc5a in_review",
+    "s-6c2cbbc3e8 done",
+    "s-d8a2452ae9 done",
+    "s-1a029fd6bb done",
+    "s-0cfebd3862 in_review",
+    "s-967481b62a done",
+    "s-da61d38c5e in_progress"
+   ],
+   "links": [
+    "epic-7f3d64e6de produced art-71bad5407f",
+    "epic-7f3d64e6de produced art-03ac75d66e",
+    "epic-7f3d64e6de produced art-49c25890e3",
+    "epic-7f3d64e6de produced art-c6ebf6f153",
+    "epic-7f3d64e6de produced art-a26206c6cd",
+    "epic-7f3d64e6de produced art-1e28857706",
+    "epic-7f3d64e6de uses_strategy strategyhl-86b4805322",
+    "epic-7f3d64e6de uses_strategy strategyhl-d76b06a3dd",
+    "epic-7f3d64e6de uses_strategy strategyll-2d9045f5a0",
+    "epic-7f3d64e6de uses_strategy strategyll-3b8f4033e0",
+    "epic-7f3d64e6de produced art-38623a0cf2",
+    "epic-7f3d64e6de produced art-eb690830bf",
+    "epic-7f3d64e6de produced art-b3bc8315eb",
+    "epic-7f3d64e6de produced art-8e8b327a27",
+    "epic-7f3d64e6de produced art-9f2bf7512a",
+    "epic-7f3d64e6de produced art-8b1c1cbdc5",
+    "epic-7f3d64e6de produced art-34c17c0714",
+    "epic-7f3d64e6de produced art-144e2ae27e",
+    "epic-7f3d64e6de produced art-f29e7ce0df",
+    "epic-7f3d64e6de produced art-5e869e7937",
+    "epic-7f3d64e6de produced art-e48f0a97d7",
+    "epic-7f3d64e6de produced art-fddcc29837",
+    "epic-7f3d64e6de produced art-a960aec4a4",
+    "epic-7f3d64e6de produced art-f949847b14",
+    "epic-7f3d64e6de produced art-67c765ca99",
+    "epic-7f3d64e6de produced art-b88cb22c41",
+    "epic-7f3d64e6de produced art-678346d6e2",
+    "epic-7f3d64e6de produced art-6f20b5e6f0",
+    "epic-7f3d64e6de produced art-c941250fb0",
+    "epic-7f3d64e6de produced art-f3e09b0f79",
+    "epic-7f3d64e6de produced art-ea7f34a703",
+    "epic-7f3d64e6de produced art-b9ab0ce31b"
+   ],
+   "open_gates": [
+    "acceptance"
+   ],
+   "thread": [
+    {
+     "id": "m-98c7821acc",
+     "kind": "answer",
+     "created_at": "2026-09-27T08:14:50.979781Z"
+    }
+   ],
+   "thread_total": 317,
+   "recall_count": 0
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='s-226d9db7ec') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzI5OS40NTE5MjEsIm1ldGFkYXRhIjoiMWJmYzMxZTYwZWMxNTk3NjAyYjMwNWI2NmEyMDExMGQ5YTg3ZTYwOThhZmM4YWYyNzllOGQwNzY1N2MxZmM2NSIsInAiOiJiMzJlNzg3MDM5ZGVlNDE4NDk4YjdiZWJkOTJhMDIxZDFiZjFhMDk3NTFkN2FlZGU5NDBmMzFiNDNjMTllZmVlIiwicm9sZSI6ImFyY2hpdGVjdCIsInJvb3RzIjoiNWZkZjZmMzRiODA4OTY2MTliNTRjZTY3YzY5YjY5MmZlN2M2NTBiYjU2NDMyMTI5ZTAzMTM1Nzg4MjQyNmRlOCIsInNjb3BlIjoiNzQyMzRlOThhZmU3NDk4ZmI1ZGFmMWYzNmFjMmQ3OGFjYzMzOTQ2NGY5NTA3MDNiOGMwMTk4OTJmOTgyYjkwYiIsInNlcSI6MjM3NjUsInRocm91Z2giOm51bGwsInYiOjF9f9DoeMX3GdqyYAlo_mpT56me-7J5ZeHMiFiLvwPx1d8=",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=16000 bytes (verbose=False); snapshot is 11812 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "epic_words": "context(verbose=True) or ticket_read(<epic id>) for the owner's full words",
+  "description": "ticket_read(ticket_id=<id>, include='') for the full description",
+  "compact": "criteria/docs/children/links are refs; ticket_read(ticket_id=<id>) or criterion_query(ticket_id=<id>) for rows, lookup(scope=<epic>) for recall",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

@@ -1,0 +1,192 @@
+{
+ "participant": {
+  "id": "sme.s-1dccea48b5",
+  "created_at": "2026-09-26T15:30:10.851225Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "sme",
+  "handle": "sme.s-1dccea48b5",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "s-1dccea48b5",
+    "created_at": "2026-09-26T14:43:41.078676Z",
+    "created_by": "architect.epic-7f3d64e6de",
+    "kind": "story",
+    "work_type": "knowledge",
+    "title": "ll-craft: cross-platform process control in Python — PTY (pywinpty vs ptyprocess), psutil tree-kill with pid-reuse safety, supervision, detached children, macOS specifics",
+    "words": null,
+    "parent_id": "epic-7f3d64e6de",
+    "status": "done",
+    "assignee": "sme.s-1dccea48b5",
+    "design_ref": "design-e963c656f5",
+    "description": "Knowledge for S2 and S3 (design design-e963c656f5 §4.3, §7). Write a strategy_ll doc with code-level recipes. It must cover:\n- pywinpty vs ptyprocess parity (spawn, resize, read and EOF, write, kill, exit codes) and a thin abstraction that hides both.\n- Spawning interactive CLIs (claude, codex, pi) under a PTY on each OS.\n- psutil process-tree kill, identifying a process by (pid, create_time), and pid-reuse safety (a child created before its parent is not its child).\n- Detached and background children plus supervision: POSIX setsid/process groups vs Windows CREATE_NEW_PROCESS_GROUP/DETACHED_PROCESS/job objects.\n- Signals vs CTRL_BREAK.\n- A loopback-only control port with a shared secret.\n- What replaces `ctypes.windll` keystroke injection on POSIX (write to the PTY master).\n- macOS specifics: spawn start method, App Nap, Gatekeeper and quarantine on bundled binaries.\n- CI testing of PTY code on GitHub runners.\n\nCite sources. Say what is proven vs assumed.",
+    "tags": [],
+    "epic_id": "epic-7f3d64e6de",
+    "topic_config": null
+   },
+   "words": "Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and need to publish this on Git as a distributable.",
+   "words_header": "words recorded 2026-09-26; phase: in_progress; governed by design-e963c656f5 v43",
+   "workflow": "standard@1",
+   "chain": [
+    {
+     "id": "s-1dccea48b5",
+     "kind": "story",
+     "title": "ll-craft: cross-platform process control in Python — PTY (pywinpty vs ptyprocess), psutil tree-kill with pid-reuse safety, supervision, detached children, macOS specifics",
+     "status": "done",
+     "design_ref": "design-e963c656f5"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "title": "Productize the app. Make it as installable and independent of machine or OS",
+     "status": "in_progress",
+     "design_ref": "design-e963c656f5"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-e2ce38b22c",
+     "created_at": "2026-09-26T14:43:47.553697Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "s-1dccea48b5",
+     "text": "A strategy_ll doc is published and linked, with runnable recipes for the PTY abstraction, the psutil tree-kill with pid-reuse safety, detached supervision on Windows and POSIX, and the loopback control port. It includes the macOS caveats and the CI testing approach. Sources are cited, and proven vs assumed is marked. The owner accepts it.",
+     "check": "verdict",
+     "checked_by": "owner",
+     "evidence_ref": "strategyll-3b8f4033e0",
+     "evidence_version": 2,
+     "verdict": "pass"
+    }
+   ],
+   "docs": [
+    {
+     "id": "design-e963c656f5",
+     "doc_type": "design",
+     "title": "Productize EDP: installable on any machine/OS, published on GitHub; codex bridge → codex seats",
+     "version": 43,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# Productize EDP — design (epic-7f3d64e6de)\n\n## 1. Words (verbatim)\nEpic: \"Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and ne… (+99 chars)",
+     "full": "doc_read(id)",
+     "relation": "design_ref"
+    }
+   ],
+   "strategy_links": true,
+   "children": [],
+   "blockers": [],
+   "open_gates": [],
+   "thread": [
+    {
+     "id": "m-49bcaf68cc",
+     "created_at": "2026-09-26T15:40:26.266485Z",
+     "created_by": "sme.s-1dccea48b5",
+     "ticket_id": "s-1dccea48b5",
+     "to": "owner",
+     "kind": "status",
+     "text": "The ll-craft process-control strategy is published and linked to the epic, and c-e2ce38b22c needs your verdict.\n- strategyll-2d9045f5a0 (1/2) is the PTY layer. It gives the pywinpty/ptyprocess parity… (+1312 chars)",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 20107
+    },
+    {
+     "id": "m-6f110dfe48",
+     "created_at": "2026-09-26T15:54:29.769253Z",
+     "created_by": "sme.s-1dccea48b5",
+     "ticket_id": "s-1dccea48b5",
+     "to": null,
+     "kind": "status",
+     "text": "[done] The owner passed ll-craft s-1dccea48b5 and it is done: strategyll-2d9045f5a0 (the PTY layer) and strategyll-3b8f4033e0 (process control) are linked to the epic for S2 and S3, and lesson les-9dd… (+20 chars)",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": "done",
+     "artifacts": [],
+     "seq": 20205
+    }
+   ],
+   "thread_seq": 20205,
+   "thread_total": 2,
+   "links": [
+    {
+     "id": "lk-a9a2cc87bd",
+     "created_at": "2026-09-26T14:43:48.898714Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "from_id": "s-1dccea48b5",
+     "to_id": "s-b7ec13d748",
+     "relation": "blocks"
+    }
+   ],
+   "recall": {
+    "items": [
+     {
+      "id": "les-9dd08a3619",
+      "type": "lesson",
+      "text": "On Windows, CTRL_BREAK_EVENT never reaches a child spawned with CREATE_NO_WINDOW, because the child owns a separate console; and terminating a uv venv python.e…"
+     },
+     {
+      "id": "dec-0e40835b5e",
+      "type": "decision",
+      "text": "heronry stop goes through the supervisor control port when present, else kill_tree on the recorded pid chain. A pool stop with --keep-seats kills only the pool…"
+     },
+     {
+      "id": "clm-bc02049aa3",
+      "type": "claim",
+      "text": "c-eb38e8c949 pass: qa: judged on Windows evidence per dec-aaccaefe56 (macOS/Linux run link moved to S9 c-0f247caf7d); VS Code mismatch test 4/4 re-run pass; ex…"
+     },
+     {
+      "id": "dec-aaccaefe56",
+      "type": "decision",
+      "text": "S8 c-eb38e8c949 is judged on the Windows evidence (report-66985e8a85); the macOS DMG/Linux deb run link moves to S9 as c-0f247caf7d."
+     },
+     {
+      "id": "dec-ebd5683a0e",
+      "type": "decision",
+      "text": "update runs as: verify SHA256SUMS, refuse a downgrade, compat check, live-seat guard, DB backup, stop, then a detached stdlib helper installs, starts and healt…"
+     },
+     {
+      "id": "dec-8800199e5a",
+      "type": "decision",
+      "text": "Briefcase service re-entry passes on Windows: services start as `heronry.exe --heronry-service <svc>` (console stub); bundled() is structural since Briefcase s…"
+     },
+     {
+      "id": "dec-074486e913",
+      "type": "decision",
+      "text": "Deviation accepted: Deviation on c-eb38e8c949: the macOS DMG and Linux deb legs have no run link yet. The workflow `.github/workflows/installers.yml` (666b6cd)…"
+     },
+     {
+      "id": "dec-dcfd044b13",
+      "type": "decision",
+      "text": "No more LLM adversary seats on epic-7f3d64e6de. Round-2 fixes are verified by the committed regression tests and the adversary's probes run as plain pytest, pl…"
+     }
+    ],
+    "receipt": {
+     "question": "ll-craft: cross-platform process control in Python — PTY (pywinpty vs ptyproces…",
+     "returned": 8,
+     "cut": 15,
+     "cap": 8,
+     "more": "lookup(scope=<ticket>, question=…) for the full pack"
+    }
+   }
+  }
+ ],
+ "asks_for_me": [],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='s-1dccea48b5') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjRmNTNjZGExOGMyYmFhMGMwMzU0YmI1ZjlhM2VjYmU1ZWQxMmFiNGQ4ZTExYmE4NzNjMmYxMTE2MTIwMmI5NDUiLCJhdCI6MTc5MDQ5NzMwMy44NDIxMDgsIm1ldGFkYXRhIjoiMjI1Zjg5ZTBkOTZkZjhiOTRkNjBlM2FmZWRiNGNlYTA4YTBlMzUzZDZiY2QwY2Y5MDZkZmYyYmE1ZTQxZDg0MiIsInAiOiJhMzk0ODZlZGU2YmY4ZTA5M2VmZGM5ZGZlYmUyYjdiZTk4M2YyNjFkYWI0ZjUyZTQ2ZDZkZGUwYmZmZWJkMjg0Iiwicm9sZSI6InNtZSIsInJvb3RzIjoiM2Y4MzdlMWI3OTRiMzI4NjBjOWI0OWNlMGNkZDYxNTc3NDI1ZmJmZTk0MGI5MzZjMTc5OGY3YmRlZjVhZjZiYiIsInNjb3BlIjoiNzQyMzRlOThhZmU3NDk4ZmI1ZGFmMWYzNmFjMmQ3OGFjYzMzOTQ2NGY5NTA3MDNiOGMwMTk4OTJmOTgyYjkwYiIsInNlcSI6MjM3NjUsInRocm91Z2giOm51bGwsInYiOjF9zL-jzBuojX5GkuFlQFdaEBRibCicJrUfPjMf7KwQ5io=",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=16000 bytes (verbose=False); snapshot is 8014 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "full_snapshot": "context(verbose=True)"
+ }
+}

@@ -1,0 +1,193 @@
+{
+ "participant": {
+  "id": "engineer.t-d606b5d93f",
+  "created_at": "2026-09-27T07:59:06.864506Z",
+  "created_by": "registry",
+  "type": "agent",
+  "role": "engineer",
+  "handle": "engineer.t-d606b5d93f",
+  "location": null,
+  "model": null,
+  "admin": false,
+  "retired": false
+ },
+ "tickets": [
+  {
+   "ticket": {
+    "id": "t-d606b5d93f",
+    "created_at": "2026-09-27T07:58:25.410427Z",
+    "created_by": "architect.epic-7f3d64e6de",
+    "kind": "task",
+    "work_type": "bug",
+    "title": "S17-T video claim fix: chapter 4 says the context pack is 40 KB by default; the code default is 8 KB. Re-render and replace every cut",
+    "words": null,
+    "parent_id": "s-54a03afc5a",
+    "status": "ready",
+    "assignee": "engineer.t-d606b5d93f",
+    "design_ref": null,
+    "description": "qa finding m-dbf4b571de (fail on c-50778c655b): Ch4Context.tsx:37 and :47 say the context pack is \"40 KB by default\", but bundles.py:602 sets the default to 8_000, and has since 0c2c501. The criterion requires each chapter's claim to match the code.\n\n1. Fix the caption and the meter in v8/docs/video (Ch4Context.tsx) to 8 KB. Read the value from the code, not a guess, and derive the number from bundles.py if the composition can. Then sweep every other chapter's numeric or behavioural claim against its code pointer; a second wrong claim is the same bug.\n2. Re-render with the one command: heronry-demo.mp4 (1920×1080, 60–95 s, with audio), plus the hero loop, gif and poster if any of them shows chapter 4.\n3. Rebuild the README cut the same way as before (H.264/AAC, 1280×720, +faststart, ≤ 9.5 MB). Replace the committed `docs/readme/storefront/heronry-demo.mp4`, and `video-poster.jpg` if it changed. The site's /video/ page picks it up from there.\n4. Update the storyboard doc's per-chapter code pointers, so qa can check each claim against the code.\n5. Upload the new MP4 as a board video artifact for the owner, and post its id on the epic thread.\n**Checks:** ffprobe (resolution, duration, audio), the PII grep over docs/video and the renders, the README storefront tests, and `mkdocs build --strict` (offline wheels).\n**Rules:**\n- Rendering is RAM-heavy, so check free memory first; the fleet has three other engineers live.\n- Commit by path with both trailers, staging from a fresh HEAD.\n- No fleet restarts. Leave the :8010 preview server running.",
+    "tags": [],
+    "epic_id": "epic-7f3d64e6de",
+    "topic_config": null
+   },
+   "words": "Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and need to publish this on Git as a distributable.",
+   "words_header": "words recorded 2026-09-26; phase: in_progress; governed by design-e963c656f5 v43",
+   "workflow": "standard@1",
+   "chain": [
+    {
+     "id": "t-d606b5d93f",
+     "kind": "task",
+     "title": "S17-T video claim fix: chapter 4 says the context pack is 40 KB by default; the code default is 8 KB. Re-render and replace every cut",
+     "status": "ready",
+     "design_ref": null
+    },
+    {
+     "id": "s-54a03afc5a",
+     "kind": "story",
+     "title": "S17 product video: Remotion, generated scenes, 7 chapters, CC0 music",
+     "status": "in_review",
+     "design_ref": "design-e963c656f5"
+    },
+    {
+     "id": "epic-7f3d64e6de",
+     "kind": "epic",
+     "title": "Productize the app. Make it as installable and independent of machine or OS",
+     "status": "in_progress",
+     "design_ref": "design-e963c656f5"
+    }
+   ],
+   "criteria": [
+    {
+     "id": "c-03438d22fe",
+     "created_at": "2026-09-27T07:59:02.514842Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "t-d606b5d93f",
+     "text": "Chapter 4 states the 8 KB default read from bundles.py, and every chapter's claim matches its code pointer in the storyboard doc. The re-rendered heronry-demo.mp4 passes ffprobe (1920×1080, 60–95 s, audio). The README cut at docs/readme/storefront/heronry-demo.mp4 is replaced (≤ 9.5 MB) and uploaded as a board video artifact. PII grep, storefront tests and `mkdocs build --strict` pass.",
+     "check": "command",
+     "checked_by": "engineer",
+     "evidence_ref": null,
+     "evidence_version": null,
+     "verdict": "pending"
+    }
+   ],
+   "docs": [
+    {
+     "id": "design-e963c656f5",
+     "doc_type": "design",
+     "title": "Productize EDP: installable on any machine/OS, published on GitHub; codex bridge → codex seats",
+     "version": 43,
+     "scope": "epic-7f3d64e6de",
+     "tags": [],
+     "status": "active",
+     "summary": "# Productize EDP — design (epic-7f3d64e6de)\n\n## 1. Words (verbatim)\nEpic: \"Today the app is hardcoded to run on my machine. I would like it to be run on anyone's machine with a proper installer and ne… (+99 chars)",
+     "full": "doc_read(id)",
+     "relation": "epic design_ref"
+    }
+   ],
+   "strategy_links": true,
+   "children": [],
+   "blockers": [],
+   "open_gates": [],
+   "thread": [
+    {
+     "id": "m-c9abfa3828",
+     "created_at": "2026-09-27T08:01:42.689466Z",
+     "created_by": "architect.epic-7f3d64e6de",
+     "ticket_id": "t-d606b5d93f",
+     "to": "engineer.t-d606b5d93f",
+     "kind": "steer",
+     "text": "Two additions:\n1. `guides/context-refresh.md:9` also says \"default 40 KB\". Fix it to 8 KB in the same commit.\n2. The source comment at Ch4Context.tsx:2 also says 40 KB; fix it too.\nThe owner asked whe… (+150 chars)",
+     "reply_to": null,
+     "document_context": null,
+     "code_context": null,
+     "quotes": [],
+     "status": null,
+     "artifacts": [],
+     "seq": 23628
+    }
+   ],
+   "thread_seq": 23628,
+   "thread_total": 1,
+   "links": [],
+   "recall": {
+    "items": [
+     {
+      "id": "clm-8b08f0b297",
+      "type": "claim",
+      "text": "c-4fa2c43f82 pass: Pass. The \"7 stills\" line is superseded by owner steer m-317c088ba9: See it work is now the video plus the 7 chapters in video order. Every…"
+     },
+     {
+      "id": "clm-ea55994347",
+      "type": "claim",
+      "text": "c-93775a0071 pass: Audit 19/19 passes, with 0 workarounds; the largest default call is 7,987 B. Every Waste and Coverage row is fixed or ruled out. The contrac…"
+     },
+     {
+      "id": "clm-76eaad90db",
+      "type": "claim",
+      "text": "c-7f14d19e39 pass: vitest 3/3 on a fleet-like env; theme.spec.ts 3/3 from this seat shell with all 26 EDP* vars set (launcher via EDP8_BOARD_CMD because the de…"
+     },
+     {
+      "id": "dec-b74c51b811",
+      "type": "decision",
+      "text": "First-run sign-in: `heronry start` opens /ui/setup?code= (a one-time keep_token invite for the init human, via the Teammates invite store) until POST /v1/admin…"
+     },
+     {
+      "id": "dec-9c292f88a4",
+      "type": "decision",
+      "text": "Admin = a human with the explicit admin flag or handle == EDP8_OWNER (init human); /v1/admin/* needs X-Participant + a matching tokens.json X-Token, refuses X-…"
+     },
+     {
+      "id": "dec-7990daf420",
+      "type": "decision",
+      "text": "adversarial gate on s-226d9db7ec answered by owner: We close here. Something went wrong with this ticket context. We made good progress. Lets fix what we can a…"
+     },
+     {
+      "id": "clm-cacad64022",
+      "type": "claim",
+      "text": "c-23d14e607b pass: 41d7a7c: permanent test passes (25 expired → list 0, new ask 200, claim answers expired); test_admin_access + teammates + attention 43 passe…"
+     },
+     {
+      "id": "dec-30be75475f",
+      "type": "decision",
+      "text": "heronry import is a dry run by default (--apply writes). It refuses dev mode unless --force, and refuses while the target board runs. The admin token goes to a…"
+     }
+    ],
+    "receipt": {
+     "question": "S17-T video claim fix: chapter 4 says the context pack is 40 KB by default; the…",
+     "returned": 8,
+     "cut": 16,
+     "cap": 8,
+     "more": "lookup(scope=<ticket>, question=…) for the full pack"
+    }
+   }
+  }
+ ],
+ "asks_for_me": [
+  {
+   "id": "m-c9abfa3828",
+   "created_at": "2026-09-27T08:01:42.689466Z",
+   "created_by": "architect.epic-7f3d64e6de",
+   "ticket_id": "t-d606b5d93f",
+   "to": "engineer.t-d606b5d93f",
+   "kind": "steer",
+   "text": "Two additions:\n1. `guides/context-refresh.md:9` also says \"default 40 KB\". Fix it to 8 KB in the same commit.\n2. The source comment at Ch4Context.tsx:2 also says 40 KB; fix it too.\nThe owner asked whether 40 KB was required. The ruling (m-093790d260 thread) is that 8 KB stays the default, set in S23-T2 8f40bc0. Every place that states it says 8 KB.",
+   "reply_to": null,
+   "document_context": null,
+   "code_context": null,
+   "quotes": [],
+   "status": null,
+   "artifacts": [],
+   "from_type": "agent",
+   "from_role": "architect",
+   "answer_with": "message_send(ticket_id='t-d606b5d93f', kind='answer', to='architect.epic-7f3d64e6de', reply_to='m-c9abfa3828')"
+  }
+ ],
+ "hint": "strategy/domain docs are linked: run assemble_ruleset(ticket_id='t-d606b5d93f') for your working brief (docs above are summaries; doc_read fetches full text)",
+ "cursor": "eyJhbmNob3IiOiJldi0zYWM1MmQ1ZjcwIiwiYXNrcyI6IjhmNDQ1YWIwN2JjNmYwOTlmZWM1YjM0M2U1OGI4ZWVjNjVhY2Q4MTlhZWI2NGZjOTYxMTczYzk3YjAwMjgzYzQiLCJhdCI6MTc5MDQ5NzMxMC40NjMyNTksIm1ldGFkYXRhIjoiZmJiNGMxZjA3NTlhOWM0NGVjZDlmZGRlODE3NjJjMTU0MjQxYTgyNGM5NmI4NWFjY2MxNzZmYzQ1NGM4ZjdlMyIsInAiOiIzMTU5ZmE3ZGE5MDI3MjQyYzZiMzM2N2QzYTMyNDRmMTBlYjE0MTM4NDczODMxZDU3MGJhOWQwYjg2ZDJlYWU2Iiwicm9sZSI6ImVuZ2luZWVyIiwicm9vdHMiOiJmYjI1ZDUxOWZmNzI5NGYxYTk1ZGUyYWJiOTgyNTdjYmExODAwNjJjZjVlNGI3ZTk1MDBiYzNjNWMxY2Q3MGI2Iiwic2NvcGUiOiI3NDIzNGU5OGFmZTc0OThmYjVkYWYxZjM2YWMyZDc4YWNjMzM5NDY0Zjk1MDcwM2I4YzAxOTg5MmY5ODJiOTBiIiwic2VxIjoyMzc2NSwidGhyb3VnaCI6bnVsbCwidiI6MX0Xyx0ujgXFCYQrxpDYbdbgGyUS_r5hjSDJVNmB_ZZyjQ==",
+ "omitted": {
+  "why": "bounded to EDP8_CONTEXT_BUDGET_B=16000 bytes (verbose=False); snapshot is 8954 bytes",
+  "thread_bodies": "full window: context(ticket_id=<id>, verbose=True); complete history: message_query(ticket_id=<id>, since_seq=0) then continue from last_seq",
+  "doc_summaries": "doc_read(id) for the full body",
+  "full_snapshot": "context(verbose=True)"
+ }
+}
