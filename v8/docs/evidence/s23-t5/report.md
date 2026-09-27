@@ -120,4 +120,3 @@ Recommend picking N1–N5 for a scoped follow-up; N6 needs an explicit UI-only r
 
 - p-59f06ccc — the unreachable research tail is recorded as framework pain.
 - les-a5b22ca20d — successful representative paths must anchor usability scoring.
-
