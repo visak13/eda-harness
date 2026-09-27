@@ -29,8 +29,10 @@ from edp8.schemas import EventKind, MessageKind, TicketKind, WorkType
 V8 = Path(__file__).resolve().parents[1]
 
 #: every tool the doctor may hold: reads, its thread's messages, propose_fix (inert until an admin approves)
-#: and the kernel's communication tools (architect ruling m-ec43dddf3e (1))
+#: and the kernel's communication tools (architect ruling m-ec43dddf3e (1)); S23 ruling m-fbd6ae40d3 adds
+#: `pain` (query/read/file, and resolve for the owner and the doctor) and the read-only `service_status`
 DOCTOR_ALLOWED = {
+    "pain", "service_status",
     "whoami", "preflight", "subscribe", "resume_self", "context", "context_delta", "describe", "describe_objects",
     "get_guide", "ticket_read", "ticket_query", "criterion_query", "doc_read", "doc_query", "message_send",
     "message_query", "message_read", "gates", "participants", "events_query", "board", "find", "lookup",
