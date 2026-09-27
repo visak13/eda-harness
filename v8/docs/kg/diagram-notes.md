@@ -17,4 +17,4 @@ Implementation details that affect the diagrams:
 
 Re-render with the installed Pillow interpreter:
 
-    C:/Projects/Learning/eda-base3/v8/.venv/Scripts/python.exe render_kg.py
+    C:/Work/Learning/eda-base3/v8/.venv/Scripts/python.exe render_kg.py

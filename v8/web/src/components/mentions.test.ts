@@ -24,8 +24,8 @@ describe("previewMentionText (C23)", () => {
   const boardVisible = (t: string) => mentionTokens(t.replace(/```[\s\S]*?(?:```|$)/g, " "));
   it("joins text and notes; an open fence in one source cannot swallow a later mention", () => {
     expect(previewMentionText("hi", [])).toBe("hi");
-    const t = previewMentionText("```\nunclosed", ["@vishal look", undefined, "```open", "@tokuser"]);
-    expect(boardVisible(t)).toEqual(["vishal", "tokuser"]);
-    expect(boardVisible("```\nunclosed\n\n@vishal look")).toEqual([]); // the naive join hid it
+    const t = previewMentionText("```\nunclosed", ["@jordan look", undefined, "```open", "@tokuser"]);
+    expect(boardVisible(t)).toEqual(["jordan", "tokuser"]);
+    expect(boardVisible("```\nunclosed\n\n@jordan look")).toEqual([]); // the naive join hid it
   });
 });

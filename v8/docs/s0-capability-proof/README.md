@@ -148,7 +148,7 @@ is distinct from promising delivery with all tabs closed.
 ## Claude one-session capture — prepared, awaiting owner activity
 
 Read-only settings-shape inspection: no statusLine key in user
-`C:/Users/aksou/.claude/settings.json` or project `v8/.claude/settings.json`;
+`C:/Users/user/.claude/settings.json` or project `v8/.claude/settings.json`;
 project settings.local.json and standard `C:/Program Files/ClaudeCode/managed-settings.json`
 absent. No other settings values printed/read into the report.
 Owner consent `m-d9522fe9a7` (verified/relayed in `m-f4c8ab8cd7`) authorizes the exact
@@ -160,7 +160,7 @@ and has no statusline override. Personal settings.json also has no statusLine ke
 Ready command in owner's normal profile-loaded PowerShell, for a NEW interactive session:
 
 ```powershell
-claude-personal --settings C:/Users/aksou/AppData/Local/Temp/edp8-s0-claude/settings.json
+claude-personal --settings C:/Users/user/AppData/Local/Temp/edp8-s0-claude/settings.json
 ```
 
 Exclusively created temp directory and settings.json; did not overwrite preexisting files.

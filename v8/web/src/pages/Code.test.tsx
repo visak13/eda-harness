@@ -14,7 +14,7 @@ import { CodeFaqPage, CodePage } from "./Code";
 const ok = (value: unknown) => HttpResponse.json({ ok: true, value, hint: "" });
 const STATUS: CodeStatus = {
   port: 9555, url: "http://127.0.0.1:9555/", running: true, version: "4.138.0",
-  default_folder: "C:\\Projects\\Learning\\eda-base3\\v8", start_command: ".\\edp.ps1 start code",
+  default_folder: "C:\\Work\\Learning\\eda-base3\\v8", start_command: ".\\edp.ps1 start code",
 };
 
 function mount(path = "/code", status: Partial<CodeStatus> | "error" = {}, hostname = "127.0.0.1", mint: "ok" | "forbidden" = "ok") {
@@ -66,11 +66,11 @@ describe("CodePage", () => {
   });
 
   it("a deep link opens the folder and the file at the range's start line, and shows the range", async () => {
-    mount("/code?folder=C%3A%5CProjects%5Cv8&file=src%2Fedp8%2Fboard.py&line=10-20");
+    mount("/code?folder=C%3A%5CWork%5Cv8&file=src%2Fedp8%2Fboard.py&line=10-20");
     const u = new URL(framed((await screen.findByTestId("code-frame")).getAttribute("src")!).target);
-    expect(u.searchParams.get("folder")).toBe("/c:/Projects/v8");
+    expect(u.searchParams.get("folder")).toBe("/c:/Work/v8");
     expect(JSON.parse(u.searchParams.get("payload")!)).toEqual([
-      ["openFile", "vscode-remote://127.0.0.1:9555/c:/Projects/v8/src/edp8/board.py:10"],
+      ["openFile", "vscode-remote://127.0.0.1:9555/c:/Work/v8/src/edp8/board.py:10"],
       ["gotoLineMode", "true"],
     ]);
     expect(screen.getByTestId("code-where")).toHaveTextContent("src/edp8/board.py L10–20");

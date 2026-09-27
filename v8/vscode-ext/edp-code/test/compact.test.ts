@@ -23,14 +23,14 @@ describe('touchedPaths: commits naming the scope + anchors', () => {
 });
 
 describe('anchorPath: a message anchor relative to the shared repo root', () => {
-  const root = 'c:\\Projects\\Learning\\eda-base3';
+  const root = 'c:\\Work\\Learning\\eda-base3';
   it('same root (case and slashes differ): the path as is', () =>
-    expect(anchorPath({ repo_root: 'C:/Projects/Learning/eda-base3', path: 'v8/a.ts' }, root)).toBe('v8/a.ts'));
+    expect(anchorPath({ repo_root: 'C:/Work/Learning/eda-base3', path: 'v8/a.ts' }, root)).toBe('v8/a.ts'));
   it('a nested root prefixes its sub-path', () =>
-    expect(anchorPath({ repo_root: 'C:/Projects/Learning/eda-base3/v8', path: 'src/x.py' }, root)).toBe('v8/src/x.py'));
+    expect(anchorPath({ repo_root: 'C:/Work/Learning/eda-base3/v8', path: 'src/x.py' }, root)).toBe('v8/src/x.py'));
   it('a parent root strips it; outside the repo is null', () => {
-    expect(anchorPath({ repo_root: 'C:/Projects/Learning', path: 'eda-base3/v8/a.ts' }, root)).toBe('v8/a.ts');
-    expect(anchorPath({ repo_root: 'C:/Projects/Learning', path: 'other/a.ts' }, root)).toBeNull();
+    expect(anchorPath({ repo_root: 'C:/Work/Learning', path: 'eda-base3/v8/a.ts' }, root)).toBe('v8/a.ts');
+    expect(anchorPath({ repo_root: 'C:/Work/Learning', path: 'other/a.ts' }, root)).toBeNull();
   });
   it("another machine's root keeps the repo-relative path; unsafe paths are dropped", () => {
     expect(anchorPath({ repo_root: '/home/ravi/eda-base3', path: 'v8/a.ts' }, root)).toBe('v8/a.ts');

@@ -5,10 +5,10 @@ import { embedUrl, guardBase, isLoopbackHost, lineLabel, loginUrl, normalizeFile
 // ruling (dec-ea925a2d30): `/c:/…` — leading slash, lowercase drive, forward slashes.
 describe("normalizeFolder", () => {
   it.each([
-    [String.raw`C:\Projects\Learning\eda-base3\v8`, "/c:/Projects/Learning/eda-base3/v8"],
-    ["C:/Projects/Learning/eda-base3/v8", "/c:/Projects/Learning/eda-base3/v8"],
-    ["/C:/Projects/x/", "/c:/Projects/x"],
-    ["/c:/Projects/x", "/c:/Projects/x"],
+    [String.raw`C:\Work\Learning\eda-base3\v8`, "/c:/Work/Learning/eda-base3/v8"],
+    ["C:/Work/Learning/eda-base3/v8", "/c:/Work/Learning/eda-base3/v8"],
+    ["/C:/Work/x/", "/c:/Work/x"],
+    ["/c:/Work/x", "/c:/Work/x"],
     ["c:\\", "/c:/"],
     ["D:", "/d:/"],
     [String.raw`C:\\a\\b`, "/c:/a/b"],
@@ -44,8 +44,8 @@ describe("parseLine", () => {
 
 describe("parseCodeLink", () => {
   it("reads folder, file and line, and names the unusable ones", () => {
-    const l = parseCodeLink("?folder=C%3A%5CProjects%5Cv8&file=src%2Fa.py&line=10-20");
-    expect(l).toEqual({ folder: "/c:/Projects/v8", file: "src/a.py", line: { start: 10, end: 20 }, invalid: [] });
+    const l = parseCodeLink("?folder=C%3A%5CWork%5Cv8&file=src%2Fa.py&line=10-20");
+    expect(l).toEqual({ folder: "/c:/Work/v8", file: "src/a.py", line: { start: 10, end: 20 }, invalid: [] });
     expect(parseCodeLink("?folder=rel&file=..%2Fx&line=zz").invalid).toEqual(["folder", "file", "line"]);
     expect(parseCodeLink("")).toEqual({ folder: null, file: null, line: null, invalid: [] });
   });
@@ -58,15 +58,15 @@ describe("embedUrl", () => {
   // t-6356c06c40: a plain open sends no folder, so code-server reopens its last folder/workspace
   // (and only with no history its CLI default); any ?folder= would override that memory.
   it.each(["", "?line=10", "?folder=", "?file="])("a plain open (%s) sends no folder, so code-server reopens its last folder", search => {
-    const u = embedUrl(BASE, parseCodeLink(search), String.raw`C:\Projects\Learning\eda-base3\v8`);
+    const u = embedUrl(BASE, parseCodeLink(search), String.raw`C:\Work\Learning\eda-base3\v8`);
     expect(u).toBe("http://127.0.0.1:9410/");
   });
 
   it("a deep-linked file with no folder resolves against the board's own tree in the /c:/ form", () => {
-    const u = embedUrl(BASE, parseCodeLink("?file=src/edp8/board.py&line=7"), String.raw`C:\Projects\Learning\eda-base3\v8`);
-    expect(new URL(u).searchParams.get("folder")).toBe("/c:/Projects/Learning/eda-base3/v8");
+    const u = embedUrl(BASE, parseCodeLink("?file=src/edp8/board.py&line=7"), String.raw`C:\Work\Learning\eda-base3\v8`);
+    expect(new URL(u).searchParams.get("folder")).toBe("/c:/Work/Learning/eda-base3/v8");
     expect(payloadOf(u)).toEqual([
-      ["openFile", "vscode-remote://127.0.0.1:9410/c:/Projects/Learning/eda-base3/v8/src/edp8/board.py:7"],
+      ["openFile", "vscode-remote://127.0.0.1:9410/c:/Work/Learning/eda-base3/v8/src/edp8/board.py:7"],
       ["gotoLineMode", "true"],
     ]);
   });
@@ -80,10 +80,10 @@ describe("embedUrl", () => {
   });
 
   it("opens the file at the range's start line through the workbench payload", () => {
-    const u = embedUrl(BASE, parseCodeLink("?folder=C:/Projects/v8&file=src/edp8/board.py&line=10-20"), null);
-    expect(new URL(u).searchParams.get("folder")).toBe("/c:/Projects/v8");
+    const u = embedUrl(BASE, parseCodeLink("?folder=C:/Work/v8&file=src/edp8/board.py&line=10-20"), null);
+    expect(new URL(u).searchParams.get("folder")).toBe("/c:/Work/v8");
     expect(payloadOf(u)).toEqual([
-      ["openFile", "vscode-remote://127.0.0.1:9410/c:/Projects/v8/src/edp8/board.py:10"],
+      ["openFile", "vscode-remote://127.0.0.1:9410/c:/Work/v8/src/edp8/board.py:10"],
       ["gotoLineMode", "true"],
     ]);
   });

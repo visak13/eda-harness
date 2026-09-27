@@ -10,7 +10,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(os.environ.get("KG_DB", "C:/Projects/Learning/eda-base3/v8/.data/kg-poc/kg.db"))
+DB_PATH = Path(os.environ.get("KG_DB", "C:/Work/Learning/eda-base3/v8/.data/kg-poc/kg.db"))
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS node (

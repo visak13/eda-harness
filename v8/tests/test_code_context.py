@@ -31,7 +31,7 @@ SHA = "0123456789abcdef0123456789abcdef01234567"
 
 
 def anchor(**over):
-    cc = {"repo_root": "C:/Projects/Learning/eda-base3/v8", "path": "src/edp8/board.py", "line_start": 10,
+    cc = {"repo_root": "C:/Work/Learning/eda-base3/v8", "path": "src/edp8/board.py", "line_start": 10,
           "line_end": 12, "commit": SHA, "dirty": False, "snippet": "def f():\n    return 1\n"}
     cc.update(over)
     if "snippet_sha" not in over:

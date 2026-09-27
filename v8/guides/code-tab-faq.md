@@ -53,7 +53,7 @@ own folder, on its own branch.
 git worktree add ..\eda-base3-mine -b my-branch
 ```
 
-Then open it in the tab: `/ui/code?folder=C:\Projects\Learning\eda-base3-mine`. Branch switches,
+Then open it in the tab: `/ui/code?folder=C:\Work\Learning\eda-base3-mine`. Branch switches,
 merges and resets there touch only your copy. Merge back when ready, and remove the worktree with
 `git worktree remove ..\eda-base3-mine`.
 

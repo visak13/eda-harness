@@ -45,7 +45,7 @@ def published(monkeypatch):
 
 @pytest.fixture
 def env(client):
-    for pid, role, typ in [("owner", "owner", "human"), ("vishal", "owner", "human"),
+    for pid, role, typ in [("owner", "owner", "human"), ("jordan", "owner", "human"),
                            ("arch", "architect", "agent"), ("eng", "engineer", "agent")]:
         assert client.post("/v1/participants", json={"type": typ, "role": role, "handle": pid, "id": pid},
                            headers=ADMIN).json()["ok"]
@@ -77,22 +77,22 @@ def event_mentions(board, mid):
 
 
 def test_a_mention_only_in_a_note_is_notified_and_listed(board, client, env, published):
-    m = send(client, env, text="no handles here", note="@vishal can you rule on this?")
-    assert event_mentions(board, m["id"]) == ["vishal"]
-    assert ("vishal", m["id"]) in published       # the broker inbox mirror wakes the person
+    m = send(client, env, text="no handles here", note="@jordan can you rule on this?")
+    assert event_mentions(board, m["id"]) == ["jordan"]
+    assert ("jordan", m["id"]) in published       # the broker inbox mirror wakes the person
     assert m["unresolved_mentions"] == []
 
 
 def test_a_handle_in_text_and_note_is_listed_once(board, client, env, published):
-    m = send(client, env, text="@vishal look", note="@vishal and this line")
-    assert event_mentions(board, m["id"]) == ["vishal"]
-    assert [to for to, mid in published if mid == m["id"]].count("vishal") == 1
+    m = send(client, env, text="@jordan look", note="@jordan and this line")
+    assert event_mentions(board, m["id"]) == ["jordan"]
+    assert [to for to, mid in published if mid == m["id"]].count("jordan") == 1
 
 
 def test_sender_and_to_are_excluded_in_notes(board, client, env, published):
-    m = send(client, env, text="x", note="@owner @eng @vishal", to="eng", who=OWNER)
-    assert event_mentions(board, m["id"]) == ["vishal"]
-    assert [to for to, mid in published if mid == m["id"]] == ["eng", "vishal"]  # eng once, as `to`
+    m = send(client, env, text="x", note="@owner @eng @jordan", to="eng", who=OWNER)
+    assert event_mentions(board, m["id"]) == ["jordan"]
+    assert [to for to, mid in published if mid == m["id"]] == ["eng", "jordan"]  # eng once, as `to`
 
 
 def test_an_unknown_handle_in_a_note_is_prose_like_in_text(board, client, env, published):
@@ -105,13 +105,13 @@ def test_an_unknown_handle_in_a_note_is_prose_like_in_text(board, client, env, p
 
 
 def test_an_open_fence_in_the_text_does_not_swallow_a_note_mention(board, client, env, published):
-    m = send(client, env, text="```\nunclosed", note="@vishal")
-    assert event_mentions(board, m["id"]) == ["vishal"]
+    m = send(client, env, text="```\nunclosed", note="@jordan")
+    assert event_mentions(board, m["id"]) == ["jordan"]
 
 
 def test_mentions_in_several_notes_keep_order(board, client, env, published):
     qs = [{"source": "message", "id": env["src"], "text": "The quoted passage.", "note": "@arch first"},
-          {"source": "message", "id": env["src"], "text": "The quoted passage.", "note": "@vishal @arch"}]
+          {"source": "message", "id": env["src"], "text": "The quoted passage.", "note": "@jordan @arch"}]
     r = client.post("/v1/messages", headers=OWNER, json={"ticket_id": env["story"], "to": "eng",
                                                          "kind": "question", "text": "x", "quotes": qs})
-    assert event_mentions(board, r.json()["value"]["id"]) == ["arch", "vishal"]
+    assert event_mentions(board, r.json()["value"]["id"]) == ["arch", "jordan"]

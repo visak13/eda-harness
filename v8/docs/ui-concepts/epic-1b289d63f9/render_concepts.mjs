@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 const root=path.dirname(fileURLToPath(import.meta.url));
-const executable=process.env.CONCEPT_CHROME || 'C:\\Users\\aksou\\AppData\\Local\\ms-playwright\\chromium-1234\\chrome-win64\\chrome.exe';
+const executable=process.env.CONCEPT_CHROME || 'C:\\Users\\user\\AppData\\Local\\ms-playwright\\chromium-1234\\chrome-win64\\chrome.exe';
 const browser=spawn(executable,['--headless=new','--disable-gpu','--no-sandbox','--in-process-gpu','--disable-features=NetworkServiceSandbox','--no-first-run','--no-default-browser-check','--hide-scrollbars','--remote-debugging-pipe',`--user-data-dir=${path.join(root,'.render-profile')}`],{stdio:['ignore','ignore','pipe','pipe','pipe'],windowsHide:true});
 browser.stderr.on('data',chunk=>process.stderr.write(chunk));
 browser.on('exit',(code)=>{if(code)console.error('Browser exited',code)});

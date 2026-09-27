@@ -2,7 +2,7 @@
 // parsed here (pure, unit-tested) and turned into the code-server iframe URL.
 //
 // Two measured facts shape it (code-server 4.138 native Windows, S1 report-b90f1f63df, S3 probe):
-//  - `?folder=` must be `/c:/Projects/...` — leading slash, lowercase drive, forward slashes. The
+//  - `?folder=` must be `/c:/Work/...` — leading slash, lowercase drive, forward slashes. The
 //    `C:/...` form opens a phantom workspace in which git finds no repository (dec-ea925a2d30).
 //  - A file opens at a line through the workbench `payload` query: [["openFile", "vscode-remote://
 //    <host>/c:/.../file:<n>"], ["gotoLineMode", "true"]]. It reveals the START line only (no range).

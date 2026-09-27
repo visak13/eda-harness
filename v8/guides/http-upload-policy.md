@@ -20,7 +20,7 @@ Example JSON (replace with actual canonical existing paths and canonical partici
 ```json
 {
   "version": 1,
-  "workspace_root": "C:\\Projects\\board-workspace",
+  "workspace_root": "C:\\Work\\board-workspace",
   "seats": {
     "engineer.s-example": {"scratch_root": "C:\\seat-scratch\\engineer.s-example"},
     "architect.epic-example": {}

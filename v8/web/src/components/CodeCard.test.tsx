@@ -13,7 +13,7 @@ const SHA = "0123456789abcdef0123456789abcdef01234567";
 const HOSTILE = `<script>window.__pwned = 1</script>\n<img src=x onerror="window.__pwned = 2">`;
 
 function cc(over: Partial<CodeContext> = {}): CodeContext {
-  return { repo_root: "C:/Projects/Learning/eda-base3/v8", path: "src/edp8/board.py", line_start: 10, line_end: 20,
+  return { repo_root: "C:/Work/Learning/eda-base3/v8", path: "src/edp8/board.py", line_start: 10, line_end: 20,
     commit: SHA, dirty: false, snippet: "def f():\n    return 1", snippet_sha: "x", ...over };
 }
 
@@ -49,7 +49,7 @@ describe("CodeCard (S4)", () => {
     const a = screen.getByRole("link", { name: /Open in Code/ });
     const url = new URL(a.getAttribute("href")!, "http://x");
     expect(url.pathname).toBe("/code");
-    expect(url.searchParams.get("folder")).toBe("C:/Projects/Learning/eda-base3/v8");
+    expect(url.searchParams.get("folder")).toBe("C:/Work/Learning/eda-base3/v8");
     expect(url.searchParams.get("file")).toBe("src/edp8/board.py");
     expect(url.searchParams.get("line")).toBe("10-20"); // S3: a range anchor carries its range
     expect(screen.getByText("opens your current working copy")).toBeVisible();

@@ -26,7 +26,7 @@ npm --prefix web run build
 
 PowerShell browser command (Git Bash equivalent uses a quoted Windows-backslash environment assignment):
 ```powershell
-$env:EDP8_BOARD_CMD = 'C:\Projects\Learning\eda-base3\v8\.venv\Scripts\edp8-board.exe'
+$env:EDP8_BOARD_CMD = 'C:\Work\Learning\eda-base3\v8\.venv\Scripts\edp8-board.exe'
 npm --prefix web run e2e -- e2e/s2-foundations.spec.ts e2e/s2-live.spec.ts e2e/s2-reflow.spec.ts --workers=1 --max-failures=1
 # 25 passed, 55.1s
 ```

@@ -1,7 +1,7 @@
 // C1 spike measurement: live :9410, one browser per run. node c1-measure.cjs <chromium|firefox> <outdir> [steps]
 const path = require('node:path');
 const fs = require('node:fs');
-const WEB = 'C:/Projects/Learning/eda-base3/v8/web/node_modules';
+const WEB = 'C:/Work/Learning/eda-base3/v8/web/node_modules';
 const which = process.argv[2];
 const outDir = process.argv[3];
 const steps = (process.argv[4] || 'view,inline,panel').split(',');
@@ -21,7 +21,7 @@ const L = (s) => { const l = `${new Date().toISOString()} ${s}`; console.log(l);
   page.on('pageerror', (e) => L(`pageerror ${e.message.slice(0, 300)}`));
   page.on('requestfailed', (r) => L(`requestfailed ${r.url().slice(0, 160)} ${r.failure()?.errorText}`));
   L(`browser ${which} ${browser.version()}`);
-  await page.goto('http://127.0.0.1:9410/?folder=/c:/Projects/Learning/eda-base3/v8', { waitUntil: 'domcontentloaded' });
+  await page.goto('http://127.0.0.1:9410/?folder=/c:/Work/Learning/eda-base3/v8', { waitUntil: 'domcontentloaded' });
   await page.locator('div.monaco-workbench').waitFor({ timeout: 60000 });
   L('workbench visible');
   await page.waitForTimeout(4000); // let extensions activate (spike is onStartupFinished)
@@ -142,7 +142,7 @@ const L = (s) => { const l = `${new Date().toISOString()} ${s}`; console.log(l);
   };
   S.newpage = async () => {
     const p2 = await ctx.newPage(); await page.close();
-    page = p2; await page.goto('http://127.0.0.1:9410/?folder=/c:/Projects/Learning/eda-base3/v8', { waitUntil: 'domcontentloaded' });
+    page = p2; await page.goto('http://127.0.0.1:9410/?folder=/c:/Work/Learning/eda-base3/v8', { waitUntil: 'domcontentloaded' });
     await page.locator('div.monaco-workbench').waitFor({ timeout: 60000 }); await page.waitForTimeout(6000); L('new tab, same profile');
   };
   S.frames = async () => { for (const f of page.frames()) L(`frame ${f.url().slice(0, 150)}`); };

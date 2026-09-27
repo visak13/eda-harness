@@ -101,3 +101,27 @@ v8/.pi/parity/
 # Consult/Sol run logs and their manifests, at any depth (S16: a Sol adversarial log was committed)
 .sol/
 *.manifest.json
+
+# S9 (s-9648fded35) HEAD purge: private or host-only material stays out of the public tree.
+# These paths were removed with `git rm --cached` and live on only in local checkouts.
+/claude/
+/opencode-fleet/
+/neuron-sol/
+/archive/
+/design-templates-mcp/
+/integration/
+/vault/
+/review-package/
+/update-claude.bat
+.sol-run*
+.sol_review_*
+**/.memory/
+**/.shadows/
+**/.claude-pool/
+v8/.run/
+v8/.env
+.env
+**/tokens.json
+**/human-tokens.txt
+**/code.json
+v8/ui-settings.json

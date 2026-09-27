@@ -16,8 +16,8 @@ import db
 import walk
 from ingest import add_edge, upsert_node, upsert_source
 
-SRC = Path("C:/Projects/Learning/eda-base3/v8/.data/kg-poc/kg.db")
-REPLAY = Path("C:/Projects/Learning/eda-base3/v8/.data/kg-poc/kg-replay.db")
+SRC = Path("C:/Work/Learning/eda-base3/v8/.data/kg-poc/kg.db")
+REPLAY = Path("C:/Work/Learning/eda-base3/v8/.data/kg-poc/kg-replay.db")
 
 SLACK_TICKET = "ticket:s-7f663c6322"
 SLACK_MODULE = "module:src/edp8/slack_bridge.py"

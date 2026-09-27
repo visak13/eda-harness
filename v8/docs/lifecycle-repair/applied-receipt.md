@@ -4,7 +4,7 @@ Owner authorization: **m-f5feec237a**, “@architect.epic-44a0576511 yes I autho
 
 Extended isolated proof to verify exact authorization record and exclusive before-image creation: **13 tests passed in 1.191s**. The proof file's default execution still runs temporary synthetic tests only. Candidate helper now has explicit authorization/before-image parameters; a separately invoked one-off operator command used those after permission. No reusable live CLI was added.
 
-Identified the running :9400 listener as PID **17500** and read its EDP8_DB environment (rather than assuming the current shell's default). Confirmed active path `C:/Projects/Learning/eda-base3/v8/.data/edp8.db`. Board tools independently showed the expected v7 epic/children/open gate immediately before maintenance.
+Identified the running :9400 listener as PID **17500** and read its EDP8_DB environment (rather than assuming the current shell's default). Confirmed active path `C:/Work/Learning/eda-base3/v8/.data/edp8.db`. Board tools independently showed the expected v7 epic/children/open gate immediately before maintenance.
 
 One `BEGIN IMMEDIATE` transaction, 1s lock timeout, all tested prerequisites rechecked, exclusive before-image written, changed only epic-44a0576511's status JSON/index from `in_progress` to `designed` and appended maintenance status event **ev-28f799b21a**, attributed to architect.epic-44a0576511 and referencing m-f5feec237a. Event sequence allocated atomically. No owner/gate impersonation, no deletion or rewrite of old history. Transaction measured **0.0289s**; this is duration, not a claim of zero concurrent latency impact.
 

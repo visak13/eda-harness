@@ -18,7 +18,7 @@ const L = s => { const l = `${new Date().toISOString()} ${s}`; console.log(l); f
   const page = await (await browser.newContext({ viewport: { width: 1600, height: 950 } })).newPage();
   page.on('pageerror', e => L(`pageerror ${e.message.slice(0, 200)}`));
   L(`browser ${which} ${browser.version()}`);
-  await page.goto('http://127.0.0.1:9410/?folder=/c:/Projects/Learning/eda-base3/v8', { waitUntil: 'domcontentloaded' });
+  await page.goto('http://127.0.0.1:9410/?folder=/c:/Work/Learning/eda-base3/v8', { waitUntil: 'domcontentloaded' });
   await page.locator('div.monaco-workbench').waitFor({ timeout: 60000 });
   await page.waitForTimeout(5000);
   const quick = page.locator('.quick-input-widget');

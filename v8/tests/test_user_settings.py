@@ -92,10 +92,10 @@ def test_save_retries_a_windows_sharing_violation_on_replace(tmp_path, monkeypat
 
     monkeypatch.setattr(user_settings.time, "sleep", lambda _s: None)  # no real backoff wait
     monkeypatch.setattr(Path, "replace", flaky_replace)
-    stored = user_settings.save_settings("p1", {"profile": {"display_name": "Vishal"}}, path=f)
-    assert stored["profile"]["display_name"] == "Vishal"
+    stored = user_settings.save_settings("p1", {"profile": {"display_name": "Jordan"}}, path=f)
+    assert stored["profile"]["display_name"] == "Jordan"
     assert calls["n"] == 3            # two retries then success
-    assert user_settings.load_all(f)["p1"]["profile"]["display_name"] == "Vishal"
+    assert user_settings.load_all(f)["p1"]["profile"]["display_name"] == "Jordan"
 
     # a replace that never recovers still raises rather than silently losing the write
     calls["n"] = 0

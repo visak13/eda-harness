@@ -16,7 +16,7 @@ import db
 import board
 
 EPIC = "epic-44a0576511"
-REPO = "C:/Projects/Learning/eda-base3"
+REPO = "C:/Work/Learning/eda-base3"
 RENDER_NODE = "ref:revision3-clean"
 RENDER_RE = re.compile(r"revision3-clean", re.I)
 

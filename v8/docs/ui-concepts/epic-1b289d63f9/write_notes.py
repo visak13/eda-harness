@@ -63,7 +63,7 @@ A filled orange active-nav item provides a firm location cue while charcoal text
 
 ## Exact existing root-token replacements
 
-Source reviewed: `C:/Projects/Learning/eda-base3/v8/src/edp8/ui.py`, `_CSS`, starting at the `/* Tokens */` block. Values below describe a later implementation of the selected direction; they are not a patch applied to the live board.
+Source reviewed: `C:/Work/Learning/eda-base3/v8/src/edp8/ui.py`, `_CSS`, starting at the `/* Tokens */` block. Values below describe a later implementation of the selected direction; they are not a patch applied to the live board.
 
 Keep `--rail-w:64px` and `--side-w:272px` for this re-skin. Keep the existing responsive layout rules. The unused legacy rail width should not be used to shift the composer. Set `color-scheme:light` for all three.
 

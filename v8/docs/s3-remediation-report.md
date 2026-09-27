@@ -24,7 +24,7 @@ Decisions New conversation: reproduced 17/18 tests, failure at detached composer
 - `npm --prefix web test -- --run src/components/ContextualWork.test.tsx src/components/Composer.test.tsx src/components/DesignReview.test.tsx src/components/NotificationCenter.test.tsx src/pages/Epic.test.tsx src/pages/Ticket.test.tsx src/pages/Decisions.test.tsx`: **100 passed**.
 - `npm --prefix web test -- --run src/components/NewEpicDialog.test.tsx`: **6 passed**.
 - `cd web && npx tsc --noEmit`: passed. `npm --prefix web run build`: passed, existing >500KB bundle advisory.
-- `EDP8_BOARD_CMD='C:\Projects\Learning\eda-base3\v8\.venv\Scripts\edp8-board.exe' npm --prefix web run e2e -- e2e/qa-ui-integration.spec.ts e2e/s3-workflow.spec.ts --workers=1`: **14 passed**, isolated fixture board/process cleanup. Not full web e2e.
+- `EDP8_BOARD_CMD='C:\Work\Learning\eda-base3\v8\.venv\Scripts\edp8-board.exe' npm --prefix web run e2e -- e2e/qa-ui-integration.spec.ts e2e/s3-workflow.spec.ts --workers=1`: **14 passed**, isolated fixture board/process cleanup. Not full web e2e.
 - Earlier focused `s3-review.spec.ts`: passed with seven original QA regression cases (8 total). Exact-version local feedback/attachment/dedicated-view case is unchanged.
 - `git diff --check`: clean.
 

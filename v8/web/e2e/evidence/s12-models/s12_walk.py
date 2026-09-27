@@ -9,7 +9,7 @@ import sys
 import uuid
 from pathlib import Path
 
-V8 = Path(r"C:\Projects\Learning\eda-base3\v8")
+V8 = Path(r"C:\Work\Learning\eda-base3\v8")
 sys.path.insert(0, str(V8 / "tests"))
 import test_cli_launcher as base  # noqa: E402
 from edp_contracts.proc import kill_tree, scan_env_marker  # noqa: E402

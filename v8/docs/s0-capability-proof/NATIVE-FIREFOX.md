@@ -10,7 +10,7 @@ because this is a different origin and a dedicated profile. No credentials are n
 In one PowerShell terminal:
 
 ```powershell
-node C:/Projects/Learning/eda-base3/v8/docs/s0-capability-proof/manual-server.cjs
+node C:/Work/Learning/eda-base3/v8/docs/s0-capability-proof/manual-server.cjs
 ```
 
 It prints `S0 fixture ready http://127.0.0.1:<port>/ owned_pid=<pid>`. Record the

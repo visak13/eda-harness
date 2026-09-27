@@ -88,13 +88,13 @@ def test_sub_3b_build_env_pins_whole_stack(monkeypatch):
     # stray eda-base values in the parent env and confirm build_env
     # OVERRIDES them with the explicit pool-stack values.
     monkeypatch.setenv("EDP_POOL_URL", "http://127.0.0.1:9200")     # stray old
-    monkeypatch.setenv("EDP_AGENT_HOME", "C:/Projects/Learning/eda-base/claude")
-    monkeypatch.setenv("EDP_LOG_DIR", "C:/Projects/Learning/eda-base/.logs")
+    monkeypatch.setenv("EDP_AGENT_HOME", "C:/Work/Learning/eda-base/claude")
+    monkeypatch.setenv("EDP_LOG_DIR", "C:/Work/Learning/eda-base/.logs")
     e = pl.build_env(
         "sid", "curiosity", "curiosity-x", "http://127.0.0.1:9300",
         pool_url="http://127.0.0.1:9301",
-        agent_home="C:/Projects/Learning/eda-base3/claude",
-        log_dir="C:/Projects/Learning/eda-base3/.logs",
+        agent_home="C:/Work/Learning/eda-base3/claude",
+        log_dir="C:/Work/Learning/eda-base3/.logs",
     )
     assert e["EDP_BROKER_URL"] == "http://127.0.0.1:9300"
     assert e["EDP_POOL_URL"] == "http://127.0.0.1:9301"     # overrode stray

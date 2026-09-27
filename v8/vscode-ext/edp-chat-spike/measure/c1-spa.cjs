@@ -1,7 +1,7 @@
 // C1: the spike view through the live SPA Code tab (/ui/code iframe on :9400). node c1-spa.cjs <chromium|stockff> <outdir>
 const path = require('node:path');
 const fs = require('node:fs');
-const WEB = 'C:/Projects/Learning/eda-base3/v8/web/node_modules';
+const WEB = 'C:/Work/Learning/eda-base3/v8/web/node_modules';
 const which = process.argv[2], outDir = process.argv[3];
 const pw = require(`${WEB}/playwright-core`);
 fs.mkdirSync(outDir, { recursive: true });

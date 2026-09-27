@@ -5,7 +5,7 @@
 Owner m-5e59c44c21 authorized testing now. Preflight 1496 MiB free; S1 generation had
 finished according to architect. Launched scoped Node fixture PID **27936** at
 **http://127.0.0.1:49329/** and stock Firefox launch PID **27496**, dedicated profile
-`C:/Users/aksou/AppData/Local/Temp/edp8-s0-native-dcins4l_/profile`.
+`C:/Users/user/AppData/Local/Temp/edp8-s0-native-dcins4l_/profile`.
 Stock installed binary inventory was Firefox **156.0**, Windows **10.0.26200.0**;
 no retained browser-user-agent log from this trial independently confirms the displayed version.
 Normal owner Firefox tabs/profile and shared board origin were untouched.
@@ -43,7 +43,7 @@ No image-name kill, shared process restart, broad cleanup, or desktop reopening.
 Owner m-6e4db95d3d allowed reopening, freed memory m-67bb5872fd; architect coordinated
 S1 hold m-c84cdae09a. Preflight 2120 MiB free. Repeat used Node PID36380 / Firefox
 launch PID35440, origin **http://127.0.0.1:64988**, dedicated profile
-`C:/Users/aksou/AppData/Local/Temp/edp8-s0-repeat-smw8k5c5/profile`.
+`C:/Users/user/AppData/Local/Temp/edp8-s0-repeat-smw8k5c5/profile`.
 
 Owner m-39e288ab70 supplied Downloads/s0-native-trials.json. Preserved byte-for-byte as
 `native-repeat-20260918.json`; SHA256

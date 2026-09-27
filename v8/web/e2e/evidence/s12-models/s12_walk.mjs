@@ -2,7 +2,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import fs from "node:fs";
-const require = createRequire("C:/Projects/Learning/eda-base3/v8/web/package.json");
+const require = createRequire("C:/Work/Learning/eda-base3/v8/web/package.json");
 const { chromium } = require("@playwright/test");
 
 const { SETUP_URL, BOARD, OUT } = process.env;

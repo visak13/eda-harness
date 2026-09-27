@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { COMMIT, codeTarget, pullText, safeRelPath } from '../src/core/codeTarget';
 
-const a = { repo_root: 'C:\\Projects\\Learning\\eda-base3', path: 'v8/src/edp8/board.py', line_start: 10, line_end: 20, commit: 'abc1234' };
+const a = { repo_root: 'C:\\Work\\Learning\\eda-base3', path: 'v8/src/edp8/board.py', line_start: 10, line_end: 20, commit: 'abc1234' };
 
 describe('codeTarget', () => {
   it('resolves the repo-relative path in the matching local repo first', () => {
-    const roots = ['D:\\other', 'c:\\projects\\learning\\eda-base3'];
-    expect(codeTarget(a, roots, () => true)).toEqual({ root: 'c:\\projects\\learning\\eda-base3', path: 'v8/src/edp8/board.py', line_start: 10, line_end: 20, commit: 'abc1234' });
+    const roots = ['D:\\other', 'c:\\work\\learning\\eda-base3'];
+    expect(codeTarget(a, roots, () => true)).toEqual({ root: 'c:\\work\\learning\\eda-base3', path: 'v8/src/edp8/board.py', line_start: 10, line_end: 20, commit: 'abc1234' });
   });
 
   it('falls back to any open repo that has the file (a teammate clone)', () => {
@@ -33,7 +33,7 @@ describe('codeTarget', () => {
 // C6 (s-6a52d6545a): a teammate's second clone at another path, which may be behind the host
 describe('codeTarget on a second clone', () => {
   const sha = 'e07da58' + '0'.repeat(33);
-  const host = 'C:\\Projects\\Learning\\eda-base3';
+  const host = 'C:\\Work\\Learning\\eda-base3';
   const clone = 'D:\\work\\eda-base3-clone';
   const b = { ...a, repo_root: host, commit: sha };
 

@@ -11,7 +11,7 @@ import { quoteTray } from "./quoteTray";
 
 // C23 (s-93ddb7fd1a): a quote note takes the composer's @ picker, same keys.
 const people: PersonRow[] = [
-  { id: "vishal", handle: "vishal", type: "human", role: "owner", seat_ticket: null, seat_state: null, label: "person", self: false },
+  { id: "jordan", handle: "jordan", type: "human", role: "owner", seat_ticket: null, seat_state: null, label: "person", self: false },
   { id: "architect.s-1", handle: "architect.s-1", type: "agent", role: "architect", seat_ticket: "s-1", seat_state: "alive", label: "architect seat", self: false },
 ];
 
@@ -36,15 +36,15 @@ beforeEach(() => {
 });
 
 describe("MentionInput", () => {
-  it("'@vi' opens the picker; Enter picks '@vishal ' and does not reach the field's own Enter", async () => {
+  it("'@jo' opens the picker; Enter picks '@jordan ' and does not reach the field's own Enter", async () => {
     let entered = 0;
     wrap(<Note onEnter={() => entered++} />);
     const el = screen.getByTestId("note") as HTMLInputElement;
-    await waitFor(() => { typeAt(el, "see @vi"); expect(screen.getByTestId("note-mentions-menu")).toBeInTheDocument(); });
+    await waitFor(() => { typeAt(el, "see @jo"); expect(screen.getByTestId("note-mentions-menu")).toBeInTheDocument(); });
     expect(el.getAttribute("aria-expanded")).toBe("true");
     expect(el.getAttribute("aria-activedescendant")).toBeTruthy();
     fireEvent.keyDown(el, { key: "Enter" });
-    expect(el.value).toBe("see @vishal ");
+    expect(el.value).toBe("see @jordan ");
     expect(entered).toBe(0);
     expect(screen.queryByTestId("note-mentions-menu")).toBeNull();
     fireEvent.keyDown(el, { key: "Enter" }); // closed list: Enter is the field's again
@@ -55,9 +55,9 @@ describe("MentionInput", () => {
     let entered = 0;
     wrap(<Note onEnter={() => entered++} />);
     const el = screen.getByTestId("note") as HTMLInputElement;
-    await waitFor(() => { typeAt(el, "@vi"); expect(screen.getByTestId("note-mentions-menu")).toBeInTheDocument(); });
+    await waitFor(() => { typeAt(el, "@jo"); expect(screen.getByTestId("note-mentions-menu")).toBeInTheDocument(); });
     fireEvent.keyDown(el, { key: "Enter", isComposing: true });
-    expect(el.value).toBe("@vi");
+    expect(el.value).toBe("@jo");
     expect(entered).toBe(1); // the host's own handler sees it and must check isComposing itself (QuoteLayer does)
   });
 
@@ -69,19 +69,19 @@ describe("MentionInput", () => {
     expect(screen.getAllByRole("option")[1].getAttribute("aria-selected")).toBe("true");
     fireEvent.keyDown(el, { key: "Tab" });
     expect(el.value).toBe("@architect.s-1 ");
-    typeAt(el, "@architect.s-1 @v");
+    typeAt(el, "@architect.s-1 @j");
     await waitFor(() => expect(screen.getByTestId("note-mentions-menu")).toBeInTheDocument());
     fireEvent.keyDown(el, { key: "Escape" });
     expect(screen.queryByTestId("note-mentions-menu")).toBeNull();
-    expect(el.value).toBe("@architect.s-1 @v");
+    expect(el.value).toBe("@architect.s-1 @j");
   });
 
   it("the composer's quote chip note has the picker and writes the tray", async () => {
     quoteTray.add("s-9", { source: "message", id: "m-1", text: "passage", locator: { char_start: 0, char_end: 7 } }, "m-1");
     wrap(<QuoteChips ticketId="s-9" />);
     const el = screen.getByTestId("quote-chip-note") as HTMLInputElement;
-    await waitFor(() => { typeAt(el, "@vi"); expect(screen.getByTestId("note-mentions-menu")).toBeInTheDocument(); });
+    await waitFor(() => { typeAt(el, "@jo"); expect(screen.getByTestId("note-mentions-menu")).toBeInTheDocument(); });
     fireEvent.keyDown(el, { key: "Enter" });
-    expect(quoteTray.get("s-9")[0].quote.note).toBe("@vishal ");
+    expect(quoteTray.get("s-9")[0].quote.note).toBe("@jordan ");
   });
 });

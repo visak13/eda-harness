@@ -21,7 +21,7 @@ describe('lineSpan (0-based selection -> 1-based inclusive lines)', () => {
 
 describe('relPath / normDrive', () => {
   it('nested path -> forward slashes', () => expect(relPath('C:\\repo', 'C:\\repo\\src\\a\\b.py')).toBe('src/a/b.py'));
-  it('c:\\ -> C:\\', () => expect(normDrive('c:\\Projects\\x')).toBe('C:\\Projects\\x'));
+  it('c:\\ -> C:\\', () => expect(normDrive('c:\\Work\\x')).toBe('C:\\Work\\x'));
   it('drive case does not matter to the relative path', () => expect(relPath('C:\\repo', normDrive('c:\\repo\\x.ts'))).toBe('x.ts'));
   it('a file outside the root throws', () => expect(() => relPath('C:\\repo', 'C:\\other\\x.ts')).toThrow(/outside/));
   it('a sibling dir sharing the prefix is outside', () => expect(() => relPath('C:\\repo', 'C:\\repo2\\x.ts')).toThrow(/outside/));
@@ -30,7 +30,7 @@ describe('relPath / normDrive', () => {
   it('a file named "..foo" inside the root is inside', () => expect(relPath('C:\\repo', 'C:\\repo\\..foo')).toBe('..foo'));
   it('POSIX roots work too', () => expect(relPath('/srv/repo', '/srv/repo/a/b.ts')).toBe('a/b.ts'));
   it('samePath is case-insensitive on Windows paths and ignores a trailing slash', () =>
-    expect(samePath('c:\\Projects\\V8\\', 'C:\\projects\\v8')).toBe(true));
+    expect(samePath('c:\\Work\\V8\\', 'C:\\work\\v8')).toBe(true));
 });
 
 describe('truncateUtf8 (4096 B cap on a code-point boundary)', () => {

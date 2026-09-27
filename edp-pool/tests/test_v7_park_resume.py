@@ -551,11 +551,11 @@ def test_park_no_longer_waits_on_the_transcript_at_all(
 def test_transcript_path_uses_claude_codes_cwd_key_scheme(svc, monkeypatch):
     monkeypatch.setenv("EDP_CLAUDE_CONFIG_DIR", r"D:\cfg")
     monkeypatch.setenv("EDP_AGENT_HOME",
-                       r"C:\Projects\Learning\eda-base3\claude")
+                       r"C:\Work\Learning\eda-base3\claude")
     p = svc._transcript_path("abc-123")
     assert p.name == "abc-123.jsonl"
     # every non-alphanumeric char of the cwd becomes '-' (observed scheme)
-    assert p.parent.name == "C--Projects-Learning-eda-base3-claude"
+    assert p.parent.name == "C--Work-Learning-eda-base3-claude"
     assert p.parent.parent.name == "projects"
 
 

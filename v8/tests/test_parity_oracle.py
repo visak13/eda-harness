@@ -14,7 +14,7 @@ SPEC = importlib.util.spec_from_file_location("parity_oracle", Path(__file__).re
 po = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(po)
 
-SESSION = Path(r"C:\Projects\Learning\eda-base3\edp-pool\.claude-pool\projects\C--Projects-Learning-eda-base3-v8\7edf0320-390f-496d-8427-c2b1ef4aff80.jsonl")
+SESSION = Path(r"C:\Work\Learning\eda-base3\edp-pool\.claude-pool\projects\C--Projects-Learning-eda-base3-v8\7edf0320-390f-496d-8427-c2b1ef4aff80.jsonl")
 
 
 def test_normalise_ids_paths_times():

@@ -34,12 +34,12 @@ def client(tmp_path, monkeypatch, ui_prefix):
 
 @pytest.fixture
 def rig(client):
-    for pid, role, typ in [("aksou", "owner", "human"), ("x", "owner", "human"),
+    for pid, role, typ in [("sam", "owner", "human"), ("x", "owner", "human"),
                            ("arch", "architect", "agent")]:
         assert client.post("/v1/participants", json={"type": typ, "role": role, "handle": pid, "id": pid},
                            headers=ADMIN).json()["ok"]
     epic = client.post("/v1/tickets", json={"kind": "epic", "work_type": "feature", "title": "mine"},
-                       headers={"X-Participant": "aksou"}).json()["value"]["id"]
+                       headers={"X-Participant": "sam"}).json()["value"]["id"]
     return {"epic": epic}
 
 
@@ -48,7 +48,7 @@ def rig(client):
 def test_mention_fans_out_to_broker_and_feed(client, rig, published):
     r = client.post("/v1/messages", json={"ticket_id": rig["epic"], "kind": "note",
                                           "text": "planning this — need @x and @arch to weigh in"},
-                    headers={"X-Participant": "aksou"}).json()
+                    headers={"X-Participant": "sam"}).json()
     assert r["ok"], r
     targets = [t for _f, t, _k, _b in published]
     assert targets == ["x", "arch"]  # thread note, but both mentions woken
@@ -60,7 +60,7 @@ def test_mention_fans_out_to_broker_and_feed(client, rig, published):
 def test_unknown_handle_is_prose_not_error(client, rig, published):
     r = client.post("/v1/messages", json={"ticket_id": rig["epic"], "kind": "note",
                                           "text": "email me @ home or ping @nobody-here"},
-                    headers={"X-Participant": "aksou"}).json()
+                    headers={"X-Participant": "sam"}).json()
     assert r["ok"], r
     assert published == []
 
@@ -77,19 +77,19 @@ def _signable(client, epic, who):
 
 def test_gate_routes_to_epic_owning_human(client, rig, published):
     assert client.patch(f"/v1/tickets/{rig['epic']}", json={"assignee": "arch"},
-                        headers={"X-Participant": "aksou"}).json()["ok"]
+                        headers={"X-Participant": "sam"}).json()["ok"]
     _signable(client, rig["epic"], "arch")
     r = client.post(f"/v1/gates/{rig['epic']}/design_signoff/open", json={"note": "ready"},
                     headers={"X-Participant": "arch"}).json()
     assert r["ok"], r
-    assert published[-1][:3] == ("arch", "aksou", "question")  # NOT the generic 'owner'
+    assert published[-1][:3] == ("arch", "sam", "question")  # NOT the generic 'owner'
 
 
 def test_other_owner_does_not_see_my_epic_events(client, rig):
     _signable(client, rig["epic"], "arch")
     client.post(f"/v1/gates/{rig['epic']}/design_signoff/open", json={"note": "n"},
-                headers={"X-Participant": "aksou"})
-    mine = client.get("/v1/events", params={"since": 0}, headers={"X-Participant": "aksou"}).json()["value"]
+                headers={"X-Participant": "sam"})
+    mine = client.get("/v1/events", params={"since": 0}, headers={"X-Participant": "sam"}).json()["value"]
     theirs = client.get("/v1/events", params={"since": 0}, headers={"X-Participant": "x"}).json()["value"]
     assert any(e["kind"] == "gate_opened" for e in mine)
     assert not any(e["kind"] == "gate_opened" for e in theirs)
@@ -107,8 +107,8 @@ def test_token_required_only_when_configured(client, rig, tmp_path):
     assert allowed["ok"]
     # agents are untouched; an un-listed HUMAN is refused once tokens.json exists (human #34)
     assert client.get("/v1/whoami", headers={"X-Participant": "arch"}).json()["ok"]
-    unminted = client.get("/v1/whoami", headers={"X-Participant": "aksou"})
-    assert unminted.status_code == 401 and "no token minted for aksou" in unminted.text
+    unminted = client.get("/v1/whoami", headers={"X-Participant": "sam"})
+    assert unminted.status_code == 401 and "no token minted for sam" in unminted.text
 
 
 def test_token_mode_refuses_unminted_human_writes(client, rig, tmp_path):
@@ -117,24 +117,24 @@ def test_token_mode_refuses_unminted_human_writes(client, rig, tmp_path):
     with the mint hint; minting an entry (top-level handle→secret) lets the same request through."""
     (tmp_path / "tokens.json").write_text(json.dumps({"agents": {"arch": "a-secret"}}), encoding="utf-8")
     body = {"kind": "epic", "work_type": "feature", "title": "smuggled"}
-    r = client.post("/v1/tickets", json=body, headers={"X-Participant": "aksou"})
+    r = client.post("/v1/tickets", json=body, headers={"X-Participant": "sam"})
     assert r.status_code == 401 and "mint one" in r.text
     assert client.get("/v1/whoami", headers={"X-Participant": "arch", "X-Token": "a-secret"}).json()["ok"]
-    (tmp_path / "tokens.json").write_text(json.dumps({"aksou": "h-secret", "agents": {"arch": "a-secret"}}),
+    (tmp_path / "tokens.json").write_text(json.dumps({"sam": "h-secret", "agents": {"arch": "a-secret"}}),
                                           encoding="utf-8")
-    assert client.post("/v1/tickets", json=body, headers={"X-Participant": "aksou"}).status_code == 401
-    ok = client.post("/v1/tickets", json=body, headers={"X-Participant": "aksou", "X-Token": "h-secret"})
+    assert client.post("/v1/tickets", json=body, headers={"X-Participant": "sam"}).status_code == 401
+    ok = client.post("/v1/tickets", json=body, headers={"X-Participant": "sam", "X-Token": "h-secret"})
     assert ok.status_code == 200 and ok.json()["ok"]
 
 
 def test_asks_on_closed_projects_disappear(client, rig):
-    client.post("/v1/messages", json={"ticket_id": rig["epic"], "kind": "question", "to": "aksou",
+    client.post("/v1/messages", json={"ticket_id": rig["epic"], "kind": "question", "to": "sam",
                                       "text": "still relevant?"}, headers={"X-Participant": "arch"})
-    ctx = client.get("/v1/context", headers={"X-Participant": "aksou"}).json()["value"]
+    ctx = client.get("/v1/context", headers={"X-Participant": "sam"}).json()["value"]
     assert any(a["text"] == "still relevant?" for a in ctx["asks_for_me"])
     assert client.patch(f"/v1/tickets/{rig['epic']}", json={"status": "dropped"},
-                        headers={"X-Participant": "aksou"}).json()["ok"]
-    ctx = client.get("/v1/context", headers={"X-Participant": "aksou"}).json()["value"]
+                        headers={"X-Participant": "sam"}).json()["ok"]
+    ctx = client.get("/v1/context", headers={"X-Participant": "sam"}).json()["value"]
     assert not any(a["text"] == "still relevant?" for a in ctx["asks_for_me"])
 
 
@@ -143,16 +143,16 @@ def test_asks_on_closed_projects_disappear(client, rig):
 def test_ui_me_renders_and_replies(client, rig, published, ui_prefix):
     client.post("/v1/messages", json={"ticket_id": rig["epic"], "kind": "question", "to": "x",
                                       "text": "your call on the auth boundary?"},
-                headers={"X-Participant": "aksou"})
+                headers={"X-Participant": "sam"})
     page = client.get(f"{ui_prefix}/me", params={"as": "x"})
     assert page.status_code == 200 and "auth boundary" in page.text
-    r = client.post(f"{ui_prefix}/me/message", data={"as_": "x", "ticket_id": rig["epic"], "to": "aksou",
+    r = client.post(f"{ui_prefix}/me/message", data={"as_": "x", "ticket_id": rig["epic"], "to": "sam",
                                             "kind": "answer", "text": "option B, keep it server-side"},
                     follow_redirects=False)
     assert r.status_code == 303
-    assert published[-1][:3] == ("x", "aksou", "answer")
+    assert published[-1][:3] == ("x", "sam", "answer")
     thread = client.get("/v1/messages", params={"ticket_id": rig["epic"]},
-                        headers={"X-Participant": "aksou"}).json()["value"]
+                        headers={"X-Participant": "sam"}).json()["value"]
     assert any("option B" in m["text"] for m in thread)
 
 
@@ -168,11 +168,11 @@ def test_ui_me_gate_answer(client, rig, published, ui_prefix):
                         headers={"X-Participant": "arch"}).json()["ok"]
     client.post(f"/v1/gates/{rig['epic']}/design_signoff/open", json={"note": "n"},
                 headers={"X-Participant": "arch"})
-    page = client.get(f"{ui_prefix}/me", params={"as": "aksou"})
+    page = client.get(f"{ui_prefix}/me", params={"as": "sam"})
     assert "design_signoff" in page.text
-    r = client.post(f"{ui_prefix}/me/gate", data={"as_": "aksou", "ticket_id": rig["epic"],
+    r = client.post(f"{ui_prefix}/me/gate", data={"as_": "sam", "ticket_id": rig["epic"],
                                          "gate": "design_signoff", "answer": "signed"},
                     follow_redirects=False)
     assert r.status_code == 303
-    gates = client.get(f"/v1/gates/{rig['epic']}", headers={"X-Participant": "aksou"}).json()["value"]
+    gates = client.get(f"/v1/gates/{rig['epic']}", headers={"X-Participant": "sam"}).json()["value"]
     assert gates == []

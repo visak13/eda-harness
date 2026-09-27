@@ -1,5 +1,0 @@
-neuron.png
-curiosity.png
-planner.png
-worker.png
-reviewer.png

@@ -12,7 +12,7 @@ import { SettingsPage } from "./Settings";
 // tabs, persisted through GET/PUT /v1/me/settings, webhook masked on read, honest about sign-in.
 
 const stored: UserSettings = {
-  profile: { display_name: "Vishal", timezone: "Asia/Kolkata" },
+  profile: { display_name: "Jordan", timezone: "Asia/Kolkata" },
   notifications: { browser: true, quiet: null },
   slack: { enabled: true, slack_id: "U0123456789", webhook_url: "https://hooks.slack.com/services/••••", webhook_set: true, quiet: [22, 7] },
 };
@@ -46,7 +46,7 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("tab", { name: "Profile" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Notifications" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Slack" })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByTestId("settings-display-name")).toHaveValue("Vishal"));
+    await waitFor(() => expect(screen.getByTestId("settings-display-name")).toHaveValue("Jordan"));
     expect(screen.getByTestId("settings-signin")).toHaveTextContent(/Not available yet/);
     expect(screen.getByTestId("settings-signin")).toHaveTextContent(/OAuth app the owner provisions/);
     expect(screen.getByTestId("settings-save")).toBeDisabled();

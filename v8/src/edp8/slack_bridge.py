@@ -8,7 +8,7 @@ Config `slack_map.json` at the agent home (EDP8_SLACK_MAP overrides the path):
       "bot_token": "xoxb-...",                          // optional: enables DMs via chat.postMessage
       "people": {
         "x":     {"slack_id": "U0123456", "quiet": [22, 7]},   // DM if bot_token, else webhook mention
-        "aksou": {"webhook_url": "https://hooks.slack.com/other", "quiet": null}
+        "sam": {"webhook_url": "https://hooks.slack.com/other", "quiet": null}
       }
     }
 

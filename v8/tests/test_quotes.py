@@ -50,7 +50,7 @@ tail line
 
 
 def code_cc(**over):
-    cc = {"repo_root": "C:/Projects/Learning/eda-base3/v8", "path": "src/edp8/board.py", "line_start": 10,
+    cc = {"repo_root": "C:/Work/Learning/eda-base3/v8", "path": "src/edp8/board.py", "line_start": 10,
           "line_end": 11, "commit": SHA, "dirty": False, "snippet": "def f():\n    return 1"}
     cc.update(over)
     cc["snippet_sha"] = hashlib.sha256(cc["snippet"].encode("utf-8")).hexdigest()

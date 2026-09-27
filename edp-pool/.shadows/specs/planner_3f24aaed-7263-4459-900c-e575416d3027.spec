@@ -1,1 +1,0 @@
-rx.merge(rx.broker(me), rx.worklog(plan_id), rx.pool(scope=plan_id), rx.orphaned(plan_id), rx.recipe_events(recipe_id))
