@@ -1198,6 +1198,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#091" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.1
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.9.1">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#090" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1293,6 +1332,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#091" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.1
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.9.1">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#090" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1364,7 +1442,26 @@
 <a href="https://keepachangelog.com/en/1.1.0/">Keep a Changelog</a>, and versions follow
 <a href="https://semver.org/spec/v2.0.0.html">Semantic Versioning</a>. Every release is on the
 <a href="https://github.com/visak13/eda-harness/releases">releases page</a>.</p>
-<h2 id="unreleased"><a href="https://github.com/visak13/eda-harness/compare/v0.9.0...HEAD">Unreleased</a><a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h2 id="unreleased"><a href="https://github.com/visak13/eda-harness/compare/v0.9.1...HEAD">Unreleased</a><a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h2 id="091"><a href="https://github.com/visak13/eda-harness/compare/v0.9.0...v0.9.1">0.9.1</a><a class="headerlink" href="#091" title="Permanent link">&para;</a></h2>
+<p>Fixes found in the first live cutover from a source checkout to the installed app.</p>
+<h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Resuming a seat imported from the old checkout: claude could not find the seat's conversation and closed
+  within a second. <code>heronry import</code> now copies the claude transcripts into the new claude folder, and a
+  resume whose transcript is missing starts the seat fresh (it calls <code>resume_self()</code>) instead of closing.</li>
+<li><code>irm .../install.ps1 | iex</code> on Windows PowerShell 5.1: the script shipped with a UTF-8 BOM and failed at
+  <code>[string]$Version</code>. It ships without a BOM and ASCII-only.</li>
+<li><code>heronry import</code>: the live <code>.data/models.json</code> wins over the root <code>models.json</code> template; a stale
+  <code>edp8.db-wal</code>/<code>-shm</code> beside the target is removed before the database is replaced (the import reported
+  0 epics); the report names the install folder instead of "into None".</li>
+<li>The board's bare address (<code>/</code>) opens the UI instead of a 404.</li>
+</ul>
+<h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Cutover runbook: re-point <code>tailscale serve</code> to the installed board's port (19400), and verify a fresh
+  spawn and a resume with a live seat before retiring the old fleet.</li>
+</ul>
 <h2 id="090"><a href="https://github.com/visak13/eda-harness/releases/tag/v0.9.0">0.9.0</a><a class="headerlink" href="#090" title="Permanent link">&para;</a></h2>
 <p>First public release. Verified hands-on on Windows; macOS and Linux are built and tested in CI and
 community-tested, so please <a href="https://github.com/visak13/eda-harness/issues">report issues</a>.</p>
@@ -1372,6 +1469,7 @@ community-tested, so please <a href="https://github.com/visak13/eda-harness/issu
 <ul>
 <li>Heronry: the board, its seats and services, installable on Windows, macOS and Linux.</li>
 <li>Heronry Desktop: a native window and tray icon, shipped as MSI, DMG and deb installers (unsigned).</li>
+<li>The macOS DMG is for Apple Silicon Macs; on an Intel Mac, install with install.sh.</li>
 <li>The <code>heronry</code> command line: <code>init</code>, <code>start</code>, <code>stop</code>, <code>status</code>, <code>doctor</code>, <code>update</code>, <code>import</code>, <code>gui</code>.</li>
 <li>A setup wizard, harness choice (Claude Code, Codex, Pi) and in-app updates.</li>
 <li>One-line installers (<code>install.ps1</code>, <code>install.sh</code>) that verify every wheel against <code>SHA256SUMS</code>.</li>

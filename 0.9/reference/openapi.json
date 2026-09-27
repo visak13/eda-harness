@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "edp8 board",
-    "version": "0.9.0"
+    "version": "0.9.1"
   },
   "paths": {
     "/v1/me/notifications": {
