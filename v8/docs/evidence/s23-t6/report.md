@@ -49,7 +49,9 @@ The run used a private board on ports 19472/19372, a temp home, a read-only DB b
 ## Verification
 
 - `pytest tests/test_s23_t6_findings.py` → 34 passed. Against the pre-fix source (a HEAD worktree): 19 failed, 15 passed (`docs/evidence/s23-t6/prefix-fail.txt`).
-- Contract, no-loss/info-parity, descriptions, S20, agent-home kinds, topics, harvest, MCP tools, enums, context tools and parity oracle all pass (the numbers are in the hand-off message).
+- Contract, info-parity/no-loss, hint-parity (test_tool_contract::test_following_the_hint_…), descriptions, S20, agent-home kinds, topics, harvest, MCP tools, enums, context tools and parity oracle: 803 passed, 1 skipped; the later re-run of T6+parity+S20+descriptions+kinds: 337 passed.
+- A full `pytest tests` run was stopped by the host's low-memory reaper at about 16% (1 F in about 430 tests). The F re-ran as `tests/test_admin_services_live.py::test_admin_update_check_and_apply_backup_stop_upgrade_start`: no update-result.json after 240 s, a live detached-update drill under RAM pressure that imports none of the changed modules. It was not re-run at HEAD, and the full suite was not re-run (host memory).
+- Commit 1dc77a9.
 - S20 surface headroom after T6: sme 34 B, owner 77 B, engineer 120 B, architect 138 B, adversary 139 B. No rebaseline was needed. topic_research's `url` field lost its description because the tool description already names its hosts.
 
 ## Deploy note
