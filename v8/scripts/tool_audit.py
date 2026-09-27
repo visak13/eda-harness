@@ -207,7 +207,9 @@ class Audit:
             result = {"ok": False, "error": {"code": "exception", "message": repr(exc)}, "hint": ""}
         raw = encoded(result)
         error = result.get("error") or {}
-        self.calls.append({"task": task, "role": role, "tool": name, "args": args or {},
+        ledger_args = {key: (str(value).replace(str(ROOT), "<workspace>") if key == "path" else value)
+                       for key, value in (args or {}).items()}
+        self.calls.append({"task": task, "role": role, "tool": name, "args": ledger_args,
                            "ok": bool(result.get("ok")), "error_code": error.get("code"),
                            "result_id": (result.get("value") or {}).get("id") if isinstance(result.get("value"), dict) else None,
                            "error": str(error.get("message") or "")[:400],
@@ -651,7 +653,7 @@ def main() -> int:
         audit.stop()
         workaround_hits = scan_workarounds()
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_bytes(encoded({"source_db": str(SOURCE_DB), "private_home": str(home),
+        args.out.write_bytes(encoded({"source_db": ".data/edp8.db", "private_home": "<temporary-private-home>",
                                       "board_port": audit.board_port, "pool_port": audit.pool_port,
                                       "tasks": audit.tasks, "calls": audit.calls, "tools": scores(audit),
                                       "workaround_hits": workaround_hits}))
