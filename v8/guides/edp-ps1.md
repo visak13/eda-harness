@@ -19,11 +19,13 @@ failed). A failed start is kept in `.run\code.last-error.txt` until the next goo
 it touches no other service. A seat starts/stops it by name only, never with `all`. `status` names a
 reason for every service that is not up (not running / exited + log path / start failed / not
 installed / unhealthy). Start/stop run
-`v8\scripts\start-code.ps1` / `stop-code.ps1`: pinned install (`vscode-ext\code-server.lock.json`,
-sha256 before extraction, `install-code-server.ps1`), sha-checked Open VSX extensions
-(`vscode-ext\extensions.txt` + `extensions.lock.json`), loopback + `--auth none`, every `EDP_*`/`EDP8_*`
-stripped from its env, `.run\code.json`; the stop kills the recorded pid's verified descendant tree
-(extension host, pty host, terminal shells). Re-runnable evidence: `v8\scripts\verify-code-service.ps1`.
+`v8\scripts\start-code.ps1` / `stop-code.ps1`, thin wrappers (S21) over `heronry start code` /
+`heronry stop code` (edp8.code_service, the same on every OS; the Admin console, the tray and the Code
+tab's Start run it too): pinned install (`vscode-ext\code-server.lock.json`, sha256 before extraction,
+`install-code-server.ps1`), sha-checked Open VSX extensions (`vscode-ext\extensions.txt` +
+`extensions.lock.json`), loopback behind the guard with a per-start password, every `EDP_*`/`EDP8_*`
+stripped from its env, `.run\code.json`; the stop kills the recorded (pid, start time) trees of
+code-server and the guard (extension host, pty host, terminal shells) and never a reused pid. Re-runnable evidence: `v8\scripts\verify-code-service.ps1`.
 
 **How to restart safely** (what the script does, so nobody improvises it): every service is two or
 more processes with one command line (uv / shim → venv launcher → interpreter owning the port).

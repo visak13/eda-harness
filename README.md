@@ -216,11 +216,17 @@ supervisor that restarts any that crash. They listen on `127.0.0.1` only, unless
 | pool | 9301 | spawns, watches, parks and resumes the seat shells |
 | broker | 9300 | delivers messages and wake-ups to seats |
 | bridge | — | relays a Slack channel to the board; runs only when Slack is configured |
+| code | 9410 | optional: VS Code in the browser for the **Code** tab ([code-server](https://github.com/coder/code-server), behind a loopback guard); starts only when you start it |
 
 - `heronry status` prints one row per service (state, pid, port, uptime, last restart); `--json` for scripts.
 - `heronry stop` stops everything and checks that nothing is left. It refuses while seats are live;
   `--force` takes them offline, `--keep-seats` leaves their shells running.
 - `heronry restart <svc>` restarts one service through the supervisor.
+- `heronry start code` / `heronry stop code` start and stop the Code tab's editor (also **Start code server** in the
+  tray, or Admin → Services). `heronry start` leaves it alone unless you turn on
+  `code_server.autostart`. It needs code-server installed; without it, `heronry start code` prints the install
+  command for your OS (`npm install -g code-server` on Windows, `brew install code-server` on macOS, the
+  code-server install script on Linux). `code_server.path` points Heronry at a code-server that is not on PATH.
 - Ports taken? `heronry init --ports 9500` moves the whole block (board N, mcp N+2, pool N-99, broker N-100),
   or set one with `--board-port` and the like.
 
@@ -246,6 +252,7 @@ Heronry updates itself from this repository's GitHub Releases, and only when you
 | `heronry` is not found after install | open a new terminal: the installer changed your PATH |
 | Seats spawn and die at once | the harness is not signed in on this machine: run `claude` (or `codex login`) once, then `heronry doctor` |
 | A port is in use | `heronry doctor` checks the ports; move Heronry with `heronry init --ports <N>` |
+| The Code tab says the code server is not running | `heronry start code` (or **Start** in the tab, as an admin), then **Retry**; `heronry status` shows why `code` is down, and a missing code-server comes with its install command |
 | An update failed | the services are back on the previous version; `heronry doctor --bundle` writes a redacted zip for an issue |
 | The antivirus removed the app | see **Antivirus** above |
 | Anything else | `heronry doctor`, or `heronry doctor --agent "<what you see>"` to ask the Help seat, which proposes fixes you approve |

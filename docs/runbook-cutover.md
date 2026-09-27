@@ -53,7 +53,7 @@ From the repo root:
 
 ```powershell
 .\edp.ps1 stop all          # add -Force only once every seat is closed
-.\edp.ps1 stop code         # code-server, if it was running
+v8\scripts\stop-code.ps1   # code-server, if it was running: heronry stop code on the checkout's home
 .\edp.ps1 status            # every service down
 Get-NetTCPConnection -State Listen -LocalPort 9400,9402,9300,9301,9410 -ErrorAction SilentlyContinue   # prints nothing
 ```

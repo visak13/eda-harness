@@ -6,18 +6,21 @@ safe to do there. It grows over time (design-449b628cdd §4).
 
 ## Starting it and where it works
 
-- **Start / stop:** `.\edp.ps1 start code` and `.\edp.ps1 stop code` from the repo root.
-  `.\edp.ps1 start all` starts it too, last (after the board); `stop all` stops it first. If it
-  cannot start, `start all` still brings up the rest, prints code's failure with its log path and
-  exits 10; `.\edp.ps1 status` shows why code is down. If the tab says "Code service is not
-  running", run the start command and press Retry.
-- **Board host only.** code-server listens on loopback with no password (a terminal is a shell on the
-  host), so the tab works only in a browser on the board host. A browser on another machine sees
+- **Start / stop:** `heronry start code` and `heronry stop code` (`heronry restart code`), on any OS.
+  An admin can also press **Start** in the tab when it is down, use Admin → Services → code-server,
+  or the tray's **Start code server** / **Stop code server**. It is optional: `heronry start` leaves
+  it alone unless `code_server.autostart` is on, and then starts it last. `heronry status` shows why
+  code is down. If the tab says the code server is not running, start it and press Retry.
+- **Not installed?** `heronry start code` and the tab print the install command for your OS
+  (`npm install -g code-server`, `brew install code-server`, or the code-server install script on
+  Linux). A checkout uses its pinned build; `code_server.path` names any other code-server.
+- **Board host only.** code-server listens on loopback behind the guard, with a password that is new
+  on every start (a terminal is a shell on the host), so the tab works only in a browser on the board host. A browser on another machine sees
   "Code runs on the board host only" and nothing is exposed.
 - **The owner only.** A guard on :9410 relays only for a browser holding its sign-in cookie. The tab
   gets that cookie through a one-time, 60-second sign-in the board issues to its human owner alone,
   and the cookie lasts until the code service restarts or the browser closes. Agent seats and other callers get 401 from
-  :9410 and "The board did not open a code session" in the tab. After `.\edp.ps1 restart code`,
+  :9410 and "The board did not open a code session" in the tab. After `heronry restart code`,
   reload the tab to sign in again. A bare `http://127.0.0.1:9410/` bookmark answers 401 until the
   tab has signed that browser in.
 - **Browsers:** Chromium (Chrome, Edge) and stock Firefox. In Firefox, webviews that load local

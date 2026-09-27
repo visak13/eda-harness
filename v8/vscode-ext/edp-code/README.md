@@ -29,8 +29,8 @@ npm test            # vitest over src/core, no VS Code download
 npm run package     # tsc + esbuild -> dist/extension.js -> edp-code.vsix (here, where S2's hook looks)
 ```
 
-`scripts\start-code.ps1` (the `code` service) installs the newest `*.vsix` in this folder into the service's own
-extensions dir on every start; restarting the service (`.\edp.ps1 restart code`, an owner action) or
+`heronry start code` (the `code` service) installs the newest `*.vsix` in this folder into the service's own
+extensions dir on every start; restarting the service (`heronry restart code`, an owner action) or
 "Developer: Reload Window" after it picks up a new build. Bump `version` in package.json with each rebuild.
 
 ## Install on a teammate machine (desktop VS Code)
