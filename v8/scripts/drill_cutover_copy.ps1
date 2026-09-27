@@ -151,8 +151,8 @@ try {
   Check ($ui -match "<title>Heronry") "/ui serves the Heronry SPA"
   $tok = & "$T\venv\Scripts\python.exe" -c "import json,sys; print(json.load(open(sys.argv[1]))['owner'])" "$C\tokens.json"
   $who = $null; try { $who = Invoke-RestMethod "http://127.0.0.1:$env:EDP8_PORT/v1/whoami" -Headers @{ "X-Participant" = "owner"; "X-Token" = $tok } -TimeoutSec 20 } catch { "   whoami error: $($_.Exception.Message)" }
-  $pid_ = $who.data.participant.id; if (-not $pid_) { $pid_ = $who.participant.id }
-  "   whoami with the imported owner token: $pid_ ($(@($who.data.tickets).Count) tickets)"
+  $pid_ = $who.value.participant.id  # the board envelope is {ok, value, hint}
+  "   whoami with the imported owner token: $pid_ ($(@($who.value.tickets).Count) tickets)"
   Check ([bool]$pid_) "an imported owner token signs in to the new board"
   if ($Shots) {
     "== chat-pane screenshots on the imported copy (t-6129a95a3d)"
