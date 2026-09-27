@@ -668,7 +668,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                                  f"<button name='verdict' value='pass' title='sign this doc off — {_e(c.ticket_id)} can proceed'>Approve</button>"
                                  f"<button name='verdict' value='fail' class='btn-fail' title='send back — add a comment saying what is missing'>Needs work</button></form>")
                 comment=(f"<form method='post' action='{prefix}/doc/{quote(doc_id,safe='')}/comment' style='display:flex;gap:8px;flex:1'>{hidden}"
-                         f"<input name='text' placeholder='Comment on this doc as @{_e(p.handle.lstrip('@'))} — @mention a reviewer to request review' required "
+                         f"<input name='text' placeholder='Comment on this doc as @{_e(p.handle.lstrip('@'))} — @mention someone to ask for their read' required "
                          f"title='posts [doc {_e(doc_id)} v{d.version}] + your comment to the epic thread; @mentions get inbox + Slack'>"
                          f"<button>Comment</button></form>") if scope_is_epic else ""
                 actions=f"<div class='doc-actions'>{approve}{comment}</div>" if (approve or comment) else ""

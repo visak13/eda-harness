@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from edp_contracts.roles import NON_AGENT_ROLES, RETIRED_ROLES
 from edp_contracts.seats import load, seat_for_role
 from edp_pool.codex_launcher import catalog_routes_codex
 from edp_pool.pi_launcher import catalog_routes_pi
@@ -14,7 +15,7 @@ V8 = str(Path(__file__).resolve().parents[2] / "v8")
 
 def test_v8_registry_with_role_models_validates():
     seats, roles = load(V8)
-    assert "reviewer" not in roles
+    assert not RETIRED_ROLES & set(roles) and not NON_AGENT_ROLES & set(roles)  # m-da9a2ae62f
     assert seat_for_role(V8, "qa") is not None
 
 

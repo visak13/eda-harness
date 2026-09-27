@@ -21,10 +21,13 @@ from pathlib import Path
 from edp8.bundles import ALL_TOOLS, tools_for_role
 
 V8 = Path(__file__).resolve().parents[1]
-SEAT_ROLES = ("owner", "architect", "engineer", "qa", "sme", "adversary", "doctor")
+#: the roles a seat runs as; the owner is a person, never a seat (owner m-da9a2ae62f), so an owner line
+#: binds no seat. Scope markers may still name the owner, so they parse over MARKER_ROLES.
+SEAT_ROLES = ("architect", "engineer", "qa", "sme", "adversary", "doctor")
+MARKER_ROLES = ("owner",) + SEAT_ROLES
 _ALT = "|".join(sorted(ALL_TOOLS, key=len, reverse=True))
 _CALL = re.compile(r"`(" + _ALT + r")\b(?!\.)[^`]*`|(?<![.\w])(" + _ALT + r")\(")
-_ROLE = "|".join(SEAT_ROLES)
+_ROLE = "|".join(MARKER_ROLES)
 _ROLES = r"((?:" + _ROLE + r")(?:\s*/\s*(?:" + _ROLE + r"))*)"
 _ONLY = re.compile(r"\(" + _ROLES + r" only\)")
 _NOT = re.compile(r"\(not " + _ROLES + r"\)")
@@ -63,7 +66,7 @@ def _scoped_files() -> list[tuple[Path, set[str]]]:
     for p in sorted((V8 / ".claude" / "skills").glob("*/SKILL.md")) + sorted((V8 / "guides").glob("*.md")):
         m = _FILE_SCOPE.search(p.read_text(encoding="utf-8"))
         if m:
-            roles = {r.strip() for r in m.group(1).split(",")}
+            roles = {r.strip() for r in m.group(1).split(",")} & set(SEAT_ROLES)
         else:
             roles = set(SEAT_ROLES) - _READ_ONLY
             if p.name == "SKILL.md":
@@ -88,7 +91,7 @@ def _violations() -> list[str]:
         for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if line.startswith("#"):
                 section = _narrow(line, roles)
-            line_roles = _narrow(line, section)
+            line_roles = _narrow(line, section) & set(SEAT_ROLES)
             for tool in {a or b for a, b in _CALL.findall(line)}:
                 missing = sorted(r for r in line_roles if tool not in have[r])
                 if missing:
@@ -103,7 +106,7 @@ def test_no_skill_card_or_guide_names_a_tool_its_role_lacks():
 def test_the_scan_sees_calls_scopes_and_role_limits():
     # The detector finds both call forms, and a line scope overrides the file scope.
     assert {a or b for a, b in _CALL.findall("`gates(epic)` then find(q)")} == {"gates", "find"}
-    assert _narrow("`gates` (owner/architect/qa only)", set(SEAT_ROLES)) == {"owner", "architect", "qa"}
+    assert _narrow("`gates` (owner/architect/qa only)", set(SEAT_ROLES)) & set(SEAT_ROLES) == {"architect", "qa"}
     # The three cases qa named (m-e1eeb1d29e) are real gaps in the bundles, so an unscoped line
     # naming them for those roles must be caught.
     have = {r: {t.name for t in tools_for_role(r)} for r in SEAT_ROLES}
@@ -113,5 +116,6 @@ def test_the_scan_sees_calls_scopes_and_role_limits():
     # Every skill a card lists exists, so no skill silently falls out of the scan.
     for skill in _card_skills():
         assert (V8 / ".claude" / "skills" / skill / "SKILL.md").exists(), skill
-    assert _narrow("`inbox()` (not owner)", set(SEAT_ROLES)) == set(SEAT_ROLES) - {"owner"}
+    assert _narrow("`inbox()` (not architect)", set(SEAT_ROLES)) == set(SEAT_ROLES) - {"architect"}
+    assert "owner" not in SEAT_ROLES  # the owner is a person: no seat, no card
     assert _CALL.findall("manual `f.close()` or x.close() calls") == []

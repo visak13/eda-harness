@@ -193,7 +193,7 @@ def test_full_flow(raw_client, board):
         ALL_TOOLS["ticket_update"].args_model(id=epic_id, status="in_review"))
     assert in_review["ok"], in_review
 
-    # a non-checker (adversary) cannot verdict; qa can (S-ROLES: reviewer retired)
+    # a non-checker (adversary) cannot verdict; qa can (S-ROLES: qa is the one checker)
     use(adversary_client)
     bad_verdict = ALL_TOOLS["criterion_update"].handler(
         ALL_TOOLS["criterion_update"].args_model(id=crit_id, verdict="pass"))

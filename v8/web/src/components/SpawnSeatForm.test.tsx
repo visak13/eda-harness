@@ -36,6 +36,16 @@ describe("SpawnSeatForm (S-ROLES)", () => {
     expect(body).toEqual({ role: "engineer", participant_id: "engineer.s-1", ticket_id: "s-1", model: "gpt-6-sol", assign: true });
   });
 
+  it("never offers a person's role (owner, expert, human), even when the catalog lists one (owner m-da9a2ae62f)", async () => {
+    server.use(http.get("/v1/models", () => HttpResponse.json({ ok: true, hint: "", value: {
+      roles: { owner: ["claude-opus-5-5"], expert: ["claude-opus-5-5"], human: ["claude-opus-5-5"], engineer: ["claude-opus-5-5"], qa: ["claude-fable-5"] },
+      defaults: { owner: "claude-opus-5-5", expert: "claude-opus-5-5", human: "claude-opus-5-5", engineer: "claude-opus-5-5", qa: "claude-fable-5" },
+      models: {},
+    } })));
+    mount(<SpawnSeatForm />);
+    await waitFor(() => expect(opts("spawn-seat-role")).toEqual(["engineer", "qa"]));
+  });
+
   it("a checker role is never made the assignee by default, and switching role resets the model to the epic's choice", async () => {
     let body: Record<string, unknown> | null = null;
     server.use(http.post("/v1/sessions/spawn", async ({ request }) => {

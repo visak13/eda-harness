@@ -20,6 +20,8 @@ import sys
 import time
 from pathlib import Path
 
+from edp_contracts.roles import non_agent_refusal
+
 from edp8 import settings
 
 from .driver import PiSeat
@@ -43,8 +45,13 @@ def role_card(agent_home: Path, role: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     env = settings.environ_copy()
-    role = env.get("EDP_ROLE", "owner")
-    handle = env.get("EDP_HANDLE", f"{role}.pi")
+    role = env.get("EDP_ROLE") or ""
+    handle = env.get("EDP_HANDLE") or f"{role}.pi"
+    # owner m-da9a2ae62f: a seat runs as its spawn's agent role; unset or a person's role is refused
+    why = non_agent_refusal(role, handle) if role else "EDP_ROLE is unset: a seat is launched by a spawn that names its role"
+    if why:
+        print(f"edp8 pi seat refused: {why}", file=sys.stderr)
+        return 2
     agent_home = Path(env.get("EDP_AGENT_HOME") or os.getcwd()).resolve()
     log_dir = Path(env.get("EDP_LOG_DIR") or (agent_home / ".logs"))
     log_dir.mkdir(parents=True, exist_ok=True)

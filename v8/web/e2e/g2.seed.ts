@@ -69,7 +69,7 @@ export async function seedDecisions(): Promise<G2Fixture> {
       "POST",
       "/v1/tickets",
       // A KNOWLEDGE story: design §24 rule 2 lets only review/knowledge stories carry an owner-checked
-      // criterion (a feature story's checker is derived — qa/reviewer — and a design_signoff answer
+      // criterion (a feature story's checker is derived — qa — and a design_signoff answer
       // is refused while a feature story is owner-checked; acceptance finding 2026-09-08).
       { kind: "story", work_type: "knowledge", title: "Decisions home story", parent_id: epic },
       as(arch),

@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from edp_contracts.roles import is_non_agent
 from edp_contracts.seats import config_path
 
 from . import settings
@@ -45,32 +46,44 @@ def path() -> Path:
 
 
 def migrate(raw: dict[str, Any]) -> dict[str, Any]:
-    """One-time conversion of the historic host catalog; preserve every binding and its order."""
+    """One-time conversion of the historic host catalog; preserve every binding and its order. A person's
+    role (owner, expert, human) keeps no binding (owner m-da9a2ae62f: it is never a seat); every other legacy
+    `roles` binding no `role_models` row names becomes that role's row, so it resolves as before."""
     result = json.loads(json.dumps(raw))
     models = dict(result.get("models") or {})
     seats = result.get("seats") or {}
+    for col in [k for k in result if k == "role_models" or k.startswith("roles")]:
+        if isinstance(result[col], dict):
+            result[col] = {r: v for r, v in result[col].items() if not is_non_agent(r)}
+    role_models = result.setdefault("role_models", {})
+    legacy = {}  # model id -> the seat row a legacy `roles` binding named it through
+    for role, seat in (result.get("roles") or {}).items():
+        model = (seats.get(seat) or {}).get("model") if isinstance(seat, str) else None
+        if model and not role_models.get(role):
+            role_models[role] = [model]
+            legacy.setdefault(model, seats[seat])
     for ids in (result.get("role_models") or {}).values():
         for model in ids:
             if model in models:
                 continue
             # Legacy inference happens only here. Runtime routing never examines an id's prefix.
-            if model in seats:
-                row = seats[model]
+            if model in seats or model in legacy:
+                row = seats.get(model) or legacy[model]
                 harness = row.get("harness") or "claude"
                 provider = row.get("provider") or ("openai-codex" if harness == "pi" else harness)
-                window = row.get("context_window", 1_000_000)
-                compact = row.get("auto_compact", 350_000)
+                window, compact = row.get("context_window"), row.get("auto_compact")
             else:
                 harness = "pi" if model.startswith(("openai/", "openai-codex/")) else (
                     "codex" if model.startswith(("gpt-", "codex/")) else "claude")
                 provider = model.split("/", 1)[0] if harness == "pi" else harness
-                window = 272_000 if harness != "claude" else 1_000_000
-                compact = 200_000 if harness != "claude" else 350_000
+                window = compact = None
+            if harness == "claude":  # the fleet's one Claude window and compaction (owner 2026-08-06)
+                window, compact = window or 1_000_000, compact or 350_000
             row = {"harness": harness, "provider": provider,
-                   "context_window": window, "auto_compact": compact,
                    "effort_cap": "medium" if harness == "claude" else "high"}
-            if harness in HARNESS_WINDOWS:  # the harness reports its own window and compaction
-                del row["context_window"], row["auto_compact"]
+            # a non-Claude row keeps only numbers its legacy seat wrote; none is invented (owner m-bfe93b313c)
+            if harness not in HARNESS_WINDOWS or (window, compact) != _INVENTED_CODEX:
+                row.update({k: v for k, v in (("context_window", window), ("auto_compact", compact)) if v})
             models[model] = row
     for row in seats.values():
         row.setdefault("harness", "claude")

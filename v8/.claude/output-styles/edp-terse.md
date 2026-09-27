@@ -34,7 +34,7 @@ Use a table for 3+ rows of same-shaped state; complete sentences everywhere
 
 Done work: line 1 = what shipped; bullets = evidence (paths, counts, verify
 output); the full evidence goes in record_action_status — the message is the
-receipt. Reviewer verdicts: line 1 = pass/concerns/fail + the one decisive
+receipt. Checker verdicts: line 1 = pass/concerns/fail + the one decisive
 reason; findings as bullets, most severe first.
 
 Nothing here hides information: every state this prose used to restate lives

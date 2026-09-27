@@ -22,4 +22,4 @@ change; also the structural portion of a bug fix.
 story's criteria) pass unchanged throughout.
 
 **Typical gates.** None by default; a refactor touching a shared/critical seam may warrant
-an early reviewer look on the step plan before executing.
+an early checker look on the step plan before executing.

@@ -118,34 +118,41 @@ class CodexSpawner:
                               log_dir=self._log_dir, parent=parent)
         if extra_env:  # S20: the per-seat EDP8_TOKEN the service mints — merged AFTER build_env's
             env.update({str(k): str(v) for k, v in extra_env.items()})  # secret strip; env only
+        from edp_contracts.seats import model_entry
+        home = self._agent_home or os.getcwd()
         named = codex_seat_named(model, self._agent_home)
+        entries: list[dict] = []  # the rows whose owner-set window/compaction this launch carries
         if named is not None:
             env["EDP_CODEX_MODEL"] = named.model.split("/", 1)[-1]
             if named.thinking and not settings.is_set("EDP_CODEX_EFFORT"):
                 env["EDP_CODEX_EFFORT"] = named.thinking
+            # the catalog row of the seat's model first (Admin edits it), then the seat row as written
+            entries = [e for e in (model_entry(home, env["EDP_CODEX_MODEL"]), model_entry(home, model)) if e]
         else:
-            from edp_contracts.seats import model_entry
-            entry = model_entry(self._agent_home or os.getcwd(), model)
+            entry = model_entry(home, model)
             if entry and entry.get("harness") == "codex":
                 env["EDP_CODEX_MODEL"] = str(entry.get("model") or model)
-                # S12 (owner m-bfe93b313c): an owner-set window/compaction reaches codex as -c overrides
-                # (seat.argv, shared by launch and resume); unset leaves Codex's own numbers
-                for key, var in (("auto_compact", "EDP_CODEX_AUTO_COMPACT"),
-                                 ("context_window", "EDP_CODEX_CONTEXT_WINDOW")):
-                    if isinstance(entry.get(key), int) and not isinstance(entry.get(key), bool):
-                        env[var] = str(entry[key])
+                entries = [entry]
             elif not model and not env.get("EDP_CODEX_MODEL"):
                 import json
                 from edp_contracts.seats import config_path
                 try:
-                    raw = json.loads(config_path(self._agent_home or os.getcwd()).read_text(encoding="utf-8"))
-                    entries = raw.get("models") or {}
-                    ids = (raw.get("role_models") or {}).get(role) or list(entries)
-                    picked = next((mid for mid in ids if (entries.get(mid) or {}).get("harness") == "codex"), None)
+                    raw = json.loads(config_path(home).read_text(encoding="utf-8"))
+                    rows = raw.get("models") or {}
+                    ids = (raw.get("role_models") or {}).get(role) or list(rows)
+                    picked = next((mid for mid in ids if (rows.get(mid) or {}).get("harness") == "codex"), None)
                 except (OSError, ValueError, TypeError):
                     picked = None
                 if picked:
-                    env["EDP_CODEX_MODEL"] = str((entries[picked].get("model") or picked))
+                    env["EDP_CODEX_MODEL"] = str((rows[picked].get("model") or picked))
+                    entries = [rows[picked]]
+        # S12 (owner m-bfe93b313c): an owner-set window/compaction reaches codex as -c overrides (seat.argv,
+        # shared by launch and resume); unset leaves Codex's own numbers, never an invented pair
+        for key, var in (("auto_compact", "EDP_CODEX_AUTO_COMPACT"), ("context_window", "EDP_CODEX_CONTEXT_WINDOW")):
+            val = next((e[key] for e in entries if isinstance(e.get(key), int) and not isinstance(e.get(key), bool)),
+                       None)
+            if val is not None:
+                env[var] = str(val)
         effort = str((extra_env or {}).get("EDP_SEAT_EFFORT") or "").strip().lower()
         if effort in CODEX_EFFORTS:  # the spawn's own effort wins over the seat default
             env["EDP_CODEX_EFFORT"] = effort

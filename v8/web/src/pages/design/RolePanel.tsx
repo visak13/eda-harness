@@ -7,7 +7,7 @@ import type { CapacityClass, RoleDef, Templates, WorkflowDef } from "../../api/w
 import { Markdown } from "../../components/Markdown";
 import ui from "../../components/ui.module.css";
 import styles from "./Design.module.css";
-import { DOC_TYPES, EFFORTS, FIELD_HELP, KINDS, PERMISSION_HELP, ROLE_ID, roleLabel, spawnersOf } from "./model";
+import { DOC_TYPES, EFFORTS, FIELD_HELP, KINDS, NON_AGENT_ROLES, PERMISSION_HELP, ROLE_ID, roleLabel, spawnersOf } from "./model";
 
 // S14 (§4.14(c)-(e)): one role at a time — its model/harness/effort from the S12 catalog, its card (a
 // markdown editor with the board's own preview), its tool checklist and its permissions — plus Add role
@@ -313,7 +313,9 @@ function AddRole({ wf, templates, onChange, onDone }: RolePanelProps & { onDone:
   const defaultSpawner = wf.roles.find((r) => r.id === "architect")?.id ?? wf.roles.find((r) => (r.may_spawn ?? []).length && !r.human)?.id ?? humans[0] ?? "";
   const [spawner, setSpawner] = useState(defaultSpawner);
   const taken = wf.roles.some((r) => r.id === id);
-  const bad = !ROLE_ID.test(id) ? "Use lowercase letters, digits and dashes, starting with a letter." : taken ? `A role ${id} already exists.` : null;
+  const bad = !ROLE_ID.test(id) ? "Use lowercase letters, digits and dashes, starting with a letter."
+    : NON_AGENT_ROLES.has(id) ? `${id} is a person's role, never a seat: pick another id.`
+    : taken ? `A role ${id} already exists.` : null;
   const add = () => {
     // blank = a spawnable seat role with nothing else: Validate then names what it lacks (card, bundle)
     const base = tpl === "blank" ? { spawnable: true } : templates?.roles[tpl]?.role ?? {};

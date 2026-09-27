@@ -19,6 +19,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from edp_contracts.roles import is_non_agent, retired_refusal
+
 from .schemas import Role, TicketKind, TicketStatus
 
 STANDARD_ID = "standard"
@@ -461,7 +463,9 @@ class Workflow:
         self.criterion_authors = {r.id for r in d.roles if r.criterion_author}
         self.criterion_checkers = {r.id for r in d.roles if r.criterion_checker}
         self.gate_answerers = {r.id for r in d.roles if r.gate_answerer}
-        self.spawnable = {r.id for r in d.roles if r.spawnable}
+        # owner m-da9a2ae62f: a human role (the data's flag, or a reserved id) is never a seat, whatever
+        # the definition says, so a hand-edited or legacy definition cannot open a launch path for it
+        self.spawnable = {r.id for r in d.roles if r.spawnable and not r.human and not is_non_agent(r.id)}
         self.terminal = set(d.terminal)
         self.gates = {g.id: g for g in d.gates}
 
@@ -882,6 +886,10 @@ WHY_FIX: dict[str, tuple[str, str]] = {
                        "remove the role from the gate's answerers, or answer with a human role"),
     "human_spawnable": ("a spawned seat is always an agent, so a spawnable role marked human would let an agent "
                         "act as a human (answer gates, sign off)", "untick spawnable, or untick human"),
+    "retired_role": ("the owner removed this role for good; a definition cannot bring it back",
+                     "delete the role; qa checks stories and the adversary files findings"),
+    "non_agent_role": ("owner, expert and human are people (owner m-da9a2ae62f): no path may launch them as "
+                       "an agent seat", "keep the role human and untick spawnable, or give a custom role another id"),
     "role_without_spawner": ("no seat of this role can ever start, so its tickets are never worked",
                              "add the role to some role's `may_spawn`"),
     "card_missing": ("a spawned seat boots from its card; without one it has no instructions",
@@ -1040,6 +1048,10 @@ def validate(d: WorkflowDef | dict[str, Any]) -> list[dict[str, str]]:
     for r in d.roles:
         if r.human and r.spawnable:
             err("human_spawnable", f"role {r.id!r} is marked human but is spawnable (a spawned seat is an agent)")
+        if retired_refusal(r.id):
+            err("retired_role", retired_refusal(r.id))
+        if is_non_agent(r.id) and (not r.human or r.spawnable):
+            err("non_agent_role", f"role {r.id!r} is a person's role: it must be human and never spawnable")
         if r.human and r.id in _BUILTIN_ROLE_IDS:
             continue
         if r.spawnable and not r.bundle:

@@ -171,3 +171,24 @@ def test_owner_compaction_reaches_launch_and_resume_env(monkeypatch, tmp_path):
     sp.launch("s2", "engineer", "engineer.2", model="plain")
     assert "EDP_CODEX_AUTO_COMPACT" not in seen["kw"]["env"]
     assert "EDP_CODEX_CONTEXT_WINDOW" not in seen["kw"]["env"]
+
+
+def test_owner_compaction_reaches_a_named_seat_and_a_role_default_launch(monkeypatch, tmp_path):
+    """S12 c-f9ccee4071 (owner m-bfe93b313c): EVERY codex launch carries the owner-set auto_compact: a legacy
+    seat name (astra-codex) reads its model's catalog row, and a model-less launch the row it picks; the
+    seat row with no numbers of its own adds none (no invented 272k/200k pair)."""
+    for var in ("EDP_CODEX_AUTO_COMPACT", "EDP_CODEX_CONTEXT_WINDOW"):
+        monkeypatch.delenv(var, raising=False)
+    (tmp_path / "models.json").write_text(json.dumps({
+        "models": {"gpt-6-astra": {"harness": "codex", "provider": "codex", "auto_compact": 180000}},
+        "seats": {"astra-codex": {"model": "gpt-6-astra", "harness": "codex", "thinking": "medium"}},
+        "role_models": {"adversary": ["gpt-6-astra"]}}), encoding="utf-8")
+    seen = _capture(monkeypatch)
+    sp = cl.CodexSpawner(log_dir=str(tmp_path / "logs"), agent_home=str(tmp_path))
+    for model in ("astra-codex", "gpt-6-astra", None):
+        for resume in (None, "thread-state"):
+            sp.launch("s1", "adversary", "adversary.1", model=model, resume_session=resume)
+            env = seen["kw"]["env"]
+            assert env["EDP_CODEX_MODEL"] == "gpt-6-astra", model
+            assert env["EDP_CODEX_AUTO_COMPACT"] == "180000", (model, resume)
+            assert "EDP_CODEX_CONTEXT_WINDOW" not in env, model

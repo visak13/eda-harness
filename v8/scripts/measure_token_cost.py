@@ -32,9 +32,9 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from edp8.bundles import ROLE_BUNDLES, tools_for_role  # noqa: E402
 
-# pool-spawned seats, and the human's own shells (the owner seat runs there)
+# pool-spawned seats, and older transcripts under the user's own Claude store
 TRANSCRIPT_ROOTS = (V8.parent / "edp-pool" / ".claude-pool" / "projects", Path.home() / ".claude" / "projects")
-SEAT_ROLES = ("architect", "engineer", "qa", "reviewer", "sme", "owner", "adversary")
+SEAT_ROLES = ("architect", "engineer", "qa", "sme", "adversary", "doctor")
 _CMD = re.compile(r"<command-name>/(\w+)</command-name>")
 _WHOAMI_ROLE = re.compile(r'\\"type\\": \\"(?:agent|human)\\", \\"role\\": \\"(\w+)\\"')
 

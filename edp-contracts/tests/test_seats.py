@@ -65,7 +65,7 @@ def test_auto_compact_must_sit_below_window():
 
 def test_role_to_unknown_seat_refused():
     raw = _raw()
-    raw["roles"]["reviewer"] = "ghost"
+    raw["roles"]["auditor"] = "ghost"
     with pytest.raises(SeatsError, match="unknown seat"):
         parse(raw)
 

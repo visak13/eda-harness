@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from admin_support import ADMIN_H, make_env
 
 from edp8 import harness, model_catalog, seat_choice, settings
@@ -290,3 +292,69 @@ def test_put_refuses_setting_a_default_on_an_unselected_harness(tmp_path, monkey
     body["role_models"]["engineer"] = ["gpt-6-astra", "claude-opus-5-5"]
     r = env.client.put("/v1/admin/models", json=body, headers=ADMIN_H)
     assert r.status_code == 200, r.text
+
+
+def _pre_migration_model(home, role):
+    """What the pool gave a role from the historic file: role_models[0], else its legacy `roles` seat."""
+    from edp_contracts.seats import catalog_model_for, seat_for_role
+    seat = seat_for_role(home, role)
+    return catalog_model_for(home, role) or (seat.model if seat else None)
+
+
+def test_s12_parity_on_the_real_pre_migration_catalog(tmp_path):
+    """qa c-c0b35be596 (architect m-a3a8943c39): the real pre-S12 file (git show cb84bba^:v8/models.json, prose
+    notes dropped) resolves every agent role to the same model after migration, on the board and the pool;
+    a person's role (owner) has no model any more and is refused (owner m-da9a2ae62f)."""
+    from pathlib import Path
+
+    from edp_contracts.roles import NonAgentRole, is_non_agent
+    from edp_contracts.seats import catalog_model_for, seat_for_role
+
+    legacy = json.loads((Path(__file__).parent / "fixtures" / "models_pre_s12.json").read_text(encoding="utf-8"))
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir(), new.mkdir()
+    (old / "models.json").write_text(json.dumps(legacy), encoding="utf-8")
+    migrated = model_catalog.migrate(legacy)
+    (new / "models.json").write_text(json.dumps(migrated), encoding="utf-8")
+    roles = set(legacy["role_models"]) | set(legacy["roles"])
+    assert "owner" in roles and "sme" in roles
+    for col in [k for k in migrated if k == "role_models" or k.startswith("roles")]:
+        assert not any(is_non_agent(r) for r in migrated[col]), col
+    for role in sorted(roles):
+        if is_non_agent(role):
+            with pytest.raises(NonAgentRole):
+                seat_choice.resolve(None, None, [], new, role=role)
+            assert catalog_model_for(new, role) is None and seat_for_role(new, role) is None
+            continue
+        before = _pre_migration_model(old, role)
+        assert before, role
+        assert seat_choice.resolve(None, None, [], new, role=role).model == before, role
+        assert _pre_migration_model(new, role) == before, role  # the pool's lookup on the migrated file
+
+
+def test_migration_invents_no_window_for_a_non_claude_row():
+    """S12 c-f9ccee4071 (owner m-bfe93b313c): a migrated Codex or Pi row carries no invented window or
+    compaction (Codex reports its own); a number the legacy seat row wrote survives, and a Claude row keeps
+    the fleet's 1M / 350k."""
+    from pathlib import Path
+
+    legacy = json.loads((Path(__file__).parent / "fixtures" / "models_pre_s12.json").read_text(encoding="utf-8"))
+    legacy["role_models"]["engineer"].append("openai/gpt-new")
+    legacy["seats"]["tuned-codex"] = {"model": "gpt-tuned", "harness": "codex", "auto_compact": 400000,
+                                      "context_window": 900000}
+    legacy["role_models"]["sme"].append("tuned-codex")
+    rows = model_catalog.migrate(legacy)["models"]
+    for mid in ("gpt-6-astra", "gpt-6-sol", "openai/gpt-new"):
+        assert rows[mid]["harness"] != "claude", mid
+        assert "context_window" not in rows[mid] and "auto_compact" not in rows[mid], (mid, rows[mid])
+    assert (rows["tuned-codex"]["context_window"], rows["tuned-codex"]["auto_compact"]) == (900000, 400000)
+    assert (rows["claude-opus-5-5"]["context_window"], rows["claude-opus-5-5"]["auto_compact"]) == (1_000_000, 350_000)
+
+
+def test_the_shipped_codex_seat_row_carries_no_invented_window():
+    from pathlib import Path
+
+    raw = json.loads((Path(__file__).resolve().parents[1] / "models.json").read_text(encoding="utf-8"))
+    for name, row in {**raw["seats"], **raw["models"]}.items():
+        if row.get("harness") == "codex":
+            assert "context_window" not in row and "auto_compact" not in row, name

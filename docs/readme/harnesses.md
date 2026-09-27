@@ -1,7 +1,7 @@
 # Two harnesses: Claude Code and Codex
 
 - **Seats.** By default every seat is a Claude Code session. Set `EDP_CODEX_ROLES` in `v8/.env`
-  (for example `EDP_CODEX_ROLES=reviewer,qa`) and the pool runs those roles as resident
+  (for example `EDP_CODEX_ROLES=adversary,qa`) and the pool runs those roles as resident
   **Codex app-server** seats on GPT-6 Astra instead (commits `e9fdc4f`, `84303b5`). They read the
   same role card and get the same board tools, plus Claude-style wake-ups (a Monitor feed and a cron
   heartbeat). `v8/scripts/drill_codex_seat.py` is the boot, wake and resume drill that proves a Codex

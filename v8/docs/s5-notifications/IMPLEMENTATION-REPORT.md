@@ -35,7 +35,7 @@ Screenshots: `web/e2e/evidence/s5-notifications.png` and `s5-notifications-320.p
 
 ## Criterion map and remaining acceptance
 
-- **c-b950658c10**: Python + RTL + worker VM + isolated Chromium checks above. Covers explicit gesture, authenticated selection/click reauthorization, IDB cross-tab replay, generic minimal data, honest fallback, draft guards and reviewer-reported races. Native permission revocation/focus behavior still requires matrix. Worker restart persistence uses IDB; concurrent actual transactions tested, a native Firefox worker restart scenario is not claimed.
+- **c-b950658c10**: Python + RTL + worker VM + isolated Chromium checks above. Covers explicit gesture, authenticated selection/click reauthorization, IDB cross-tab replay, generic minimal data, honest fallback, draft guards and review-reported races. Native permission revocation/focus behavior still requires matrix. Worker restart persistence uses IDB; concurrent actual transactions tested, a native Firefox worker restart scenario is not claimed.
 - **c-62b9921733**: procedure/harness available; **0/80 integrated native trials executed**. Full stock owner Windows/Firefox 20 each foreground/background/minimized/multitab and rapid-click/disappearance/denied/revoked/identity cases remain mandatory QA/owner work. S0 single-click evidence does not pass this criterion. Fresh consent and exact canonical origin/profile must be recorded. No all-tabs/browser-closed delivery promise.
 
 Evidence refs may be attached to both criteria with verdicts pending: report explicitly distinguishes completed command checks from unexecuted look checks. QA performs final consolidated verification per architect dispatch; engineering in_review is not acceptance.

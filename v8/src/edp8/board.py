@@ -21,6 +21,8 @@ from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
 from typing import Any
 
+from edp_contracts.roles import is_non_agent, non_agent_refusal
+
 from . import harness, knowledge, records, seat_choice
 from .schemas import (
     DECISION_DETAIL_MAX,
@@ -308,6 +310,14 @@ class Board:
             return str(role) in self.workflow_of(t).roles
         return any(str(role) in self.workflows.resolve(r).roles for r in self.workflows.pinned_refs())
 
+    def human_role(self, role: Any) -> bool:
+        """A person's role: a reserved non-agent id, or a role some pinned workflow marks human."""
+        rid = str(getattr(role, "value", role))
+        if is_non_agent(rid):
+            return True
+        wfs = [self.workflow_of(None)] + [self.workflows.resolve(r) for r in self.workflows.pinned_refs()]
+        return any(rid in wf.roles and wf.roles[rid].human for wf in wfs)
+
     def checker_roles(self) -> set[str]:
         """Every role that checks criteria in some pinned workflow (Standard's qa/owner at least)."""
         out = set(self.workflow_of(None).criterion_checkers)
@@ -350,6 +360,13 @@ class Board:
         if not self.known_role(role):
             raise BoardError("schema", f"role {role!r} is not a built-in role nor a role of any pinned workflow",
                              "pin an epic to the workflow that defines it first")
+        if type_ == "agent":  # owner m-da9a2ae62f: a person's role is never an agent participant
+            why = non_agent_refusal(role, id_ or handle)
+            if why is None and self.human_role(role):
+                why = f"the {role.value} role is a human role in its workflow: no seat is ever launched as it"
+            if why:
+                raise BoardError("scope", why, "people join through Teammates; seats are agent roles "
+                                               "(architect, engineer, qa, adversary, sme, doctor)")
         if self.store.query("participant", {"handle": handle}):
             raise BoardError("conflict", f"handle @{handle} already registered", "choose another handle")
         p = Participant(id=id_ or new_id(role.value), type=type_, role=role, handle=handle,
@@ -1013,7 +1030,7 @@ class Board:
     def _rederive_pending_pairings(self) -> None:
         """Rebuild the volatile pairing queue from durable board state (§24 finding 3), so a board
         restart between enqueue and drain never strands a checker: an epic whose acceptance gate is
-        open without a live qa seat (S-ROLES: qa is the only checker seat; no reviewer pairing).
+        open without a live qa seat (S-ROLES: qa is the only checker seat).
         Idempotent — _enqueue_pairing skips a live seat and de-dups."""
         # scan ALL tickets — the default 500-row page would silently skip eligible stories/epics on
         # a long-lived board (second-opinion 2026-09-08), stranding their pairing after a restart.
@@ -1034,7 +1051,7 @@ class Board:
                 self._enqueue_pairing(f"{role}.{t.id}", role, t.id)
 
     def _pairing_epic_active(self, ticket_id: str) -> bool:
-        """§24.1(a): the pairing's epic is still active. A qa pairing's ticket IS the epic; a reviewer
+        """§24.1(a): the pairing's epic is still active. A qa pairing's ticket IS the epic; any other
         pairing's ticket is a story under one. A pairing whose epic is terminal (or gone) is dead."""
         t = self.store.get("ticket", ticket_id)
         if t is None:
@@ -1096,6 +1113,10 @@ class Board:
         service-spawned one — mint its per-seat EDP8_TOKEN and inject it as spawn env, so the
         qa can authenticate to the board in public mode. Trusted mode (no minter, or the
         minter returns None) injects nothing, exactly as the service route does."""
+        why = non_agent_refusal(role, participant_id)
+        if why or self.human_role(role):  # owner m-da9a2ae62f: never re-queued, so log and drop it
+            _log.warning("pairing spawn for %s refused: %s", participant_id, why or f"{role} is a human role")
+            return True
         if self.store.get("participant", participant_id) is None:
             try:
                 self.participant_create("agent", role, participant_id, id_=participant_id)  # S13: or a custom role
@@ -1155,7 +1176,7 @@ class Board:
     # ------------------------------------------------------------------ criteria
     def checker_for(self, t: Ticket) -> str:
         """The board derives a criterion's checker from its ticket (design §24.1, owner ruling
-        v22 2026-09-08; S-ROLES removed the reviewer role): **qa** checks every story/epic criterion; a
+        v22 2026-09-08; S-ROLES): **qa** checks every story/epic criterion; a
         **task** criterion is the task's own **engineer** (a task is the doer's checklist —
         self-verdicted, no paired seat, gating nothing); a knowledge ticket's criteria are the
         **owner**'s single HITL sign-off (the strategy-doc approval). The doer never chooses — this
@@ -2127,7 +2148,7 @@ class Board:
         mine: list[Ticket] = list(self.store.query("ticket", {"assignee": p.id}))  # type: ignore[arg-type]
         # a per-seat participant is NAMED for its ticket (role.<ticket_id>): surface that ticket
         # even when unassigned (checkers are deliberately not assigned — pain 2026-09-01: a
-        # spawned reviewer booted with an empty plate while its story was still in_progress)
+        # spawned checker booted with an empty plate while its story was still in_progress)
         if "." in p.id:
             tid = p.id.split(".", 1)[1]
             tk = self.store.get("ticket", tid)
@@ -2676,7 +2697,7 @@ class Board:
     def dense_diagnostic(self, actor: Participant, *, scope: str, question: str,
                          k: int = 10) -> dict[str, Any]:
         """Read-only D4/D5 diagnostic: the dense-only cosine top-k over the records in this epic's
-        scope (no BM25 leg, no graph, no cap). Lets a reviewer see exactly what the dense seed leg
+        scope (no BM25 leg, no graph, no cap). Lets a checker see exactly what the dense seed leg
         votes for, which the fused lookup otherwise hides. Scope-limited to the epic's live records."""
         if self.index is None:
             return {"scope": scope, "question": question, "embedder": "none", "hits": []}
@@ -3044,7 +3065,7 @@ class Board:
             # v21 / §24 finding 9 (tightened per second-opinion 2026-09-08): the owner is paged for
             # EVERY criterion check EXCEPT the one case rule 2 names — an AGENT qa PASSING a
             # command/path check. Keying suppression on the acting role (by_role), not just by_type +
-            # checked_by, closes the branch where an agent seat with Role.owner verdicts a reviewer
+            # checked_by, closes the branch where an agent seat with Role.owner verdicts a qa
             # criterion and was wrongly suppressed. A human's pass, any fail, a `look` check, and an
             # owner-checked criterion all still page.
             if d.get("by") != p.id and self._owner_scope(p, ev.subject_id):

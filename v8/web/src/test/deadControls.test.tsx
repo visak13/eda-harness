@@ -182,7 +182,7 @@ const SEATS = {
       latest_status: { text: "Owner checks are ready for review.", status: "reviewed", role: "engineer", at: ago(20_000) },
     },
     {
-      id: "reviewer.s-1", handle: "reviewer.s-1", role: "reviewer", state: "parked",
+      id: "adversary.s-1", handle: "adversary.s-1", role: "adversary", state: "parked",
       ticket_id: "s-1", ticket_title: "Build the epic page", last_output_at: ago(3 * 60_000),
       presence_stale_since: null, reason: "waiting on evidence", latest_status: null,
     },

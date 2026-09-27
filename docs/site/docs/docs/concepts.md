@@ -11,23 +11,22 @@ set of board tools. The model in the chair is your choice; see [Harnesses](../se
 
 | Role | Who | What it does |
 |---|---|---|
-| **owner** | you, a human | Says what is wanted, answers questions, signs the design, accepts the result |
+| **owner** | you, a human, never a seat | Says what is wanted, answers questions, signs the design, accepts the result |
 | **architect** | seat | Designs the epic with the owner, splits it into stories, coordinates the seats |
 | **engineer** | seat | Plans and builds one story, and attaches evidence to every criterion |
-| **reviewer** | seat | Gives an independent verdict on one story; never the builder |
-| **qa** | seat | Accepts the whole epic, re-running the checks from cold |
+| **qa** | seat | Checks every story and accepts the whole epic, re-running the checks from cold |
 | **sme** | seat | Writes the craft rules a story is built under, when the domain needs an expert |
 | **adversary** | seat | Runs one bounded hostile review round, hunting for hidden faults |
 | **doctor** (shown as **Help**) | seat | Read-only diagnosis; proposes fixes that an admin approves |
 
-Seats are started, woken and closed for you. You work in the browser or in Heronry Desktop.
+Seats are started, woken and closed for you. You work in the browser or in Heronry Desktop. The owner
+and every other person are never seats: no path starts an agent as a human role.
 
 The **admin** is the person `heronry init` created, plus anyone made an admin later. Admins use the
 **Admin** pages and edit workflows in the [Design tab](design-tab.md).
 
 !!! note "The doer never checks its own work"
-    The seat that builds a story is never the one that gives its verdict. A reviewer, qa or the owner
-    checks it.
+    The seat that builds a story is never the one that gives its verdict. qa or the owner checks it.
 
 ## The board
 

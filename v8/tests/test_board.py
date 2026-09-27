@@ -493,13 +493,13 @@ def test_session_upsert_dead_emits_shell_dead_once(board, rig):
 # ------------------------------------------------------------------ review-type criteria checker
 
 def test_review_story_criterion_derives_qa_ignoring_a_passed_checker(board, rig):
-    """§24.1: a review story's criteria are checked by qa; a passed checked_by (here the retired
-    reviewer, S-ROLES) is ignored (the derivation, not a refusal, is the mechanism now)."""
+    """§24.1: a review story's criteria are checked by qa; a passed checked_by (here the adversary)
+    is ignored (the derivation, not a refusal, is the mechanism now)."""
     epic = make_epic(board, rig)
     review_story = board.ticket_create(rig["architect"], kind=TicketKind.story, work_type=WorkType.review,
                                         title="review the slice", parent_id=epic.id)
     crit = board.criterion_create(rig["architect"], ticket_id=review_story.id, text="reviewed",
-                                   check=Check.verdict, checked_by="reviewer")
+                                   check=Check.verdict, checked_by="adversary")
     assert crit.checked_by == "qa"  # passed checker ignored, board derived qa for a review story
 
 
@@ -557,7 +557,7 @@ def test_implicit_blocker_review_story_waits_on_sibling_then_auto_promotes(board
 
 def test_my_tickets_and_context_for_checker_roles(board, rig):
     epic = make_epic(board, rig)
-    # a review_required story → the board derives qa as its checker (S-ROLES: no reviewer role)
+    # a review_required story → the board derives qa as its checker (S-ROLES: qa is the one checker)
     story = board.ticket_create(rig["architect"], kind=TicketKind.story, work_type=WorkType.feature,
                                 title="CLI skeleton", parent_id=epic.id, tags=["review_required"])
     d = design_doc(board, rig, epic.id)

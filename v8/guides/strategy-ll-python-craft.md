@@ -1,12 +1,12 @@
 # strategy_ll: python craft
 
-**Intent + why.** Craft rules exist so the code is safe to hand to a reviewer who wasn't
+**Intent + why.** Craft rules exist so the code is safe to hand to a checker who wasn't
 there and to a future engineer who has no memory of this session — not as style
 preference. Each item below is intent + why + a concrete example, so a lower-tier
 executing model can adapt it rather than pattern-match a rule it doesn't understand.
 
 **Structure** — keep one responsibility per module/function so a change in one concern
-doesn't ripple; a reviewer should be able to verify a function by reading only its body and
+doesn't ripple; a checker should be able to verify a function by reading only its body and
 signature. Example: a `parse_ticket()` function does parsing only; it does not also write
 the result to disk.
 
@@ -22,7 +22,7 @@ chosen and why, not each loop iteration.
 doesn't leak handles across many tickets. Example: use a context manager (`with open(...)`)
 rather than manual `f.close()` calls that skip on an exception path.
 
-**Tests** — a test exists for every criterion's `check: command`, runnable by the reviewer
+**Tests** — a test exists for every criterion's `check: command`, runnable by the checker
 without special setup, so "it works" is re-checkable rather than a claim. Example: a test
 that reproduces the bug's repro from the diagnose strategy, asserting it no longer fails.
 

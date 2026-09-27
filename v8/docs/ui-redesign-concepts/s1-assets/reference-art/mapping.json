@@ -370,14 +370,6 @@
       "column": 4
     },
     {
-      "key": "reviewer",
-      "motif": "round head with single lens and dot eye",
-      "adaptationNote": "Remove incidental antenna to improve distinction from owner.",
-      "section": "bot_identities",
-      "row": 1,
-      "column": 5
-    },
-    {
       "key": "adversary",
       "motif": "shield head with split V brow",
       "adaptationNote": "Keep curious/firm, not hostile.",

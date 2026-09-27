@@ -223,7 +223,7 @@ describe("EpicPage", () => {
     const data = page();
     data.board.epic.children = [
       node({ id: "s-1", title: "Alpha", status: "in_progress", work_type: "feature", assignee: "engineer.s-1" }),
-      node({ id: "s-2", title: "Bravo", status: "done", work_type: "bug", assignee: "reviewer.s-2" }),
+      node({ id: "s-2", title: "Bravo", status: "done", work_type: "bug", assignee: "sme.s-2" }),
     ];
     mount(data);
     await title();

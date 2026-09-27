@@ -140,7 +140,7 @@ class Store:
             # and a thread's asks to one addressee (views._pending_owner_request): stat1 averages ~90 rows per
             # "to", but the owner holds ~1,100, so the single-column pick scanned them all (4 ms per epic)
             self._conn.execute('CREATE INDEX IF NOT EXISTS ix_message_ticket_to ON message("ticket_id", "to")')
-            self.migrated_reviewer = self._migrate_reviewer_locked()
+            self.migrated_retired = self._migrate_reviewer_locked()
             self.retired_roles = self._retire_roles_locked()
         self.optimize(on_open=True)
 

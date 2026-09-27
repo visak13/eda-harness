@@ -10,6 +10,8 @@ import os
 os.environ.setdefault("EDP8_EMBEDDER", "none")
 
 import pytest
+
+from edp_contracts.roles import NonAgentRole
 from fastapi.testclient import TestClient
 
 from edp8 import pool_adapter, seat_choice
@@ -268,7 +270,9 @@ def test_rule_missing_falls_to_the_first_catalog_entry(cat_home):
     for role, ids in OWNER_TABLE.items():
         assert seat_choice.resolve(None, None, [], cat_home, role=role).model == ids[0]
     # S12 (owner bug m-549b8adc3a): a role not in the catalog gets the catalog default, never None
-    assert seat_choice.resolve(None, None, [], cat_home, role="owner").model == seat_choice.default_model(cat_home)
+    assert seat_choice.resolve(None, None, [], cat_home, role="auditor").model == seat_choice.default_model(cat_home)
+    with pytest.raises(NonAgentRole):  # a person's role has no seat model (owner m-da9a2ae62f, qa c-c0b35be596)
+        seat_choice.resolve(None, None, [], cat_home, role="owner")
     assert seat_choice.default_model(cat_home) is not None
     assert seat_choice.resolve(None, None, [], cat_home).model is None               # no role given
 

@@ -28,6 +28,8 @@ from typing import Annotated, Any
 from pathlib import Path
 from dataclasses import replace
 
+from edp_contracts.roles import non_agent_refusal
+
 from .http_upload import HttpUploadPolicy
 
 import anyio
@@ -140,6 +142,24 @@ def _refused(tool_name: str, path_role: str, caller_role: str | None) -> str:
         "hint": "tools follow your board role (whoami), not the /mcp/<role> path"})
 
 
+def _agent_shell_as_human(board_url: str, admin_token: str | None, participant: str | None, session: str | None,
+                          token: str | None, tool_name: str) -> str | None:
+    """Owner m-da9a2ae62f ("no way anyone can launch the owner role"): a call from an agent shell (it carries
+    a pool session id) whose board identity is a person's role (owner, expert, human) is refused, so no model
+    ever acts as the owner. A person's own client (no session) is unaffected; the board still authorises it."""
+    if not session:
+        return None
+    why = non_agent_refusal(None, participant)
+    if why is None:
+        role = _caller_role(board_url, admin_token, participant, token)
+        why = non_agent_refusal(role) if role else None
+    if why is None:
+        return None
+    return json.dumps({"ok": False, "error": {
+        "code": "forbidden", "message": f"tool {tool_name!r} refused: an agent shell never acts as a person ({why})"},
+        "hint": "a seat runs as its own agent role (EDP_ROLE / EDP_HANDLE from its spawn); people act in the web UI"})
+
+
 def _wrap(tool: ToolDef, *, board_url: str, admin_token: str | None, workspace_root: Path | None = None,
           http_upload_policy: HttpUploadPolicy | None = None, path_role: str | None = None):
     """Build a function whose signature mirrors tool.args_model's fields (flat input schema)
@@ -147,6 +167,9 @@ def _wrap(tool: ToolDef, *, board_url: str, admin_token: str | None, workspace_r
 
     def call(ctx: Context, **kwargs: Any) -> str:
         participant, session, token = _identity_from(ctx)
+        refused = _agent_shell_as_human(board_url, admin_token, participant, session, token, tool.name)
+        if refused:
+            return refused
         if path_role is not None:
             caller_role = _caller_role(board_url, admin_token, participant, token)
             if tool.name not in allowed_tool_names(path_role, caller_role,

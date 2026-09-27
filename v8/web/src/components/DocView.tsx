@@ -183,7 +183,7 @@ function DocBody({
   versionsHosted?: boolean;
   /** Inside a design review the header already names the doc (review-title). */
   hideTitle?: boolean;
-  /** Inside a design review the reader is the reviewer, not the author: the author actions
+  /** Inside a design review the reader is not the author: the author actions
    *  (Ask for a review / Publish a new version) do not belong on the review surface (finding 5). */
   reviewing?: boolean;
 }): React.JSX.Element {

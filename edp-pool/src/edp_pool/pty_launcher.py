@@ -397,14 +397,13 @@ _ROLE_ACTIVATOR = {
     "worker": "/worker",
     "neuron": "/neuron",
     # Team-architecture Phase 6 (2026-05-21): externality shells.
-    # ("critic" retired in v2.4 — replaced by the reviewer fork below.)
+    # ("critic" retired in v2.4.)
     "goal_keeper": "/goal-keeper",
     "pattern_observer": "/pattern-observer",
     # Specialization vision phase 4 (2026-05-22): SME self-train shell.
     "specialist": "/specialist",
     # v2.2 (2026-05-22): per-decision interrogator.
     "curiosity": "/curiosity",
-    # ("reviewer" removed 2026-09-23, S-ROLES s-a0c67e6aa7: not a role; qa checks stories.)
     # F31 (2026-08-18): the final-acceptance shell (advisor seat).
     "acceptor": "/acceptor",
 }

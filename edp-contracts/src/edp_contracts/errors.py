@@ -26,6 +26,7 @@ class ErrorCode(StrEnum):
     POOL_CAPACITY_EXCEEDED = "pool_capacity_exceeded"  # max workers (=3)
     POOL_SPAWN_FAILED = "pool_spawn_failed"  # shell failed to start
     POOL_UNKNOWN_HANDLE = "pool_unknown_handle"  # no such handle
+    POOL_ROLE_REFUSED = "pool_role_refused"  # a person's role (owner, expert, human) is never launched
 
     # ── broker ────────────────────────────────────────────────────────────
     BROKER_UNREGISTERED_KIND = "broker_unregistered_kind"

@@ -24,7 +24,6 @@ row 1:
 "coordinator" low rounded horizontal bot with three connected rounded nodes forming a top bridge;
 "architect" roof-shaped triangular brow integrated into a squat square bot;
 "engineer" hexagonal bot with a wrench-jaw notch integrated into its top contour;
-"reviewer" round bot with one large single lens/monocle eye and one dot eye;
 "adversary" angular shield-shaped bot with a split V brow, inquisitive and firm, never demonic or angry.
 row 2:
 "qa" rectangular bot whose upper-right outline incorporates a large check tab;

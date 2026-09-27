@@ -16,6 +16,7 @@ from enum import StrEnum
 from pathlib import PureWindowsPath
 from typing import Annotated, Any, Literal
 
+from edp_contracts.roles import is_non_agent, retired_refusal
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, PlainValidator, ValidationInfo, WithJsonSchema, field_validator
 
 # ----------------------------------------------------------------------------- enums
@@ -28,8 +29,7 @@ class Role(StrEnum):
     architect = "architect"
     sme = "sme"
     engineer = "engineer"
-    # "reviewer" is not a role (S-ROLES, owner m-bba708e10e): qa checks stories; the store migrates
-    # old reviewer participants/criteria/docs to qa at open (Store._migrate_reviewer_locked)
+    # removed roles (edp_contracts.roles.RETIRED_ROLES) are refused by role_id(); qa checks stories
     adversary = "adversary"
     qa = "qa"
     # S-SME-SURFACE (owner m-de07c37d0c): a named human from the owner's team linked to ONE Library topic;
@@ -60,6 +60,9 @@ def role_id(v: Any) -> Role | CustomRole:
     try:
         return Role(v)
     except ValueError:
+        why = retired_refusal(v)
+        if why:  # owner m-da9a2ae62f: a removed role never comes back as a custom one
+            raise ValueError(why) from None
         if isinstance(v, str) and _ROLE_ID_RX.match(v):
             return CustomRole(v)
         raise ValueError(f"{v!r} is not a role id (a built-in role or a workflow role: [a-z][a-z0-9_-]{{1,31}})") from None
@@ -800,6 +803,9 @@ class TeammateAction(StrEnum):
 SeatTicketKind = StrEnum("SeatTicketKind", {k.name: k.value for k in TicketKind if k != TicketKind.topic})
 SeatRelation = StrEnum("SeatRelation", {r.name: r.value for r in Relation if r != Relation.has_expert})
 SeatRole = StrEnum("SeatRole", {r.name: r.value for r in Role if r != Role.expert})
+# owner m-da9a2ae62f: the roles a seat can be launched as — never a person's role (owner, expert), so the
+# spawn tool's schema does not even offer one
+SpawnRole = StrEnum("SpawnRole", {r.name: r.value for r in Role if not is_non_agent(r)})
 
 class ParticipantType(StrEnum):
     """participants(type=…) filter (T3 F4); Participant.type holds the same two values."""

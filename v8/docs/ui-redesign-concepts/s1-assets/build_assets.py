@@ -58,7 +58,6 @@ BOTS = {
  'coordinator': ('#8DC0B0', '<rect x="3" y="14" width="30" height="18" rx="6"/><path d="M7 14V6h22v8M18 6v8"/><circle cx="7" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="29" cy="6" r="2"/>'),
  'architect': ('#ECA78D', '<path d="M5 14h26v14q0 4-4 4H9q-4 0-4-4Z"/><path d="M2 14 18 2l16 12Z"/>'),
  'engineer': ('#BBB1D8', '<path d="m7 12-5 10 6 10h20l6-10-5-10M12 3v8q6 6 12 0V3l5 4v7q-11 12-22 0V7Z"/>'),
- 'reviewer': ('#EEE6CC', '<circle cx="18" cy="19" r="14"/><circle cx="13" cy="20" r="7"/><path d="m8 25-4 5M18 5V2"/>'),
  'adversary': ('#83B5A5', '<path d="M4 6 18 11 32 6v19L18 34 4 25ZM4 12l14 6 14-6"/>'),
  'qa': ('#E8E3CF', '<rect x="3" y="11" width="30" height="21" rx="5"/><path d="m22 5 4 4 7-7"/>'),
  'sme': ('#EBC569', '<path d="M18 12q-6-6-15-4v24q9-2 15 2 6-4 15-2V8q-9-2-15 4ZM18 12v22"/>'),

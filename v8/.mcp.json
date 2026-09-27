@@ -2,9 +2,9 @@
   "mcpServers": {
     "edp8": {
       "type": "http",
-      "url": "${EDP8_MCP_URL:-http://127.0.0.1:9402}/mcp/${EDP_ROLE:-owner}",
+      "url": "${EDP8_MCP_URL:-http://127.0.0.1:9402}/mcp/${EDP_ROLE:-unset}",
       "headers": {
-        "X-Participant": "${EDP_HANDLE:-owner}",
+        "X-Participant": "${EDP_HANDLE:-}",
         "X-Session": "${EDP_SPAWN_SESSION_ID:-}",
         "X-Token": "${EDP8_TOKEN:-}"
       }

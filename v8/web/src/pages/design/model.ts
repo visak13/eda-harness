@@ -290,3 +290,6 @@ export function short(v: unknown): string {
 }
 
 export const ROLE_ID = /^[a-z][a-z0-9-]{0,30}$/;
+/** A person's role (owner m-da9a2ae62f): never a seat, so Add role and Spawn seat never offer or take one.
+ *  Mirrors edp_contracts.roles.NON_AGENT_ROLES; the board and the pool refuse it too. */
+export const NON_AGENT_ROLES: ReadonlySet<string> = new Set(["owner", "expert", "human"]);

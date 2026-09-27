@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getModels, modelLabel, spawnSeat } from "../api/seats";
 import { BoardApiError } from "../api/client";
 import type { ModelCatalog } from "../api/types";
+import { NON_AGENT_ROLES } from "../pages/design/model";
 import ui from "./ui.module.css";
 import styles from "./SpawnSeatForm.module.css";
 
@@ -30,7 +31,8 @@ export function SpawnSeatForm({ ticketId: fixedTicket, roles: onlyRoles }: {
   const qc = useQueryClient();
   const modelsQ = useQuery({ queryKey: ["models"], queryFn: getModels, retry: false });
   const catalog = modelsQ.data as ModelCatalog | undefined;
-  const catalogRoles = Object.keys(catalog?.roles ?? {});
+  // owner m-da9a2ae62f: a person's role is never offered, whatever the catalog lists (the board refuses too)
+  const catalogRoles = Object.keys(catalog?.roles ?? {}).filter((r) => !NON_AGENT_ROLES.has(r));
   const roles = onlyRoles ? onlyRoles.filter((r) => catalogRoles.includes(r)) : catalogRoles;
   const [role, setRole] = useState("engineer");
   const [typed, setTicket] = useState("");

@@ -1,7 +1,7 @@
 """DESIGN-v7 1.2 — the capacity model split into three named knobs.
 
 EDP_MAX_WORKERS (6) and EDP_MAX_PLANNERS (4) are per-role throughput caps;
-EDP_MAX_TOTAL_SHELLS (10) is the true all-roles resource guard. Reviewers
+EDP_MAX_TOTAL_SHELLS (10) is the true all-roles resource guard. Checkers
 are exempt from the per-role caps (count under total only) so a review leg
 can never eat a builder slot — the DESIGN-v6 "~2 effective builders" bug.
 Every refusal must NAME its env knob: the operator's fix is one env var.

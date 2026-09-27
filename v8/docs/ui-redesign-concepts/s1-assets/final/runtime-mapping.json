@@ -75,7 +75,6 @@
   "bots": {
     "architect": "bots/architect.svg",
     "engineer": "bots/engineer.svg",
-    "reviewer": "bots/reviewer.svg",
     "adversary": "bots/adversary.svg",
     "qa": "bots/qa.svg",
     "sme": "bots/sme.svg",

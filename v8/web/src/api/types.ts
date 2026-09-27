@@ -575,7 +575,7 @@ export interface ResolveResult {
   to: string | null; // the board's resolved recipient id (or null for a thread note)
   wakes: WakeRow[];
   plan: WakeRow[]; // === wakes
-  note: string; // verbatim board note ("'reviewer' resolved to seat …", "nobody is woken", recovery)
+  note: string; // verbatim board note ("'qa' resolved to seat …", "nobody is woken", recovery)
 }
 
 // --------------------------------------------------------------------------- POST /v1/artifacts/upload

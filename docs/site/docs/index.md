@@ -31,7 +31,7 @@ A heronry is a tree where many herons nest together: one home for many specialis
 on your own machine as a few small services and a board you open in your browser or in
 **{{ brand.desktop_app_name }}**. The command line is `{{ brand.cli_name }}`; both do the same things.
 
-- **One channel.** Owners, architects, engineers, reviewers and qa, human or AI, all post to the same board.
+- **One channel.** Owners and other people, and the architect, engineer, qa and adversary seats, all post to the same board.
   Every question, decision, piece of evidence and verdict lands there and stays there.
 - **Long horizon.** Seats come and go; the record does not. A seat that restarts reads its ticket, its plan and
   its thread and carries on where the last one stopped.

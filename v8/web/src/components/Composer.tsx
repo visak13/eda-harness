@@ -35,7 +35,6 @@ const ROLE_GLOSS: Record<string, string> = {
   engineer: "wakes the engineer on this epic — builds a story",
   sme: "wakes the sme on this epic — craft author",
   qa: "wakes the qa on this epic — final acceptance",
-  reviewer: "wakes the reviewer on this epic — independent verdict",
   owner: "reaches the owner — the human who steers and approves",
 };
 const KIND_GLOSS: Partial<Record<MessageKind, string>> = {

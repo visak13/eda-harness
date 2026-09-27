@@ -30,7 +30,7 @@ HERE = Path(__file__).resolve().parent
 _spec = importlib.util.spec_from_file_location("drill_codex_seat", HERE / "drill_codex_seat.py")
 base = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(base)
-base.ROLE = "qa"  # "reviewer" is no longer a role (S-ROLES); qa runs read-only like it did
+base.ROLE = "qa"  # qa runs read-only
 
 
 def _p(r: dict) -> dict:

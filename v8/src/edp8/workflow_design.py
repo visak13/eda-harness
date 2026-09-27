@@ -6,7 +6,7 @@
 - `diff(a, b)`: a structural diff of two definitions, keyed by role id, edge, gate and hook.
 - `merge3(base, ours, theirs)`: the three-way merge behind "upstream changed" (§4.14(e).4); a field both
   sides changed differently keeps ours and is listed as a conflict.
-- `ROLE_TEMPLATES`: the builder, checker and reviewer starting points for Add role.
+- `ROLE_TEMPLATES`: the builder and checker starting points for Add role.
 
 The walk uses the real board (`Board(Store(':memory:'))`), so every refusal it names is the board's own.
 Nothing it does leaves the scratch board: spawns go to a recording pool and no card file is materialised.
@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import copy
 from typing import Any
+
+from edp_contracts.roles import non_agent_refusal, retired_refusal
 
 from . import workflow as wflow
 
@@ -26,8 +28,6 @@ _TEMPLATE_CARDS = {
                 "review."),
     "checker": ("You check finished work. For each criterion checked by your role, re-run its evidence cold "
                 "and record a verdict (pass or fail) with a one-line reason. You never build what you check."),
-    "reviewer": ("You review a whole epic adversarially once its stories are built. Read the design, the "
-                 "diffs and the evidence, and file findings on the thread, most severe first."),
 }
 
 #: Add role starting points (§4.14(e).3): the fields a role of that shape needs to pass Validate.
@@ -42,14 +42,13 @@ ROLE_TEMPLATES: dict[str, dict[str, Any]] = {
                          "criterion_checker": True, "doc_types": ["report"],
                          "bundle": ["ticket_read", "criterion_query", "criterion_update", "doc_create",
                                     "doc_read", "link_create"]}},
-    "reviewer": {"label": "Reviewer", "help": "reads the whole epic and files findings; approves nothing",
-                 "role": {"card_md": _TEMPLATE_CARDS["reviewer"], "spawnable": True, "capacity_class": "checker",
-                          "doc_types": ["report"],
-                          "bundle": ["ticket_read", "doc_read", "doc_create", "criterion_query", "find"]}},
 }
 
 
 def role_from_template(template: str, role_id: str) -> dict[str, Any]:
+    why = retired_refusal(role_id) or non_agent_refusal(role_id)
+    if why:  # owner m-da9a2ae62f: Add role never makes a removed role or a person's role a seat
+        raise wflow.WorkflowError("schema", why, "pick another role id")
     t = ROLE_TEMPLATES.get(template)
     if t is None:
         raise wflow.WorkflowError("schema", f"no role template {template!r}", f"one of {sorted(ROLE_TEMPLATES)}")

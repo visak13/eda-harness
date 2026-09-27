@@ -7,6 +7,7 @@ the catalog's `default_model`, so a custom (S13) role and a role no table names 
 import json
 
 import pytest
+from edp_contracts.roles import NonAgentRole
 
 from edp_pool import pty_launcher
 from edp_pool import spawner as pl
@@ -66,8 +67,10 @@ def test_every_role_spawns_with_a_catalog_model(home, monkeypatch, role, handle,
 
 def test_seat_model_for_order(home):
     assert pl.seat_model_for("engineer", str(home)) == "claude-opus-5-5"   # role_models first
-    assert pl.seat_model_for("owner", str(home)) == "claude-opus-5-5"      # no row: default_model
-    raw = dict(CATALOG, roles={"owner": "builder"}, seats={"builder": {"model": "claude-fable-5-1"}})
+    assert pl.seat_model_for("auditor", str(home)) == "claude-opus-5-5"    # no row: default_model
+    raw = dict(CATALOG, roles={"auditor": "builder"}, seats={"builder": {"model": "claude-fable-5-1"}})
     (home / "models.json").write_text(json.dumps(raw), encoding="utf-8")
-    assert pl.seat_model_for("owner", str(home)) == "claude-fable-5-1"     # legacy roles seat before default
+    assert pl.seat_model_for("auditor", str(home)) == "claude-fable-5-1"   # legacy roles seat before default
+    with pytest.raises(NonAgentRole):  # a person's role has no model (owner m-da9a2ae62f, qa c-c0b35be596)
+        pl.seat_model_for("owner", str(home))
     assert pl.seat_model_for("x", None) is None

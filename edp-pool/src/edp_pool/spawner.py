@@ -155,7 +155,10 @@ def seat_model_for(role: str, agent_home: str | None) -> str | None:
     is resolved from models.json here, so the registry binds EVERY spawned
     role. S12 (owner bug m-549b8adc3a): the role's first `role_models` entry, else its legacy `roles`
     seat, else the catalog's `default_model` — so a role no table names (a custom role, a new Help
-    seat) still spawns with --model. None only with no registry at all (legacy host default)."""
+    seat) still spawns with --model. None only with no registry at all (legacy host default).
+    A person's role (owner, expert, human) has no seat model: NonAgentRole (owner m-da9a2ae62f)."""
+    from edp_contracts.roles import refuse_non_agent
+    refuse_non_agent(role)
     if not agent_home:
         return None
     try:

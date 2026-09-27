@@ -21,4 +21,4 @@ an unclear cause.
 (not just "fixed"), and the fix's class (instance vs. class) is recorded.
 
 **Typical gates.** None by default; a fix that touches shared/critical code may warrant a
-reviewer's early look before wider changes.
+checker's early look before wider changes.

@@ -1,7 +1,7 @@
 # strategy_hl: creative-reference-then-build
 
 **Intent + why.** Creative/UI work judged only by code review misses whether it looks
-right; anchoring to concrete references before building gives the visual reviewer (a codex
+right; anchoring to concrete references before building gives the visual checker (a codex
 seat) and the owner something specific to judge against, instead of a subjective
 back-and-forth after the fact.
 

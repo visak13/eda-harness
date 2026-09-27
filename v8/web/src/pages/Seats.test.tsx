@@ -22,10 +22,10 @@ const staleSeat: SeatRow = {
   presence_stale_since: null, reason: "", latest_status: null,
 };
 const parked: SeatRow = {
-  id: "reviewer.s-rev", handle: "reviewer.s-rev", role: "reviewer", state: "parked",
+  id: "adversary.s-rev", handle: "adversary.s-rev", role: "adversary", state: "parked",
   ticket_id: "s-rev", ticket_title: "Review the Folio shell", last_output_at: ago(3 * 60_000),
   presence_stale_since: null, reason: "waiting on evidence",
-  latest_status: { text: "Waiting for the engineer's evidence.", status: "handed_off", role: "reviewer", at: ago(3 * 60_000) },
+  latest_status: { text: "Waiting for the engineer's evidence.", status: "handed_off", role: "adversary", at: ago(3 * 60_000) },
 };
 const closed: SeatRow = {
   id: "qa.s-qa", handle: "qa.s-qa", role: "qa", state: "dead",
@@ -140,11 +140,11 @@ describe("Seats Resume gating (both pool answers)", () => {
     }));
     mount();
     await screen.findByText("engineer.s-eng");
-    fireEvent.click(await within(rowFor("reviewer.s-rev")).findByTestId("seat-resume"));
-    await waitFor(() => expect(resumed).toEqual(["reviewer.s-rev"]));
-    expect(within(rowFor("reviewer.s-rev")).getByTestId("resume-result")).toHaveTextContent("continued saved-session");
+    fireEvent.click(await within(rowFor("adversary.s-rev")).findByTestId("seat-resume"));
+    await waitFor(() => expect(resumed).toEqual(["adversary.s-rev"]));
+    expect(within(rowFor("adversary.s-rev")).getByTestId("resume-result")).toHaveTextContent("continued saved-session");
     fireEvent.click(await within(rowFor("qa.s-qa")).findByTestId("seat-resume"));
-    await waitFor(() => expect(resumed).toEqual(["reviewer.s-rev", "qa.s-qa"]));
+    await waitFor(() => expect(resumed).toEqual(["adversary.s-rev", "qa.s-qa"]));
   });
 
   it("resume_closed=false: the closed seat offers no Resume, explaining a fresh seat instead", async () => {
@@ -168,21 +168,21 @@ describe("Seats Resume gating (both pool answers)", () => {
     mockBoard(CAPS_YES);
     mount();
     await screen.findByText("engineer.s-eng");
-    await waitFor(() => expect(within(rowFor("reviewer.s-rev")).getByTestId("seat-resume")).toBeInTheDocument());
+    await waitFor(() => expect(within(rowFor("adversary.s-rev")).getByTestId("seat-resume")).toBeInTheDocument());
   });
 
   it("resume_parked=false: a parked seat offers NO Resume (never assumed)", async () => {
     mockBoard(CAPS_NO_PARKED);
     mount();
     await screen.findByText("engineer.s-eng");
-    expect(within(rowFor("reviewer.s-rev")).queryByTestId("seat-resume")).not.toBeInTheDocument();
+    expect(within(rowFor("adversary.s-rev")).queryByTestId("seat-resume")).not.toBeInTheDocument();
   });
 
   it("capabilities unavailable: a parked seat offers NO Resume until the pool reports it can", async () => {
     mockBoardCapsDown();
     mount();
     await screen.findByText("engineer.s-eng");
-    expect(within(rowFor("reviewer.s-rev")).queryByTestId("seat-resume")).not.toBeInTheDocument();
+    expect(within(rowFor("adversary.s-rev")).queryByTestId("seat-resume")).not.toBeInTheDocument();
   });
 });
 

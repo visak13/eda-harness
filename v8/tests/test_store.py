@@ -231,7 +231,7 @@ def test_open_migrates_every_stored_reviewer_to_qa_and_counts_it(tmp_path):
     from edp8.schemas import Check, Criterion
     db = str(tmp_path / "old.db")
     s = Store(db)
-    assert s.migrated_reviewer == {"participant": 0, "criterion": 0, "doc": 0, "doc_versions": 0}
+    assert s.migrated_retired == {"participant": 0, "criterion": 0, "doc": 0, "doc_versions": 0}
     p = make_participant(role=Role.qa, handle="rev", id_="reviewer.s-1")
     c = Criterion(id="c-1", ticket_id="s-1", text="t", check=Check.command, checked_by="qa")
     d = Doc(id="d-1", doc_type=DocType.report, title="r", body_md="b", owner_role=Role.qa, scope="epic-1")
@@ -247,7 +247,7 @@ def test_open_migrates_every_stored_reviewer_to_qa_and_counts_it(tmp_path):
     s.close()
 
     s = Store(db)
-    assert s.migrated_reviewer == {"participant": 1, "criterion": 1, "doc": 1, "doc_versions": 2}
+    assert s.migrated_retired == {"participant": 1, "criterion": 1, "doc": 1, "doc_versions": 2}
     assert s.get("participant", "reviewer.s-1").role == Role.qa
     assert s.get("criterion", "c-1").checked_by == "qa"
     assert s.get("doc", "d-1").owner_role == Role.qa
@@ -255,5 +255,5 @@ def test_open_migrates_every_stored_reviewer_to_qa_and_counts_it(tmp_path):
     assert [r.id for r in s.query("criterion", {"checked_by": "qa"})] == ["c-1"]
     s.close()
     s = Store(db)
-    assert not any(s.migrated_reviewer.values())
+    assert not any(s.migrated_retired.values())
     s.close()

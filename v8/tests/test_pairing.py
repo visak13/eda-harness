@@ -1,6 +1,6 @@
 """S22 §24 rule 3, as narrowed by S-ROLES (s-a0c67e6aa7, dec-0697863338): the board pairs ONE
-checker — qa.<epic> when the acceptance gate opens. A story reaching in_review pairs nothing (reviewer
-is no longer a role); under the RAM floor the qa spawn queues with one feed note and retries; a failed
+checker — qa.<epic> when the acceptance gate opens. A story reaching in_review pairs nothing (qa is
+the one checker); under the RAM floor the qa spawn queues with one feed note and retries; a failed
 spawn is kept for the retry. A stub pool records the spawn calls — no real shell, no real RAM."""
 
 from __future__ import annotations

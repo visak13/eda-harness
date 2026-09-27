@@ -16,7 +16,7 @@ Nobody else harvests; the board records the rest without a model call.
 - `message_query(ticket_id=<epic>)` — the thread: deviations, owner rulings, findings, rework;
 - `assemble_ruleset(ticket_id=<epic>)` — its `index` lists every strategy doc linked to the epic;
   `doc_read(<id>)` each one you will judge.
-Do not re-verify anything and do not spawn a reviewer: harvest is one pass over what the epic already proved.
+Do not re-verify anything and do not spawn a checker: harvest is one pass over what the epic already proved.
 
 **Do**
 1. **Lessons.** For each fact true beyond this epic (a pitfall, a host limit, a tool trap, a better

@@ -1,0 +1,91 @@
+{
+  "seats": {
+    "judgment": {
+      "model": "claude-opus-4-8",
+      "effort": "medium",
+      "context_window": 1000000,
+      "auto_compact": 350000
+    },
+    "advisor": {
+      "model": "claude-fable-5-1",
+      "effort": "medium",
+      "context_window": 1000000,
+      "auto_compact": 350000,
+      "max_output": 8000
+    },
+    "builder": {
+      "model": "claude-opus-4-8",
+      "effort": "medium",
+      "context_window": 1000000,
+      "auto_compact": 350000,
+      "max_output": 16000
+    },
+    "checker": {
+      "model": "claude-opus-4-8",
+      "effort": "medium",
+      "context_window": 1000000,
+      "auto_compact": 350000,
+      "max_output": 12000
+    },
+    "astra": {
+      "model": "openai-codex/gpt-6-astra",
+      "effort": "medium",
+      "harness": "pi",
+      "thinking": "medium",
+      "context_window": 272000,
+      "auto_compact": 200000
+    },
+    "astra-codex": {
+      "model": "gpt-6-astra",
+      "effort": "medium",
+      "harness": "codex",
+      "thinking": "medium",
+      "context_window": 272000,
+      "auto_compact": 200000
+    }
+  },
+  "roles": {
+    "owner": "judgment",
+    "architect": "advisor",
+    "sme": "judgment",
+    "engineer": "builder",
+    "adversary": "checker",
+    "qa": "advisor"
+  },
+  "harnesses": [
+    "claude",
+    "codex",
+    "pi"
+  ],
+  "role_models": {
+    "architect": [
+      "claude-fable-5-1",
+      "claude-opus-5-5",
+      "gpt-6-astra"
+    ],
+    "engineer": [
+      "claude-opus-5-5",
+      "gpt-6-sol"
+    ],
+    "qa": [
+      "claude-fable-5-1",
+      "claude-opus-5-5",
+      "gpt-6-astra"
+    ],
+    "adversary": [
+      "gpt-6-astra"
+    ],
+    "sme": [
+      "claude-opus-5-5",
+      "gpt-6-sol"
+    ]
+  },
+  "roles_openai": {
+    "owner": "astra",
+    "architect": "astra",
+    "sme": "astra",
+    "engineer": "astra",
+    "adversary": "astra",
+    "qa": "astra"
+  }
+}

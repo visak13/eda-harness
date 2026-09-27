@@ -66,14 +66,14 @@ def main(argv: list[str] | None = None) -> int:
     log = Path(a.log_dir).resolve()
     (log / "tasks").mkdir(parents=True, exist_ok=True)
     env = {
-        "EDP_ROLE": "reviewer", "EDP_HANDLE": "cases", "EDP_CODEX_TASKS_DIR": str(log / "tasks"),
+        "EDP_ROLE": "qa", "EDP_HANDLE": "cases", "EDP_CODEX_TASKS_DIR": str(log / "tasks"),
         "EDP_MONITOR_SHELL": os.environ.get("EDP_MONITOR_SHELL", "bash"),
         "EDP_PARITY_SEED": os.environ.get("EDP_PARITY_SEED", "oracle"),
         # the probe's blocking bash must run; read-only still executes commands
         "EDP_CODEX_SANDBOX": os.environ.get("EDP_CODEX_SANDBOX", "read-only"),
     }
     watch = Watch(time.time())
-    seat = CodexSeat(cwd=V8, role="reviewer", handle="cases", log_dir=log, env=env, model=a.model, effort=a.effort,
+    seat = CodexSeat(cwd=V8, role="qa", handle="cases", log_dir=log, env=env, model=a.model, effort=a.effort,
                      board=False, ephemeral=True, on_event=lambda m, p: watch.on_event(m, p))
     try:
         seat.start()

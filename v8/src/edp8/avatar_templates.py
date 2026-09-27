@@ -52,14 +52,6 @@ BOT_TEMPLATES = {'adversary': {'body': '<rect width="36" height="36" rx="8" fill
                 '14.5)"/><ellipse cx="12" cy="21.5" rx="2.7" ry="5" transform="rotate(60 12 '
                 '21.5)"/></g>',
         'label': 'Qa avatar'},
- 'reviewer': {'body': '<rect width="36" height="36" rx="8" fill="#8B5CF6"/><g '
-                      'fill="#FFF3D8"><ellipse cx="18" cy="11" rx="2.7" ry="5"/><ellipse cx="18" '
-                      'cy="25" rx="2.7" ry="5"/><ellipse cx="12" cy="14.5" rx="2.7" ry="5" '
-                      'transform="rotate(-60 12 14.5)"/><ellipse cx="24" cy="21.5" rx="2.7" ry="5" '
-                      'transform="rotate(-60 24 21.5)"/><ellipse cx="24" cy="14.5" rx="2.7" ry="5" '
-                      'transform="rotate(60 24 14.5)"/><ellipse cx="12" cy="21.5" rx="2.7" ry="5" '
-                      'transform="rotate(60 12 21.5)"/></g>',
-              'label': 'Reviewer avatar'},
  'sme': {'body': '<rect width="36" height="36" rx="8" fill="#AC7215"/><g fill="#FFF3D8"><ellipse '
                  'cx="18" cy="11" rx="2.7" ry="5"/><ellipse cx="18" cy="25" rx="2.7" '
                  'ry="5"/><ellipse cx="12" cy="14.5" rx="2.7" ry="5" transform="rotate(-60 12 '

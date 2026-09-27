@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from edp8 import harness, settings
+from edp_contracts.roles import is_non_agent, refuse_non_agent
 
 MODEL_TAG = "seat-model:"
 ROLE_MODEL_TAG = "model:"    # model:<role>=<id>, one per role (S-ROLES)
@@ -147,7 +148,7 @@ def catalog(home: str | os.PathLike | None) -> dict[str, list[str]]:
         return {}
     # S4 (§4.11): only models on a selected harness; the adversary falls back to Fable without codex
     return harness.filter_catalog({str(r): [str(m) for m in ids if m] for r, ids in table.items()
-                                   if isinstance(ids, list) and any(ids)}, reg)
+                                   if isinstance(ids, list) and any(ids) and not is_non_agent(r)}, reg)
 
 
 def default_model(home: str | os.PathLike | None) -> str | None:
@@ -226,7 +227,10 @@ def resolve(model: str | None, effort: str | None, epic_tags: Iterable[str] | No
     `model:<role>=` tag, else its old `seat-model:` tag ("claude" = no per-spawn model, the pool's
     roles column), else the role's first catalog entry, else the catalog default. Effort: explicit, else the epic's
     `seat-effort:<role>=` tag, else its old whole-epic `seat-effort:`;
-    outside low/medium/high is dropped; a Claude seat is capped at medium."""
+    outside low/medium/high is dropped; a Claude seat is capped at medium. A person's role has no seat
+    model: NonAgentRole (owner m-da9a2ae62f)."""
+    if role:
+        refuse_non_agent(role)
     tags = list(epic_tags or [])
     tag_model, tag_effort = choice_from_tags(tags)
     per_role = role_models_from_tags(tags).get(role) if role else None

@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from . import __version__, pool_adapter, seat_choice, settings
 from . import workflow as wflow
+from edp_contracts.roles import non_agent_refusal
 from edp_contracts.settings import secrets as secret_files
 from . import rsi  # S18: imported at boot so rsi.LOADED hashes the retrieval code this process runs
 from .board import QUICK_TAG, Board, BoardError
@@ -437,9 +438,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     retired = getattr(board.store, "retired_roles", None)
     if retired:  # s-ccdafcb229: coordinator/consultant/owner-agent seats deleted at open
         logging.getLogger("edp8.service").warning("retired role seats deleted: %s", retired)
-    moved = getattr(board.store, "migrated_reviewer", None)
-    if moved and any(moved.values()):  # S-ROLES: reviewer -> qa at open (Store._migrate_reviewer_locked)
-        logging.getLogger("edp8.service").warning("migrated reviewer -> qa: %s", moved)
+    moved = getattr(board.store, "migrated_retired", None)
+    if moved and any(moved.values()):  # S-ROLES: a removed checker role -> qa at open (Store)
+        logging.getLogger("edp8.service").warning("migrated a removed role -> qa: %s", moved)
     app = FastAPI(title="edp8 board", version=__version__)
     app.state.board = board
 
@@ -672,6 +673,19 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                 "allowed": allowed}))
         raise HTTPException(403, json.dumps({
             "message": f"role {a.role.value!r} may not operate the pool control plane", "allowed": allowed}))
+
+    def _refuse_non_agent(role: Any, participant_id: str | None) -> None:
+        """Owner m-da9a2ae62f: no REST path spawns, tokens or resumes a seat for a person's role (owner,
+        expert, human, or a role the workflow marks human); the refusal names why."""
+        p = board.store.get("participant", participant_id) if participant_id else None
+        roles = [r for r in (role, getattr(p, "role", None)) if r is not None]
+        why = next((w for w in (non_agent_refusal(r, participant_id) for r in roles or [None]) if w), None)
+        if why is None and p is not None and p.type != "agent":
+            why = f"{participant_id!r} is a {p.type}, not an agent seat: no shell is launched for a person"
+        if why is None and any(board.human_role(r) for r in roles):
+            why = f"the {roles[0]} role is a human role in its workflow: no seat is ever launched as it"
+        if why:
+            raise BoardError("scope", why, "people join through Teammates; spawn an agent role instead")
 
     def _pool_result(out: dict):
         """Pass a pool success through; map a pool failure to a {code,message,hint} envelope with
@@ -1375,6 +1389,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         pool directly, so without this its seats had no EDP8_TOKEN and 401 in public mode. Same authz as
         /v1/sessions/spawn (owner any seat, architect its own epic); agents with a spawnable role only."""
         _authorize_pool_op(a, b.participant_id, b.ticket_id)
+        _refuse_non_agent(None, b.participant_id)
         p = board.store.get("participant", b.participant_id)
         if p is None or p.type != "agent" or str(p.role) not in board.workflow_of(b.ticket_id).spawnable:
             raise BoardError("scope", f"{b.participant_id!r} is not a registered seat of a spawnable role",
@@ -1392,6 +1407,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def session_spawn(b: SessionSpawnIn, a: Participant = Depends(actor),
                       idempotency_key: str | None = Header(default=None)):
         _authorize_pool_op(a, b.participant_id, b.ticket_id)
+        _refuse_non_agent(b.role, b.participant_id)
         spawnable = board.workflow_of(b.ticket_id).spawnable  # S13: the target epic's workflow decides
         if str(b.role) not in spawnable:  # S-ADV finding 1: no owner (or retired) seat is ever minted by a spawn
             raise BoardError("scope", f"a {b.role.value} seat is not spawned; spawnable roles: "
@@ -1498,6 +1514,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def session_resume(b: SessionActionIn, a: Participant = Depends(actor),
                        idempotency_key: str | None = Header(default=None)):
         _authorize_pool_op(a, b.participant_id, b.ticket_id)
+        _refuse_non_agent(None, b.participant_id)
         if not pool_adapter.reachable():
             return _pool_down_envelope()
         cached = _idem_get(a, idempotency_key)
@@ -1575,7 +1592,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.get("/v1/workflows/templates")
     def workflow_templates(a: Participant = Depends(actor)):
-        """S14 (§4.14(e).3): Add role starting points (builder, checker, reviewer), the hook registry with
+        """S14 (§4.14(e).3): Add role starting points (builder, checker), the hook registry with
         its params, the predicate vocabulary and the kernel tools, for the Design tab's inline help."""
         from . import workflow_design as wd
         from .bundles import ALL_TOOLS

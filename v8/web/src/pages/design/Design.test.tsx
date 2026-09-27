@@ -128,24 +128,39 @@ describe("role panel", () => {
     expect(screen.getByTestId("role-card-kernel")).toHaveTextContent("Boot");
   });
 
-  it("Add role from the reviewer template: id, label and spawner land in the draft", async () => {
+  it("Add role refuses a person's role id: owner, expert and human are never seats (owner m-da9a2ae62f)", async () => {
     server.use(...workflowHandlers());
     wrap(<Editable start={DRAFT}>{(wf, set) => (
       <RolePanel {...props} wf={wf} editable selected={null} onSelect={() => {}} onChange={set} />
     )}</Editable>);
     fireEvent.click(screen.getByTestId("role-add-open"));
-    fireEvent.change(screen.getByTestId("role-add-template"), { target: { value: "reviewer" } });
-    fireEvent.change(screen.getByTestId("role-add-id"), { target: { value: "reviewer" } });
-    fireEvent.change(screen.getByTestId("role-add-label"), { target: { value: "Reviewer" } });
+    for (const id of ["owner", "expert", "human"]) {
+      fireEvent.change(screen.getByTestId("role-add-id"), { target: { value: id } });
+      expect(screen.getByTestId("role-add")).toHaveTextContent("is a person's role, never a seat");
+      fireEvent.click(screen.getByTestId("role-add-save"));
+      expect(draftOf().roles.filter((x) => x.id === id).length).toBeLessThanOrEqual(1);
+      expect(draftOf().roles.find((x) => x.id === id && x.spawnable)).toBeUndefined();
+    }
+  });
+
+  it("Add role from the checker template: id, label and spawner land in the draft", async () => {
+    server.use(...workflowHandlers());
+    wrap(<Editable start={DRAFT}>{(wf, set) => (
+      <RolePanel {...props} wf={wf} editable selected={null} onSelect={() => {}} onChange={set} />
+    )}</Editable>);
+    fireEvent.click(screen.getByTestId("role-add-open"));
+    fireEvent.change(screen.getByTestId("role-add-template"), { target: { value: "checker" } });
+    fireEvent.change(screen.getByTestId("role-add-id"), { target: { value: "auditor" } });
+    fireEvent.change(screen.getByTestId("role-add-label"), { target: { value: "Auditor" } });
     fireEvent.change(screen.getByTestId("role-add-spawner"), { target: { value: "architect" } });
     fireEvent.click(screen.getByTestId("role-add-save"));
     const d = draftOf();
-    const r = d.roles.find((x) => x.id === "reviewer")!;
-    expect(r.label).toBe("Reviewer");
+    const r = d.roles.find((x) => x.id === "auditor")!;
+    expect(r.label).toBe("Auditor");
     expect(r.card_md).toBeTruthy();
     expect(r.capacity_class).toBe("checker");
     expect(r.bundle).toContain("doc_create");
-    expect(d.roles.find((x) => x.id === "architect")!.may_spawn).toContain("reviewer");
+    expect(d.roles.find((x) => x.id === "architect")!.may_spawn).toContain("auditor");
   });
 
   it("read-only: every control is disabled and there is no Add role", () => {

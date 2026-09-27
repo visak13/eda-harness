@@ -34,7 +34,7 @@ PATHS.update({
 # Monoline all assets: deliberately no filled partial circle/progress percentage.
 LABELS = {'drafted':'Drafted','designed':'Designed','signed_off':'Signed off','ready':'Ready','in_progress':'In progress','in_review':'In review','blocked':'Blocked','done':'Done','partial':'Partial','dropped':'Dropped'}
 STATUS = {k: f'status-{k}' for k in LABELS}
-COLORS = {'architect':'#5865F2','engineer':'#168B68','reviewer':'#8B5CF6','adversary':'#D95C5C','qa':'#168AAD','sme':'#AC7215','owner':'#7C3AED','coordinator':'#64748B'}
+COLORS = {'architect':'#5865F2','engineer':'#168B68','adversary':'#D95C5C','qa':'#168AAD','sme':'#AC7215','owner':'#7C3AED','coordinator':'#64748B'}
 
 
 def icon(key):

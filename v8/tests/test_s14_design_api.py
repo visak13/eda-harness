@@ -264,7 +264,7 @@ def client(home):
 def test_the_design_api(client):
     c, O, B, E = client, {"X-Participant": "owner"}, {"X-Participant": "bob"}, {"X-Participant": "eng"}
     t = c.get("/v1/workflows/templates", headers=E).json()["value"]
-    assert set(t["roles"]) == {"builder", "checker", "reviewer"} and "epic_auto_advance" in t["hooks"]
+    assert set(t["roles"]) == {"builder", "checker"} and "epic_auto_advance" in t["hooks"]
     # a non-admin human reads but cannot edit
     assert c.post("/v1/workflows/duplicate", json={"ref": "standard@1", "new_id": "x"}, headers=B).status_code == 400
     assert "read-only" in c.get("/v1/workflows", headers=B).json()["hint"]

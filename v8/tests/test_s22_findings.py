@@ -251,7 +251,7 @@ def test_finding7_unreleased_blocker_walks_ready_successor_back():
 def test_finding3_pending_pairings_rederived_on_new_board():
     """A board built on a store that already holds an epic with an open acceptance gate re-derives
     the qa pairing — a restart between enqueue and drain loses nothing. An in_review story (even a
-    review_required one) re-derives nothing (S-ROLES: no reviewer role)."""
+    review_required one) re-derives nothing (S-ROLES: qa is the one checker)."""
     store = Store(":memory:")
     board = Board(store, free_mb=lambda: 4096)
     r = rig(board)
@@ -289,7 +289,6 @@ def test_finding5_review_required_is_a_plain_tag_now():
     board.ticket_update(r["architect"], story.id, tags=["review_required"])
     assert "review_required" in board.ticket(story.id).tags
     assert board.store.get("criterion", crit.id).checked_by == "qa"
-    assert not hasattr(board, "_story_wants_reviewer")
 
 
 # --------------------------------------------------------------- finding 11: caps under the lock

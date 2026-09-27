@@ -289,7 +289,7 @@ def test_no_new_caller_of_spawner_alive(tmp_path):
 
 
 def test_spawn_never_steals_a_live_orphans_lock(tmp_path, child):
-    """s26/a5 (reviewer): the SAME defect, in the path that actually dispatches.
+    """s26/a5 (second read): the SAME defect, in the path that actually dispatches.
 
     `reconcile_sessions` was taught the shared resolver, but `spawn`'s stale-
     lock reap still asked `spawner.alive(holder)` — False for EVERY pre-restart

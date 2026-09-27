@@ -23,7 +23,7 @@ Glossary categories and where their words surface:
 | work_type | Feature, Bug, R&D, Creative | ticket details, filters |
 | gate | Design sign-off, Proof of concept, Demo, Adversarial, Budget, Acceptance, Scope | gate forms, open-a-gate control |
 | message_kind | Question, Answer, Steer, Finding, Deviation, Status, Note | thread rows, composer |
-| role | Owner, Coordinator, Architect, Engineer, Reviewer, QA, SME | seats, assignee, ask-a-role |
+| role | Owner, Architect, Engineer, Adversary, QA, SME, Doctor | seats, assignee, ask-a-role |
 | check | Command, Path, Look, Verdict | criterion cards, add-criterion |
 | verdict | Passed, Needs work, Pending | criterion cards |
 

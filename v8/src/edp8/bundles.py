@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Literal
 
+from edp_contracts.roles import non_agent_refusal
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationError
 
 from . import seat_choice, settings
@@ -49,6 +50,7 @@ from .schemas import (
     SeatRelation,
     SeatRole,
     SeatTicketKind,
+    SpawnRole,
     Role,
     StatusValue,
     SessionState,
@@ -1548,7 +1550,7 @@ def _spawnable_roles() -> set[str]:
 
 
 class SpawnArgs(Args):
-    role: SeatRole = Field(description='seat role')
+    role: SpawnRole = Field(description='seat role')
     ticket_id: str | None = Field(default=None, description="registers and assigns '<role>.<ticket_id>'")
     participant_id: str | None = Field(default=None, description='explicit pool handle; omit with ticket_id')
     parent_session: str | None = Field(default=None, description='spawning session id')
@@ -1682,6 +1684,10 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
     assign_flag = args.pop("assign", None)
     if not pid:
         pid = f"{a.role.value}.{ticket_id}"
+    why = non_agent_refusal(a.role.value, pid)
+    if why:  # owner m-da9a2ae62f: a person's role is never launched, whatever the handle
+        return {"ok": False, "error": {"code": "scope", "message": why},
+                "hint": "spawn an agent role: architect, engineer, qa, adversary, sme or doctor"}
     spawnable = _spawnable_roles()
     if a.role.value not in spawnable:  # S-ADV finding 1 on the tool path
         return {"ok": False, "error": {"code": "scope", "message": f"a {a.role.value} seat is not spawned"},

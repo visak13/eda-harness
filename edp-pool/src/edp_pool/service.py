@@ -18,6 +18,7 @@ from edp_contracts import HealthStatus, Microservice, Tool, get_logger, mount
 from edp_contracts import settings as edp_settings
 from edp_contracts.errors import ErrorCode
 from edp_contracts.proc import ProcId, kill_tree
+from edp_contracts.roles import non_agent_refusal
 
 from .spawner import FakeSpawner, Spawner
 
@@ -999,6 +1000,11 @@ class PoolService(Microservice):
         capacity_class: str | None = None,
         max_concurrent: int | None = None,
     ):
+        # owner m-da9a2ae62f: a person's role (owner, expert, human) is never launched as a shell, by any
+        # caller of the pool — the board refuses too, this is the pool's own line of defence
+        why = non_agent_refusal(role, handle)
+        if why:
+            return Tool.propagate(source="edp-pool", code=ErrorCode.POOL_ROLE_REFUSED, message=why)
         # ── DESIGN-v7 1.2 capacity model ───────────────────────────────────
         # Per-role throughput caps first (workers, planners), then the
         # all-roles EDP_MAX_TOTAL_SHELLS resource guard. A checker (qa) is
@@ -1788,6 +1794,9 @@ class PoolService(Microservice):
         The ~30s spawn itself runs OUTSIDE the lock.
 
         A stored conversation is never silently replaced by a fresh one."""
+        refused = self._non_agent_resume(handle)
+        if refused:
+            return refused
         sid = self.locks.get(handle)
         if sid is None:
             return self.resume_closed(handle)
@@ -1976,6 +1985,12 @@ class PoolService(Microservice):
                             "started fresh: no stored session"),
                 "released_after_resume": release_requested}
 
+    def _non_agent_resume(self, handle: str) -> dict | None:
+        """Owner m-da9a2ae62f: a handle or a recorded role naming a person is never resumed."""
+        roles = {s.get("role") for s in self.sessions.values() if s.get("handle") == handle}
+        why = next((w for w in (non_agent_refusal(r, handle) for r in roles or {None}) if w), None)
+        return {"resumed": False, "handle": handle, "reason": why} if why else None
+
     def resume_closed(self, handle: str) -> dict:
         """S20 / design §18.3 (owner m-6ffe756cf7) — fork-resume a CLOSED (`done`) seat from its
         stored claude_session_id with the role/cwd/env/model/mode recorded at spawn
@@ -1985,6 +2000,9 @@ class PoolService(Microservice):
         handle lock FREED — so this RE-TAKES the lock under the transition lock. It refuses if the
         handle is currently held by a live seat (something cold-spawned it since), and if no
         resumable `done` row exists it says so instead of guessing."""
+        refused = self._non_agent_resume(handle)
+        if refused:
+            return refused
         with self._transition_lock:
             held = self.locks.get(handle)
             if held is not None:

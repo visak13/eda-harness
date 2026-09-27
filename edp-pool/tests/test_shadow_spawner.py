@@ -11,6 +11,7 @@ from edp_pool.shadow_spawner import (
     parent_of,
     shadow_enabled,
 )
+from edp_contracts.roles import RETIRED_ROLES
 from edp_pool.spawner import SubprocessSpawner
 
 
@@ -36,7 +37,7 @@ def test_role_specs_cover_every_pool_role():
     # rows were deleted with the retired consult shell role.)
     for role in ("worker", "planner", "specialist", "curiosity"):
         assert role in ROLE_SPECS
-    assert "consult" not in ROLE_SPECS and "reviewer" not in ROLE_SPECS  # retired roles (S-ROLES)
+    assert "consult" not in ROLE_SPECS and not RETIRED_ROLES & set(ROLE_SPECS)  # removed roles (S-ROLES)
 
 
 @pytest.fixture

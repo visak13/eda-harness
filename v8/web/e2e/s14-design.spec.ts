@@ -77,7 +77,7 @@ test("admin: duplicate Standard, publish team@1, then team@2 with model, card, c
   await expect(page.getByTestId("cap-stories_per_epic")).toBeFocused();
   await page.getByTestId("cap-stories_per_epic").fill("10");
 
-  // Add role: a blank role (no card, no bundle) is refused; then a reviewer from its template
+  // Add role: a blank role (no card, no bundle) is refused; then an auditor from the checker template
   await tab(page, "Roles");
   await page.getByTestId("role-add-open").click();
   await page.getByTestId("role-add-template").selectOption("blank");
@@ -93,13 +93,13 @@ test("admin: duplicate Standard, publish team@1, then team@2 with model, card, c
   await page.getByTestId("role-remove").click();
 
   await page.getByTestId("role-add-open").click();
-  await page.getByTestId("role-add-template").selectOption("reviewer");
-  await page.getByTestId("role-add-id").fill("reviewer");
-  await page.getByTestId("role-add-label").fill("Reviewer");
+  await page.getByTestId("role-add-template").selectOption("checker");
+  await page.getByTestId("role-add-id").fill("auditor");
+  await page.getByTestId("role-add-label").fill("Auditor");
   await page.getByTestId("role-add-spawner").selectOption("architect");
   await page.getByTestId("role-add-save").click();
-  await expect(page.getByTestId("role-form-reviewer")).toBeVisible();
-  await shot(page, "05-custom-role-reviewer");
+  await expect(page.getByTestId("role-form-auditor")).toBeVisible();
+  await shot(page, "05-custom-role-auditor");
   await validateClean(page);
 
   // Dry run and diff against team@1
@@ -109,7 +109,7 @@ test("admin: duplicate Standard, publish team@1, then team@2 with model, card, c
   await shot(page, "06-dry-run");
   await tab(page, "Diff");
   await page.getByTestId("diff-against").selectOption("team@1");
-  await expect(page.getByTestId("diff-table")).toContainText("roles.reviewer");
+  await expect(page.getByTestId("diff-table")).toContainText("roles.auditor");
   await expect(page.getByTestId("diff-table")).toContainText("caps.stories_per_epic");
   await shot(page, "07-diff-against-v1");
 

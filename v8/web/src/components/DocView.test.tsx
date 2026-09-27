@@ -109,7 +109,7 @@ describe("DocView", () => {
     );
     renderRoute("/ticket/s-1?request=ev-gate", "/ticket/:id", <DocView docId="design-1" source="s-1" request="ev-gate" />);
     await screen.findByTestId("review-state");
-    // no author actions embedded in the reviewer's reading pane
+    // no author actions embedded in the reader's reading pane
     expect(screen.queryByTestId("doc-controls")).toBeNull();
     expect(screen.queryByRole("button", { name: "Publish a new version" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Ask for a review/ })).toBeNull();

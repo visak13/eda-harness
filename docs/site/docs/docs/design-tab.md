@@ -25,7 +25,7 @@ it"). Click a row to open it.
 
 | Preset | How work flows |
 |---|---|
-| **Standard** | The default. Owner, architect, engineers, reviewer, qa, sme, adversary and Help, as described in [Concepts](concepts.md) |
+| **Standard** | The default. Owner, architect, engineers, qa, sme, adversary and Help, as described in [Concepts](concepts.md) |
 | **Lean** | Owner → engineer → qa, with no architect |
 | **Solo** | Owner → engineer, and the owner checks |
 

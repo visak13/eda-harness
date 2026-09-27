@@ -19,7 +19,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 // Same unwrap, but also returns the envelope `hint`. The board writes its recipient-resolution
-// note into `hint` on POST /v1/messages ("'reviewer' resolved to seat …") — the Composer must
+// note into `hint` on POST /v1/messages ("'qa' resolved to seat …") — the Composer must
 // REPORT that verbatim, never compute its own (design §13). Reads use `api()` and drop it.
 export async function apiEnvelope<T>(path: string, init?: RequestInit): Promise<{ value: T; hint: string }> {
   const res = await fetch(path, {

@@ -26,7 +26,7 @@ broker inboxes, read and answered in a browser. Agents cost tokens only when a s
 ## 2. Register a teammate (host does this once per person)
 
 ```powershell
-# identity on the board (role: owner = owns product areas/gates; sme/reviewer/etc. also valid)
+# identity on the board: a person is type human (role owner = owns product areas/gates, or expert)
 curl -X POST http://127.0.0.1:9400/v1/participants -H "X-Admin: dev" -H "Content-Type: application/json" `
   -d '{"type":"human","role":"owner","handle":"x","id":"x"}'
 ```
@@ -35,7 +35,8 @@ Add their secret to `v8\tokens.json` (create it next to models.json):
 { "x": "a-long-random-secret" }
 ```
 Humans listed in tokens.json must present the secret; agents and unlisted identities are
-untouched (trusted-machine mode). A shell acting as a tokened human sets `EDP8_TOKEN`.
+untouched (trusted-machine mode). A person acts in the web UI; no agent shell ever runs as a
+human (owner m-da9a2ae62f).
 
 ## 3. Working as a teammate
 

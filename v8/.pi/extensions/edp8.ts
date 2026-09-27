@@ -18,11 +18,11 @@ import { localArtifactUpload } from "./edp8-upload.ts";
 const CWD = process.cwd();
 const DESC_PATH = process.env.EDP_PARITY_DESCRIPTIONS ?? resolve(CWD, "guides/harness-parity/descriptions.ours.json"); // our wording (owner m-2d7ef9243d); descriptions.json = Claude reference, measurement only
 const TASKS_DIR = process.env.EDP_PI_TASKS_DIR ?? resolve(CWD, ".pi/tasks");
-const MCP_URL = `${process.env.EDP8_MCP_URL ?? "http://127.0.0.1:9402"}/mcp/${process.env.EDP_ROLE ?? "owner"}`;
+const MCP_URL = `${process.env.EDP8_MCP_URL ?? "http://127.0.0.1:9402"}/mcp/${process.env.EDP_ROLE || "unset"}`; // no default identity: a person's role is never an agent (owner m-da9a2ae62f)
 const MCP_HEADERS: Record<string, string> = {
 	"Content-Type": "application/json",
 	Accept: "application/json, text/event-stream",
-	"X-Participant": process.env.EDP_HANDLE ?? "owner",
+	"X-Participant": process.env.EDP_HANDLE ?? "",
 	"X-Session": process.env.EDP_SPAWN_SESSION_ID ?? "",
 	"X-Token": process.env.EDP8_TOKEN ?? "",
 };

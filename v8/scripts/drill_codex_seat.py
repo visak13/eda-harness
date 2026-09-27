@@ -37,7 +37,7 @@ import httpx
 
 V8 = Path(__file__).resolve().parents[1]
 VENV = V8 / ".venv" / "Scripts"
-ROLE = "reviewer"
+ROLE = "qa"
 FLEET_ONLY_ENV = ("EDP_POOL_URL", "EDP8_POOL_WATCH", "EDP_BROKER_URL", "EDP8_BOARD_URL", "EDP8_PUBLIC_URL",
                   "EDP8_TOKEN", "EDP_HANDLE", "EDP8_PARTICIPANT", "EDP_ROLE", "EDP_SPAWN_SESSION_ID",
                   "EDP8_ADMIN_TOKEN", "EDP8_MCP_URL", "EDP8_USAGE_CONFIG", "EDP_CODEX_RESUME", "EDP_ACTIVATION",

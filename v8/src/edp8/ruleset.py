@@ -11,7 +11,7 @@ separate doc.
 
 The assembled ruleset is split into two VIEWS for the two consumers:
 CONSTRUCTIVE (how to build — the worker's view) and ENFORCED (what to check —
-the reviewer/adversary's adherence view). A line is ENFORCED when it is a
+the qa/adversary's adherence view). A line is ENFORCED when it is a
 checkbox (`- [ ]`), carries an adherence tag (`[required]`, `[expected]`,
 `[preferred]`), or sits under a heading containing "checklist" or "enforced".
 

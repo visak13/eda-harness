@@ -59,7 +59,7 @@ def advance_to_designed(board, rig, ticket, doc, checked_by="qa"):
 # ------------------------------------------------------------------ §24.1 derivation
 
 def test_checker_derivation_per_ticket_kind(board, rig):
-    """qa checks every story/review-story/epic, review_required or not (S-ROLES: no reviewer role);
+    """qa checks every story/review-story/epic, review_required or not (S-ROLES: qa is the one checker);
     owner for a knowledge ticket."""
     epic = make_epic(board, rig)
     assert board.checker_for(epic) == "qa"

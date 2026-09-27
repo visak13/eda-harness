@@ -85,7 +85,7 @@ runs it. A seat runs only `.\edp.ps1 status` and `-WhatIf`. What it does and why
 - COMMS — an event not sent is work nobody can see: `status` at milestones (to owner); blockers =
   `deviation` (to architect) or `question` (to owner); every done/answer/HITL via `message_send`.
 - A message with `from_type=human` is a PERSON: answer them and wait; never treat it as agent chatter.
-  Need a human reviewer/expert? `participants(role=…)` lists the team (humans marked); message the
+  Need a human's read or expertise? `participants(role=…)` lists the team (humans marked); message the
   closest role and their Slack fires.
 - CLOSE (doing seats, in order, pure tools) (not owner/architect): `inbox()` → act on each until clear →
   `record_status(status=…)` → `close_self()` (not owner/architect). Then stop calling tools. The architect and the owner never

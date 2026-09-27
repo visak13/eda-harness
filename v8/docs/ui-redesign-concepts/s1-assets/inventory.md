@@ -27,7 +27,7 @@ Source snapshot: Icon.tsx, AppShell.tsx, Composer.tsx, Drawer.tsx, DocDrawer.tsx
 Presence is separate (Alive/Parked/Stalled/Closed/Availability unknown); do not substitute ticket state icons as progress. Unknown runtime names must not silently fall back to Decisions.
 
 ## Identity keys and preservation
-Agent roles: owner, coordinator, architect, engineer, reviewer, adversary, qa, sme, consultant; plus system and unknown. Preserve backend dispatch rule consultant OR model containing gpt -> consultant illustration, with actual role/model text retained alongside. Artwork never supplies identity/model inference. Existing other roles stay distinct through motif/shape, not just color.
+Agent roles: owner, coordinator, architect, engineer, adversary, qa, sme, consultant; plus system and unknown. Preserve backend dispatch rule consultant OR model containing gpt -> consultant illustration, with actual role/model text retained alongside. Artwork never supplies identity/model inference. Existing other roles stay distinct through motif/shape, not just color.
 Human IDs human-01..human-08 and names Rowan/Mira/Dev/June/Sam/Noor/Eli/Aya unchanged. Keep preference storage, deterministic fallback and existing human SVG functions byte-for-byte. No human selections migrated. System/unknown are not people.
 
 ## Visual adaptation contract

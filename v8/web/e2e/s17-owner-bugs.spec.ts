@@ -25,7 +25,7 @@ async function seed(request: APIRequestContext): Promise<Seed> {
   if (seeded) return seeded;
   const epic = (await call(request, "POST", "/v1/tickets", { kind: "epic", work_type: "feature", title: "Owner bug sweep" }, "owner")).id as string;
   const story = (await call(request, "POST", "/v1/tickets", { kind: "story", work_type: "bug", parent_id: epic, title: "Readable seats and chat" }, "arch")).id as string;
-  for (const [id, role] of [["engineer.s17", "engineer"], ["qa.s17", "qa"], ["reviewer.s17-with-a-rather-long-handle", "reviewer"]]) {
+  for (const [id, role] of [["engineer.s17", "engineer"], ["qa.s17", "qa"], ["adversary.s17-with-a-rather-long-handle", "adversary"]]) {
     await call(request, "POST", "/v1/participants", { type: "agent", role, handle: id, id }, "", true);
   }
   await call(request, "PATCH", `/v1/tickets/${story}`, { assignee: "engineer.s17" }, "arch");

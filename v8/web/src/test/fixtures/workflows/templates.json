@@ -47,25 +47,6 @@
      "link_create"
     ]
    }
-  },
-  "reviewer": {
-   "label": "Reviewer",
-   "help": "reads the whole epic and files findings; approves nothing",
-   "role": {
-    "card_md": "You review a whole epic adversarially once its stories are built. Read the design, the diffs and the evidence, and file findings on the thread, most severe first.",
-    "spawnable": true,
-    "capacity_class": "checker",
-    "doc_types": [
-     "report"
-    ],
-    "bundle": [
-     "ticket_read",
-     "doc_read",
-     "doc_create",
-     "criterion_query",
-     "find"
-    ]
-   }
   }
  },
  "hooks": {
