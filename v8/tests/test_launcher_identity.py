@@ -347,3 +347,19 @@ def test_doctor_names_a_folder_this_process_cannot_write(home, monkeypatch, caps
     out = capsys.readouterr().out
     assert "FAIL   run folder  could not write " + str(settings.run_dir()) in out and "antivirus" not in out.lower()
     assert "ok     data folder" in out and "ok     logs folder" in out
+
+
+def test_listener_pid_falls_back_to_own_process_sockets_when_the_host_scan_is_denied(monkeypatch):
+    # macOS: psutil.net_connections() needs root (CI run 36325369067); our own listeners must still be found
+    import psutil
+
+    from edp8 import run_state
+
+    def denied(*_a, **_k):
+        raise psutil.AccessDenied()
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        s.listen()
+        monkeypatch.setattr(psutil, "net_connections", denied)
+        assert run_state.listener_pid(s.getsockname()[1]) == os.getpid()

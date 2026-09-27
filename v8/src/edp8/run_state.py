@@ -295,12 +295,29 @@ def _listeners() -> dict[int, int]:
     out: dict[int, int] = {}
     try:
         import psutil
-        for c in psutil.net_connections(kind="inet"):
-            if (getattr(c, "status", None) == psutil.CONN_LISTEN and c.laddr
-                    and getattr(c.laddr, "port", None) and c.pid):
-                out.setdefault(int(c.laddr.port), int(c.pid))
-    except Exception:  # noqa: BLE001 — psutil absent or unprivileged; caller falls back to its own pid
+    except Exception:  # noqa: BLE001 — psutil absent; caller falls back to its own pid
         return {}
+    try:
+        conns = [(c, c.pid) for c in psutil.net_connections(kind="inet")]
+    except psutil.AccessDenied:
+        # macOS: the host-wide scan needs root (CI run 36325369067 found no listener, ever). A user may still
+        # read the sockets of its OWN processes, and every service we start is one of them.
+        conns = _own_process_sockets(psutil)
+    except Exception:  # noqa: BLE001 — unprivileged elsewhere; caller falls back to its own pid
+        return {}
+    for c, pid in conns:
+        if getattr(c, "status", None) == psutil.CONN_LISTEN and c.laddr and getattr(c.laddr, "port", None) and pid:
+            out.setdefault(int(c.laddr.port), int(pid))
+    return out
+
+
+def _own_process_sockets(psutil: Any) -> list[tuple[Any, int]]:
+    out: list[tuple[Any, int]] = []
+    for p in psutil.process_iter():
+        try:
+            out += [(c, p.pid) for c in p.net_connections(kind="inet")]
+        except (psutil.Error, OSError):
+            continue  # another user's process, or one that exited mid-scan
     return out
 
 

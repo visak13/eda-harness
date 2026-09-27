@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -75,7 +76,7 @@ class ProcId:
             p = psutil.Process(self.pid)
             if abs(p.create_time() - self.create_time) >= CREATE_TIME_TOLERANCE:
                 return None
-            if self.name and _name(p) != self.name:
+            if self.name and not same_image(_name(p), self.name):
                 return None
             return p
         except (psutil.Error, ValueError, OSError):
@@ -89,7 +90,7 @@ class ProcId:
             p = psutil.Process(self.pid)
             if abs(p.create_time() - self.create_time) >= CREATE_TIME_TOLERANCE:
                 return False
-            if self.name and _name(p) not in ("", self.name):
+            if self.name and _name(p) and not same_image(_name(p), self.name):
                 return False
             return p.status() != psutil.STATUS_ZOMBIE
         except psutil.NoSuchProcess:
@@ -103,6 +104,23 @@ class ProcId:
             return p is not None and p.is_running() and p.status() != psutil.STATUS_ZOMBIE
         except psutil.Error:
             return False
+
+
+_PYTHON_IMAGE = re.compile(r"^python(?:\d+(?:\.\d+)*)?w?$")
+
+
+def _image_key(name: str) -> str:
+    n = name.lower().removesuffix(".exe")
+    return "python" if _PYTHON_IMAGE.match(n) else n
+
+
+def same_image(now: str, recorded: str) -> bool:
+    """`now` is the process image `recorded` was, allowing the renames a python launch makes on the SAME pid.
+
+    A macOS framework python execs from `python3.12` into `Python` (…/Python.app/Contents/MacOS/Python) with no
+    new pid or create_time, and a venv launcher reads `python` vs `python3.14`. Every spelling of python is
+    one image; any other rename is still a different process (pid reuse stays refused)."""
+    return now == recorded or _image_key(now) == _image_key(recorded)
 
 
 def _name(p: psutil.Process) -> str:

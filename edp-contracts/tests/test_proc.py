@@ -160,3 +160,22 @@ def test_named_job_holds_the_grandchild_and_terminates_orphans(tmp_path):
     time.sleep(1.0)
     assert not any(_alive(p) for p in levels.values())
     root.wait(timeout=5)
+
+
+def test_same_image_accepts_python_renames_on_one_pid_only():
+    # macOS framework python execs python3.12 -> Python on the same pid (CI run 36325369256)
+    assert proc.same_image("Python", "python3.12") and proc.same_image("python.exe", "python3.14.exe")
+    assert proc.same_image("pythonw.exe", "python.exe") and proc.same_image("node", "node")
+    assert not proc.same_image("bash", "python3") and not proc.same_image("heronry.exe", "python.exe")
+
+
+def test_live_survives_a_python_rename_but_not_another_image():
+    p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        real = ProcId.of(p.pid)
+        assert ProcId(real.pid, real.create_time, "Python").live() is not None
+        assert ProcId(real.pid, real.create_time, "python3.12").probe() is True
+        assert ProcId(real.pid, real.create_time, "bash").live() is None
+    finally:
+        p.kill()
+        p.wait()
