@@ -1,0 +1,4860 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="your agent team, built on decisions, checked before delivery">
+      
+      
+      
+        <link rel="canonical" href="https://visak13.github.io/eda-harness/reference/rest-api/">
+      
+      
+        <link rel="prev" href="../settings/">
+      
+      
+        <link rel="next" href="../mcp-tools/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/brand/favicon-32.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>REST API - Heronry</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/heronry.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="heronry-light" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#rest-api" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Heronry" class="md-header__button md-logo" aria-label="Heronry" data-md-component="logo">
+      
+  <img src="../../assets/brand/heronry-logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Heronry
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              REST API
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="heronry-light" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/visak13/eda-harness" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    visak13/eda-harness
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../download/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Download
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../video/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Video
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../setup/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Setup guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../docs/concepts/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Docs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+                
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" hidden>
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Heronry" class="md-nav__button md-logo" aria-label="Heronry" data-md-component="logo">
+      
+  <img src="../../assets/brand/heronry-logo.png" alt="logo">
+
+    </a>
+    Heronry
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/visak13/eda-harness" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    visak13/eda-harness
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../download/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Download
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../video/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Video
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../setup/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Setup guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Setup guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../setup/first-run/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../setup/harnesses/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Harnesses and models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../setup/remote-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Remote access and teammates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../setup/integrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integrations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Docs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../docs/concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../docs/design-tab/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Design tab
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../docs/updates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Updates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../docs/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command line
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    REST API
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#healthz" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        healthz
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ui
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ui-legacy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ui-legacy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-access-requests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/access-requests
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-activity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/activity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-access-requests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/access-requests
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-capacity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/capacity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/fixes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-harnesses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/harnesses
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-integrations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/integrations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/models
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-services" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/services
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/settings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-tailnet" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/tailnet
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-teammates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/teammates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-tokens" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/tokens
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-updates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/updates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-artifacts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/artifacts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-avatars" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/avatars
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-board" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/board
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-claims" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/claims
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-close-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/close_check
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/code
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/context
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-context-delta" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/context_delta
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-criteria" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/criteria
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/decisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-describe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/describe
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/docs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-doctor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/doctor
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-epics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/epics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/events
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-expert-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/expert-session
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-feed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/feed
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-find" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/find
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/fixes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-gates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/gates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-harness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/harness
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-harvest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/harvest
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-health" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/health
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-help" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/help
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-inbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/inbox
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/index
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-join" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/join
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-knowledge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/knowledge
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-lessons" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/lessons
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-library" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/library
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-links" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/links
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-listening" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/listening
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-lookup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/lookup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-me" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/me
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-messages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/messages
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/models
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-pains" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/pains
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-participants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/participants
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-pool" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/pool
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-quick-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/quick-tasks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-recall" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/recall
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-seats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/seats
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-service-event" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/service_event
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-services" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/services
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-sessions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/sessions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-signout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/signout
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-tickets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/tickets
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-topics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/topics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-whoami" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/whoami
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/workflows
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../workflow-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflow schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+                
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#healthz" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        healthz
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ui
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ui-legacy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ui-legacy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-access-requests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/access-requests
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-activity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/activity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-access-requests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/access-requests
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-capacity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/capacity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/fixes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-harnesses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/harnesses
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-integrations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/integrations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/models
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-services" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/services
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/settings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-tailnet" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/tailnet
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-teammates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/teammates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-tokens" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/tokens
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-admin-updates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/admin/updates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-artifacts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/artifacts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-avatars" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/avatars
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-board" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/board
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-claims" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/claims
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-close-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/close_check
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/code
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/context
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-context-delta" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/context_delta
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-criteria" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/criteria
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/decisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-describe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/describe
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/docs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-doctor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/doctor
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-epics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/epics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/events
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-expert-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/expert-session
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-feed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/feed
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-find" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/find
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/fixes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-gates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/gates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-harness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/harness
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-harvest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/harvest
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-health" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/health
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-help" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/help
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-inbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/inbox
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/index
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-join" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/join
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-knowledge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/knowledge
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-lessons" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/lessons
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-library" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/library
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-links" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/links
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-listening" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/listening
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-lookup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/lookup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-me" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/me
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-messages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/messages
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/models
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-pains" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/pains
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-participants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/participants
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-pool" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/pool
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-quick-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/quick-tasks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-recall" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/recall
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-seats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/seats
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-service-event" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/service_event
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-services" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/services
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-sessions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/sessions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-signout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/signout
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-tickets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/tickets
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-topics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/topics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-whoami" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/whoami
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1/workflows
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+  
+
+
+
+
+<h1 id="rest-api">REST API<a class="headerlink" href="#rest-api" title="Permanent link">&para;</a></h1>
+<p>Generated at build from the board's OpenAPI document (230 operations). The full machine-readable schema is <a href="../openapi.json">openapi.json</a>. Agent seats call the same API through the <a href="../mcp-tools/">MCP tools</a>; a running board also serves it at <code>/openapi.json</code>.</p>
+<p><a href="#healthz">healthz</a> · <a href="#ui">ui</a> · <a href="#ui-legacy">ui-legacy</a> · <a href="#v1-access-requests">v1/access-requests</a> · <a href="#v1-activity">v1/activity</a> · <a href="#v1-admin-access-requests">v1/admin/access-requests</a> · <a href="#v1-admin-capacity">v1/admin/capacity</a> · <a href="#v1-admin-fixes">v1/admin/fixes</a> · <a href="#v1-admin-harnesses">v1/admin/harnesses</a> · <a href="#v1-admin-integrations">v1/admin/integrations</a> · <a href="#v1-admin-models">v1/admin/models</a> · <a href="#v1-admin-services">v1/admin/services</a> · <a href="#v1-admin-settings">v1/admin/settings</a> · <a href="#v1-admin-setup">v1/admin/setup</a> · <a href="#v1-admin-tailnet">v1/admin/tailnet</a> · <a href="#v1-admin-teammates">v1/admin/teammates</a> · <a href="#v1-admin-tokens">v1/admin/tokens</a> · <a href="#v1-admin-updates">v1/admin/updates</a> · <a href="#v1-artifacts">v1/artifacts</a> · <a href="#v1-avatars">v1/avatars</a> · <a href="#v1-board">v1/board</a> · <a href="#v1-claims">v1/claims</a> · <a href="#v1-close-check">v1/close_check</a> · <a href="#v1-code">v1/code</a> · <a href="#v1-context">v1/context</a> · <a href="#v1-context-delta">v1/context_delta</a> · <a href="#v1-criteria">v1/criteria</a> · <a href="#v1-decisions">v1/decisions</a> · <a href="#v1-describe">v1/describe</a> · <a href="#v1-docs">v1/docs</a> · <a href="#v1-doctor">v1/doctor</a> · <a href="#v1-epics">v1/epics</a> · <a href="#v1-events">v1/events</a> · <a href="#v1-expert-session">v1/expert-session</a> · <a href="#v1-feed">v1/feed</a> · <a href="#v1-find">v1/find</a> · <a href="#v1-fixes">v1/fixes</a> · <a href="#v1-gates">v1/gates</a> · <a href="#v1-harness">v1/harness</a> · <a href="#v1-harvest">v1/harvest</a> · <a href="#v1-health">v1/health</a> · <a href="#v1-help">v1/help</a> · <a href="#v1-inbox">v1/inbox</a> · <a href="#v1-index">v1/index</a> · <a href="#v1-join">v1/join</a> · <a href="#v1-knowledge">v1/knowledge</a> · <a href="#v1-lessons">v1/lessons</a> · <a href="#v1-library">v1/library</a> · <a href="#v1-links">v1/links</a> · <a href="#v1-listening">v1/listening</a> · <a href="#v1-lookup">v1/lookup</a> · <a href="#v1-me">v1/me</a> · <a href="#v1-messages">v1/messages</a> · <a href="#v1-models">v1/models</a> · <a href="#v1-pains">v1/pains</a> · <a href="#v1-participants">v1/participants</a> · <a href="#v1-pool">v1/pool</a> · <a href="#v1-quick-tasks">v1/quick-tasks</a> · <a href="#v1-recall">v1/recall</a> · <a href="#v1-seats">v1/seats</a> · <a href="#v1-service-event">v1/service_event</a> · <a href="#v1-services">v1/services</a> · <a href="#v1-sessions">v1/sessions</a> · <a href="#v1-signout">v1/signout</a> · <a href="#v1-status">v1/status</a> · <a href="#v1-tickets">v1/tickets</a> · <a href="#v1-topics">v1/topics</a> · <a href="#v1-whoami">v1/whoami</a> · <a href="#v1-workflows">v1/workflows</a></p>
+<h2 id="healthz">healthz<a class="headerlink" href="#healthz" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/healthz</code></td>
+<td>Healthz</td>
+</tr>
+</tbody>
+</table>
+<h2 id="ui">ui<a class="headerlink" href="#ui" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/ui/poll</code></td>
+<td>How many events landed in <code>scope</code> since seq — the page decides whether to swap or offer a pill.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="ui-legacy">ui-legacy<a class="headerlink" href="#ui-legacy" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/ui-legacy</code></td>
+<td>Epics</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/ui-legacy/activity</code></td>
+<td>Activity Page</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/ui-legacy/doc/{doc_id}</code></td>
+<td>Doc</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/ui-legacy/doc/{doc_id}/comment</code></td>
+<td>Doc Comment</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/ui-legacy/epic/{epic_id}</code></td>
+<td>Epic</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/ui-legacy/me</code></td>
+<td>Me</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/ui-legacy/me/avatar</code></td>
+<td>Me Avatar</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/ui-legacy/me/gate</code></td>
+<td>Me Gate</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/ui-legacy/me/message</code></td>
+<td>Me Message</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/ui-legacy/me/verdict</code></td>
+<td>Me Verdict</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/ui-legacy/ticket/{ticket_id}</code></td>
+<td>Ticket</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/ui-legacy/ticket/{ticket_id}/say</code></td>
+<td>Ticket Say</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/ui-legacy/tickets</code></td>
+<td>Every ticket across epics, filterable — the view the board never had (2026-09-06).</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-access-requests">v1/access-requests<a class="headerlink" href="#v1-access-requests" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/access-requests</code></td>
+<td>Ask</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/access-requests/available</code></td>
+<td>Available</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/access-requests/claim</code></td>
+<td>Claim</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-activity">v1/activity<a class="headerlink" href="#v1-activity" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/activity</code></td>
+<td>Activity</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-admin-access-requests">v1/admin/access-requests<a class="headerlink" href="#v1-admin-access-requests" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/admin/access-requests</code></td>
+<td>Requests List</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/access-requests/{req_id}/approve</code></td>
+<td>Approve</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/access-requests/{req_id}/deny</code></td>
+<td>Deny</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-admin-capacity">v1/admin/capacity<a class="headerlink" href="#v1-admin-capacity" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/admin/capacity</code></td>
+<td>Capacity Get</td>
+</tr>
+<tr>
+<td><code>PUT</code></td>
+<td><code>/v1/admin/capacity</code></td>
+<td>Capacity Put</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-admin-fixes">v1/admin/fixes<a class="headerlink" href="#v1-admin-fixes" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/fixes/{fix_id}/approve</code></td>
+<td>Fix Approve</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/fixes/{fix_id}/reject</code></td>
+<td>Fix Reject</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-admin-harnesses">v1/admin/harnesses<a class="headerlink" href="#v1-admin-harnesses" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/admin/harnesses</code></td>
+<td>Harnesses Get</td>
+</tr>
+<tr>
+<td><code>PUT</code></td>
+<td><code>/v1/admin/harnesses/selection</code></td>
+<td>Harness Selection</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/harnesses/{h}/update</code></td>
+<td>Harness Update</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-admin-integrations">v1/admin/integrations<a class="headerlink" href="#v1-admin-integrations" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/admin/integrations</code></td>
+<td>Integrations</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/admin/integrations/code-server</code></td>
+<td>Code Get</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/integrations/code-server/test</code></td>
+<td>Code Test</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/admin/integrations/plane</code></td>
+<td>Plane Get</td>
+</tr>
+<tr>
+<td><code>PUT</code></td>
+<td><code>/v1/admin/integrations/plane</code></td>
+<td>Plane Put</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/integrations/plane/test</code></td>
+<td>Plane Check</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/admin/integrations/slack</code></td>
+<td>Slack Get</td>
+</tr>
+<tr>
+<td><code>PUT</code></td>
+<td><code>/v1/admin/integrations/slack</code></td>
+<td>Slack Put</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/integrations/slack/test</code></td>
+<td>Slack Test</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/admin/integrations/vscode</code></td>
+<td>Vscode Get</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/integrations/vscode/test</code></td>
+<td>The board URL the extension will be given answers /v1/health from here.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-admin-models">v1/admin/models<a class="headerlink" href="#v1-admin-models" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/admin/models</code></td>
+<td>Get Models</td>
+</tr>
+<tr>
+<td><code>PUT</code></td>
+<td><code>/v1/admin/models</code></td>
+<td>Put Models</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/models/test-spawn</code></td>
+<td>Test Spawn</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-admin-services">v1/admin/services<a class="headerlink" href="#v1-admin-services" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/admin/services</code></td>
+<td>Services Get</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/services/{svc}/{verb}</code></td>
+<td>Service Action</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-admin-settings">v1/admin/settings<a class="headerlink" href="#v1-admin-settings" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/admin/settings</code></td>
+<td>Settings Get</td>
+</tr>
+<tr>
+<td><code>PUT</code></td>
+<td><code>/v1/admin/settings</code></td>
+<td>Settings Put</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-admin-setup">v1/admin/setup<a class="headerlink" href="#v1-admin-setup" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/admin/setup</code></td>
+<td>Setup Get</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/setup/done</code></td>
+<td>Setup Done</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/admin/setup/prereqs</code></td>
+<td>Prereqs Get</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/setup/prereqs/{name}/install</code></td>
+<td>Prereqs Install</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-admin-tailnet">v1/admin/tailnet<a class="headerlink" href="#v1-admin-tailnet" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/admin/tailnet</code></td>
+<td>Tailnet Status</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/tailnet/apply</code></td>
+<td>Tailnet Apply</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/admin/tailnet/guide</code></td>
+<td>Tailnet Guide</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/tailnet/remove</code></td>
+<td>Tailnet Remove</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-admin-teammates">v1/admin/teammates<a class="headerlink" href="#v1-admin-teammates" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/admin/teammates</code></td>
+<td>Teammates List</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/teammates</code></td>
+<td>Teammate Create</td>
+</tr>
+<tr>
+<td><code>PUT</code></td>
+<td><code>/v1/admin/teammates/{handle}</code></td>
+<td>Teammate Patch</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/teammates/{handle}/invite</code></td>
+<td>Teammate Reinvite</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/teammates/{handle}/remove</code></td>
+<td>Revoke + retire (t-882e4d2eeb): the token is refused, any invite dropped, and the person leaves every picker and People list. Their name stays on history (greyed).</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/teammates/{handle}/revoke</code></td>
+<td>Teammate Revoke</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/teammates/{handle}/rotate</code></td>
+<td>Teammate Rotate</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/teammates/{handle}/tailscale-key</code></td>
+<td>Tailscale Key</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-admin-tokens">v1/admin/tokens<a class="headerlink" href="#v1-admin-tokens" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/admin/tokens/agents</code></td>
+<td>Agent Tokens</td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td><code>/v1/admin/tokens/agents/{handle}</code></td>
+<td>Agent Token Revoke</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-admin-updates">v1/admin/updates<a class="headerlink" href="#v1-admin-updates" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/admin/updates</code></td>
+<td>Updates Get</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/admin/updates/apply</code></td>
+<td>Updates Apply</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-artifacts">v1/artifacts<a class="headerlink" href="#v1-artifacts" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/artifacts</code></td>
+<td>Artifact Create</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/artifacts/finalize</code></td>
+<td>Attach staged uploads straight onto a ticket, no message (§18.1 finding 11: a file dropped on the ticket's Files card must really attach — flip staged→False and link <code>produced</code> — not linger staged in the SPA until the 24 h sweep). Same all-or-nothing validation and uploader-scope check as the message finalise path.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/artifacts/upload</code></td>
+<td>Drop a file, get a STAGED artifact (design §18.1). The bytes stream to a temp file under the cap for their sniffed type (25 MB; 100 MB for mp4/webm video, t-f01372d361); the type is SNIFFED from them (the client's name/Content-Type are never trusted); an SVG is stored as a file, never an inline image. The artifact is invisible until a message finalises it — attach it with POST /v1/messages artifacts:[id]. The framework still spools the multipart body before this loop runs; the loop itself never holds more than one chunk in memory.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/artifacts/upload-authorize</code></td>
+<td>Strict credential probe for opt-in proxy file access; trusted-mode headers are insufficient.</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/artifacts/{id_}</code></td>
+<td>Artifact Get</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/artifacts/{id_}/content</code></td>
+<td>Serve an uploaded artifact's bytes with the sniffed type. Never sniffs in the browser (X-Content-Type-Options: nosniff) and forces a download for everything but the four inline image types and mp4/webm video — an uploaded SVG is thus never rendered (design §18.1). Range requests get 206 partial content (FileResponse), so a &lt;video&gt; can seek.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-avatars">v1/avatars<a class="headerlink" href="#v1-avatars" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/avatars/catalog</code></td>
+<td>Avatars Catalog</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/avatars/{pid}.svg</code></td>
+<td>The inline identity SVG for a participant — served header-less so an &lt;img src&gt; can load it, image/svg+xml. Cached by CONTENT (ETag + no-cache: the browser revalidates every time and gets a 304 unless the chosen avatar changed) — a fixed max-age served the previous face after a reload or a second pick (adversary round 2 #15, 2026-09-10). <code>palette=human-0N</code> overrides with a specific human avatar (the picker previews a choice before it is saved).</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-board">v1/board<a class="headerlink" href="#v1-board" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/board/{epic_id}</code></td>
+<td>Board View</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-claims">v1/claims<a class="headerlink" href="#v1-claims" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/claims</code></td>
+<td>Record Claim</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/claims/{id_}/withdraw</code></td>
+<td>Withdraw Claim</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-close-check">v1/close_check<a class="headerlink" href="#v1-close-check" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/close_check</code></td>
+<td>Close Check</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-code">v1/code<a class="headerlink" href="#v1-code" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/code</code></td>
+<td>Code</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/code/external/{port}/{target_path}</code></td>
+<td>Browser-only redirect for code-server's external-URI template; never a server proxy.</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/code/faq</code></td>
+<td>Faq</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/code/reset-layout</code></td>
+<td>t-93da8bf09d: Code tab → Reset layout. Stamps a file in the edp-code extension's global storage; the extension in every open code-server window watches it and runs exitZenMode + resetViewLocations there (the workbench's layout lives in the browser, beyond the board's reach). Owner only, as a session.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/code/session</code></td>
+<td>A one-time, 60 s login token for the guard (<code>&amp;lt;guard&amp;gt;/__edp/login?t=&amp;lt;token&amp;gt;&amp;next=&amp;lt;path&amp;gt;</code>). Only the board's human owner, on the board host: every agent token or seat gets 403.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-context">v1/context<a class="headerlink" href="#v1-context" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/context</code></td>
+<td>Context</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-context-delta">v1/context_delta<a class="headerlink" href="#v1-context-delta" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/context_delta</code></td>
+<td>Context Delta</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-criteria">v1/criteria<a class="headerlink" href="#v1-criteria" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/criteria</code></td>
+<td>Criterion Query</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/criteria</code></td>
+<td>Criterion Create</td>
+</tr>
+<tr>
+<td><code>PATCH</code></td>
+<td><code>/v1/criteria/{id_}</code></td>
+<td>Criterion Update</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-decisions">v1/decisions<a class="headerlink" href="#v1-decisions" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/decisions</code></td>
+<td>C17 (design-10b21760d9 §14.2): the scope's live and withdrawn decisions (a ticket and every ticket under it), live binding first, then newest; the epic's participants only.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/decisions</code></td>
+<td>Record Decision</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/decisions/{id_}/binding</code></td>
+<td>D5 re-judge: promote/demote a live decision's binding flag (architect or owner only). The id and its kglinks stay; a binding_changed audit event records who, when and why.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/decisions/{id_}/withdraw</code></td>
+<td>Withdraw Decision</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-describe">v1/describe<a class="headerlink" href="#v1-describe" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/describe/{type_}</code></td>
+<td>Describe</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-docs">v1/docs<a class="headerlink" href="#v1-docs" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/docs</code></td>
+<td>Doc Query</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/docs</code></td>
+<td>Doc Create</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/docs/comments</code></td>
+<td>Document Comment</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/docs/{doc_id}/html</code></td>
+<td>Doc Html</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/docs/{id_}</code></td>
+<td>Doc Get</td>
+</tr>
+<tr>
+<td><code>PATCH</code></td>
+<td><code>/v1/docs/{id_}</code></td>
+<td>Doc Update</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/docs/{id_}/approve</code></td>
+<td>Doc Approve</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/docs/{id_}/comments</code></td>
+<td>Doc Comments</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/docs/{id_}/context</code></td>
+<td>Document Context</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/docs/{id_}/diff</code></td>
+<td>Doc Diff</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/docs/{id_}/edit</code></td>
+<td>Doc Edit</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/docs/{id_}/reject</code></td>
+<td>Doc Reject</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/docs/{id_}/sources</code></td>
+<td>Document Sources</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-doctor">v1/doctor<a class="headerlink" href="#v1-doctor" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/doctor/dead-mail</code></td>
+<td>D Dead</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/doctor/feed-lag</code></td>
+<td>D Lag</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/doctor/health</code></td>
+<td>D Health</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/doctor/logs/{service}</code></td>
+<td>D Logs</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/doctor/pains</code></td>
+<td>D Pains</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/doctor/pool</code></td>
+<td>D Pool</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/doctor/why-stuck/{ticket_id}</code></td>
+<td>D Stuck</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/doctor/workflow/{ref}</code></td>
+<td>D Workflow</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-epics">v1/epics<a class="headerlink" href="#v1-epics" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/epics/summary</code></td>
+<td>Epics Summary</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/epics/{epic_id}/page</code></td>
+<td>Epic Page</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-events">v1/events<a class="headerlink" href="#v1-events" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/events</code></td>
+<td>Events</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-expert-session">v1/expert-session<a class="headerlink" href="#v1-expert-session" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/expert-session</code></td>
+<td>Redeem an expert link's one-time code for the expert's handle + token (the SPA keeps the token in the tab's session storage). No credential: the code is the credential, and it dies on first use.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-feed">v1/feed<a class="headerlink" href="#v1-feed" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/feed</code></td>
+<td>Feed</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-find">v1/find<a class="headerlink" href="#v1-find" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/find</code></td>
+<td>Find</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-fixes">v1/fixes<a class="headerlink" href="#v1-fixes" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/fixes</code></td>
+<td>Fix List</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/fixes</code></td>
+<td>Fix Propose</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-gates">v1/gates<a class="headerlink" href="#v1-gates" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/gates/decide</code></td>
+<td>Review Decide</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/gates/{ticket_id}</code></td>
+<td>Gates</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/gates/{ticket_id}/{gate}/answer</code></td>
+<td>Gate Answer</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/gates/{ticket_id}/{gate}/open</code></td>
+<td>Gate Open</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-harness">v1/harness<a class="headerlink" href="#v1-harness" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/harness</code></td>
+<td>S4 (§4.11): the selected harnesses, the adversary's model and whether the Fable risk is acknowledged.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/harness/fable-ack</code></td>
+<td>S4 (§4.11, R5): a HUMAN records once that an adversary on Fable may decline or soften a review.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-harvest">v1/harvest<a class="headerlink" href="#v1-harvest" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/harvest/cost</code></td>
+<td>Harvest Cost</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-health">v1/health<a class="headerlink" href="#v1-health" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/health</code></td>
+<td>Uniform health route the launcher's supervisor probes (design §22 rule 3), same shape the pool and broker expose. No auth: it is the liveness probe.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-help">v1/help<a class="headerlink" href="#v1-help" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/help</code></td>
+<td>Help List</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/help</code></td>
+<td>Ask</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-inbox">v1/inbox<a class="headerlink" href="#v1-inbox" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/inbox</code></td>
+<td>Inbox</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-index">v1/index<a class="headerlink" href="#v1-index" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/index/backfill_decided_at</code></td>
+<td>Data pass (steer m-34d0beb1e8): set decided_at from each record's source date, so scoring and render use when it was decided, not when it was backfilled. No re-embed needed.</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/index/binding_audit</code></td>
+<td>Every replaced/withdrawn binding decision must have a live binding successor; lists those that do not (m-0cccdead3e).</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/index/dense_search</code></td>
+<td>Read-only D4/D5 diagnostic: dense-only cosine top-k over this epic's live records (no BM25, no graph). Shows what the dense seed leg votes for, which the fused lookup hides.</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/index/embed_counts</code></td>
+<td>R2 item-3: embedded vs unembedded live records for an epic.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/index/reembed</code></td>
+<td>R2 item-3: run the in-board bounded re-embed pass for any unit lacking a vector (no restart). The board is the only process allowed to hold the model.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-join">v1/join<a class="headerlink" href="#v1-join" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/join</code></td>
+<td>Redeem a teammate invite: the handle and a fresh token, once. No credential — the code is it.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-knowledge">v1/knowledge<a class="headerlink" href="#v1-knowledge" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/knowledge</code></td>
+<td>Knowledge List</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-lessons">v1/lessons<a class="headerlink" href="#v1-lessons" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/lessons</code></td>
+<td>Record Lesson</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-library">v1/library<a class="headerlink" href="#v1-library" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/library</code></td>
+<td>Library</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/library/import</code></td>
+<td>Library Import</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-links">v1/links<a class="headerlink" href="#v1-links" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/links</code></td>
+<td>Link Query</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/links</code></td>
+<td>Link Create</td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td><code>/v1/links/{id_}</code></td>
+<td>Link Delete</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-listening">v1/listening<a class="headerlink" href="#v1-listening" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/listening</code></td>
+<td>Listening</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-lookup">v1/lookup<a class="headerlink" href="#v1-lookup" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/lookup</code></td>
+<td>Lookup</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-me">v1/me<a class="headerlink" href="#v1-me" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/me/attention</code></td>
+<td>S20 (design §4.18): everything waiting on you, each item with its trail (scope → tab → section → ticket → item), plus per-scope counts and reasons. Every attention surface renders this one read.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/me/attention/dismiss</code></td>
+<td>v34 item 6 (owner m-1a09573d3d): the no-reply path. Marks asks waiting on you as dismissed. A pure attention write: no message is posted and no seat is woken; every attention surface clears together.</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/me/avatar</code></td>
+<td>Me Avatar Get</td>
+</tr>
+<tr>
+<td><code>PUT</code></td>
+<td><code>/v1/me/avatar</code></td>
+<td>Me Avatar Put</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/me/conversations</code></td>
+<td>Me Conversations</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/me/decisions</code></td>
+<td>Me Decisions</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/me/decisions/resolved</code></td>
+<td>Me Resolved</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/me/notifications</code></td>
+<td>Me Notifications</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/me/people</code></td>
+<td>Me People</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/me/replies</code></td>
+<td>Replies to the viewer, newest first, each with the words it answers (human report m-3d3a36455f: a person could not tell whether anyone replied).</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/me/settings</code></td>
+<td>Get Settings</td>
+</tr>
+<tr>
+<td><code>PUT</code></td>
+<td><code>/v1/me/settings</code></td>
+<td>Put Settings</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/me/settings/slack/test</code></td>
+<td>Ring the caller's OWN Slack with a test message. The destination is read from stored settings server-side — the masked webhook the SPA holds is never accepted or echoed — and the webhook host is re-validated before sending (findings 3/10/17).</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/me/summary</code></td>
+<td>Me Summary</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/me/usage</code></td>
+<td>Usage</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/me/verdict</code></td>
+<td>One-click sign-off (design §14): record the verdict for the doc version named, and, when a note is given, post '[sign-off pass|fail] note' to the ticket's assignee. The board refuses an older version than the doc's current one unless stale_ok.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-messages">v1/messages<a class="headerlink" href="#v1-messages" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/messages</code></td>
+<td>Message Query</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/messages</code></td>
+<td>Message Send</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/messages/resolve</code></td>
+<td>Message Resolve</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/messages/{id_}</code></td>
+<td>Message Get</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-models">v1/models<a class="headerlink" href="#v1-models" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/models</code></td>
+<td>S-ROLES: the per-role model catalog (models.json <code>role_models</code>, first entry = the role's default) — the new-epic dialog, the Epic page and Spawn seat read this one list.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-pains">v1/pains<a class="headerlink" href="#v1-pains" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/pains</code></td>
+<td>Pain Query</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/pains</code></td>
+<td>Pain File</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/pains/{pain_id}</code></td>
+<td>Pain Read</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/pains/{pain_id}/resolve</code></td>
+<td>Pain Resolve</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-participants">v1/participants<a class="headerlink" href="#v1-participants" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/participants</code></td>
+<td>Participants</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/participants</code></td>
+<td>Participant Create</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/participants/{id_}</code></td>
+<td>Participant Get</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-pool">v1/pool<a class="headerlink" href="#v1-pool" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/pool/capabilities</code></td>
+<td>What the pool supports, read live (never hard-coded). Pool unreachable → every capability false plus a reason, so the UI hides pool controls rather than guessing.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-quick-tasks">v1/quick-tasks<a class="headerlink" href="#v1-quick-tasks" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/quick-tasks</code></td>
+<td>S-QUICK (design-34bf11cc07 §4.2): the owner's one-step quick task — create a parentless story tagged <code>quick</code> (it starts ready; the words are its design), spawn <code>engineer.&lt;story&gt;</code> on the chosen model and make it the assignee. The pool is probed FIRST so a down pool never leaves a ticket with nobody on it; a spawn the pool refuses after the create keeps the ticket and says so.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-recall">v1/recall<a class="headerlink" href="#v1-recall" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/recall</code></td>
+<td>S-IMPLICIT: the ticket's recall section (records.recall — FTS + graph, capped, no model call); assemble_ruleset appends it to the brief.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-seats">v1/seats<a class="headerlink" href="#v1-seats" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/seats</code></td>
+<td>The Seats page (design §4.2, §18.3): agent seats with presence signals + closed seats with their reason, and a People block of humans. The client applies the 60s presence rule.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-service-event">v1/service_event<a class="headerlink" href="#v1-service-event" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/service_event</code></td>
+<td>The launcher's supervisor (or <code>start.* --restart</code>) records that it restarted a shared service (design §22 rule 3). Admin-guarded: only the launcher, which holds the admin token, may post it. Delivery to the owner/architect listening set is S18's job; here we just record.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-services">v1/services<a class="headerlink" href="#v1-services" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/services/status</code></td>
+<td>Services Status</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-sessions">v1/sessions<a class="headerlink" href="#v1-sessions" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/sessions</code></td>
+<td>Sessions</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/sessions/close</code></td>
+<td>Session Close</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/sessions/reap</code></td>
+<td>Session Reap</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/sessions/resume</code></td>
+<td>Session Resume</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/sessions/seat-token</code></td>
+<td>C8 (s-a4fd5df319): the spawn env for a seat the MCP <code>spawn</code> tool starts. That tool calls the pool directly, so without this its seats had no EDP8_TOKEN and 401 in public mode. Same authz as /v1/sessions/spawn (owner any seat, architect its own epic); agents with a spawnable role only.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/sessions/spawn</code></td>
+<td>Session Spawn</td>
+</tr>
+<tr>
+<td><code>PUT</code></td>
+<td><code>/v1/sessions/{id_}</code></td>
+<td>Session Upsert</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-signout">v1/signout<a class="headerlink" href="#v1-signout" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/signout</code></td>
+<td>Signout</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-status">v1/status<a class="headerlink" href="#v1-status" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/status</code></td>
+<td>Record Status</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-tickets">v1/tickets<a class="headerlink" href="#v1-tickets" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/tickets</code></td>
+<td>Ticket Query</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/tickets</code></td>
+<td>Ticket Create</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/tickets/table</code></td>
+<td>Tickets Table</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/tickets/{id_}</code></td>
+<td>Ticket Get</td>
+</tr>
+<tr>
+<td><code>PATCH</code></td>
+<td><code>/v1/tickets/{id_}</code></td>
+<td>Ticket Update</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/tickets/{id_}/contextual</code></td>
+<td>Ticket Contextual</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/tickets/{ticket_id}/page</code></td>
+<td>Ticket Page</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/tickets/{ticket_id}/thread</code></td>
+<td>Ticket Thread</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/tickets/{ticket_id}/transitions</code></td>
+<td>Ticket Transitions</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-topics">v1/topics<a class="headerlink" href="#v1-topics" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/topics</code></td>
+<td>Topic List</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/topics</code></td>
+<td>Topic Create</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/topics/{topic_id}</code></td>
+<td>Topic Page</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/topics/{topic_id}/close</code></td>
+<td>Topic Close</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/topics/{topic_id}/docs/{doc_id}</code></td>
+<td>Topic Doc</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/topics/{topic_id}/experts</code></td>
+<td>Expert Add</td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td><code>/v1/topics/{topic_id}/experts/{expert_id}</code></td>
+<td>Expert Remove</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/topics/{topic_id}/messages</code></td>
+<td>Topic Post</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/topics/{topic_id}/proposals</code></td>
+<td>Topic Propose</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/topics/{topic_id}/research</code></td>
+<td>Topic Research</td>
+</tr>
+<tr>
+<td><code>PATCH</code></td>
+<td><code>/v1/topics/{topic_id}/tags</code></td>
+<td>Topic Tags</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-whoami">v1/whoami<a class="headerlink" href="#v1-whoami" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/whoami</code></td>
+<td>Whoami</td>
+</tr>
+</tbody>
+</table>
+<h2 id="v1-workflows">v1/workflows<a class="headerlink" href="#v1-workflows" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/workflows</code></td>
+<td>Every workflow version: the built-in presets (published, immutable) and stored ones, each with the epics pinned to it and the version it was duplicated from (S14). <code>archived=true</code> also lists the archived versions; each row's <code>delete_outcome</code> says what Delete would do (t-0c16c00424).</td>
+</tr>
+<tr>
+<td><code>PUT</code></td>
+<td><code>/v1/workflows</code></td>
+<td>Create or replace a DRAFT version; a built-in or published version is refused (immutable).</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/workflows/card-preview</code></td>
+<td>S14: a role card's markdown rendered as the board renders docs (the card editor's preview).</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/workflows/diff</code></td>
+<td>S14: the diff of an unsaved definition (<code>definition</code>) against a stored version (<code>against</code>).</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/workflows/dryrun</code></td>
+<td>S14 (§4.14(e).3): walk a synthetic epic through a definition on a throwaway in-memory board; the timeline lists spawns, wakes, gates and transitions, and <code>stall</code> names the step no role can take.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/workflows/duplicate</code></td>
+<td>Workflow Duplicate</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/workflows/templates</code></td>
+<td>S14 (§4.14(e).3): Add role starting points (builder, checker), the hook registry with its params, the predicate vocabulary and the kernel tools, for the Design tab's inline help.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/workflows/validate</code></td>
+<td>Lint a definition without storing it: each problem names its code, message and severity. A definition with no lint error is also walked by the dry run (S14): a stall is an error too.</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/workflows/{ref_}</code></td>
+<td>Workflow Get</td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td><code>/v1/workflows/{ref_}</code></td>
+<td>t-0c16c00424: delete an unpublished draft; archive a published version no epic pins (restorable); refuse a pinned version (409, naming the epics) and a built-in preset.</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/workflows/{ref_}/card/{role}</code></td>
+<td>S14: a role's card as written in the version (inline) or shipped in the agent home (Standard).</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/workflows/{ref_}/diff</code></td>
+<td>S14: what changed from <code>against</code> (default: the version it was duplicated from) to <code>ref_</code>.</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/workflows/{ref_}/lifecycle</code></td>
+<td>The lifecycle of <code>kind</code> rendered from a version (what the /epic and /ticket skills show).</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/workflows/{ref_}/merge-upstream</code></td>
+<td>S14: three-way merge the upstream change into a NEW draft version; conflicts keep this version's value and are listed for the author.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/workflows/{ref_}/publish</code></td>
+<td>Workflow Publish</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v1/workflows/{ref_}/restore</code></td>
+<td>Workflow Restore</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/workflows/{ref_}/upstream</code></td>
+<td>S14 (§4.14(e).4): has the version this one came from moved on (e.g. Standard@N → N+1)?</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+  
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+        
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../settings/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Settings">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Settings
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../mcp-tools/" class="md-footer__link md-footer__link--next" aria-label="Next: MCP tools">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                MCP tools
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Heronry contributors · Apache-2.0
+    </div>
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.footer", "navigation.indexes", "search.suggest", "search.highlight", "content.code.copy", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

@@ -1,0 +1,3065 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="your agent team, built on decisions, checked before delivery">
+      
+      
+      
+        <link rel="canonical" href="https://visak13.github.io/eda-harness/reference/settings/">
+      
+      
+        <link rel="prev" href="../cli/">
+      
+      
+        <link rel="next" href="../rest-api/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/brand/favicon-32.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Settings - Heronry</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/heronry.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="heronry-light" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#settings" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Heronry" class="md-header__button md-logo" aria-label="Heronry" data-md-component="logo">
+      
+  <img src="../../assets/brand/heronry-logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Heronry
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Settings
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="heronry-light" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/visak13/eda-harness" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    visak13/eda-harness
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../download/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Download
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../video/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Video
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../setup/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Setup guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../docs/concepts/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Docs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+                
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" hidden>
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Heronry" class="md-nav__button md-logo" aria-label="Heronry" data-md-component="logo">
+      
+  <img src="../../assets/brand/heronry-logo.png" alt="logo">
+
+    </a>
+    Heronry
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/visak13/eda-harness" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    visak13/eda-harness
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../download/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Download
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../video/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Video
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../setup/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Setup guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Setup guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../setup/first-run/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../setup/harnesses/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Harnesses and models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../setup/remote-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Remote access and teammates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../setup/integrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integrations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Docs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../docs/concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../docs/design-tab/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Design tab
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../docs/updates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Updates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../docs/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command line
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#embedder-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Embedder/search
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Identity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#integrations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integrations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limits-tuning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limits/tuning
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paths
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#platform" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Platform
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#seats---models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seats &amp; models
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#updates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Updates
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rest-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../workflow-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflow schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+                
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" hidden>
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#embedder-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Embedder/search
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Identity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#integrations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integrations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limits-tuning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limits/tuning
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paths
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#platform" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Platform
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#seats---models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seats &amp; models
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#updates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Updates
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+  
+
+
+
+
+<h1 id="settings">Settings<a class="headerlink" href="#settings" title="Permanent link">&para;</a></h1>
+<p>Generated at build from the settings registry (171 settings). Each value resolves <strong>environment variable &gt; <code>config.toml</code> key &gt; default</strong>; Admin → Settings shows the <code>basic</code> ones, the <code>advanced</code> ones behind <em>Show advanced</em>, and never the <code>internal</code> ones. <code>restart</code> names the service a change needs restarted.</p>
+<p><a href="#embedder-search">Embedder/search</a> · <a href="#identity">Identity</a> · <a href="#integrations">Integrations</a> · <a href="#limits-tuning">Limits/tuning</a> · <a href="#network">Network</a> · <a href="#paths">Paths</a> · <a href="#platform">Platform</a> · <a href="#seats---models">Seats &amp; models</a> · <a href="#updates">Updates</a></p>
+<h2 id="embedder-search">Embedder/search<a class="headerlink" href="#embedder-search" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Env</th>
+<th>config.toml key</th>
+<th>Type</th>
+<th>Default</th>
+<th>What it does</th>
+<th>Tier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>EDP8_EMBED_ARENA</code></td>
+<td><code>search.embed_arena</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Keep onnxruntime's CPU memory arena (off: board RSS tracks live use).</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_EMBED_CACHE</code></td>
+<td><code>search.embed_cache</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Folder the embedding model is downloaded to; unset = &lt;data&gt;/models when installed, fastembed's own default (FASTEMBED_CACHE_PATH, else a temp folder) in dev mode.</td>
+<td>internal, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_EMBED_MODEL</code></td>
+<td><code>search.embed_model</code></td>
+<td>str</td>
+<td><code>nomic-ai/nomic-embed-text-v1.5</code></td>
+<td>fastembed model used for dense search.</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_EMBED_THREADS</code></td>
+<td><code>search.embed_threads</code></td>
+<td>int</td>
+<td><code>1</code></td>
+<td>onnxruntime intra-op threads of the embedding model.</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_EMBEDDER</code></td>
+<td><code>search.embedder</code></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Force the embedder: fastembed, ollama or none; unset = fastembed, then ollama, then none. Choices: <code>fastembed</code>, <code>ollama</code>, <code>none</code>.</td>
+<td>basic, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_OLLAMA_URL</code></td>
+<td><code>search.ollama_url</code></td>
+<td>url</td>
+<td><code>http://127.0.0.1:11434</code></td>
+<td>Ollama base URL for the ollama embedder.</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_RANKED_FLOOR</code></td>
+<td><code>search.ranked_floor</code></td>
+<td>float</td>
+<td><code>0.35</code></td>
+<td>Drop ranked records scoring below this fraction of the top hit (0 disables).</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_VEC_CACHE</code></td>
+<td><code>search.vec_cache</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Embedding cache SQLite file; unset = &lt;board db&gt;.vec.</td>
+<td>internal, restart board</td>
+</tr>
+</tbody>
+</table>
+<h2 id="identity">Identity<a class="headerlink" href="#identity" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Env</th>
+<th>config.toml key</th>
+<th>Type</th>
+<th>Default</th>
+<th>What it does</th>
+<th>Tier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>EDP8_ADMIN_TOKEN</code></td>
+<td><code>edp8.admin_token</code></td>
+<td>str</td>
+<td>(secret)</td>
+<td>Board admin token (X-Admin). Required outside dev mode; 'dev' is refused there.</td>
+<td>internal, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_OWNER</code></td>
+<td><code>identity.owner</code></td>
+<td>str</td>
+<td><code>owner</code></td>
+<td>Handle of the first human (the owner) that <code>heronry init</code> creates and <code>start</code> registers.</td>
+<td>internal, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_ROLE</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Role of a stdio MCP server when whoami cannot answer at start; falls back to EDP_ROLE.</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>EDP8_TOKENS</code></td>
+<td><code>paths.tokens</code></td>
+<td>path</td>
+<td><code>&lt;EDP_HOME&gt;/tokens.json, installed &lt;config&gt;/secrets/tokens.json</code></td>
+<td>The participant token file (never inside a package or repo path when installed).</td>
+<td>internal, restart board</td>
+</tr>
+<tr>
+<td><code>EDP_HANDLE</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>This seat's handle (set by the pool on a spawned shell).</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>EDP8_PARTICIPANT</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>This process's participant id; falls back to EDP_HANDLE.</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>EDP_ROLE</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>This seat's role (set by the pool on a spawned shell).</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>EDP_SPAWN_SESSION_ID</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>The pool spawn session this shell belongs to.</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>EDP8_TOKEN</code></td>
+<td></td>
+<td>str</td>
+<td>(secret)</td>
+<td>This seat's board token (set by the pool on a spawned shell).</td>
+<td>internal, env only</td>
+</tr>
+</tbody>
+</table>
+<h2 id="integrations">Integrations<a class="headerlink" href="#integrations" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Env</th>
+<th>config.toml key</th>
+<th>Type</th>
+<th>Default</th>
+<th>What it does</th>
+<th>Tier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CODE_GUARD_MINT_KEY</code></td>
+<td></td>
+<td>str</td>
+<td>(secret)</td>
+<td>Key the board signs code-guard sign-in tokens with (removed from the guard's env at start).</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>CODE_GUARD_SESSION</code></td>
+<td></td>
+<td>str</td>
+<td>(secret)</td>
+<td>code-server session secret handed to the code guard (removed from its env at start).</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>EDP_CODE_AUTOSTART</code></td>
+<td><code>code_server.autostart</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td><code>heronry start</code> also starts the code server (it is opt-in: <code>heronry start code</code>).</td>
+<td>basic</td>
+</tr>
+<tr>
+<td><code>EDP_CODE_DATA</code></td>
+<td><code>code_server.data</code></td>
+<td>path</td>
+<td><code>&lt;data&gt;/code</code></td>
+<td>code-server's user-data and extensions dirs.</td>
+<td>internal</td>
+</tr>
+<tr>
+<td><code>EDP_CODE_HOST</code></td>
+<td><code>code_server.host</code></td>
+<td>str</td>
+<td><code>127.0.0.1</code></td>
+<td>code-server bind host; loopback only (anyone who reaches it owns the host through its terminal), so any other value is refused.</td>
+<td>internal</td>
+</tr>
+<tr>
+<td><code>EDP_CODE_SERVER_PATH</code></td>
+<td><code>code_server.path</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>code-server executable (or its entry .js); default <code>code-server</code> on PATH.</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP_CODE_PORT</code></td>
+<td><code>code_server.port</code></td>
+<td>int</td>
+<td><code>9410</code></td>
+<td>code-server port: the loopback guard <code>heronry start code</code> puts in front of code-server holds it.</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_PLANE_API_KEY</code></td>
+<td><code>plane.api_key</code></td>
+<td>str</td>
+<td>(secret)</td>
+<td>Plane API key.</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_PLANE_PROJECT</code></td>
+<td><code>plane.project</code></td>
+<td>str</td>
+<td></td>
+<td>Plane project id.</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_PLANE_STATES</code></td>
+<td><code>plane.states</code></td>
+<td>str</td>
+<td>(unset)</td>
+<td>JSON map of ticket status to Plane state; unset = identity map.</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_PLANE_URL</code></td>
+<td><code>plane.url</code></td>
+<td>url</td>
+<td>(unset)</td>
+<td>Plane base URL; set turns on the Plane mirror and webhook.</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_PLANE_WEBHOOK_SECRET</code></td>
+<td><code>plane.webhook_secret</code></td>
+<td>str</td>
+<td>(secret)</td>
+<td>HMAC secret the Plane webhook signature is checked against; empty = unchecked.</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_PLANE_WORKSPACE</code></td>
+<td><code>plane.workspace</code></td>
+<td>str</td>
+<td></td>
+<td>Plane workspace slug.</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_SLACK_MAP</code></td>
+<td><code>slack.map</code></td>
+<td>path</td>
+<td><code>&lt;config&gt;/slack_map.json</code></td>
+<td>The Slack bridge's handle→user map and settings file.</td>
+<td>internal, restart all</td>
+</tr>
+<tr>
+<td><code>EDP8_SLACK_WEBHOOK_HOSTS</code></td>
+<td><code>slack.webhook_hosts</code></td>
+<td>list</td>
+<td><code>[]</code></td>
+<td>Extra allowed Slack webhook hosts (comma-separated) besides hooks.slack.com.</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP8_HTTP_UPLOAD_MODE</code></td>
+<td><code>uploads.http_mode</code></td>
+<td>str</td>
+<td>(unset)</td>
+<td>'single-host' enables MCP uploads over HTTP from local seats; anything else disables them. Choices: <code>single-host</code>, <code>off</code>.</td>
+<td>advanced, restart mcp</td>
+</tr>
+<tr>
+<td><code>EDP8_HTTP_UPLOAD_POLICY</code></td>
+<td><code>uploads.http_policy</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Absolute path of the HTTP upload policy JSON (workspace root and per-seat roots).</td>
+<td>advanced, restart mcp</td>
+</tr>
+<tr>
+<td><code>EDP8_USAGE_CONFIG</code></td>
+<td><code>usage.config</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Operator ACL JSON mapping participants to the provider usage they may see; unset = none.</td>
+<td>advanced</td>
+</tr>
+</tbody>
+</table>
+<h2 id="limits-tuning">Limits/tuning<a class="headerlink" href="#limits-tuning" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Env</th>
+<th>config.toml key</th>
+<th>Type</th>
+<th>Default</th>
+<th>What it does</th>
+<th>Tier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>EDP8_CONTEXT_BUDGET_B</code></td>
+<td><code>board.context_budget_b</code></td>
+<td>int</td>
+<td><code>16000</code></td>
+<td>Byte cap of the bounded context() snapshot (floor 4000). Unit: bytes.</td>
+<td>advanced, restart mcp</td>
+</tr>
+<tr>
+<td><code>EDP8_DELTA_BUDGET_B</code></td>
+<td><code>board.delta_budget_b</code></td>
+<td>int</td>
+<td><code>12000</code></td>
+<td>Byte cap of one context_delta page (floor 4000). Unit: bytes.</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_FEED_EVENT_B</code></td>
+<td><code>board.feed_event_b</code></td>
+<td>int</td>
+<td><code>2000</code></td>
+<td>Byte cap of one feed_driver output line (floor 600). Unit: bytes.</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP8_LOG</code></td>
+<td><code>board.log_level</code></td>
+<td>str</td>
+<td><code>warning</code></td>
+<td>The board's uvicorn log level. Choices: <code>debug</code>, <code>info</code>, <code>warning</code>, <code>error</code>, <code>critical</code>.</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_TIMING</code></td>
+<td><code>board.timing</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Log every request's route template, status, ms and bytes to &lt;logs&gt;/timing.jsonl (S22 profiling).</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_TOOL_CALL_CAP_S</code></td>
+<td><code>board.tool_call_cap_s</code></td>
+<td>float</td>
+<td><code>30.0</code></td>
+<td>Seconds one MCP tool call may take before it is answered as still running. Unit: seconds.</td>
+<td>advanced, restart mcp</td>
+</tr>
+<tr>
+<td><code>EDP8_TOOL_PAGE_B</code></td>
+<td><code>board.tool_page_b</code></td>
+<td>int</td>
+<td><code>8000</code></td>
+<td>Byte cap of one list/query tool page (ticket_query, doc_query, participants, ...; floor 2000). Unit: bytes.</td>
+<td>advanced, restart mcp</td>
+</tr>
+<tr>
+<td><code>EDP8_UI</code></td>
+<td><code>board.ui</code></td>
+<td>str</td>
+<td><code>folio</code></td>
+<td>Which renderer owns /ui: folio (the SPA; legacy kept at /ui-legacy) or legacy (no SPA). Choices: <code>folio</code>, <code>legacy</code>.</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_UPLOAD_SWEEP</code></td>
+<td><code>board.upload_sweep</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Hourly sweep of staged uploads nobody finalised (the startup sweep always runs).</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP_BROKER_ACCESS_LOG</code></td>
+<td><code>broker.access_log</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>uvicorn access log for the broker (floods: rx inbox polls every ~2 s).</td>
+<td>advanced, restart broker</td>
+</tr>
+<tr>
+<td><code>EDP_BROKER_SHUTDOWN_GRACE_SECS</code></td>
+<td><code>broker.shutdown_grace_secs</code></td>
+<td>int</td>
+<td><code>5</code></td>
+<td>Seconds uvicorn waits for open SSE streams at shutdown before cancelling them. Unit: seconds.</td>
+<td>advanced, restart broker</td>
+</tr>
+<tr>
+<td><code>EDP8_HARVEST_LOG_ROOTS</code></td>
+<td><code>harvest.log_roots</code></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Seat session-log roots (os.pathsep list) harvest_cost searches instead of the agent-home defaults; a private audit board still finds the host's seat logs.</td>
+<td>internal</td>
+</tr>
+<tr>
+<td><code>EDP8_LANE_AGING_S</code></td>
+<td><code>lanes.aging_s</code></td>
+<td>float</td>
+<td><code>120.0</code></td>
+<td>Seconds a lane ticket waits before it sorts as top priority (anti-starvation). Unit: seconds.</td>
+<td>advanced, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP8_LANE_DIR</code></td>
+<td><code>lanes.dir</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Override dir for the host-wide admission lane files.</td>
+<td>internal</td>
+</tr>
+<tr>
+<td><code>EDP8_LANE_QUEUE_STALE_S</code></td>
+<td><code>lanes.queue_stale_s</code></td>
+<td>float</td>
+<td><code>10.0</code></td>
+<td>Seconds an untouched lane queue ticket lives before a waiter removes it as dead. Unit: seconds.</td>
+<td>advanced, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP8_LANE_TTL_S</code></td>
+<td><code>lanes.ttl_s</code></td>
+<td>int</td>
+<td><code>900</code></td>
+<td>Seconds a lane holder may go without touching its lock before it is treated as dead. Unit: seconds.</td>
+<td>advanced, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_LOG_DIR</code></td>
+<td><code>logging.dir</code></td>
+<td>path</td>
+<td><code>.logs</code></td>
+<td>Structured log directory (relative to the process cwd).</td>
+<td>internal</td>
+</tr>
+<tr>
+<td><code>EDP_LOG_LEVEL</code></td>
+<td><code>logging.level</code></td>
+<td>str</td>
+<td><code>info</code></td>
+<td>Structured log level. Choices: <code>debug</code>, <code>info</code>, <code>warning</code>, <code>error</code>.</td>
+<td>basic</td>
+</tr>
+<tr>
+<td><code>EDP_LOG_RETENTION_DAYS</code></td>
+<td><code>logging.retention_days</code></td>
+<td>int</td>
+<td><code>14</code></td>
+<td>Days of structured logs kept. Unit: days.</td>
+<td>basic</td>
+</tr>
+<tr>
+<td><code>EDP_LOG_SUFFIX</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Log file name suffix; falls back to EDP_HANDLE.</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>EDP8_UPLOAD_ROOT</code></td>
+<td><code>mcp.upload_root</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Workspace root local uploads are resolved against (MCP artifact_upload).</td>
+<td>internal, restart mcp</td>
+</tr>
+<tr>
+<td><code>EDP_POOL_ACCESS_LOG</code></td>
+<td><code>pool.access_log</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>uvicorn access log for the pool (off: the rx polls flood it).</td>
+<td>advanced, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_DOCTOR_TIMEOUT_S</code></td>
+<td><code>pool.doctor_timeout_secs</code></td>
+<td>float</td>
+<td><code>3.0</code></td>
+<td>Per-probe timeout of the pool doctor's HTTP checks. Unit: seconds.</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP_MAX_LIVE_SHELLS</code></td>
+<td><code>pool.max_live_shells</code></td>
+<td>int</td>
+<td>(unset)</td>
+<td>Hard ceiling on live shell processes (active+starting+parked+resuming); default 2x the total cap. Unit: agents.</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP_MAX_PLANNERS</code></td>
+<td><code>pool.max_planners</code></td>
+<td>int</td>
+<td><code>4</code></td>
+<td>Cap on concurrent planner shells. Unit: agents.</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP_MAX_TOTAL_SHELLS</code></td>
+<td><code>pool.max_total_shells</code></td>
+<td>int</td>
+<td><code>10</code></td>
+<td>Cap on concurrent throughput shells of every role. Unit: agents.</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP_MAX_WORKERS</code></td>
+<td><code>pool.max_workers</code></td>
+<td>int</td>
+<td><code>6</code></td>
+<td>Cap on concurrent worker shells. Unit: agents.</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP_PARKED_HEARTBEAT_SECS</code></td>
+<td><code>pool.parked_heartbeat_secs</code></td>
+<td>float</td>
+<td><code>1800.0</code></td>
+<td>A parked shell idle this long is resumed for a reconcile tick; 0 disables. Unit: seconds.</td>
+<td>basic</td>
+</tr>
+<tr>
+<td><code>EDP_PAUSE_MAX_SECS</code></td>
+<td><code>pool.pause_max_secs</code></td>
+<td>float</td>
+<td><code>1800.0</code></td>
+<td>Auto-resume deadline of a paused (suspended) shell. Unit: seconds.</td>
+<td>basic</td>
+</tr>
+<tr>
+<td><code>EDP_READY_TIMEOUT_SECS</code></td>
+<td><code>pool.ready_timeout_secs</code></td>
+<td>float</td>
+<td><code>30.0</code></td>
+<td>How long a spawn waits for the shell to become ready. Unit: seconds.</td>
+<td>basic</td>
+</tr>
+<tr>
+<td><code>EDP_RESUME_WATCHDOG</code></td>
+<td><code>pool.resume_watchdog</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Run the parked-handle resume watchdog.</td>
+<td>advanced, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_RESUME_WATCHDOG_SECS</code></td>
+<td><code>pool.resume_watchdog_secs</code></td>
+<td>float</td>
+<td><code>5.0</code></td>
+<td>Resume watchdog poll cadence. Unit: seconds.</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP_POOL_SHUTDOWN_GRACE_SECS</code></td>
+<td><code>pool.shutdown_grace_secs</code></td>
+<td>int</td>
+<td><code>5</code></td>
+<td>uvicorn graceful-shutdown bound, so an open panel long-poll cannot freeze a stop. Unit: seconds.</td>
+<td>advanced, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_STARTING_REAP_GRACE_SECS</code></td>
+<td><code>pool.starting_reap_grace_secs</code></td>
+<td>float</td>
+<td><code>180.0</code></td>
+<td>Age after which a spawn reservation still 'starting' counts as abandoned. Unit: seconds.</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP_SUBMIT_DELAY_MS</code></td>
+<td><code>pool.submit_delay_ms</code></td>
+<td>float</td>
+<td><code>150.0</code></td>
+<td>Delay between typing a prompt into a shell and pressing Enter. Unit: ms.</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP_TURN_TIMEOUT_SECS</code></td>
+<td><code>pool.turn_timeout_secs</code></td>
+<td>float</td>
+<td><code>2400.0</code></td>
+<td>Hard bound on one resumed turn's wall clock; 0 disables. Unit: seconds.</td>
+<td>basic</td>
+</tr>
+<tr>
+<td><code>EDP_WAKE_DEFER_MAX_S</code></td>
+<td><code>pool.wake_defer_max_secs</code></td>
+<td>float</td>
+<td><code>10.0</code></td>
+<td>Longest a console wake waits for the operator to stop typing before deferring. Unit: seconds.</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP8_AUTO_RECORD_CAP</code></td>
+<td><code>records.auto_cap</code></td>
+<td>int</td>
+<td><code>60</code></td>
+<td>Auto-recorded decisions allowed per epic. Unit: decisions.</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP8_RSI</code></td>
+<td><code>rsi.enabled</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Run the RSI retrieval-regression sweep in the board (re-read every loop).</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_RSI_INTERVAL_S</code></td>
+<td><code>rsi.interval_s</code></td>
+<td>float</td>
+<td><code>900.0</code></td>
+<td>Seconds between RSI sweep ticks. Unit: seconds.</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_RSI_RAM_FLOOR_MB</code></td>
+<td><code>rsi.ram_floor_mb</code></td>
+<td>int</td>
+<td><code>1500</code></td>
+<td>Free RAM (MB) below which an RSI tick holds instead of running. Unit: MB.</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_RSI_WARM_S</code></td>
+<td><code>rsi.warm_s</code></td>
+<td>float</td>
+<td><code>900.0</code></td>
+<td>Seconds the RSI CLI waits for the dense index to warm. Unit: seconds.</td>
+<td>advanced</td>
+</tr>
+</tbody>
+</table>
+<h2 id="network">Network<a class="headerlink" href="#network" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Env</th>
+<th>config.toml key</th>
+<th>Type</th>
+<th>Default</th>
+<th>What it does</th>
+<th>Tier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>EDP8_HOST</code></td>
+<td><code>board.host</code></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Board bind host; unset = loopback, or the public-mode default.</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_PORT</code></td>
+<td><code>board.port</code></td>
+<td>int</td>
+<td><code>9400</code></td>
+<td>Board HTTP port.</td>
+<td>advanced, restart board</td>
+</tr>
+<tr>
+<td><code>EDP_BROKER_HOST</code></td>
+<td><code>broker.host</code></td>
+<td>str</td>
+<td><code>127.0.0.1</code></td>
+<td>Broker bind host.</td>
+<td>advanced, restart broker</td>
+</tr>
+<tr>
+<td><code>EDP_BROKER_PORT</code></td>
+<td><code>broker.port</code></td>
+<td>int</td>
+<td><code>9300</code></td>
+<td>Broker port.</td>
+<td>advanced, restart broker</td>
+</tr>
+<tr>
+<td><code>EDP8_MCP_HOST</code></td>
+<td><code>mcp.host</code></td>
+<td>str</td>
+<td><code>127.0.0.1</code></td>
+<td>MCP proxy bind host.</td>
+<td>advanced, restart mcp</td>
+</tr>
+<tr>
+<td><code>EDP8_MCP_PORT</code></td>
+<td><code>mcp.port</code></td>
+<td>int</td>
+<td><code>9402</code></td>
+<td>MCP proxy port.</td>
+<td>advanced, restart mcp</td>
+</tr>
+<tr>
+<td><code>EDP8_MCP_TRANSPORT</code></td>
+<td><code>mcp.transport</code></td>
+<td>str</td>
+<td></td>
+<td>stdio runs the MCP server per shell over stdio; anything else serves shared streamable-http. Choices: <code>`,</code>stdio`.</td>
+<td>advanced, restart mcp</td>
+</tr>
+<tr>
+<td><code>EDP8_BOARD_URL</code></td>
+<td><code>network.board_url</code></td>
+<td>url</td>
+<td><code>http://127.0.0.1:9400</code></td>
+<td>Board base URL clients and services call.</td>
+<td>internal, restart all</td>
+</tr>
+<tr>
+<td><code>EDP_BROKER_URL</code></td>
+<td><code>network.broker_url</code></td>
+<td>url</td>
+<td><code>http://127.0.0.1:9300</code></td>
+<td>Message broker base URL.</td>
+<td>internal, restart all</td>
+</tr>
+<tr>
+<td><code>EDP8_MCP_URL</code></td>
+<td><code>network.mcp_url</code></td>
+<td>url</td>
+<td><code>http://127.0.0.1:9402</code></td>
+<td>MCP proxy base URL seats connect to.</td>
+<td>internal, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_POOL_URL</code></td>
+<td><code>network.pool_url</code></td>
+<td>url</td>
+<td><code>http://&lt;pool.host&gt;:&lt;pool.port&gt;</code></td>
+<td>Seat pool base URL.</td>
+<td>internal, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_PUBLIC_URL</code></td>
+<td><code>network.public_url</code></td>
+<td>url</td>
+<td>(unset)</td>
+<td>Public (tailnet) URL of the board; set turns on public mode's fail-closed token rules.</td>
+<td>internal, restart board</td>
+</tr>
+<tr>
+<td><code>EDP_POOL_HOST</code></td>
+<td><code>pool.host</code></td>
+<td>str</td>
+<td><code>127.0.0.1</code></td>
+<td>Seat pool bind host.</td>
+<td>advanced, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_PHOENIX_URL</code></td>
+<td><code>pool.phoenix_url</code></td>
+<td>url</td>
+<td><code>http://localhost:6006</code></td>
+<td>Phoenix (tracing) URL the pool doctor probes.</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP_POOL_PORT</code></td>
+<td><code>pool.port</code></td>
+<td>int</td>
+<td><code>9301</code></td>
+<td>Seat pool port.</td>
+<td>advanced, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_CONTROL_PORT</code></td>
+<td><code>supervisor.control_port</code></td>
+<td>int</td>
+<td><code>0</code></td>
+<td>The supervisor's loopback control port (S5 service control); 0 = a free port, recorded in the run dir.</td>
+<td>internal, restart supervisor</td>
+</tr>
+<tr>
+<td><code>EDP_TAILSCALE_API_URL</code></td>
+<td><code>tailscale.api_url</code></td>
+<td>url</td>
+<td><code>https://api.tailscale.com</code></td>
+<td>Tailscale API base URL (tests point it at a mock).</td>
+<td>internal</td>
+</tr>
+<tr>
+<td><code>EDP_TAILSCALE_KEY_TAGS</code></td>
+<td><code>tailscale.key_tags</code></td>
+<td>list</td>
+<td><code>["tag:heronry"]</code></td>
+<td>Tags a minted auth key applies to the new device (an OAuth-minted key must carry tags).</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP_TAILSCALE_OAUTH_CLIENT_ID</code></td>
+<td><code>tailscale.oauth_client_id</code></td>
+<td>str</td>
+<td></td>
+<td>Tailscale OAuth client id (scope auth_keys) that mints teammates' auth keys; empty = feature off.</td>
+<td>basic</td>
+</tr>
+<tr>
+<td><code>EDP_TAILSCALE_OAUTH_CLIENT_SECRET</code></td>
+<td><code>tailscale.oauth_client_secret</code></td>
+<td>str</td>
+<td>(secret)</td>
+<td>Tailscale OAuth client secret for the client above.</td>
+<td>basic</td>
+</tr>
+<tr>
+<td><code>EDP_TAILSCALE_TAILNET</code></td>
+<td><code>tailscale.tailnet</code></td>
+<td>str</td>
+<td><code>-</code></td>
+<td>Tailnet the auth keys are minted in; '-' = the OAuth client's own tailnet.</td>
+<td>advanced</td>
+</tr>
+</tbody>
+</table>
+<h2 id="paths">Paths<a class="headerlink" href="#paths" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Env</th>
+<th>config.toml key</th>
+<th>Type</th>
+<th>Default</th>
+<th>What it does</th>
+<th>Tier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>EDP_BROKER_DATA</code></td>
+<td><code>broker.data_dir</code></td>
+<td>path</td>
+<td><code>&lt;data&gt;/broker-data</code></td>
+<td>The broker's message store dir.</td>
+<td>internal, restart broker</td>
+</tr>
+<tr>
+<td><code>EDP_AGENT_HOME</code></td>
+<td></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Seat home (role cards, skills, guides, .mcp.json, models.json); default EDP_HOME in dev mode, else &lt;data&gt;/agent-home.</td>
+<td>internal, env only, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_CONFIG_DIR</code></td>
+<td></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Config dir (config.toml; installed also secrets/); default EDP_HOME, else &lt;OS config dir&gt;/config.</td>
+<td>internal, env only, restart all</td>
+</tr>
+<tr>
+<td><code>EDP8_DATA</code></td>
+<td></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Data dir (db, uploads, agent home, backups); default EDP_HOME/.data, else &lt;OS data dir&gt;/data.</td>
+<td>internal, env only, restart all</td>
+</tr>
+<tr>
+<td><code>EDP8_DB</code></td>
+<td><code>paths.db</code></td>
+<td>path</td>
+<td><code>&lt;data&gt;/edp8.db</code></td>
+<td>The board's SQLite database.</td>
+<td>internal, restart board</td>
+</tr>
+<tr>
+<td><code>EDP_DEV</code></td>
+<td></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Force dev mode (allows the 'dev' admin token) without EDP_HOME being a source checkout.</td>
+<td>internal, env only, restart all</td>
+</tr>
+<tr>
+<td><code>EDP_HOME</code></td>
+<td></td>
+<td>path</td>
+<td>(unset)</td>
+<td>One root for config, data, run dir and agent home; a source checkout's v8/ is dev mode.</td>
+<td>internal, env only, restart all</td>
+</tr>
+<tr>
+<td><code>EDP8_RUN_DIR</code></td>
+<td></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Run dir (service pid/state files); default EDP_HOME/.run, else &lt;OS state dir&gt;/run.</td>
+<td>internal, env only, restart all</td>
+</tr>
+<tr>
+<td><code>EDP_CLAUDE_CONFIG_DIR</code></td>
+<td><code>pool.claude_config_dir</code></td>
+<td>path</td>
+<td><code>&lt;repo&gt;/edp-pool/.claude-pool in dev mode, else &lt;data&gt;/claude-pool</code></td>
+<td>CLAUDE_CONFIG_DIR of pool-spawned claude shells (never the operator's personal store).</td>
+<td>internal</td>
+</tr>
+<tr>
+<td><code>EDP_POOL_CLAUDE_HOME</code></td>
+<td><code>pool.claude_home</code></td>
+<td>path</td>
+<td><code>&lt;repo&gt;/claude in dev mode, else the agent home</code></td>
+<td>The v7 <code>claude</code> repo (.recipes briefs, neuron_heartbeat.py, recipe_ctl.py) the panel's recipe features use when EDP_AGENT_HOME is unset.</td>
+<td>internal</td>
+</tr>
+<tr>
+<td><code>EDP_POOL_DIR</code></td>
+<td><code>pool.dir</code></td>
+<td>path</td>
+<td><code>&lt;repo&gt;/edp-pool in dev mode, else &lt;data&gt;/pool</code></td>
+<td>The pool's own runtime dir (.shadows, .pi-harness, the pause watchdog's cwd).</td>
+<td>internal, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_POOL_LOG_DIR</code></td>
+<td><code>pool.log_dir</code></td>
+<td>path</td>
+<td><code>.pool-logs</code></td>
+<td>Dir the pool drains spawned shells' PTY output into (relative to the pool's cwd).</td>
+<td>internal, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_POOL_PAUSE_TOKENS</code></td>
+<td><code>pool.pause_tokens</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Dir of the pause watchdog's run tokens; default &lt;state dir&gt;/pause-tokens.</td>
+<td>internal</td>
+</tr>
+<tr>
+<td><code>EDP_POOL_SHELL_LOG_DIR</code></td>
+<td><code>pool.shell_log_dir</code></td>
+<td>path</td>
+<td><code>&lt;repo&gt;/.logs in dev mode, else &lt;data&gt;/logs</code></td>
+<td>EDP_LOG_DIR pinned on every spawned shell (and the pi/codex backends' log root).</td>
+<td>internal, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_SPAWN_DEFAULTS</code></td>
+<td><code>pool.spawn_defaults</code></td>
+<td>path</td>
+<td><code>.pool-logs/spawn_defaults.json</code></td>
+<td>The panel-saved spawn defaults file (W12).</td>
+<td>internal</td>
+</tr>
+<tr>
+<td><code>EDP_POOL_STATE</code></td>
+<td><code>pool.state</code></td>
+<td>path</td>
+<td><code>.pool-logs/pool-state.json</code></td>
+<td>The pool's persisted locks+sessions file, reloaded across a pool restart.</td>
+<td>internal, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP8_PAIN_FILE</code></td>
+<td><code>records.pain_file</code></td>
+<td>path</td>
+<td><code>&lt;EDP_HOME&gt;/.pain/pain-points.jsonl, else &lt;data&gt;/.pain/pain-points.jsonl</code></td>
+<td>The pain-point log (JSONL) the pain skill appends to and the board reads.</td>
+<td>internal</td>
+</tr>
+<tr>
+<td><code>EDP_BOARD_PYTHON</code></td>
+<td><code>services.board.python</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Python the supervisor restarts the board service with.</td>
+<td>internal</td>
+</tr>
+<tr>
+<td><code>EDP_BRIDGE_PYTHON</code></td>
+<td><code>services.bridge.python</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Python the supervisor restarts the bridge service with.</td>
+<td>internal</td>
+</tr>
+<tr>
+<td><code>EDP_BROKER_PYTHON</code></td>
+<td><code>services.broker.python</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Python the supervisor restarts the broker service with.</td>
+<td>internal</td>
+</tr>
+<tr>
+<td><code>EDP_MCP_PYTHON</code></td>
+<td><code>services.mcp.python</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Python the supervisor restarts the mcp service with.</td>
+<td>internal</td>
+</tr>
+<tr>
+<td><code>EDP_POOL_PYTHON</code></td>
+<td><code>services.pool.python</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Python the supervisor restarts the pool service with.</td>
+<td>internal</td>
+</tr>
+<tr>
+<td><code>EDP8_UI_SETTINGS</code></td>
+<td><code>ui.settings_file</code></td>
+<td>path</td>
+<td><code>&lt;agent home&gt;/ui-settings.json</code></td>
+<td>Per-person UI settings file (profile, notifications, Slack).</td>
+<td>internal</td>
+</tr>
+</tbody>
+</table>
+<h2 id="platform">Platform<a class="headerlink" href="#platform" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Env</th>
+<th>config.toml key</th>
+<th>Type</th>
+<th>Default</th>
+<th>What it does</th>
+<th>Tier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>EDP8_GIT_REV</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>The running tree's git rev (the launcher injects it); unset = read .git under EDP_HOME.</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>EDP8_WEB_DIST</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Directory of the SPA bundle the board serves at /ui; unset = the packaged src/edp8/webapp/dist. An e2e board points it at its private build (t-b2f8859d30), so a seat's build never ships to the fleet.</td>
+<td>internal, env only, restart board</td>
+</tr>
+<tr>
+<td><code>CLAUDE_CONFIG_DIR</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Claude Code config dir of this process.</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>COMSPEC</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Windows command interpreter; runs .cmd/.bat shims without a shell string (edp_contracts.toolpath).</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>LOCALAPPDATA</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Windows local app-data dir.</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>ProgramFiles</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Windows Program Files dir.</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>ProgramFiles(x86)</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Windows Program Files (x86) dir.</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>ProgramW6432</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Windows 64-bit Program Files dir.</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>SystemRoot</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Windows system dir; a bash under it is WSL's relay, never Git bash.</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>USERNAME</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>OS user name (Windows).</td>
+<td>internal, env only</td>
+</tr>
+</tbody>
+</table>
+<h2 id="seats---models">Seats &amp; models<a class="headerlink" href="#seats---models" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Env</th>
+<th>config.toml key</th>
+<th>Type</th>
+<th>Default</th>
+<th>What it does</th>
+<th>Tier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>EDP8_POOL_ID</code></td>
+<td><code>board.pool_id</code></td>
+<td>str</td>
+<td><code>local</code></td>
+<td>The id this board gives the seat pool it spawns through.</td>
+<td>internal, restart board</td>
+</tr>
+<tr>
+<td><code>EDP8_POOL_WATCH</code></td>
+<td><code>board.pool_watch</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Run the pool session mirror even without EDP_POOL_URL set.</td>
+<td>internal, restart board</td>
+</tr>
+<tr>
+<td><code>EDP_CODEX_BIN</code></td>
+<td><code>codex.bin</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>codex executable; default <code>codex</code> on PATH.</td>
+<td>basic, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_CODEX_EFFORT</code></td>
+<td><code>codex.effort</code></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Reasoning effort of a codex seat (low|medium|high). Choices: <code>low</code>, <code>medium</code>, <code>high</code>.</td>
+<td>basic, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_CODEX_MODEL</code></td>
+<td><code>codex.model</code></td>
+<td>str</td>
+<td><code>gpt-6-astra</code></td>
+<td>Default model of a codex seat.</td>
+<td>basic, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_CODEX_SANDBOX</code></td>
+<td><code>codex.sandbox</code></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Overrides the per-role codex sandbox. Choices: <code>read-only</code>, <code>workspace-write</code>, <code>danger-full-access</code>.</td>
+<td>advanced, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_MODELS_CONFIG</code></td>
+<td><code>models.config</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Path of the models catalog; default &lt;data dir&gt;/models.json.</td>
+<td>internal</td>
+</tr>
+<tr>
+<td><code>EDP_PI_BIN</code></td>
+<td><code>pi.bin</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Pi executable or &lt;pi-coding-agent&gt;/dist/cli.js; default <code>pi</code> on PATH.</td>
+<td>basic, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_PI_HARNESS</code></td>
+<td><code>pi.harness</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Dir of the npm-installed Pi harness (node_modules inside).</td>
+<td>advanced, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_PI_MODEL</code></td>
+<td><code>pi.model</code></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Optional override; otherwise the catalog supplies the Pi provider/model.</td>
+<td>advanced, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_PI_PROVIDER_CREDENTIALS</code></td>
+<td><code>pi.provider_credentials</code></td>
+<td>str</td>
+<td>(secret)</td>
+<td>JSON map of Pi provider ids to API key and optional base URL; kept in secret settings.</td>
+<td>advanced, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_PI_THINKING</code></td>
+<td><code>pi.thinking</code></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Thinking level of a Pi seat. Choices: <code>low</code>, <code>medium</code>, <code>high</code>.</td>
+<td>basic, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_POOL_AGENT_HOME</code></td>
+<td><code>pool.agent_home</code></td>
+<td>path</td>
+<td><code>the agent home</code></td>
+<td>The agent home the pool serves (spawned shells' cwd, skills); exported to every seat.</td>
+<td>internal, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_CLAUDE_BIN</code></td>
+<td><code>pool.claude_bin</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>claude executable for pool shells; default <code>claude</code> on PATH (npm shim resolved to the exe).</td>
+<td>basic</td>
+</tr>
+<tr>
+<td><code>EDP_CLAUDE_VERSIONS_CACHE</code></td>
+<td><code>pool.claude_versions_cache</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Dir or file holding the full claude.exe to repair an npm stub from.</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP_CODEX_BY_MODEL</code></td>
+<td><code>pool.codex_by_model</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Route spawns whose model is a codex seat (or codex/&lt;id&gt;) to the codex backend.</td>
+<td>advanced, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_CODEX_ROLES</code></td>
+<td><code>pool.codex_roles</code></td>
+<td>list</td>
+<td>(derived)</td>
+<td>Roles always routed to the codex app-server backend.</td>
+<td>advanced, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_PI_ROLES</code></td>
+<td><code>pool.pi_roles</code></td>
+<td>list</td>
+<td>(derived)</td>
+<td>Roles always routed to the Pi backend.</td>
+<td>advanced, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_PI_SEAT_PYTHON</code></td>
+<td><code>pool.pi_seat_python</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>Python that runs the Pi/codex seat runner; default the agent home's .venv python.</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP_SHADOW</code></td>
+<td><code>pool.shadow</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Diagnostic opt-in: wrap every spawn in a shell shadow (retired, default off).</td>
+<td>internal, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_SPAWN_ENV_KEEP</code></td>
+<td><code>pool.spawn_env_keep</code></td>
+<td>list</td>
+<td>(derived)</td>
+<td>Secret-looking env names still passed through to spawned shells (comma list).</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP_SPAWN_MODE</code></td>
+<td><code>pool.spawn_mode</code></td>
+<td>str</td>
+<td><code>monitor</code></td>
+<td>Default spawn mode when neither the request nor the panel sets one (monitor|headless). Choices: <code>monitor</code>, <code>headless</code>.</td>
+<td>basic</td>
+</tr>
+<tr>
+<td><code>EDP_HARNESSES</code></td>
+<td><code>seats.harnesses</code></td>
+<td>list</td>
+<td>(unset)</td>
+<td>Selected seat harnesses (claude, codex, pi; at least one of claude/codex), set by <code>heronry init</code>.</td>
+<td>basic, restart board</td>
+</tr>
+<tr>
+<td><code>EDP_MONITOR_SHELL</code></td>
+<td><code>seats.monitor_shell</code></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Shell the codex seat's Monitor tool runs under; default bash (Git Bash on Windows).</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP_MONITOR_VARIANT</code></td>
+<td><code>seats.monitor_variant</code></td>
+<td>str</td>
+<td><code>persistent</code></td>
+<td>codex seat Monitor tool variant. Choices: <code>persistent</code>, <code>expiry</code>.</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP_NPM_REGISTRY</code></td>
+<td><code>seats.npm_registry</code></td>
+<td>url</td>
+<td><code>https://registry.npmjs.org</code></td>
+<td>npm registry Admin → Integrations asks for the latest claude/codex/pi versions.</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP_SKIP_PERMISSIONS</code></td>
+<td><code>seats.skip_permissions</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Seats run without permission prompts (claude --dangerously-skip-permissions, codex danger-full-access).</td>
+<td>basic, restart pool</td>
+</tr>
+<tr>
+<td><code>EDP_ACTIVATION</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Explicit first prompt of a spawned seat (park/resume path).</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>EDP_CARD</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Per-flow role card a spawned seat boots (e.g. engineer-quick).</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>EDP_CODEX_CONSOLE</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>1: the codex seat is visible (native TUI joins its thread).</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>EDP_CODEX_RESUME</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>1: the codex seat resumes its recorded thread.</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>EDP_PI_RESUME</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>1: the Pi seat resumes its session file.</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>EDP_BASH_BIN</code></td>
+<td><code>tools.bash</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>bash for scripts and the codex Monitor tool; default Git's bash next to git (Windows) or <code>bash</code> on PATH.</td>
+<td>advanced</td>
+</tr>
+<tr>
+<td><code>EDP_GIT_BIN</code></td>
+<td><code>tools.git</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>git executable; default <code>git</code> on PATH. On Windows it also locates Git's bash.</td>
+<td>basic</td>
+</tr>
+<tr>
+<td><code>EDP_NODE_BIN</code></td>
+<td><code>tools.node</code></td>
+<td>path</td>
+<td>(unset)</td>
+<td>node executable (Pi's cli.js, the codex seat's WebSocket monitor); default <code>node</code> on PATH.</td>
+<td>basic</td>
+</tr>
+</tbody>
+</table>
+<h2 id="updates">Updates<a class="headerlink" href="#updates" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Env</th>
+<th>config.toml key</th>
+<th>Type</th>
+<th>Default</th>
+<th>What it does</th>
+<th>Tier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>EDP_UPDATE_API</code></td>
+<td><code>update.api_url</code></td>
+<td>url</td>
+<td><code>https://api.github.com</code></td>
+<td>GitHub API base the release check asks (tests and mirrors point it elsewhere).</td>
+<td>internal</td>
+</tr>
+<tr>
+<td><code>EDP_UPDATE_COMPAT_CMD</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Packaging/test override: a JSON argv run instead of the new release's <code>heronry workflows check</code>; {db} is the live DB, {wheel} the new edp8 wheel.</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>EDP_UPDATE_INSTALL_CMD</code></td>
+<td></td>
+<td>str</td>
+<td>(unset)</td>
+<td>Packaging/test override: a JSON argv run instead of <code>uv tool install --force</code>; {wheel} is the edp8 wheel, {with} expands to the sibling wheels.</td>
+<td>internal, env only</td>
+</tr>
+<tr>
+<td><code>HERONRY_NO_UPDATE_CHECK</code></td>
+<td><code>update.no_check</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>1: never ask GitHub for a newer release (the daily and on-start check).</td>
+<td>basic</td>
+</tr>
+<tr>
+<td><code>EDP_UPDATE_REPO</code></td>
+<td><code>update.repo</code></td>
+<td>str</td>
+<td><code>visak13/eda-harness</code></td>
+<td>GitHub owner/repo whose latest release <code>heronry update</code> installs.</td>
+<td>advanced</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+  
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+        
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../cli/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Command line">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Command line
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../rest-api/" class="md-footer__link md-footer__link--next" aria-label="Next: REST API">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                REST API
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Heronry contributors · Apache-2.0
+    </div>
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.footer", "navigation.indexes", "search.suggest", "search.highlight", "content.code.copy", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
