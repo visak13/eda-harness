@@ -173,6 +173,14 @@ def _pinned() -> Install | None:
     return Install([str(node), str(server)], str(install), str(lock["version"]), "pinned", lock.get("sha256"))
 
 
+def _release_version(d: Path) -> str | None:
+    """A code-server release dir's version, from its package.json."""
+    with contextlib.suppress(OSError, ValueError):
+        v = json.loads((d / "package.json").read_text(encoding="utf-8")).get("version")
+        return str(v) if v else None
+    return None
+
+
 def _from_path(path: str, source: str) -> Install | None:
     """An argv prefix for a configured or PATH code-server: a release dir (lib/node + the dir), a ``.js`` entry
     (node), a ``.py`` entry (this interpreter: the test stub), a Windows npm shim (node + its entry.js, so no
@@ -182,7 +190,7 @@ def _from_path(path: str, source: str) -> Install | None:
         node = next((n for n in (p / "lib" / "node.exe", p / "lib" / "node") if n.is_file()), None)
         if node is None:
             return None
-        return Install([str(node), str(p)], str(p), None, source)
+        return Install([str(node), str(p)], str(p), _release_version(p), source)
     if not p.is_file():
         return None
     low = p.name.lower()

@@ -129,7 +129,8 @@ def code_status() -> dict[str, Any]:
     port = code_port()
     up = probe(port)
     mine = up and ours(port)
-    installed, hint = _installed()
+    # a running code-server of ours is installed, whatever this process's own settings can locate
+    installed, hint = (True, None) if mine else _installed()
     return {
         "port": port,
         "url": f"http://127.0.0.1:{port}/",
