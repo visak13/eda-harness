@@ -204,6 +204,55 @@ Controlled-folder protection (Windows Security's *Controlled folder access*, Bit
 also block an unsigned app from writing to protected folders. Heronry writes only to its own data folder;
 if you move that folder somewhere protected, allow `Heronry Desktop.exe` and `heronry.exe` there.
 
+## Services
+
+`heronry start` (or **Start** in the tray) runs four local services, a fifth when Slack is configured, and a
+supervisor that restarts any that crash. They listen on `127.0.0.1` only, unless you turn on remote access.
+
+| Service | Default port | What it does |
+|---|---|---|
+| board | 9400 | the web app (`/ui/`), the REST API and the database |
+| mcp | 9402 | the board tools every seat calls |
+| pool | 9301 | spawns, watches, parks and resumes the seat shells |
+| broker | 9300 | delivers messages and wake-ups to seats |
+| bridge | — | relays a Slack channel to the board; runs only when Slack is configured |
+
+- `heronry status` prints one row per service (state, pid, port, uptime, last restart); `--json` for scripts.
+- `heronry stop` stops everything and checks that nothing is left. It refuses while seats are live;
+  `--force` takes them offline, `--keep-seats` leaves their shells running.
+- `heronry restart <svc>` restarts one service through the supervisor.
+- Ports taken? `heronry init --ports 9500` moves the whole block (board N, mcp N+2, pool N-99, broker N-100),
+  or set one with `--board-port` and the like.
+
+## Updates
+
+Heronry updates itself from this repository's GitHub Releases, and only when you say so.
+
+- The CLI checks once a day and prints a one-line notice when a release is out (`HERONRY_NO_UPDATE_CHECK=1`
+  turns it off). `heronry update --check` reports the installed and latest versions.
+- `heronry update` (or **Check for update**) downloads the release, verifies `SHA256SUMS`, checks your
+  custom workflows against the new version, backs up the board, stops the services, upgrades and starts again.
+  `--dry-run` stops after the download and checks.
+- It refuses while seats are live, and when it cannot secure the installed version's wheels for a rollback.
+  If the new version does not start, it reinstalls the previous one and restores the backup.
+- The VS Code extension and your agent CLIs (claude, codex, pi) are not updated by Heronry. The extension
+  offers its own one-line fix when its version differs from the board's.
+
+## Troubleshooting
+
+| Symptom | Try |
+|---|---|
+| The browser does not open, or `/ui/` does not load | `heronry status`; if the board is down, `heronry restart board`; then open `http://127.0.0.1:9400/ui/` |
+| `heronry` is not found after install | open a new terminal: the installer changed your PATH |
+| Seats spawn and die at once | the harness is not signed in on this machine: run `claude` (or `codex login`) once, then `heronry doctor` |
+| A port is in use | `heronry doctor` checks the ports; move Heronry with `heronry init --ports <N>` |
+| An update failed | the services are back on the previous version; `heronry doctor --bundle` writes a redacted zip for an issue |
+| The antivirus removed the app | see **Antivirus** above |
+| Anything else | `heronry doctor`, or `heronry doctor --agent "<what you see>"` to ask the Help seat, which proposes fixes you approve |
+
+When you open an [issue](https://github.com/visak13/eda-harness/issues), attach the zip from
+`heronry doctor --bundle`. It removes tokens, keys, email addresses, your username and user-profile paths.
+
 ## What gets installed
 
 `install.ps1` / `install.sh` install Heronry with `uv`, then run `heronry prereqs install`. That step checks
