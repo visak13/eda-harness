@@ -10,6 +10,8 @@ export const server = setupServer(...handlers);
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => {
   server.resetHandlers();
+  // node-environment files (e.g. notificationWorker.test.ts) have no Web Storage on Node < 25 (CI runs Node 24)
+  if (typeof sessionStorage === "undefined") return;
   Object.keys(sessionStorage).filter((key) => key.startsWith("edp8.draft.")).forEach((key) => sessionStorage.removeItem(key));
 });
 afterAll(() => server.close());

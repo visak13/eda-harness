@@ -86,7 +86,7 @@ describe("EpicPage", () => {
     // All loaded: the indicator confirms the full count, the "older" suffix is gone.
     expect(screen.getByTestId("thread-page-indicator")).toHaveTextContent("Showing 235 of 235");
     expect(screen.getByTestId("thread-page-indicator")).not.toHaveTextContent("older");
-  });
+  }, 30_000);  // 235 rows over 3 pages: 5.5-6.7 s on CI runners (run 36324602815), past vitest's 5 s default
 
   it("header: title, purpose from the owner's words, ONE status badge, owner and assigned from the board", async () => {
     mount(page());

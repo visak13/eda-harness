@@ -364,7 +364,7 @@ def start(svc: str, *, wait_s: float = 90.0) -> dict[str, Any]:
     else:
         time.sleep(2.0)  # port-less (the bridge): still alive after 2 s is started
     if not ident.live() and not (p and healthy(svc)):
-        raise LaunchError(f"{svc} exited during start; see {log}")
+        raise LaunchError(f"{svc} exited during start ({_why_not_live(ident)}); see {log}")
     if p and not _answers_as_spawned(svc, ident):
         rep = kill_tree(ident, job=job)
         raise LaunchError(f"{svc} did not answer {SPECS[svc].health} on :{p} within {int(wait_s)} s "
@@ -385,6 +385,22 @@ def start(svc: str, *, wait_s: float = 90.0) -> dict[str, Any]:
 
 def write_blocked_hint(d: Path) -> str:
     return f"Heronry could not write to {d}; `heronry doctor` checks its folders."
+
+
+def _why_not_live(ident: ProcId) -> str:
+    """Why `ident.live()` said no: gone, or the pid now reads as another process (name / create_time). A
+    start that fails while the service answers its port (macOS CI run 36324602815) needs this to be readable."""
+    import psutil
+
+    try:
+        now = psutil.Process(ident.pid)
+        name, ct, status = now.name(), now.create_time(), now.status()
+    except psutil.NoSuchProcess:
+        return f"pid {ident.pid} is gone"
+    except (psutil.Error, OSError) as e:
+        return f"pid {ident.pid} unreadable: {type(e).__name__}"
+    return (f"pid {ident.pid} now reads name={name!r} (spawned {ident.name!r}), create_time "
+            f"{ct - ident.create_time:+.3f}s from spawn, status {status}")
 
 
 def _answers_as_spawned(svc: str, ident: ProcId) -> bool:

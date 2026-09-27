@@ -84,12 +84,15 @@ curl -s -X POST --max-time 60 "$POOL/v1/reap/stub:smoke" | sed 's/^/   reap: /';
 echo "== heronry stop"
 "$H" stop --force 2>&1 | sed 's/^/   /'; check "${PIPESTATUS[0]}" "stop exit 0"
 sleep 2
-LEFT="$(ps -eo pid=,command= | grep -F "$T" | grep -v grep | wc -l | tr -d ' ')"
+# -ww: never let ps cut command= short (run 36324602815: 0 found on macOS while all four ports still answered)
+LEFT="$(ps -ww -eo pid=,command= | grep -F "$T" | grep -v grep | wc -l | tr -d ' ')"
 [ "$LEFT" = 0 ]; check $? "stop leaves no process running from the install ($LEFT found)"
 for p in "$EDP8_PORT" "$EDP8_MCP_PORT" "$EDP_POOL_PORT" "$EDP_BROKER_PORT"; do
   ! curl -s -o /dev/null --max-time 2 "http://127.0.0.1:$p/"; check $? "port $p is free"
 done
 if [ $FAIL != 0 ]; then  # the service logs live in the temp HOME, gone after this run: print their tails
+  echo "== python/heronry processes still running"
+  ps -ww -eo pid=,ppid=,comm=,command= | grep -E "python|heronry|edp" | grep -v grep | sed 's/^/   /'
   find "$T/home" -name '*.log' -type f 2>/dev/null | sort | while read -r f; do
     echo "== tail of ${f#$T/}"; tail -n 60 "$f" | sed 's/^/   /'
   done
