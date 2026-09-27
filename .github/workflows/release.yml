@@ -5,7 +5,8 @@ name: release
 # Releases only, no PyPI).
 #   python-dist   SPA, then sdist + wheel of edp-contracts, edp-pool, edp-broker, edp8; manifest guard + PII gate
 #   installers    installers.yml: MSI (Windows), universal2 DMG (macOS, lipo in the log), deb (ubuntu:noble), vsix
-#   assets        merge, require the full set, SHA256SUMS + `sha256sum -c`, PII gate over everything
+#   assets        merge, add install.ps1/install.sh pinned to the tag, require the full set, SHA256SUMS +
+#                 `sha256sum -c`, PII gate over everything
 #   attest        build-provenance attestation for every asset (id-token + attestations write, nothing else)
 #   draft         `gh release create --draft --verify-tag` with the CHANGELOG section + generated notes
 # A dry run: Actions → release → Run workflow with an existing tag (on a fork, or delete the draft afterwards).
@@ -92,6 +93,14 @@ jobs:
           pattern: edp-code-vsix
           path: assets
           merge-multiple: true
+      - name: The install scripts, pinned to this tag
+        # README's one-liners fetch releases/latest/download/install.{ps1,sh} (adversary R2-E): the release carries
+        # both, and each defaults to ITS OWN tag, so an older release's script never drifts to a newer one.
+        run: |
+          sed 's/^  \[string\]\$Version = "",$/  [string]$Version = "'"$TAG"'",/' install.ps1 > assets/install.ps1
+          sed 's/^VERSION=""; RELEASE_URL=""/VERSION="'"$TAG"'"; RELEASE_URL=""/' install.sh > assets/install.sh
+          grep -n "^  \[string\]\$Version = \"$TAG\",$" assets/install.ps1
+          grep -n "^VERSION=\"$TAG\"; RELEASE_URL=\"\"" assets/install.sh
       - name: Require the full asset set
         working-directory: assets
         run: |
@@ -100,6 +109,7 @@ jobs:
           ok=0
           need '*.whl' 4 || ok=1; need '*.tar.gz' 4 || ok=1; need '*.vsix' 1 || ok=1
           need '*.msi' 1 || ok=1; need '*.dmg' 1 || ok=1; need '*.deb' 1 || ok=1
+          need 'install.ps1' 1 || ok=1; need 'install.sh' 1 || ok=1
           exit $ok
       - name: SHA256SUMS over every asset, verified
         working-directory: assets
