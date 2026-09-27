@@ -1,7 +1,7 @@
 """Settings declared for board (see keys_common for shared ones)."""
 from __future__ import annotations
 
-from ._core import config_dir, declare
+from ._core import config_dir, data_dir, declare
 
 # ---- board service
 declare("board.ui", "EDP8_UI", "str", "folio", "Limits/tuning",
@@ -142,9 +142,26 @@ declare("slack.map", "EDP8_SLACK_MAP", "path", lambda: config_dir() / "slack_map
         restart_required="all",
         tier="internal")
 declare("code_server.port", "EDP_CODE_PORT", "int", 9410, "Integrations",
-        "code-server port the board links to (the one edp.ps1 starts it on).", restart_required="board",
+        "code-server port: the loopback guard `heronry start code` puts in front of code-server holds it.",
+        restart_required="board",
         tier="advanced", label='VS Code in the browser port',
         help='The port of the browser VS Code the board links to. Match it to where you run code-server.')
+# S21 (s-0cfebd3862): the code server is an optional managed service (edp8.code_service)
+declare("code_server.path", "EDP_CODE_SERVER_PATH", "path", None, "Integrations",
+        "code-server executable (or its entry .js); default `code-server` on PATH.", restart_required="none",
+        tier="advanced", label='code-server program',
+        help='Where code-server is installed, if it is not on your PATH. Leave empty to find it on the PATH.')
+declare("code_server.autostart", "EDP_CODE_AUTOSTART", "bool", False, "Integrations",
+        "`heronry start` also starts the code server (it is opt-in: `heronry start code`).", restart_required="none",
+        tier="basic", label='Start VS Code in the browser with Heronry',
+        help='Start the code server whenever Heronry starts. Off: start it yourself from Admin → Services or the tray.')
+declare("code_server.host", "EDP_CODE_HOST", "str", "127.0.0.1", "Integrations",
+        "code-server bind host; loopback only (anyone who reaches it owns the host through its terminal), so any "
+        "other value is refused.", restart_required="none",
+        tier="internal")
+declare("code_server.data", "EDP_CODE_DATA", "path", lambda: data_dir() / "code", "Integrations",
+        "code-server's user-data and extensions dirs.", default_doc="<data>/code", restart_required="none",
+        tier="internal")
 
 # ---- Admin console (S5, design-e963c656f5 §4.8): Tailscale auth keys for teammates' machines (R7b)
 declare("tailscale.oauth_client_id", "EDP_TAILSCALE_OAUTH_CLIENT_ID", "str", "", "Network",
