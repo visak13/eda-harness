@@ -93,7 +93,9 @@ def test_bundle_zip_has_every_section_and_no_plant(planted: Path, tmp_path: Path
     listing = json.loads(members["settings.json"])
     values = {r["key"]: r.get("value") for g in listing["groups"] for r in g["settings"]}
     assert values["plane.url"] == "https://plane.example.org/ws?who=<email>", values["plane.url"]
-    assert "<user>" in str(values["ui.settings_file"])
+    # path-valued keys (ui.settings_file and the other install-layout keys) are internal since 182107c and are not
+    # listed; the plant scan above still proves no profile path survives in any member
+    assert "ui.settings_file" not in values
     assert any(w.get("id") == "standard" for w in json.loads(members["workflows.json"])["workflows"])
     assert "ERROR open failed" in members["logs/board.log"] and "<user>" in members["logs/board.log"]
 
