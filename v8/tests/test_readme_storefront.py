@@ -21,6 +21,7 @@ README = (REPO / "README.md").read_text(encoding="utf-8")
 MD_LINK = re.compile(r"!?\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")
 HTML_REF = re.compile(r"""\b(?:href|src|srcset)\s*=\s*["']([^"']+)["']""")
 ABS_URL = re.compile(r"https?://[^\s)\"'<>`]+")
+VIDEO_PAGE = f"{brand.REPO_URL}/blob/main/docs/readme/storefront/heronry-demo.mp4"
 
 
 def _targets() -> list[str]:
@@ -55,10 +56,13 @@ def test_urls_derive_from_the_one_repo_slug() -> None:
     # the storefront's named links are exactly the derived ones
     assert f'<a href="{brand.RELEASES_URL}"><strong>Download</strong></a>' in README
     assert f'<a href="{brand.SITE_URL}"><strong>Website</strong></a>' in README
-    # the hero and "Watch the video" open the inline player; nothing links the raw MP4 (owner m-db01fcfb40)
-    assert '<a href="#see-it-work"' in README.split("</picture>")[0], "the hero must link See it work"
-    assert '<a href="#see-it-work"><strong>Watch the video</strong></a>' in README
-    assert brand.VIDEO_URL not in README and "heronry-demo.mp4" not in README
+    # the hero and the video slot open the committed MP4's github.com viewer page, never a raw download
+    # (owners m-db01fcfb40, m-54b1f89b31); the top link row is Download and Website only
+    assert f'<a href="{VIDEO_PAGE}"' in README.split("</picture>")[0], "the hero must link the video page"
+    assert "Watch the video" not in README and "#see-it-work" not in README
+    assert brand.VIDEO_URL not in README
+    for raw in ("raw.githubusercontent.com", "?raw=true", "/raw/main/", "/releases/download/"):
+        assert raw not in README, raw
     assert f"irm {brand.DOWNLOAD_URL}/install.ps1 | iex" in README
     assert f"curl -LsSf {brand.DOWNLOAD_URL}/install.sh | sh" in README
     assert f"-R {brand.REPO_SLUG}" in README  # gh attestation verify
@@ -84,19 +88,19 @@ def test_no_url_names_the_repo_outside_the_constant() -> None:
     assert owner not in rest.lower()
 
 
-def _see_it_work() -> str:
-    return README.split("## See it work", 1)[1].split("\n## ", 1)[0]
-
-
 def test_hero_badges_and_video() -> None:
     top = README[:2500]
     assert "docs/readme/storefront/hero.webp" in top and "docs/readme/storefront/hero.gif" in top
     for badge in ("Latest release", "CI", "Licence"):
         assert f'alt="{badge}' in top, badge
     assert brand.TAGLINE in top
-    see = _see_it_work()
-    assert "<!-- VIDEO_URL: owner uploads docs/readme/storefront/heronry-demo-readme.mp4" in see
-    assert f"({brand.SITE_URL}video/)" in see  # the fallback until the user-attachments URL is pasted
+    # the video slot sits right above the intro: the VIDEO_URL marker, then the poster linked to the committed MP4
+    assert "## See it work" not in README
+    slot = README.split("<!-- VIDEO_URL:", 1)[1].split("A heronry is a tree", 1)[0]
+    assert "docs/readme/storefront/heronry-demo.mp4" in slot.split("-->", 1)[0]
+    assert f'<a href="{VIDEO_PAGE}"' in slot and 'src="docs/readme/storefront/video-poster.jpg"' in slot
+    assert "\n## " not in slot
+    assert (REPO / "docs" / "readme" / "storefront" / "heronry-demo.mp4").is_file()
     assert "storefront/still-" not in README and "docs/readme/why/" not in README
     for gone in ("## Why this architecture", "## How it works in one screen", "**Antivirus.**",
                  "The antivirus removed the app"):
@@ -107,7 +111,7 @@ def test_hero_badges_and_video() -> None:
 
 
 def test_chapter_list_matches_the_video() -> None:
-    """README and the site's Video page list the 7 numbered chapters at their start times in the composition."""
+    """The site's Video page lists the 7 numbered chapters at their start times in the composition."""
     table = json.loads((V8 / "docs" / "video" / "src" / "chapters.json").read_text(encoding="utf-8"))
     start, want = 0, []
     for c in table:
@@ -116,9 +120,8 @@ def test_chapter_list_matches_the_video() -> None:
         start += c["frames"]
     assert len(want) == 7
     video_page = (REPO / "docs" / "site" / "docs" / "video.md").read_text(encoding="utf-8")
-    for text in (_see_it_work(), video_page):
-        rows = re.findall(r"^\| (\d:\d\d) \| \*\*([^*]+?)\.?\*\*", text, re.M)
-        assert rows == want, rows
+    rows = re.findall(r"^\| (\d:\d\d) \| \*\*([^*]+?)\.?\*\*", video_page, re.M)
+    assert rows == want, rows
 
 
 def _section(title: str) -> str:

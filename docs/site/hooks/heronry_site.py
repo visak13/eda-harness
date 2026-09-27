@@ -82,7 +82,7 @@ def _assets(config: Any) -> list[File]:
             raise PluginError(f"brand asset missing: {src.relative_to(ROOT).as_posix()}")
         out.append(_asset(config, f"assets/brand/{name}", src))
     for src in sorted((ROOT / "docs" / "readme" / "storefront").glob("*")):
-        if src.suffix.lower() in {".png", ".webp", ".gif", ".jpg"}:
+        if src.suffix.lower() in {".png", ".webp", ".gif", ".jpg", ".mp4"}:
             out.append(_asset(config, f"assets/storefront/{src.name}", src))
     return out
 
@@ -106,11 +106,11 @@ def on_files(files: Files, config: Any) -> Files:
 
 
 def _watch_block() -> str:
-    # an inline HTML5 player over the release asset; the page never links the MP4 as a download (owner m-db01fcfb40)
-    b = _state["brand"]
+    # an inline HTML5 player over the committed README cut (owner m-54b1f89b31), so the page never waits for a
+    # release asset; the page never links the MP4 as a download (owner m-db01fcfb40)
     return ('<video class="hy-player" controls preload="metadata" playsinline '
             'poster="../assets/storefront/video-poster.jpg" title="The Heronry product video">'
-            f'<source src="{b["video_url"]}" type="video/mp4"></video>')
+            '<source src="../assets/storefront/heronry-demo.mp4" type="video/mp4"></video>')
 
 
 _BRAND_RX = re.compile(r"\{\{\s*brand\.(\w+)\s*\}\}")

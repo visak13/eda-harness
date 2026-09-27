@@ -1,7 +1,7 @@
 # Heronry
 
 <p align="center">
-  <a href="#see-it-work" title="Watch the 90-second product video">
+  <a href="https://github.com/visak13/eda-harness/blob/main/docs/readme/storefront/heronry-demo.mp4" title="Watch the 90-second product video">
     <picture>
       <source srcset="docs/readme/storefront/hero.webp" type="image/webp">
       <img src="docs/readme/storefront/hero.gif" alt="Heronry in seven seconds: seats spawn, wake on their feed and walk an epic to done" width="720">
@@ -19,8 +19,14 @@
 
 <p align="center">
   <a href="https://github.com/visak13/eda-harness/releases/latest"><strong>Download</strong></a> ·
-  <a href="https://visak13.github.io/eda-harness/"><strong>Website</strong></a> ·
-  <a href="#see-it-work"><strong>Watch the video</strong></a>
+  <a href="https://visak13.github.io/eda-harness/"><strong>Website</strong></a>
+</p>
+
+<!-- VIDEO_URL: owner drags docs/readme/storefront/heronry-demo.mp4 into a github.com edit of this file and replaces the block below with the user-attachments URL it pastes -->
+<p align="center">
+  <a href="https://github.com/visak13/eda-harness/blob/main/docs/readme/storefront/heronry-demo.mp4" title="Play the 90-second product video">
+    <img src="docs/readme/storefront/video-poster.jpg" alt="The Heronry product video: click to play" width="720">
+  </a>
 </p>
 
 A heronry is a tree where many herons nest together: one home for many specialists.
@@ -107,25 +113,6 @@ on the harnesses you picked. **Pi** seats run any provider or key you have, incl
 > runs on codex. Without codex it runs on **Fable** (`claude-fable-5-1`), whose safety safeguards are strict,
 > so an adversarial or security review may be declined or softened. Review its findings before trusting
 > a clean result. The wizard shows this notice once and records your acknowledgement.
-
-## See it work
-
-Ninety seconds of Heronry, drawn in code in the Heronry palette with invented demo data; none of it is a
-screenshot of anyone's machine.
-
-<!-- VIDEO_URL: owner uploads docs/readme/storefront/heronry-demo-readme.mp4 via github.com and pastes the user-attachments URL here -->
-
-Until the video plays here, [watch it on the website](https://visak13.github.io/eda-harness/video/): it plays in your browser.
-
-| Starts | Chapter | What it shows |
-|---|---|---|
-| 0:00 | **The pool spawns seats** | Every agent is a live shell (Claude Code, Codex or Pi), and the pool watches it: alive, parked, resuming. |
-| 0:12 | **The broker carries the mail** | A message lands in the seat's mailbox and wakes it at once; mail to an unknown seat is refused, never dropped. |
-| 0:23 | **People and agents, one thread** | Teammates on other machines and the agents they mention answer in the same thread. |
-| 0:32 | **Seats sleep until it matters** | The board wakes only the seat an event is for, and every wake says why. |
-| 0:44 | **Context, engineered** | A seat boots from one bounded context pack, then reads only what changed since its cursor. |
-| 0:56 | **Memory that improves itself** | Pain points become lessons, lessons are harvested, and the next seat recalls them. |
-| 1:08 | **The board walks the epic** | Work moves on facts; when every checker's verdict passes, the epic is done. |
 
 ## Heronry Desktop
 
