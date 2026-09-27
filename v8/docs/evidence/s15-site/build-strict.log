@@ -1,7 +1,10 @@
+# HERONRY_SITE_RELEASE_JSON=docs/site/fixtures/release-latest.json mkdocs build --strict -f docs/site/mkdocs.yml  (exit 0, 0 warnings)
 INFO    -  heronry site: release v0.9.0
 INFO    -  Cleaning site directory
-INFO    -  Building documentation to directory: C:\Projects\Learning\eda-base3\docs\site\site
+INFO    -  Building documentation to directory: <repo>/docs/site/site
 INFO    -  heronry site: PII scan clean (site)
 INFO    -  Documentation built in 4.35 seconds
+# python docs/site/hooks/pii_scan.py docs/site/site
 pii scan: 0 finding(s) in docs/site/site
+# cd v8 && pytest -q tests/test_site_reference.py tests/test_cli_command_table.py  (with docs/site/requirements.txt installed)
 8 passed in 4.44s
