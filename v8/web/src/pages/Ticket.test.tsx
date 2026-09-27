@@ -8,7 +8,7 @@ import { DocDrawerProvider } from "../components/DocDrawer";
 import { server } from "../test/setup";
 import { http, okJson, renderRoute } from "./testUtils";
 import { TicketPage } from "./Ticket";
-import { attentionHandler, without } from "../test/attentionFixture";
+import { ATTENTION, attentionHandler, without } from "../test/attentionFixture";
 import type { TicketPage as TicketPageData } from "../api/types";
 
 // The upload's multipart body cannot be read back in an msw handler under jsdom (request.text() /
@@ -589,11 +589,60 @@ describe("TicketPage thread attention (S20)", () => {
     const li = await screen.findByText("which theme?").then((e) => e.closest("li")!);
     await waitFor(() => expect(li).toHaveAttribute("data-attention", "true"));
     expect(within(li).getByTestId("reader-tag")).toHaveTextContent("Waiting on you");
-    expect(within(li).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    // v34 item 5: the large highlight is the marker; no dot on the comment
+    expect(within(li).queryByRole("img", { name: /needs your attention/ })).toBeNull();
+    expect(within(li).getByTestId("thread-dismiss")).toBeInTheDocument();
     await waitFor(() => expect(li).toHaveAttribute("data-highlight", "true"));
     // a question to the viewer that the attention list no longer holds (answered) carries no mark
     const answered = screen.getByText("answered already").closest("li")!;
     expect(answered).not.toHaveAttribute("data-attention");
     expect(within(answered).queryByTestId("reader-tag")).toBeNull();
+    expect(within(answered).queryByTestId("thread-dismiss")).toBeNull();
+  });
+
+  it("v34 Dismiss: posts the id, writes no message, and the mark clears on the next attention read", async () => {
+    let value = ATTENTION;
+    const posted: unknown[] = [];
+    let messages = 0;
+    server.use(http.get("/v1/me/attention", () => HttpResponse.json({ ok: true, value })),
+      http.post("/v1/me/attention/dismiss", async ({ request }) => {
+        posted.push(await request.json()); value = without("m-storyq");
+        return HttpResponse.json({ ok: true, value: { dismissed: ["m-storyq"] } });
+      }));
+    const ask = { id: "m-storyq", by: "engineer.s-99", to: "owner", kind: "question", text: "which theme?", at: "2026-09-02T11:00:00Z", reply_to: null };
+    mount(ticketPage({ thread: [...ticketPage().thread, ask] }));
+    server.use(http.post("/v1/messages", () => { messages += 1; return okJson({}); }));
+    await title();
+    const li = await screen.findByText("which theme?").then((e) => e.closest("li")!);
+    await waitFor(() => expect(li).toHaveAttribute("data-attention", "true"));
+    fireEvent.click(within(li).getByTestId("thread-dismiss"));
+    await waitFor(() => expect(li).not.toHaveAttribute("data-attention"));
+    expect(posted).toEqual([{ ids: ["m-storyq"] }]);
+    expect(messages).toBe(0);
+    expect(within(li).queryByTestId("reader-tag")).toBeNull();
+  });
+
+  it("v34 reachability: an ask older than the loaded window shows in the N earlier waiting bar and jumps to it", async () => {
+    server.use(attentionHandler());
+    const ask = { id: "m-storyq", by: "engineer.s-99", to: "owner", kind: "question", text: "an old question", at: "2026-09-01T11:00:00Z", reply_to: null };
+    const includes: (string | null)[] = [];
+    mount(ticketPage());  // m-storyq waits on the viewer but is not on the loaded page
+    server.use(http.get("/v1/tickets/s-1/page", ({ request }) => {
+      const include = new URL(request.url).searchParams.get("include");
+      includes.push(include);
+      return okJson(include === "m-storyq" ? ticketPage({ thread: [ask, ...ticketPage().thread] }) : ticketPage());
+    }));
+    await title();
+    const bar = await screen.findByTestId("earlier-waiting");
+    expect(bar).toHaveTextContent("1 earlier waiting");
+    const item = within(bar).getByTestId("earlier-waiting-item");
+    expect(item).toHaveAttribute("data-ask", "m-storyq");
+    fireEvent.click(item);
+    // the jump sets #m-storyq: the page fetches the message in place (?include), then marks and highlights it
+    const li = await screen.findByText("an old question").then((e) => e.closest("li")!);
+    expect(includes).toContain("m-storyq");
+    await waitFor(() => expect(li).toHaveAttribute("data-highlight", "true"));
+    expect(li).toHaveAttribute("data-attention", "true");
+    await waitFor(() => expect(screen.queryByTestId("earlier-waiting")).toBeNull());
   });
 });

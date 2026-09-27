@@ -24,7 +24,17 @@
 .id { font: 11px Consolas, "SF Mono", ui-monospace, monospace; color: var(--muted); }
 .to, .by time { color: var(--muted); font-size: 13px; }
 .kind { font-size: 12px; color: var(--accentink); }
-.waiting { font-size: 11px; font-weight: 600; padding: 1px 6px; border: 1px solid var(--accentink); color: var(--accentink); border-radius: 4px; }
+/* v34 item 5 (owner m-8aa6439a77, art-b88cb22c41): the large highlight marks the message; the tag is the quiet
+   "For your information" caption (AgentLine .fyi): muted, no border, no dot. */
+.waiting { font-size: 12px; font-weight: 600; color: var(--muted); }
+.actions { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+.earlier { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; padding: 6px 10px;
+  border-radius: 8px; background: var(--accentwash); box-shadow: inset 3px 0 0 var(--accentink); }
+.earlierHead { font-weight: 600; color: var(--ink); }
+.earlierItem { font: inherit; font-size: 13px; color: var(--accentink); background: transparent; border: 1.5px solid transparent;
+  border-radius: 8px; padding: 2px 8px; min-height: 28px; cursor: pointer; text-decoration: underline; }
+.earlierItem:hover { background: var(--secondary); border-color: var(--strongline); }
+.earlierItem:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
 .reply {
   margin-left: auto; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 13px;
   border: 1.5px solid transparent; border-radius: 8px; background: transparent; padding: 3px 8px; min-height: 30px; cursor: pointer;

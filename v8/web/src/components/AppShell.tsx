@@ -24,7 +24,6 @@ import { PendingNavigation } from "./PendingNavigation";
 import { NotificationCenter } from "./NotificationCenter";
 import { useAttention } from "../api/attention";
 import { AttentionDot } from "./AttentionDot";
-import { WaitingOnYou } from "./WaitingOnYou";
 import { useViewerFlag } from "./viewerPrefs";
 import { copyProps, pageKeyFor } from "../copy/pages";
 import styles from "./AppShell.module.css";
@@ -35,9 +34,9 @@ interface WhoAmI {
   admin?: boolean;
 }
 
-// The rail per revision3-clean (design-a2e5369133 §AppShell): brand, Epics, Seats, a divider, Waiting on you (S20:
-// the attention count, opening a popover — the Needs you page is gone), the CURRENT EPIC block, then (lower) Find
-// and the account row. S20 (design-e963c656f5 §4.18): Epics and Library carry the attention dot with their count,
+// The rail per revision3-clean (design-a2e5369133 §AppShell): brand, Epics, Seats, a divider, the CURRENT EPIC block,
+// then (lower) Find and the account row. v34 (owner m-8aa6439a77 "why is that useless tab still there?"): the
+// "Waiting on you" entry and its popover are gone and nothing replaces them. S20 (design-e963c656f5 §4.18): Epics and Library carry the attention dot with their count,
 // the first hop of the trail; every count comes from GET /v1/me/attention (useAttention).
 // No Usage entry (S19, owner m-845b58f25c "only show what works"): /v1/me/usage returns no data on
 // this board (no EDP8_USAGE_CONFIG), so the rail button + widget were removed; the endpoint stays. Notifications are NOT a rail item (finding 6): Enable/Test live on
@@ -127,9 +126,6 @@ function AppShellChrome(): React.JSX.Element {
   const [findOpen, setFindOpen] = useState(false);
   const activeFamily = navFamily(location.pathname, location.search);
   const currentEpicId = useCurrentEpicId();
-  const [waitingOpen, setWaitingOpen] = useState(false);
-  const waitingRef = useRef<HTMLButtonElement>(null);
-  const closeWaiting = useCallback(() => setWaitingOpen(false), []);
   const findBtnRef = useRef<HTMLButtonElement>(null);
   const closeFind = useCallback(() => {
     setFindOpen(false);
@@ -178,7 +174,7 @@ function AppShellChrome(): React.JSX.Element {
   const handle = whoami.data?.participant.handle ?? as;
   const role = whoami.data?.participant.role ?? "";
   // t-3e246b5e32 (e): an expert reaches only its Library topic — the board answers its whoami with 403 (no
-  // other signed-in participant gets that), so the rail hides what would 403: Epics, Seats and Waiting on you.
+  // other signed-in participant gets that), so the rail hides what would 403: Epics and Seats.
   const expert = role === "expert" || (whoami.error instanceof BoardApiError && whoami.error.status === 403);
   const nav = expert ? NAV.filter((item) => item.to === "/library/knowledge") : NAV;
   const admin = Boolean(whoami.data?.admin);
@@ -238,18 +234,6 @@ function AppShellChrome(): React.JSX.Element {
           ) : null}
           {expert ? null : (<>
           <div className={styles.divider} />
-          <button ref={waitingRef} type="button" className={styles.navItem} data-testid="waiting-open"
-            aria-haspopup="dialog" aria-expanded={waitingOpen} onClick={() => setWaitingOpen((o) => !o)}
-            {...copyProps("sidebar", "waiting")}>
-            <span className={styles.icon} data-nav-icon><Icon name="warning" size={18} /></span>
-            <span className={styles.navLabel}>Waiting on you</span>
-            <span className={styles.dotSlot}><AttentionDot count={counts.total} /></span>
-          </button>
-          {waitingOpen ? (
-            <AnchoredPanel anchor={waitingRef} label="Waiting on you" heading="Waiting on you" onClose={closeWaiting} width={380} maxHeight={560}>
-              <WaitingOnYou attention={attention} onPick={() => { setWaitingOpen(false); setMenuOpen(false); }} />
-            </AnchoredPanel>
-          ) : null}
           <CurrentEpic epicId={currentEpicId} />
           </>)}
         </nav>

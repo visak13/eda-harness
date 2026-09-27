@@ -35,7 +35,7 @@ export const appRoutes: RouteObject[] = [
     element: <AppShell />,
     children: [
       // S20 (design-e963c656f5 §4.18): the Needs you page is gone; what waits on you is a trail of dots from the
-      // rail's Waiting on you and the Epics list. Old /me links land on the Epics list.
+      // Epics list (v34: the rail's Waiting on you entry is gone too). Old /me links land on the Epics list.
       { index: true, element: <RedirectTo to="/epics" /> },
       { path: "me", element: <RedirectTo to="/epics" /> },
       { path: "epics", element: <EpicsPage /> },

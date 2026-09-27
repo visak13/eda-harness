@@ -7,9 +7,12 @@ import { seedDecisions, type G2Fixture } from "./g2.seed";
 // private board seeded through /v1, follow the dot from the rail to each item and screenshot every hop —
 // rail → Epics row (sorted first, marked, reason) → the epic's openers (Actions, Design, Work) → the section
 // (Answer a decision) → the Work pop-up's ticket row → the story's Files & evidence → the ruling drawer;
-// the question highlighted on its thread; Library → Topics → the topic row → the question; the Waiting on
-// you popover (the Needs you page is gone); and clearing (an answered item's dots leave). Shots land in
-// e2e/evidence/s20-attention/ (git-ignored): the walk's evidence for qa and the owner.
+// the question highlighted on its thread; Library → Topics → the topic row → the question; and clearing (an
+// answered item's dots leave). v34 (t-852e7add63, owner m-8aa6439a77 / m-1a09573d3d): no rail "Waiting on you"
+// entry; plain statuses, notes and findings never count; a later owner message to the asker clears an ask; the Work
+// row lands on the newest waiting message; no dot on the comment, a quiet caption; an ask older than the loaded
+// window is reached from the "N earlier waiting" bar; Dismiss clears it everywhere without posting a message.
+// Shots land in e2e/evidence/s20-attention/ (git-ignored): the walk's evidence for qa and the owner.
 test.use({ boardFile: "s20-attention" });
 
 const OUT = path.join("e2e", "evidence", "s20-attention");
@@ -33,8 +36,22 @@ test.describe("S20 attention trail walk", () => {
   let fx: G2Fixture;
   let topic: string;
   let topicQ: string;
+  let oldQ: string;
   test.beforeAll(async () => {
     fx = await seedDecisions();
+    const arch = { "X-Participant": "arch" };
+    const send = (body: Record<string, unknown>, h = arch) => call("POST", "/v1/messages", { ticket_id: fx.epic, ...body }, h);
+    // v34 rule 1: updates to the owner never count — a plain status, a note, a finding
+    await send({ to: "owner", kind: "status", text: "FYI: build 3 is green." });
+    await send({ to: "owner", kind: "note", text: "FYI: notes never wait on you." });
+    await send({ to: "owner", kind: "finding", text: "FYI: a finding is an update too." });
+    // v34 reachability: a real question pushed out of the loaded window (the page holds the newest 100)
+    oldQ = (await send({ to: "owner", kind: "question", text: "An older question: keep the export?" })).id;
+    for (let i = 0; i < 101; i++) await send({ to: null, kind: "note", text: `progress note ${i}` });
+    // v34 rule 2: the owner's later message to the asker clears a question (no reply_to)
+    // (another asker: the rule clears every earlier ask of the asker on that ticket, oldQ included)
+    await send({ to: "owner", kind: "question", text: "Ship on Friday?" }, { "X-Participant": fx.liveSeat });
+    await send({ to: fx.liveSeat, kind: "note", text: "Yes, Friday works." }, { "X-Participant": "owner" });
     // a scope gate on the epic: answered from Actions → Answer a decision
     await call("POST", `/v1/gates/${fx.epic}/scope/open`, { note: "cut the export from v1?" }, { "X-Participant": "arch" });
     // a Library topic whose sme asks the owner a question
@@ -49,20 +66,18 @@ test.describe("S20 attention trail walk", () => {
     // 1. rail + Epics list: counts on Epics and Library, the epic sorted first, marked, with its reason
     await page.goto(`${BASE()}/ui/epics?as=owner`);
     const epicsLink = page.getByRole("link", { name: /^Epics/ });
-    await expect(dot(epicsLink)).toHaveAttribute("aria-label", label(4));
+    await expect(dot(epicsLink)).toHaveAttribute("aria-label", label(5));
     await expect(dot(page.getByRole("link", { name: /^Library/ }))).toHaveAttribute("aria-label", label(1));
     const row = page.getByTestId("epic-row").first();
     await expect(row).toContainText(fx.words);
     await expect(row).toHaveAttribute("data-attention", "true");
-    await expect(row.getByTestId("attention-reason")).toHaveText("Waiting on you: 1 sign-off, 1 question, 1 design sign-off, 1 scope decision");
+    // the three FYI updates and the question the owner answered do not count
+    await expect(row.getByTestId("attention-reason")).toHaveText("Waiting on you: 2 questions, 1 sign-off, 1 design sign-off, 1 scope decision");
     await shot(page, "rail-and-epics-list");
 
-    // 2. Waiting on you popover (the Needs you page is gone; /me redirects here)
-    await page.getByTestId("waiting-open").click();
-    const pop = page.getByRole("dialog", { name: "Waiting on you" });
-    await expect(pop.getByTestId("waiting-row")).toHaveCount(2);
-    await shot(page, "waiting-on-you-popover");
-    await page.keyboard.press("Escape");
+    // 2. v34: the rail has no "Waiting on you" entry and no popover (the Needs you page is gone; /me redirects)
+    await expect(page.getByTestId("waiting-open")).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "Sections" }).getByText("Waiting on you")).toHaveCount(0);
     await page.goto(`${BASE()}/ui/me?as=owner`);
     await expect(page).toHaveURL(/\/ui\/epics/);
 
@@ -73,6 +88,19 @@ test.describe("S20 attention trail walk", () => {
     await expect(dot(page.getByTestId("work-work"))).toHaveAttribute("aria-label", label(2));
     await expect(page.getByTestId("work-files").locator("[data-attention-dot]")).toHaveCount(0);
     await shot(page, "epic-openers");
+
+    // 3b. v34 reachability: the older question is off the loaded window; the "N earlier waiting" bar reaches it
+    await expect(page.locator(`li[id="${oldQ}"]`)).toHaveCount(0);
+    const earlier = page.getByTestId("earlier-waiting");
+    await expect(earlier).toContainText("1 earlier waiting");
+    await shot(page, "earlier-waiting-bar");
+    await earlier.getByTestId("earlier-waiting-item").click();
+    const oq = page.locator(`li[id="${oldQ}"]`);
+    await expect(oq).toHaveAttribute("data-highlight", "true");
+    await expect(oq).toHaveAttribute("data-attention", "true");
+    await expect(page.getByTestId("earlier-waiting")).toHaveCount(0);
+    await shot(page, "earlier-question-loaded-and-highlighted");
+    await page.goto(`${BASE()}/ui/epic/${fx.epic}?as=owner`);
 
     // 4. Actions → its section (Answer a decision) → the gate, marked
     await page.getByTestId("actions-open").click();
@@ -88,6 +116,8 @@ test.describe("S20 attention trail walk", () => {
     const storyRow = page.locator(`[id="row-${fx.story}"]`);
     await expect(storyRow).toHaveAttribute("data-attention", "true");
     await expect(dot(storyRow)).toHaveAttribute("aria-label", label(2));
+    // steer m-4ed69369cb: the row leads to the ticket's newest waiting message
+    await expect(storyRow.getByRole("link").first()).toHaveAttribute("href", `/ui/ticket/${fx.story}#${fx.question}`);
     await shot(page, "work-popup-ticket-row");
     await page.keyboard.press("Escape");
 
@@ -104,11 +134,13 @@ test.describe("S20 attention trail walk", () => {
     await shot(page, "ruling-drawer-item");
     await page.keyboard.press("Escape");
 
-    // 7. the question on its thread: highlighted from its link, marked, dotted
+    // 7. the question on its thread: highlighted from its link, marked; v34: no dot, a quiet caption, Dismiss
     await page.goto(`${BASE()}/ui/ticket/${fx.story}?as=owner#${fx.question}`);
     const q = page.locator(`li[id="${fx.question}"]`);
     await expect(q).toHaveAttribute("data-highlight", "true");
-    await expect(dot(q)).toHaveAttribute("aria-label", label(1));
+    await expect(q.locator("[data-attention-dot]")).toHaveCount(0);
+    await expect(q.getByTestId("reader-tag")).toHaveText("Waiting on you");
+    await expect(q.getByTestId("thread-dismiss")).toBeVisible();
     await shot(page, "question-highlighted-on-thread");
 
     // 8. Library → Topics (dot) → the topic row (reason) → the question in its thread
@@ -141,8 +173,25 @@ test.describe("S20 attention trail walk", () => {
     await expect.poll(async () => ((await call("GET", `/v1/gates/${fx.epic}`, undefined, { "X-Participant": "owner" }).catch(() => [])) ?? [])
       .filter((g: any) => (g.gate ?? g.data?.gate) === "scope").length).toBe(0);
     await page.goto(`${BASE()}/ui/epics?as=owner`);
+    // v34 rule 2: the sign-off note went to the story's assignee, the seat that asked the story question, so it
+    // cleared that question too; the epic's older question and the design sign-off remain
     await expect(dot(page.getByRole("link", { name: /^Epics/ }))).toHaveAttribute("aria-label", label(2));
-    await expect(page.getByTestId("epic-row").first().getByTestId("attention-reason")).toHaveText("Waiting on you: 1 question, 1 design sign-off");
+    await expect(page.getByTestId("epic-row").first().getByTestId("attention-reason")).toHaveText("Waiting on you: 1 design sign-off, 1 question");
     await shot(page, "cleared-after-answers");
+
+    // 10. v34 Dismiss: the epic's older question clears everywhere; no message is posted
+    await page.goto(`${BASE()}/ui/epic/${fx.epic}?as=owner#${oldQ}`);
+    const dq = page.locator(`li[id="${oldQ}"]`);
+    await expect(dq).toHaveAttribute("data-attention", "true");
+    const total = await page.getByTestId("conversation-total").textContent();
+    await dq.getByTestId("thread-dismiss").click();
+    await expect(dq).not.toHaveAttribute("data-attention", "true");
+    await expect(dq.getByTestId("reader-tag")).toHaveCount(0);
+    await expect(page.getByTestId("conversation-total")).toHaveText(total ?? "");
+    await shot(page, "question-dismissed");
+    await page.goto(`${BASE()}/ui/epics?as=owner`);
+    await expect(dot(page.getByRole("link", { name: /^Epics/ }))).toHaveAttribute("aria-label", label(1));
+    await expect(page.getByTestId("epic-row").first().getByTestId("attention-reason")).toHaveText("Waiting on you: 1 design sign-off");
+    await shot(page, "cleared-after-dismiss");
   });
 });

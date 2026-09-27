@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { api } from "./client";
+import { api, postJson } from "./client";
 
 // S20 attention trail (design-e963c656f5 §4.18): GET /v1/me/attention is the ONE list of what waits on the viewer,
 // each item with its path — scope (epic | quick | topic | admin) → tab (a page opener: actions | design | files | work,
@@ -72,6 +72,22 @@ export function pageItems(att: Attention, pageId: string): PageItem[] {
   }
   return out;
 }
+
+/** The asks waiting on the viewer in THIS page's own thread (not its child tickets'), oldest first. */
+export function threadAsks(att: Attention, pageId: string): PageItem[] {
+  return pageItems(att, pageId).filter((i) => i.kind === "ask" && i.pageTab === "thread");
+}
+
+/** The newest item waiting on a ticket row: the Work drawer's row link lands on it (steer m-4ed69369cb). */
+export function newestFor(items: PageItem[], ticketId: string): PageItem | undefined {
+  return items.filter((i) => i.pageTab === "work" && i.ticket?.id === ticketId)
+    .reduce<PageItem | undefined>((a, b) => (!a || b.since >= a.since ? b : a), undefined);
+}
+
+/** v34 item 6 (owner m-1a09573d3d): dismiss asks without replying. A pure attention write — no message, no seat
+ *  woken; the caller refetches the ["me", …] reads so the dots, counts and highlights clear together. */
+export const dismissAsks = (ids: string[]) =>
+  postJson<{ dismissed: string[] }>("/v1/me/attention/dismiss", { ids }).then((r) => r.value);
 
 export function countWhere(items: PageItem[], tab: AttentionTab, section?: string): number {
   return items.filter((i) => i.pageTab === tab && (section === undefined || i.pageSection === section)).length;

@@ -25,7 +25,6 @@ export const SIDEBAR: PageCopy = {
   title: "Sidebar (every page)",
   framing: "",
   items: [
-    { key: "waiting", label: "Waiting on you", text: "the count of everything waiting on you: questions and asks to you, gates and sign-offs you rule, fixes and access requests you approve. Opens one line per epic or topic with its reason; each opens the page where the dots lead on to the item, plus your recent conversations. Source: /v1/me/attention.", control: true },
     { key: "epics", label: "Epics", text: "every epic in the fleet with its progress. Source: /v1/epics/summary.", control: true },
     { key: "seats", label: "Seats", text: "every agent shell, alive or closed, and what it last said. Source: pool sessions mirrored into the board.", control: true },
     { key: "library", label: "Library", text: "knowledge first — strategies, domains and lessons every epic can link (approve proposals, import from skills.sh) — then every document, artifact and ticket. Source: /v1/knowledge and the board's records.", control: true },

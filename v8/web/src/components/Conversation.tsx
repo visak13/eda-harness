@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "react-router";
 import type { MessageAttachment, MessageView } from "../api/types";
 import { Avatar } from "./Avatar";
@@ -15,9 +16,9 @@ import { CodeCard } from "./CodeCard";
 import { QuoteCard } from "./QuoteCard";
 import { quoteRegionRef } from "./QuoteLayer";
 import styles from "./Conversation.module.css";
-import { pageItems, useAttention } from "../api/attention";
-import { AttentionDot, attentionMark } from "./AttentionDot";
-import { highlightMessage } from "./AttentionAsks";
+import { dismissAsks, threadAsks, useAttention, type PageItem } from "../api/attention";
+import { attentionMark } from "./AttentionDot";
+import { ago, highlightMessage, useJumpToMessage } from "./AttentionAsks";
 
 // The conversation canvas per revision3-clean-epic.png: "Conversation · N messages · Today" and a
 // continuous run of messages (36px avatar, bold name, "To x", time, Reply on the right), with an
@@ -119,6 +120,24 @@ function AttachmentCard({ a }: { a: MessageAttachment }): React.JSX.Element {
   );
 }
 
+/** v34 item 3 (owner m-8aa6439a77 "the rest i dont know how to find them"): the asks waiting on the viewer that
+ *  sit older than the loaded window. Each row jumps to its message: the #m- hash loads it in place (?include). */
+function EarlierWaiting({ items }: { items: PageItem[] }): React.JSX.Element | null {
+  const jump = useJumpToMessage();
+  if (!items.length) return null;
+  return (
+    <div className={styles.earlier} data-testid="earlier-waiting" role="group" aria-label={`${items.length} earlier waiting`}>
+      <span className={styles.earlierHead}>{items.length} earlier waiting</span>
+      {items.map((i) => (
+        <button key={i.id} type="button" className={styles.earlierItem} data-testid="earlier-waiting-item" data-ask={i.id}
+          onClick={() => jump(i.id)}>
+          {i.label}{i.since ? ` · ${ago(i.since)}` : ""}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function Conversation({ ticketId, history, order, onToggleOrder, onReply, composer, viewer }: {
   ticketId: string;
   history: ReturnType<typeof useThreadHistory>;
@@ -134,8 +153,18 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
   const retired = useRetired(); // t-882e4d2eeb: people who left keep their name here, greyed
   useScrollToHash(Boolean(thread.length));
   // S20: the asks waiting on the viewer come from the one attention list (never a rule of this thread's own);
-  // a #m-<id> landing (a notification, the Waiting-on-you trail) highlights that message once it is loaded.
-  const asks = new Set(pageItems(useAttention(), ticketId).filter((i) => i.kind === "ask").map((i) => i.id));
+  // a #m-<id> landing (a notification, a Work row, the earlier-waiting bar) highlights that message once loaded.
+  const waitingItems = threadAsks(useAttention(), ticketId);
+  const asks = new Set(waitingItems.map((i) => i.id));
+  const earlier = waitingItems.filter((i) => !byId.has(i.id));
+  const qc = useQueryClient();
+  // v34 item 6: Dismiss is the no-reply path, a server-side write; refetching the ["me", …] reads clears the rail
+  // count, the trail dots and this highlight together (the page reads refresh its header's asks).
+  const dismiss = useMutation({
+    mutationFn: (id: string) => dismissAsks([id]),
+    onSettled: () => { void qc.invalidateQueries({ queryKey: ["me"] }); void qc.invalidateQueries({ queryKey: ["ticket"] });
+      void qc.invalidateQueries({ queryKey: ["epic"] }); },
+  });
   const { hash } = useLocation();
   const target = hash.startsWith("#m-") ? decodeURIComponent(hash.slice(1)) : null;
   const loaded = Boolean(target && byId.has(target));
@@ -154,6 +183,7 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
         <span className={styles.end}>{dayLabel(last)}</span>
       </div>
       <ThreadHistoryControls history={history} />
+      <EarlierWaiting items={earlier} />
       {ordered.length === 0 ? (
         <p className={styles.empty} data-fill>No messages yet. Write the first one below.</p>
       ) : (
@@ -173,12 +203,23 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
                     {m.by.includes(".") ? <span className={styles.id}>{m.by}</span> : null}
                     {m.to ? <span className={styles.to}>To {m.to === viewer ? "you" : nameOf(m.to)}</span> : null}
                     {m.kind !== "note" ? <Term category="message_kind" value={m.kind} className={styles.kind} /> : null}
-                    {waiting ? <span className={styles.waiting} data-testid="reader-tag">Waiting on you <AttentionDot count={1} /></span> : null}
+                    {/* v34 item 5: the large highlight is the marker; the tag is a quiet caption, no dot */}
+                    {waiting ? <span className={styles.waiting} data-testid="reader-tag">Waiting on you</span> : null}
                     <time dateTime={m.at}>{clock(m.at)}</time>
-                    <button type="button" className={styles.reply} data-testid="thread-reply"
-                      onClick={() => { if (!pendingWork()) { setComposerCollapsed(false); onReply(m); } }}>
-                      <Icon name="reply" size={16} /> Reply
-                    </button>
+                    <span className={styles.actions}>
+                      {waiting ? (
+                        <button type="button" className={styles.reply} data-testid="thread-dismiss"
+                          title="Mark as read without replying: it stops waiting on you. The sender is not notified."
+                          disabled={dismiss.isPending && dismiss.variables === m.id}
+                          onClick={() => dismiss.mutate(m.id)}>
+                          <Icon name="check" size={16} /> Dismiss
+                        </button>
+                      ) : null}
+                      <button type="button" className={styles.reply} data-testid="thread-reply"
+                        onClick={() => { if (!pendingWork()) { setComposerCollapsed(false); onReply(m); } }}>
+                        <Icon name="reply" size={16} /> Reply
+                      </button>
+                    </span>
                   </div>
                   {parent ? (
                     <p className={styles.quote} data-testid="reply-quote">

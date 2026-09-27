@@ -363,11 +363,9 @@ describe("findDeadControls (self-test)", () => {
 // ------------------------------------------------------------------ the walk
 
 describe("dead-control lint over the real route table (human #26)", () => {
-  it("/epics with the Waiting on you popover open — and the historical proof case Find is live", async () => {
+  it("/epics — the historical proof case Find is live (v34: the Waiting on you popover is gone)", async () => {
     await walk("/epics");
     await screen.findByTestId("epic-list");
-    (await screen.findByTestId("waiting-open")).click();
-    await screen.findAllByTestId("waiting-row");
     await settle();
     expect(screen.getByTestId("find-open")).toBeInTheDocument();
     const dead = findDeadControls(document.body);

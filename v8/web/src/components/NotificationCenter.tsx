@@ -41,7 +41,7 @@ async function worker(): Promise<ServiceWorker> {
 export async function showAttention(target: ServiceWorker, actor: string, row: AttentionRequest, test = false): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const channel = new MessageChannel();
-    const timer = setTimeout(() => { channel.port1.close(); reject(new Error('Notification worker did not respond. Use Waiting on you in the menu.')); }, 10000);
+    const timer = setTimeout(() => { channel.port1.close(); reject(new Error('Notification worker did not respond. Follow the dots from Epics in the menu.')); }, 10000);
     channel.port1.onmessage = event => {
       clearTimeout(timer); channel.port1.close();
       if (event.data?.error) reject(new Error(event.data.error)); else resolve();
@@ -121,7 +121,7 @@ export function NotificationCenter({ actor, children }: { actor: string; childre
       const value = await attention(-1, request);
       if (!alive.current || value.participant !== actor) return;
       const row = value.requests.find(item => item.request === request);
-      if (!row) { setPending(null); setStatus('This request is resolved or unavailable to this participant. Use Waiting on you in the menu.'); return; }
+      if (!row) { setPending(null); setStatus('This request is resolved or unavailable to this participant. Follow the dots from Epics in the menu.'); return; }
       const current = new URL(window.location.href);
       const destination = new URL(row.url, window.location.origin);
       if (initial) {
@@ -135,7 +135,7 @@ export function NotificationCenter({ actor, children }: { actor: string; childre
       if (hasDirty() || pendingWork()) {
         setPending(row); setStatus('Request ready. Finish or save your current draft, then open it here. Your draft has not moved.');
       } else { setPending(null); setStatus('Request opened in this tab.'); navigate(row.url.replace(/^\/ui/, '')); }
-    } catch { if (alive.current) setStatus('Could not authorize this request. Check your connection or identity; use Waiting on you in the menu.'); }
+    } catch { if (alive.current) setStatus('Could not authorize this request. Check your connection or identity; follow the dots from Epics in the menu.'); }
   }, [actor, hasDirty, navigate]);
   useEffect(() => {
     if (!supported()) return;
@@ -161,7 +161,7 @@ export function NotificationCenter({ actor, children }: { actor: string; childre
             }
           } catch { if (!stopped) event.ports[0]?.postMessage({ actor: null }); }
         })();
-      } else if (event.data.type === 'focus-failed') setStatus('Browser could not focus this tab. No extra tab was opened. Use Waiting on you in the menu.');
+      } else if (event.data.type === 'focus-failed') setStatus('Browser could not focus this tab. No extra tab was opened. Follow the dots from Epics in the menu.');
     };
     navigator.serviceWorker.addEventListener('message', listener);
     return () => { stopped = true; navigator.serviceWorker.removeEventListener('message', listener); };
@@ -204,7 +204,7 @@ export function NotificationCenter({ actor, children }: { actor: string; childre
           if (prior < 0 || cursor === prior) break;
         }
         refreshState();
-      } catch { target = null; if (!stopped) setStatus('Notifications not receiving requests. Check permission, identity or connection; use Waiting on you in the menu.'); }
+      } catch { target = null; if (!stopped) setStatus('Notifications not receiving requests. Check permission, identity or connection; follow the dots from Epics in the menu.'); }
       finally { running = false; }
     };
     const schedule = () => { if (!timer) timer = setTimeout(() => { timer = undefined; void poll(); }, 250); };
@@ -241,7 +241,7 @@ export function NotificationCenter({ actor, children }: { actor: string; childre
       const request = `ev-test-${crypto.randomUUID()}`;
       await showAttention(await worker(), actor, { request, url: `/ui/ticket/test?request=${request}` }, true);
       setStatus('Test notification sent. Click it to focus this tab.');
-    } catch { setStatus('Could not send test notification. Check browser permission; use Waiting on you in the menu.'); }
+    } catch { setStatus('Could not send test notification. Check browser permission; follow the dots from Epics in the menu.'); }
     finally { setBusy(false); }
   };
   const disable = useCallback(() => {

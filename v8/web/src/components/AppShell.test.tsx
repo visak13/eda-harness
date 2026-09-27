@@ -36,46 +36,37 @@ beforeEach(() => {
 });
 
 describe("AppShell", () => {
-  // S20 (design-e963c656f5 §4.18): the Needs you page is gone; "Waiting on you" is a rail button opening a popover.
-  it("renders Epics, Seats, Library, Code, Design (one Library destination) and the Waiting on you button", async () => {
+  // S20 (design-e963c656f5 §4.18): the Needs you page is gone; v34 (owner m-8aa6439a77): so is the rail's
+  // "Waiting on you" entry and its popover, with nothing in their place.
+  it("renders Epics, Seats, Library, Code, Design (one Library destination) and no Waiting on you entry", async () => {
     renderShell("/epics");
     const links = screen.getAllByRole("link");
     expect(links.map((l) => l.textContent?.replace(/\d+$/, "").trim())).toEqual(["Epics", "Seats", "Library", "Code", "Design"]);
     // NavLink marks the active route with aria-current=page.
     expect(screen.getByRole("link", { name: /Epics/ })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByTestId("waiting-open")).toHaveTextContent("Waiting on you");
+    expect(screen.queryByTestId("waiting-open")).toBeNull();
+    expect(within(screen.getByRole("navigation", { name: "Sections" })).queryByText("Waiting on you")).toBeNull();
     expect(screen.queryByRole("link", { name: /Needs you/ })).toBeNull();
   });
 
-  it("S20 rail: the attention counts sit on Epics, Library, Admin-free rail and Waiting on you, each with a dot and an aria-label", async () => {
+  it("S20 rail: the attention counts sit on Epics and Library (Admin-free rail), each with a dot and an aria-label", async () => {
     server.use(attentionHandler());
     renderShell("/epics");
     const epics = screen.getByRole("link", { name: /^Epics/ });
     expect(await within(epics).findByRole("img", { name: "needs your attention: 5" })).toBeInTheDocument();
     expect(within(screen.getByRole("link", { name: /^Library/ })).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
     expect(within(screen.getByRole("link", { name: /^Seats/ })).queryByRole("img")).toBeNull();
-    expect(within(screen.getByTestId("waiting-open")).getByRole("img", { name: "needs your attention: 8" })).toBeInTheDocument();
     expect(within(screen.getByTestId("ask-help")).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
     // never colour only: the dot carries a glyph and the count as text
     expect(within(epics).getByRole("img").textContent).toMatch(/5/);
   });
 
-  it("S20 popover: one row per scope with its reason and trail link, plus Recent conversations", async () => {
-    server.use(attentionHandler(), http.get("/v1/me/conversations", () => HttpResponse.json({ ok: true, value: [
-      { ticket_id: "epic-1", title: "Galaxy site", epic_id: "epic-1", unread: true, last: { by: "architect", text: "shipped v2", at: "2026-09-27T00:00:00Z" } }] })));
+  it("v34: no rail control opens a Waiting on you popover", async () => {
+    server.use(attentionHandler());
     renderShell("/epics");
-    const open = screen.getByTestId("waiting-open");
-    await within(open).findByRole("img", { name: "needs your attention: 8" });
-    fireEvent.click(open);
-    const panel = await screen.findByRole("dialog", { name: "Waiting on you" });
-    const rows = within(panel).getAllByTestId("waiting-row");
-    expect(rows).toHaveLength(ATTENTION.scopes.length);
-    expect(rows[0]).toHaveTextContent("Galaxy site");
-    expect(rows[0]).toHaveAttribute("href", "/epic/epic-1");
-    expect(within(rows[0]).getByTestId("waiting-reason")).toHaveTextContent("2 questions, 1 scope decision");
-    expect(within(rows[0]).getByRole("img", { name: "needs your attention: 5" })).toBeInTheDocument();
-    expect(within(panel).getByRole("link", { name: /Rendering/ })).toHaveAttribute("href", "/library/topics/topic-1");
-    expect(within(await within(panel).findByTestId("recent-conversations")).getByText("architect: shipped v2")).toBeInTheDocument();
+    await within(screen.getByRole("link", { name: /^Epics/ })).findByRole("img", { name: "needs your attention: 5" });
+    expect(screen.queryByRole("button", { name: /Waiting on you/ })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Waiting on you" })).toBeNull();
   });
 
   it("S20 clearing: a dot leaves the rail once its item is answered (the next attention read)", async () => {
@@ -89,7 +80,7 @@ describe("AppShell", () => {
     value = without("m-topicq");
     await qc.invalidateQueries({ queryKey: ["me"] });
     await waitFor(() => expect(within(library).queryByRole("img")).toBeNull());
-    expect(within(screen.getByTestId("waiting-open")).getByRole("img", { name: "needs your attention: 7" })).toBeInTheDocument();
+    expect(within(screen.getByRole("link", { name: /^Epics/ })).getByRole("img", { name: "needs your attention: 5" })).toBeInTheDocument();
   });
 
   it("works with no dots when the attention read is unavailable (an older board)", async () => {
@@ -123,16 +114,14 @@ describe("AppShell", () => {
     expect(screen.queryByRole("link", { name: /Epics/ })).not.toBeInTheDocument();
   });
 
-  it("hides Epics, Seats and Waiting on you for an expert (whoami answers 403) — t-3e246b5e32 (e)", async () => {
+  it("hides Epics and Seats for an expert (whoami answers 403) — t-3e246b5e32 (e)", async () => {
     server.use(
       http.get("/v1/whoami", () =>
         HttpResponse.json({ ok: false, error: "expert 'dana' reaches only its Library topic" }, { status: 403 }),
       ),
     );
     renderShell("/me");
-    await waitFor(() => expect(screen.queryByTestId("waiting-open")).not.toBeInTheDocument());
-    const names = screen.getAllByRole("link").map((l) => l.textContent?.replace(/\d+$/, "").trim());
-    expect(names).toEqual(["Library"]);
+    await waitFor(() => expect(screen.getAllByRole("link").map((l) => l.textContent?.replace(/\d+$/, "").trim())).toEqual(["Library"]));
     expect(screen.queryByTestId("identity-panel")).not.toBeInTheDocument();
   });
 

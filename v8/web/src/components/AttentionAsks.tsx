@@ -25,7 +25,19 @@ export function highlightMessage(id: string): boolean {
   return true;
 }
 
-function ago(at?: string): string {
+/** Jump to a thread message: mark it now when it is on the page (no navigation, so the page never refetches);
+ *  older than the loaded window, the #m- hash makes the page fetch it in place (?include) and the retry marks it. */
+export function useJumpToMessage(): (id: string) => void {
+  const navigate = useNavigate();
+  const location = useLocation();
+  return useCallback((id: string) => {
+    if (highlightMessage(id)) return;
+    if (location.hash !== `#${id}`) navigate({ search: location.search, hash: id }, { replace: true });
+    for (const wait of [400, 1200, 2500]) window.setTimeout(() => highlightMessage(id), wait);
+  }, [navigate, location.hash, location.search]);
+}
+
+export function ago(at?: string): string {
   if (!at) return "";
   const mins = Math.max(0, Math.round((Date.now() - Date.parse(at)) / 60000));
   return mins < 60 ? `${mins} min ago` : mins < 60 * 48 ? `${Math.round(mins / 60)} h ago` : `${Math.round(mins / 1440)} d ago`;
@@ -34,18 +46,13 @@ function ago(at?: string): string {
 export function AttentionAsks({ asks }: { asks: Ask[] }): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
-  const navigate = useNavigate();
-  const location = useLocation();
+  const go = useJumpToMessage();
   const close = useCallback(() => setOpen(false), []);
   const label = `${asks.length} unanswered request${asks.length === 1 ? "" : "s"}`;
 
   function jump(id: string) {
     setOpen(false);
-    // on the page: mark it now (no navigation, so the page never refetches). Older than the loaded
-    // window: the #m- hash makes the page fetch it in place (?include) and the retry marks it.
-    if (highlightMessage(id)) return;
-    if (location.hash !== `#${id}`) navigate({ search: location.search, hash: id }, { replace: true });
-    for (const wait of [400, 1200, 2500]) window.setTimeout(() => highlightMessage(id), wait);
+    go(id);
   }
 
   return <>

@@ -507,6 +507,8 @@ describe("EpicPage attention trail (S20)", () => {
     const row = document.getElementById("row-s-1")!;
     expect(row).toHaveAttribute("data-attention", "true");
     expect(within(row).getByRole("img", { name: "needs your attention: 2" })).toBeInTheDocument();
+    // steer m-4ed69369cb: the row leads to the ticket's newest waiting item, not the bare ticket page
+    expect(within(row).getByRole("link")).toHaveAttribute("href", "/ticket/s-1#m-storyq");
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.click(trigger);
     const item = await screen.findByTestId("action-answer-decision");
@@ -515,6 +517,14 @@ describe("EpicPage attention trail (S20)", () => {
     fireEvent.click(item);
     await screen.findByTestId("action-drawer-answer-decision");
     expect(document.getElementById("ev-scope")).toHaveAttribute("data-attention", "true");
+  });
+
+  it("a Work row with nothing waiting links to the ticket page", async () => {
+    server.use(attentionHandler(without("c-1", "m-storyq")));
+    mount(page());
+    await title();
+    await openWork();
+    expect(within(document.getElementById("row-s-1")!).getByRole("link")).toHaveAttribute("href", "/ticket/s-1");
   });
 
   it("a ?request=<gate> deep link opens the decision drawer on the marked gate", async () => {

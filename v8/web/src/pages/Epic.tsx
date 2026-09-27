@@ -11,7 +11,7 @@ import { ProcessStrip } from "../components/ProcessStrip";
 import { StatusControl } from "../components/StatusControl";
 import { GateOpenControl } from "../components/GateOpenControl";
 import { GateForms, useRetainedGates } from "../components/GateForm";
-import { countWhere, pageItems, ticketCount, useAttention, type PageItem } from "../api/attention";
+import { countWhere, itemPath, newestFor, pageItems, ticketCount, useAttention, type PageItem } from "../api/attention";
 import { AttentionDot, attentionMark } from "../components/AttentionDot";
 import { AssignControl } from "../components/AssignControl";
 import { AskRoleControl } from "../components/AskRole";
@@ -347,7 +347,7 @@ function WorkTab({ epicId, epic, stories, here }: { epicId: string; epic: EpicTr
               {cards.map((n) => {
                 const dots = ticketCount(here, n.id);
                 return (
-                  <Link key={n.id} to={`/ticket/${encodeURIComponent(n.id)}`} className={`${styles.kanbanCard} ${dots ? attentionMark : ""}`}
+                  <Link key={n.id} to={rowLink(here, n.id)} className={`${styles.kanbanCard} ${dots ? attentionMark : ""}`}
                     data-attention={dots ? "true" : undefined}>
                     <span className={styles.kanbanTitle}>{n.title} <AttentionDot count={dots} /></span>
                     <span className={ui.idMono}>{n.id}</span>
@@ -362,6 +362,13 @@ function WorkTab({ epicId, epic, stories, here }: { epicId: string; epic: EpicTr
   );
 }
 
+/** A Work row's link: the ticket's newest waiting item when it has one (steer m-4ed69369cb: the highlight must lead
+ *  to the message on the ticket page), else the ticket page. */
+function rowLink(here: PageItem[], ticketId: string): string {
+  const newest = newestFor(here, ticketId);
+  return newest ? itemPath(newest) : `/ticket/${encodeURIComponent(ticketId)}`;
+}
+
 function TreeNode({ node, match, depth, here }: { node: EpicTreeNode; match: (n: EpicTreeNode) => boolean; depth: number; here: PageItem[] }): React.JSX.Element | null {
   const selfShown = match(node);
   const kids = node.children.map((k) => <TreeNode key={k.id} node={k} match={match} depth={depth + 1} here={here} />).filter(Boolean);
@@ -372,7 +379,7 @@ function TreeNode({ node, match, depth, here }: { node: EpicTreeNode; match: (n:
       {selfShown ? (
         <div className={`${styles.treeRow} ${dots ? attentionMark : ""}`} style={{ paddingLeft: 16 + depth * 20 }} data-testid="work-row"
           id={`row-${node.id}`} data-attention={dots ? "true" : undefined}>
-          <Link to={`/ticket/${encodeURIComponent(node.id)}`} className={styles.treeLink}>
+          <Link to={rowLink(here, node.id)} className={styles.treeLink}>
             <span className={styles.treeTitle}>{node.title} <AttentionDot count={dots} /></span>
             <span className={styles.treeId}>{node.id}</span>
           </Link>

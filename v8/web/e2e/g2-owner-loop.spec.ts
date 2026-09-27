@@ -29,12 +29,9 @@ test.describe("owner loop — part 1 (the trail + conversations)", () => {
     const reason = row.getByTestId("attention-reason");
     await expect(reason).toHaveText("Waiting on you: 1 sign-off, 1 question, 1 design sign-off"); // a dead seat's question is collapsed (§18.2 inbox rule)
     await expect(row.locator("[data-attention-dot]")).toHaveAttribute("aria-label", "needs your attention: 3");
-    // The rail counts it, and the popover links into the trail.
+    // The rail counts it (v34: no "Waiting on you" popover any more; the Epics count and row are the way in).
     await expect(page.getByRole("link", { name: /^Epics/ }).locator("[data-attention-dot]")).toHaveAttribute("aria-label", "needs your attention: 3");
-    await page.getByTestId("waiting-open").click();
-    const popRow = page.getByTestId("waiting-row").filter({ hasText: fx.words });
-    await expect(popRow).toHaveAttribute("href", `/ui/epic/${fx.epic}`);
-    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("waiting-open")).toHaveCount(0);
 
     // Seats now → the Seats page: the alive engineer seat, its ticket, and the honest presence caveats.
     await page.goto(`${BASE()}/ui/seats?as=owner`);
