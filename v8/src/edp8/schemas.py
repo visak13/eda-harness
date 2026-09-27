@@ -716,7 +716,7 @@ class AccessRequest(Obj):
     name: str
     role_wanted: str = "owner"
     note: str = ""
-    status: Literal["pending", "approved", "denied", "claimed"] = "pending"
+    status: Literal["pending", "approved", "denied", "claimed", "expired"] = "pending"  # expired: unanswered past the TTL
     decided_by: str | None = None
     decided_at: datetime | None = None
     handle: str | None = None  # the teammate an approval created

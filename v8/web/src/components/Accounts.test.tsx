@@ -81,6 +81,14 @@ describe("Request access (sign-in page)", () => {
     expect(await screen.findByTestId("access-done")).toHaveTextContent("declined");
     expect(sessionStorage.getItem("edp8.access.claim")).toBeNull();
   });
+
+  it("says the request expired when no admin answered in time (S11 F4)", async () => {
+    sessionStorage.setItem("edp8.access.claim", "c0de-3");
+    server.use(http.post("/v1/access-requests/claim", () => ok({ status: "expired" })));
+    wrap(<RequestAccess />);
+    expect(await screen.findByTestId("access-done")).toHaveTextContent("expired");
+    expect(sessionStorage.getItem("edp8.access.claim")).toBeNull();
+  });
 });
 
 const TEAM = [

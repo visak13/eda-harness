@@ -200,6 +200,27 @@ def _slug(name: str) -> str:
     return (s or "teammate")[:30]
 
 
+def _stale(q: AccessRequest) -> bool:
+    return q.status == "pending" and q.created_at.timestamp() <= time.time() - CLAIM_TTL_S
+
+
+def _expire(board: Any, q: AccessRequest) -> AccessRequest:
+    return board.store.put("access_request", q.model_copy(update={"status": "expired"}))
+
+
+def live_pending(board: Any) -> list[AccessRequest]:
+    """The one definition of an open request (S11 F4): pending and inside the TTL. The cap, the admin list, the
+    attention list and the claim path all read it; a pending row past the TTL is marked expired here, on read."""
+    live = []
+    with board._lock:
+        for q in board.store.query("access_request", {"status": "pending"}, limit=500):
+            if _stale(q):
+                _expire(board, q)
+            else:
+                live.append(q)
+    return live
+
+
 def _view(q: AccessRequest) -> dict[str, Any]:
     return {"id": q.id, "created_at": q.created_at.isoformat(), "name": q.name, "role_wanted": q.role_wanted,
             "note": q.note, "status": q.status, "decided_by": q.decided_by,
@@ -239,7 +260,7 @@ def public_router(ctx: AdminContext) -> APIRouter:
                 or not limits.allow("ask:*", ASK_PER_BOARD, ASK_WINDOW_S):
             raise HTTPException(429, "too many access requests from here; try again in an hour")
         with board._lock:
-            if len(board.store.query("access_request", {"status": "pending"}, limit=MAX_PENDING + 1)) >= MAX_PENDING:
+            if len(live_pending(board)) >= MAX_PENDING:
                 raise HTTPException(429, "this board has too many open access requests; try again later")
             q = board.store.put("access_request", AccessRequest(id=new_id("acc"), created_by="", name=name,
                                                                  role_wanted=role, note=b.note.strip()))
@@ -255,6 +276,14 @@ def public_router(ctx: AdminContext) -> APIRouter:
         q = board.store.get("access_request", hit["request_id"]) if hit else None
         if hit is None or q is None:
             raise HTTPException(401, "this request code is unknown, expired or already used")
+        if _stale(q):
+            with board._lock:
+                q = board.store.get("access_request", q.id) or q
+                if _stale(q):
+                    q = _expire(board, q)
+        if q.status == "expired":
+            claims.burn(b.code)
+            return {"ok": True, "value": {"status": "expired"}, "hint": "no admin answered in time; ask again"}
         if q.status == "pending":
             return {"ok": True, "value": {"status": "pending", "poll_s": POLL_S}, "hint": "not decided yet"}
         if q.status == "denied":
@@ -282,6 +311,8 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
         q = board.store.get("access_request", req_id)
         if q is None:
             raise HTTPException(404, f"no access request {req_id!r}")
+        if _stale(q):
+            q = _expire(board, q)
         if q.status != "pending":
             raise HTTPException(409, f"this request was already {q.status}")
         return q
@@ -289,9 +320,10 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
     @r.get("/v1/admin/access-requests")
     def requests_list(a: Participant = Depends(admin_actor)):
         cutoff = time.time() - CLAIM_TTL_S
-        rows = [q for q in board.store.query("access_request", {}, limit=500)
-                if q.status == "pending" and q.created_at.timestamp() > cutoff
-                or q.status != "pending" and (q.decided_at or q.created_at).timestamp() > cutoff]
+        decided = [q for q in board.store.query("access_request", {}, limit=500)
+                   if q.status in ("approved", "denied", "claimed")
+                   and (q.decided_at or q.created_at).timestamp() > cutoff]
+        rows = live_pending(board) + decided
         rows.sort(key=lambda q: (q.status != "pending", -q.created_at.timestamp()))
         return {"ok": True, "value": [_view(q) for q in rows], "hint": ""}
 

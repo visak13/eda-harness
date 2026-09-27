@@ -10,6 +10,7 @@ export interface AccessAsked { id: string; claim_code: string; poll_s: number }
 export type AccessClaim =
   | { status: "pending"; poll_s: number }
   | { status: "denied" }
+  | { status: "expired" }
   | { status: "approved"; handle: string; token: string; board_url: string };
 
 export interface AccessRequestRow {
@@ -18,7 +19,7 @@ export interface AccessRequestRow {
   name: string;
   role_wanted: string;
   note: string;
-  status: "pending" | "approved" | "denied" | "claimed";
+  status: "pending" | "approved" | "denied" | "claimed" | "expired";
   decided_by: string | null;
   decided_at: string | null;
   handle: string | null;

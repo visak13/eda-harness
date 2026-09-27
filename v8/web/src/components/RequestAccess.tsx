@@ -72,6 +72,10 @@ export function RequestAccess(): React.JSX.Element | null {
             setPhase({ kind: "done", text: "An admin declined this request. Ask the person who runs this board." });
             return;
           }
+          if (value.status === "expired") {
+            setPhase({ kind: "done", text: "No admin answered this request in time, so it expired. You can ask again." });
+            return;
+          }
           signIn(value.handle, value.token);
           const url = new URL(window.location.href);
           url.searchParams.set("as", value.handle);

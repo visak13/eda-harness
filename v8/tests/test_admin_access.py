@@ -233,3 +233,36 @@ def test_claims_file_is_json_of_hashes(env):
     code = _ask(env).json()["value"]["claim_code"]
     data = json.loads((settings.secrets_dir() / access.CLAIMS_FILE).read_text(encoding="utf-8"))
     assert list(data) == [access._hash(code)]
+
+
+def test_expired_requests_neither_fill_the_cap_nor_answer_pending(env):
+    """S11 F4 (m-7597af9fac): one live_pending() rule. Requests past the TTL used to count against MAX_PENDING
+    while the admin list hid them, so a full queue of stale rows 429'd every new asker."""
+    from datetime import timedelta
+
+    from edp8.schemas import AccessRequest, now
+    old = now() - timedelta(seconds=access.CLAIM_TTL_S + 3600)
+    for i in range(access.MAX_PENDING):
+        env.board.store.put("access_request", AccessRequest(id=f"acc-old-{i}", created_by="", name=f"Old {i}",
+                                                            created_at=old))
+    assert env.client.get("/v1/admin/access-requests", headers=ADMIN_H).json()["value"] == []
+    assert env.board.store.get("access_request", "acc-old-0").status == "expired"  # marked on read
+    r = _ask(env, name="Legitimate new person")
+    assert r.status_code == 200, r.text
+    listed = env.client.get("/v1/admin/access-requests", headers=ADMIN_H).json()["value"]
+    assert [q["name"] for q in listed] == ["Legitimate new person"]
+    # the cap still binds on live requests only
+    for i in range(access.MAX_PENDING - 1):
+        env.board.store.put("access_request", AccessRequest(id=f"acc-live-{i}", created_by="", name=f"Live {i}"))
+    assert len(access.live_pending(env.board)) == access.MAX_PENDING
+    assert _ask(env, name="One too many").status_code == 429
+    # a claim whose request went past the TTL while it waited answers expired (not pending), then is spent
+    q = env.board.store.get("access_request", r.json()["value"]["id"])
+    env.board.store.put("access_request", q.model_copy(update={"created_at": old}))
+    code = r.json()["value"]["claim_code"]
+    c = _claim(env, code)
+    assert c.status_code == 200 and c.json()["value"] == {"status": "expired"}
+    assert env.board.store.get("access_request", q.id).status == "expired"
+    assert _claim(env, code).status_code == 401
+    # and an admin cannot approve it any more
+    assert env.client.post(f"/v1/admin/access-requests/{q.id}/approve", headers=ADMIN_H).status_code == 409

@@ -127,8 +127,9 @@ def _access_requests(board: Board, viewer: Participant) -> list[dict[str, Any]]:
     from .admin.auth import is_admin
     if not is_admin(viewer):
         return []
+    from .admin.access import live_pending
     try:
-        rows = board.store.query("access_request", {"status": "pending"}, limit=500)
+        rows = live_pending(board)
     except KeyError:  # t-882e4d2eeb not landed on this build: no requests can exist
         return []
     return [{"kind": "access_request", "id": r.id, "since": r.created_at.isoformat(),
