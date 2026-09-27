@@ -64,15 +64,19 @@ Check ($LASTEXITCODE -eq 0) "[a] init exit 0"
 $codeA = CodePort $cfgA
 Check ($codeA -eq ($N + 10)) "[a] init pinned code_server.port = $codeA (block + 10 = $($N + 10))"
 $B = "http://127.0.0.1:$N"
-$adm = @{ "X-Admin" = (Get-Content (Join-Path $cfgA "secrets\admin.token") -Raw).Trim() }  # never printed
+$xadm = @{ "X-Admin" = (Get-Content (Join-Path $cfgA "secrets\admin.token") -Raw).Trim() }  # never printed
+# Admin -> Remote access is an admin HUMAN's route: the first human init minted (owner), by its token
+$ownerTok = (Get-Content (Join-Path $cfgA "secrets\tokens.json") -Raw | ConvertFrom-Json).owner
+$adm = @{ "X-Participant" = "owner"; "X-Token" = "$ownerTok" }
 $listener = $null
+$reached = $false  # the whole sequence ran; an exception that skips to the stop is a failure, never a pass
 try {
   "== [a] heronry start"
   & $h start 2>&1 | ForEach-Object { "   $_" }
   Check ($LASTEXITCODE -eq 0) "[a] start exit 0"
 
   # (d) the Code tab: nothing on the code port, then a listener of another home
-  $null = Invoke-RestMethod "$B/v1/participants" -Method Post -Headers $adm -ContentType "application/json" `
+  $null = Invoke-RestMethod "$B/v1/participants" -Method Post -Headers $xadm -ContentType "application/json" `
     -Body '{"id":"drill.agent","handle":"drill.agent","role":"engineer","type":"agent"}' -ErrorAction SilentlyContinue
   $who = @{ "X-Participant" = "drill.agent" }
   $v = (Invoke-RestMethod "$B/v1/code" -Headers $who).value
@@ -120,19 +124,24 @@ try {
       $tok | Add-Member -Force -NotePropertyName "agents" -NotePropertyValue ([pscustomobject]@{ "drill.agent" = [guid]::NewGuid().ToString("N") })
       "   seeded an agent credential into the temp home's tokens.json (a fresh home has none before its first spawn)"
     }
-    $tok | ConvertTo-Json -Depth 5 | Set-Content -Path $tokf -Encoding utf8
+    # no BOM (PS 5.1's -Encoding utf8 writes one, and the board's JSON read then fails: every token "invalid")
+    [IO.File]::WriteAllText($tokf, ($tok | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
     $code = 0; $text = ""
     try { $r = Invoke-WebRequest "$B/v1/admin/tailnet/apply" -Method Post -Headers $adm -ContentType "application/json" -Body '{"force":true}' -UseBasicParsing; $code = $r.StatusCode; $text = $r.Content }
     catch { $code = [int]$_.Exception.Response.StatusCode; $text = $_.ErrorDetails.Message }
     "   apply: $code $text"
     Check ($code -eq 200 -and $text -notmatch "set by the environment") "[a] Admin -> Remote access applies: no 'EDP8_HOST is set by the environment' refusal"
-    $t = Toml $cfgA
-    Check ($t -match '(?m)^host\s*=\s*"127\.0\.0\.1"' -and $t -match "public_url\s*=\s*`"https://$([regex]::Escape($FAKE_NAME))`"") "[a] config.toml now holds board.host and network.public_url"
+    $cfgText = Toml $cfgA  # never $t: PowerShell names are case-insensitive and $T is the temp root
+    Check ($cfgText -match '(?m)^host\s*=\s*"127\.0\.0\.1"' -and $cfgText -match "public_url\s*=\s*`"https://$([regex]::Escape($FAKE_NAME))`"") "[a] config.toml now holds board.host and network.public_url"
     Check ((Get-Content $log -Raw) -match "serve --bg --https=443 http://127\.0\.0\.1:$N") "[a] the fake tailscale got 'serve --bg --https=443 http://127.0.0.1:$N'"
     $code = 0; try { $code = (Invoke-WebRequest "$B/v1/admin/tailnet/remove" -Method Post -Headers $adm -UseBasicParsing).StatusCode } catch { }
     Check ($code -eq 200 -and (Toml $cfgA) -notmatch "public_url") "[a] remove undoes it (trusted mode again)"
   }
+  $reached = $true
+} catch {
+  "   error: $($_.Exception.Message) $($_.ErrorDetails.Message)"
 } finally {
+  Check $reached "the drill ran every step (no error cut it short)"
   if ($listener) { Stop-Job $listener; Remove-Job $listener -Force }
   $null = Profile "a"
   "== [a] heronry stop"
