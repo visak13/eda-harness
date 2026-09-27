@@ -1,22 +1,8 @@
 import { PageHeader } from "../components/PageHeader";
 
-// Route destinations. Real pages live in their own files and are re-exported here (the barrel
-// main.tsx imports). G3a owns Epics/Epic/Ticket/Doc/Library; G3b owns Seats.
-
-export { EpicsPage } from "./Epics";
-export { EpicPage } from "./Epic";
-export { TicketPage } from "./Ticket";
-export { DocPage } from "./Doc";
-export { LibraryPage } from "./Library";
-export { TopicPage } from "./TopicPage";
-export { ArtifactPage } from "./Artifact";
-
-
-// SeatsPage is G3b's, now landed (pages/Seats.tsx).
-export { SeatsPage } from "./Seats";
-
-// epic-91fcd3b370 S3: the Code tab and its FAQ.
-export { CodePage, CodeFaqPage } from "./Code";
+// Route destinations live in their own files; src/routes.tsx imports the main flow directly and loads every
+// other page lazily (S22 route split), so this barrel re-exports nothing — a re-export here would pull a
+// lazy page back into the entry bundle.
 
 export function NotFoundPage(): React.JSX.Element {
   return (
