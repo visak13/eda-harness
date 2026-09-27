@@ -453,10 +453,10 @@ def _pool_chain(ident: ProcId) -> list[ProcId]:
     return chain
 
 
-# Pool row states in which no seat is working: terminal ones, and parked (S5: a parked seat is not live for
-# an update; it resumes on the new code). active, starting, resuming, and any other state or none, count as
-# live: an unknown is never idle (t-326566ee13).
-IDLE_SEAT_STATES = ("done", "released", "reaped", "dead", "parked")
+# Pool row states whose shell is gone: only these are idle. active, starting, resuming and parked are live
+# process trees (edp-pool park() leaves the shell alive; the live-process ceiling counts all four), and any
+# other state, or none, counts as live too: an unknown is never idle (t-326566ee13, architect m-6c1dcc586f).
+IDLE_SEAT_STATES = ("done", "released", "reaped", "dead")
 
 
 def parse_sessions(payload: Any) -> list[dict[str, Any]] | None:
@@ -474,7 +474,7 @@ def seat_is_live(row: dict[str, Any]) -> bool:
 
 
 def live_seats() -> list[str] | None:
-    """Live seats on this pool ("handle (pid N)"), [] when none (or the port is another home's pool),
+    """Live seats on this pool ("handle (pid N, state)"), [] when none (or the port is another home's pool),
     None when the pool cannot say: unreachable, a non-2xx status, or an answer that is not the sessions
     schema (R2-A: a 503 {"detail": ...} read as "no seats" and let an unforced update run)."""
     if owner("pool")[0] != "ours":
@@ -489,7 +489,8 @@ def live_seats() -> list[str] | None:
         return None
     if rows is None:
         return None
-    return [f"{r.get('handle')} (pid {(r.get('proc') or {}).get('pid')})" for r in rows if seat_is_live(r)]
+    return [f"{r.get('handle')} (pid {(r.get('proc') or {}).get('pid')}, {r.get('state') or 'no state'})"
+            for r in rows if seat_is_live(r)]
 
 
 def seat_block(seats: list[str] | None, alt: str = "use --force to take them offline") -> str | None:
@@ -499,7 +500,8 @@ def seat_block(seats: list[str] | None, alt: str = "use --force to take them off
     if seats is None:
         return f"couldn't confirm no seats are working (the pool cannot say which seats are live); retry, or {alt}"
     if seats:
-        return f"{len(seats)} seat(s) are live ({', '.join(seats[:5])}); let them finish or park them, or {alt}"
+        return (f"{len(seats)} seat(s) are live ({', '.join(seats[:5])}{', ...' if len(seats) > 5 else ''}); "
+                f"let them finish, reap or close parked seats, or {alt}")
     return None
 
 

@@ -111,7 +111,7 @@ def seat_harness(row: dict[str, Any], models: dict[str, Any], seats: dict[str, A
 
 
 def live_seats_by_harness() -> dict[str, list[str]] | None:
-    """{harness: [handle]} of the pool's live seats; None when the pool cannot say: an error, an answer that
+    """{harness: ["handle (state)"]} of the pool's live seats (parked included); None when the pool cannot say: an error, an answer that
     is not the sessions schema, or a live seat whose harness cannot be resolved (it could be any harness)."""
     got = pool_adapter.sessions()
     if not got.get("ok"):
@@ -128,7 +128,7 @@ def live_seats_by_harness() -> dict[str, list[str]] | None:
             routed = seat_harness(r, models, seats)
             if routed is None:
                 return None
-            out[routed].append(str(r.get("handle")))
+            out[routed].append(f"{r.get('handle')} ({r.get('state') or 'no state'})")
     return out
 
 

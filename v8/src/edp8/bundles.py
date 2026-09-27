@@ -407,7 +407,7 @@ def _preflight(_: PreflightArgs) -> dict[str, Any]:
         if rows is None:  # the pool cannot say: unknown, never "0 live" (t-326566ee13)
             out["seats"] = {"live": None, "note": "the pool cannot say which seats are live"}
         else:
-            live = [s for s in rows if launcher.seat_is_live(s) or s.get("state") == "parked"]  # parked = a process
+            live = [s for s in rows if launcher.seat_is_live(s)]
             out["seats"] = {"live": len(live), "handles": sorted(s.get("handle") or "" for s in live)}
         cap = pool_adapter.capacity()
         if cap.get("ok") and rows is not None:

@@ -96,11 +96,16 @@ def test_detection_without_the_tool(env, fake, monkeypatch):
 
 def test_update_refuses_while_a_seat_of_that_harness_is_live_then_runs(env, fake):
     fake.sessions = [{"handle": "engineer.s-1", "model": "claude-opus-5-5", "state": "active"},
-                     {"handle": "adversary.e-1", "model": "gpt-5.5", "state": "parked"}]
+                     {"handle": "adversary.e-1", "model": "gpt-5.5", "harness": "codex", "state": "parked"}]
     r = env.client.post("/v1/admin/harnesses/claude/update", headers=ADMIN_H)
     assert r.status_code == 409 and "engineer.s-1" in r.text
     assert fake.runs == []
-    # a codex seat parked, not live: codex updates now through npm
+    # a parked codex seat is a live process tree (park() leaves the shell alive): it blocks too
+    r = env.client.post("/v1/admin/harnesses/codex/update", headers=ADMIN_H)
+    assert r.status_code == 409 and "adversary.e-1 (parked)" in r.text and fake.runs == []
+    # the codex seat is done (a finished row is not live): codex updates now through npm
+    fake.sessions = [{"handle": "engineer.s-1", "model": "claude-opus-5-5", "state": "active"},
+                     {"handle": "adversary.e-1", "model": "gpt-5.5", "harness": "codex", "state": "done"}]
     r = env.client.post("/v1/admin/harnesses/codex/update", headers=ADMIN_H)
     assert r.status_code == 200, r.text
     assert fake.runs[-1] == ["C:/bin/npm.cmd", "install", "-g", "@openai/codex@latest"]

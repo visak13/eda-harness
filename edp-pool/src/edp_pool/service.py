@@ -897,8 +897,9 @@ class PoolService(Microservice):
 
         PARKED rows are NEVER reaped here (DESIGN-v7 1.5.2): the `state !=
         "active"` gate below skips them, and that is load-bearing, not
-        incidental — a parked shell's process is dead BY DESIGN while its row
-        is the resume token. Writing "done" over one would strand the plan.
+        incidental — a parked row is the resume token and its shell stays
+        alive (park() leaves it running; it counts against the live-process
+        ceiling). Writing "done" over one would strand the plan.
         """
         changed = 0
         for sid, s in self.sessions.items():

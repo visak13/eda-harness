@@ -6,7 +6,8 @@ stop refuses without force, and preflight reports the seat count as unknown. R2-
 guard routes a live seat by the harness its row recorded (row, then spawn_settings), not by today's
 model catalog, and a live seat whose harness can't be resolved returns 409. Siblings: starting and
 resuming shells are live (the guards counted only `active`), and an unrecognised or missing state
-counts as live; parked stays idle (S5). Private temp homes and loopback test servers only.
+counts as live; so does parked (park() leaves the shell alive; architect m-6c1dcc586f). Refusals
+name each blocking seat with its state. Private temp homes and loopback test servers only.
 """
 
 from __future__ import annotations
@@ -89,8 +90,8 @@ def test_live_seats_counts_every_live_process_state(pool):
     rows.append({"handle": "s.nostate", "proc": {"pid": 9}})
     pool.answer = (200, httpx.Response(200, json=rows).content, "application/json")
     got = launcher.live_seats()
-    assert got == ["s.active (pid 0)", "s.starting (pid 1)", "s.resuming (pid 2)", "s.weird (pid 6)",
-                   "s.nostate (pid 9)"]
+    assert got == ["s.active (pid 0, active)", "s.starting (pid 1, starting)", "s.resuming (pid 2, resuming)",
+                   "s.parked (pid 3, parked)", "s.weird (pid 6, weird)", "s.nostate (pid 9, no state)"]
     pool.answer = (200, b'{"sessions": []}', "application/json")
     assert launcher.live_seats() == []
 
@@ -184,7 +185,7 @@ def test_live_seats_preflight_reports_unknown_not_zero(monkeypatch):
     monkeypatch.setattr(pool_adapter, "sessions", lambda: {"ok": True, "value": [
         {"handle": "a", "state": "starting"}, {"handle": "b", "state": "done"}, {"handle": "c", "state": "parked"}]})
     seats = bundles._preflight(bundles.PreflightArgs())["value"]["seats"]
-    assert seats["live"] == 2 and seats["handles"] == ["a", "c"]  # host capacity: a parked shell is a process
+    assert seats["live"] == 2 and seats["handles"] == ["a", "c"]
 
 
 # ------------------------------------------------------------------------------ R2-B: harness update
@@ -199,7 +200,7 @@ def _edited_catalog(monkeypatch):
 def test_harness_update_recorded_row_harness_beats_an_edited_catalog(env, fake, monkeypatch):  # noqa: F811
     _edited_catalog(monkeypatch)
     fake.sessions = [{"handle": "running-seat", "state": "active", "model": "edited-model", "harness": "claude"}]
-    assert H.live_seats_by_harness() == {"claude": ["running-seat"], "codex": [], "pi": []}
+    assert H.live_seats_by_harness() == {"claude": ["running-seat (active)"], "codex": [], "pi": []}
     r = env.client.post("/v1/admin/harnesses/claude/update", headers=ADMIN_H, json={})
     assert r.status_code == 409 and "running-seat" in r.text and fake.runs == []
 
@@ -234,6 +235,22 @@ def test_harness_update_catalog_fallback_and_finished_rows_still_idle(env, fake,
         "models": {"m-codex": {"harness": "codex"}}})
     fake.sessions = [{"handle": "cx", "state": "active", "model": "m-codex"},
                      {"handle": "old", "state": "done", "model": "unknown-model"}]
-    assert H.live_seats_by_harness() == {"claude": [], "codex": ["cx"], "pi": []}
+    assert H.live_seats_by_harness() == {"claude": [], "codex": ["cx (active)"], "pi": []}
     r = env.client.post("/v1/admin/harnesses/claude/update", headers=ADMIN_H, json={})
     assert r.status_code == 200 and fake.runs == [["C:/bin/claude.exe", "update"]]
+
+
+def test_updater_refusal_names_a_parked_seat_and_the_way_out(pool, app_update):
+    pool.answer = (200, b'[{"handle": "arch.e-1", "state": "parked", "proc": {"pid": 42}}]', "application/json")
+    with pytest.raises(updater.UpdateError) as e:
+        updater.apply({})
+    assert "arch.e-1 (pid 42, parked)" in str(e.value) and "reap or close parked seats" in str(e.value)
+    assert "--force" in str(e.value) and app_update == []
+
+
+def test_harness_update_parked_seat_blocks_with_its_state(env, fake, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(H.seat_choice, "_registry", lambda *a: {"models": {}})
+    fake.sessions = [{"handle": "qa.e-1", "state": "parked", "harness": "codex"}]
+    r = env.client.post("/v1/admin/harnesses/codex/update", headers=ADMIN_H, json={})
+    assert r.status_code == 409 and "qa.e-1 (parked)" in r.text and "reap or close parked seats" in r.text
+    assert fake.runs == []
