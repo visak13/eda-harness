@@ -99,8 +99,8 @@ def _changelog() -> str:
 
 
 def on_files(files: Files, config: Any) -> Files:
-    for uri, gen in REFERENCE.items():
-        files.append(File.generated(config, uri, content=gen()))
+    for uri, gen in REFERENCE.items():  # wide tables: the page drops the left nav (the tabs and the index remain)
+        files.append(File.generated(config, uri, content="---\nhide:\n  - navigation\n---\n\n" + gen()))
     files.append(File.generated(config, "reference/openapi.json",
                                 content=__import__("json").dumps(_openapi(), indent=2) + "\n"))
     files.append(File.generated(config, "reference/workflow.schema.json", content=sitegen.workflow_schema_json()))

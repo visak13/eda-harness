@@ -61,7 +61,11 @@
 /* downloads */
 .hy-downloads { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .8rem; margin: 1rem 0; }
 .hy-downloads .hy-dl { text-align: center; margin: 0; }
-.hy-downloads small { opacity: .85; font-weight: 400; word-break: break-all; }
+.hy-downloads small { opacity: .85; font-weight: 400; overflow-wrap: anywhere; word-break: normal; }
+
+/* generated reference tables: identifiers never split mid-word; a wide table scrolls */
+.md-typeset table:not([class]) code { white-space: nowrap; word-break: normal; }
+.md-typeset table:not([class]) { font-size: .7rem; }
 
 /* the product video player */
 .hy-player { position: relative; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; border: 1px solid var(--hy-border); }

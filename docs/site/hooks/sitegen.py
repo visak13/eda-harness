@@ -26,14 +26,20 @@ from typing import Any
 # ----------------------------------------------------------------------------- helpers
 
 
-def _cell(text: Any) -> str:
-    """One Markdown table cell: no newlines, pipes escaped."""
+def _flat(text: Any) -> str:
     s = "" if text is None else str(text)
     return " ".join(s.split()).replace("|", "\\|")
 
 
+def _cell(text: Any) -> str:
+    """One Markdown table cell: no newlines, pipes escaped, and `<…>` outside code spans shown as text (a doc line
+    like "<data>/models" is a placeholder, not HTML)."""
+    parts = _flat(text).split("`")
+    return "`".join(p if i % 2 else p.replace("<", "&lt;").replace(">", "&gt;") for i, p in enumerate(parts))
+
+
 def _code(text: Any) -> str:
-    s = _cell(text)
+    s = _flat(text)
     return f"`{s}`" if s else ""
 
 
@@ -216,10 +222,7 @@ def mcp_md() -> str:
             if props:
                 rows = []
                 for arg, spec in props.items():
-                    typ = spec.get("type") or ("one of " + "\\|".join(map(str, spec["enum"])) if "enum" in spec else "")
-                    if "enum" in spec and spec.get("type"):
-                        typ = "one of " + "\\|".join(map(str, spec["enum"]))
-                    rows.append([_code(arg), _cell(typ), "yes" if arg in req else "", _cell(spec.get("description", ""))])
+                    rows.append([_code(arg), _cell(_type_of(spec)), "yes" if arg in req else "", _cell(spec.get("description", ""))])
                 parts += [_table(["Argument", "Type", "Required", "Meaning"], rows), ""]
             if roles[t.name]:
                 parts += ["Roles: " + ", ".join(roles[t.name]), ""]
