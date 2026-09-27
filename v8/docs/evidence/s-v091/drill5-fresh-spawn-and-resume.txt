@@ -1,0 +1,89 @@
+﻿temp C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838
+== 1. source: DB copy, tokens, catalogs, one closed seat row, an old claude store with its transcript
+PASS  the copy holds a DB snapshot
+   old-store turn said: ok
+PASS  the old store holds the seat's transcript under the copy's key (C--Projects-Learning-eda-base3-v8--data-v091-drill-18b64838-v8)
+   closed row: engineer:dca0f23e-51e2-4fe1-8c4a-05a7ea72372e (claude session b4ba18a2-5603-4a60-abc4-c8c782c6a85e)
+== 2. wheels from HEAD, private venv
+   HEAD 96da776
+PASS  an SPA bundle for the edp8 wheel
+   Successfully built .data\v091-drill-18b64838\wheels\edp_contracts-0.9.1-py3-none-any.whl
+   Successfully built .data\v091-drill-18b64838\wheels\edp_pool-0.9.1-py3-none-any.whl
+   Successfully built .data\v091-drill-18b64838\wheels\edp_broker-0.9.1-py3-none-any.whl
+   Successfully built .data\v091-drill-18b64838\wheels\edp8-0.9.1-py3-none-any.whl
+PASS  four wheels
+   Activate with: .data\v091-drill-18b64838\venv\Scripts\activate
+   repacked 76 distributions into C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\wheelhouse
+    + uvicorn==0.52.4
+PASS  heronry.exe in the private venv
+== 3. private EDP_HOME, spare ports, the real claude harness
+   ports board=58376 mcp=58377 pool=58378 broker=58379
+Heronry 0.9.1
+   Heronry init
+     dir     config   C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\home
+     dir     secrets  C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\home
+     dir     data     C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\home\.data
+     dir     run      C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\home\.run
+     dir     logs     C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\home\.data\logs
+     dir     backups  C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\home\.data\backups
+     config  C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\home\config.toml
+     secret  admin token C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\home\admin.token
+     secret  tokens C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\home\tokens.json (first human: owner)
+     agents  C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\home\agent-home (61 new, 0 updated, 0 kept)
+     models  C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\home\.data\models.json
+     trust   C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\home\agent-home trusted for claude seats (C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\home\.data\claude-pool\.claude.json)
+     claude  settings C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\home\.data\claude-pool\settings.json (written)
+     harness claude
+   
+   NOTICE: Codex is not selected, so the adversary role runs on Fable (claude-fable-5-1). Fable's safety safeguards are strict: an adversarial or security review may be declined or softened. Review its findings before trusting a clean result.
+   
+   next: heronry doctor, then heronry start
+PASS  init exit 0
+   import from C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\v8
+   into        C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\home  (data C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\home\.data)
+   
+     new      board DB                       54.7 MB  -> C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\home\.data\edp8.db
+              source holds {'epics': 29, 'tickets': 390, 'participants': 302}
+     replace  tokens.json                     7.9 KB  -> C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\home\tokens.json
+     new      claude transcripts            153.9 KB  -> C:\Projects\Learning\eda-base3\v8\.data\v091-drill-18b64838\home\.data\claude-pool\projects\C--Projects-Learning-eda-base3-v8--data-v091-drill-18b64838-home-agent-home  1 files
+   
+   imported: {'epics': 29, 'tickets': 390, 'participants': 302}
+   done. The source was not modified; `heronry start` runs the imported state.
+PASS  import exit 0
+PASS  import copied the transcript under the agent home's key (C--Projects-Learning-eda-base3-v8--data-v091-drill-18b64838-home-agent-home)
+PASS  the live .data/models.json won over the template
+== 4. start, fresh spawn, resume
+   board      started          pid 23596  http://127.0.0.1:58376
+   broker     started          pid 31356  http://127.0.0.1:58379
+   pool       started          pid 26772  http://127.0.0.1:58378
+   mcp        started          pid 37692  http://127.0.0.1:58377
+   bridge     skipped          (no slack map configured)
+   supervisor started          pid 42252
+   setup      first run: finish setup at http://127.0.0.1:58376/ui/setup?code=aKO6D4zWWFA-3jeK6H8T-kYfNQkp-kHi  (the link signs you in once, within 24 h)
+PASS  start exit 0
+   board /v1/health version: 0.9.1
+PASS  GET / redirects to /ui/
+   reaping a seat the imported state started by itself: qa.epic-7f3d64e6de
+   spawn: ok=True {"session_id":"engineer:c6c792e1-c677-48ad-9358-0604f862f362","seat_choice":{"model":"claude-opus-5-5","effort":"medium","note":null}}
+   fresh seat transcript: a8f63a1e-df95-475c-9ed8-2929a801bd1d.jsonl|mcp__edp8__whoami -> ok, participant engineer.t-8713b03b24|47 transcript lines
+PASS  a fresh claude seat called whoami() and got its participant back
+   fresh liveness 15 s later: {"handle":"engineer.t-8713b03b24","state":"alive","last_output_ts":null}
+PASS  the fresh seat stays alive
+   resume: ok=True via=resume-from-closed hint=continued b4ba18a2-5603-4a60-abc4-c8c782c6a85e
+PASS  the imported closed seat resumed (resume-from-closed)
+   resumed seat transcript: a8f63a1e-df95-475c-9ed8-2929a801bd1d.jsonl|mcp__edp8__whoami -> ok, participant engineer.t-8713b03b24|82 transcript lines
+PASS  the resumed claude seat called whoami() and got its participant back
+   resumed liveness 15 s later: {"handle":"engineer.t-e5fe207e39","state":"alive","last_output_ts":null}
+PASS  the resumed seat stays alive
+== 5. stop
+   pool stop takes these 1 seat(s) offline:
+     - engineer.t-e5fe207e39 (pid 34476, active)
+   supervisor stopped
+   bridge     not running
+   mcp        stopped
+   pool       stopped
+   broker     stopped
+   board      stopped
+PASS  stop leaves no process running from the private install (0 found)
+PASS  the temp folder (with its copied claude sign-in) is removed
+RESULT: all checks passed

@@ -1,0 +1,84 @@
+﻿temp C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136
+== 1. source: DB copy, tokens, catalogs, one closed seat row, an old claude store with its transcript
+PASS  the copy holds a DB snapshot
+   old-store turn said: ok
+PASS  the old store holds the seat's transcript under the copy's key (C--Projects-Learning-eda-base3-v8--data-v091-drill-f572a136-v8)
+   closed row: engineer:dca0f23e-51e2-4fe1-8c4a-05a7ea72372e (claude session 090b8550-a472-4a45-b06a-763517a3117a)
+== 2. wheels from HEAD, private venv
+   HEAD 96da776
+PASS  an SPA bundle for the edp8 wheel
+   Successfully built .data\v091-drill-f572a136\wheels\edp_contracts-0.9.1-py3-none-any.whl
+   Successfully built .data\v091-drill-f572a136\wheels\edp_pool-0.9.1-py3-none-any.whl
+   Successfully built .data\v091-drill-f572a136\wheels\edp_broker-0.9.1-py3-none-any.whl
+   Successfully built .data\v091-drill-f572a136\wheels\edp8-0.9.1-py3-none-any.whl
+PASS  four wheels
+   Activate with: .data\v091-drill-f572a136\venv\Scripts\activate
+   repacked 76 distributions into C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\wheelhouse
+    + uvicorn==0.52.4
+PASS  heronry.exe in the private venv
+== 3. private EDP_HOME, spare ports, the real claude harness
+   ports board=60476 mcp=60477 pool=60478 broker=60479
+Heronry 0.9.1
+   Heronry init
+     dir     config   C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\home
+     dir     secrets  C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\home
+     dir     data     C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\home\.data
+     dir     run      C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\home\.run
+     dir     logs     C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\home\.data\logs
+     dir     backups  C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\home\.data\backups
+     config  C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\home\config.toml
+     secret  admin token C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\home\admin.token
+     secret  tokens C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\home\tokens.json (first human: owner)
+     agents  C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\home\agent-home (61 new, 0 updated, 0 kept)
+     models  C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\home\.data\models.json
+     trust   C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\home\agent-home trusted for claude seats (C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\home\.data\claude-pool\.claude.json)
+     claude  settings C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\home\.data\claude-pool\settings.json (written)
+     harness claude
+   
+   NOTICE: Codex is not selected, so the adversary role runs on Fable (claude-fable-5-1). Fable's safety safeguards are strict: an adversarial or security review may be declined or softened. Review its findings before trusting a clean result.
+   
+   next: heronry doctor, then heronry start
+PASS  init exit 0
+   import from C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\v8
+   into        C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\home  (data C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\home\.data)
+   
+     new      board DB                       54.7 MB  -> C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\home\.data\edp8.db
+              source holds {'epics': 29, 'tickets': 390, 'participants': 302}
+     replace  tokens.json                     7.9 KB  -> C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\home\tokens.json
+     new      claude transcripts            153.9 KB  -> C:\Projects\Learning\eda-base3\v8\.data\v091-drill-f572a136\home\.data\claude-pool\projects\C--Projects-Learning-eda-base3-v8--data-v091-drill-f572a136-home-agent-home  1 files
+   
+   imported: {'epics': 29, 'tickets': 390, 'participants': 302}
+   done. The source was not modified; `heronry start` runs the imported state.
+PASS  import exit 0
+PASS  import copied the transcript under the agent home's key (C--Projects-Learning-eda-base3-v8--data-v091-drill-f572a136-home-agent-home)
+PASS  the live .data/models.json won over the template
+== 4. start, fresh spawn, resume
+   board      started          pid 31248  http://127.0.0.1:60476
+   broker     started          pid 41660  http://127.0.0.1:60479
+   pool       started          pid 11216  http://127.0.0.1:60478
+   mcp        started          pid 27092  http://127.0.0.1:60477
+   bridge     skipped          (no slack map configured)
+   supervisor started          pid 33520
+   setup      first run: finish setup at http://127.0.0.1:60476/ui/setup?code=tPTsV-xIXve1YTBROZOOb_wGouJ3_p6f  (the link signs you in once, within 24 h)
+PASS  start exit 0
+   board /v1/health version: 0.9.1
+PASS  GET / redirects to /ui/
+   reaping a seat the imported state started by itself: qa.epic-7f3d64e6de
+   resume: ok=True via=resume-from-closed hint=continued 090b8550-a472-4a45-b06a-763517a3117a
+PASS  the imported closed seat resumed (resume-from-closed)
+   resumed seat transcript: 
+FAIL  the resumed claude seat called whoami() and got its participant back
+   resumed liveness 15 s later: {"handle":"engineer.t-e5fe207e39","state":"alive","last_output_ts":null}
+PASS  the resumed seat stays alive
+== 5. stop
+   pool stop takes these 1 seat(s) offline:
+     - engineer.t-e5fe207e39 (pid 7536, active)
+   supervisor stopped
+   bridge     not running
+   mcp        stopped
+   pool       stopped
+   broker     stopped
+   board      stopped
+PASS  stop leaves no process running from the private install (0 found)
+PASS  the temp folder (with its copied claude sign-in) is removed
+RESULT: 1 check(s) FAILED
