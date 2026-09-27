@@ -1,29 +1,17 @@
 # Secret + PII gate (S9, design §4.5; strategyhl-d76b06a3dd §4).
 # CI runs `gitleaks dir .` (the tree) and `gitleaks git --log-opts=<base>..<head>` (new commits);
-# both block. The default ruleset finds credentials; the rules below find this repo's PII.
-# Each literal is written with a character class (a[k]sou) so this file never matches itself
-# and the plain-text grep in scripts/pii_scan.py stays at 0 hits.
+# both block. The default ruleset finds credentials; the rule below finds a checkout path.
+# The maintainer's username, email and name are NOT in this file (qa report-bcef24a36a: a needle
+# in a tracked file publishes it, character class or not). They live in the PII_NEEDLES secret
+# (CI) or the gitignored .pii-needles.toml (the maintainer's machine); CI runs gitleaks on
+# `.gitleaks.pii.toml`, which `.github/scripts/pii_gate.py --gitleaks-config` writes: it extends
+# this file with the owner rules. No path is exempt from them: NOTICE names "Heronry
+# contributors" (owner m-c486b47c54).
 
 title = "heronry secret + PII gate"
 
 [extend]
 useDefault = true
-
-[[rules]]
-id = "pii-owner-username"
-description = "The maintainer's Windows username (profile paths, handles)"
-regex = '''(?i)\ba[k]sou\b'''
-
-[[rules]]
-id = "pii-owner-email"
-description = "The maintainer's personal email"
-regex = '''(?i)a[k]soulkar@gmail\.com'''
-
-[[rules]]
-id = "pii-owner-name"
-description = "The maintainer's display name (git config user.name)"
-regex = '''(?i)\bv[i]shal\b|\bo[u]lkar\b'''
-# No path is exempt: NOTICE names "Heronry contributors" (owner m-c486b47c54).
 
 [[rules]]
 id = "pii-projects-root"

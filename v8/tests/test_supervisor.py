@@ -139,9 +139,12 @@ def test_service_ports_follow_the_launcher_env(tmp_path):
     import subprocess
     import sys
 
-    env = {k: v for k, v in os.environ.items() if not k.startswith("EDP")}
+    # a temp EDP_HOME and no inherited EDP*/HERONRY* var: the real profile's config.toml (its own ports,
+    # e.g. 19400) must never decide the defaults this test asserts (qa m-d125eafce3)
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith(("EDP", "HERONRY"))}
+    (tmp_path / "home").mkdir()
     env.update(EDP8_PORT="59518", EDP_BROKER_PORT="59318", EDP_POOL_PORT="59319", EDP8_MCP_PORT="59418",
-               EDP8_RUN_DIR=str(tmp_path / "run"))
+               EDP_HOME=str(tmp_path / "home"), EDP8_RUN_DIR=str(tmp_path / "run"))
     probe = "from edp8 import run_state as r; print([r.SERVICES[s]['port'] for s in ('board','broker','pool','mcp','bridge')])"
     out = subprocess.run([sys.executable, "-c", probe], env=env, capture_output=True, text=True, timeout=60)
     assert out.stdout.strip() == "[59518, 59318, 59319, 59418, None]", out.stdout + out.stderr

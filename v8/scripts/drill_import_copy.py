@@ -11,7 +11,9 @@
 5. Checks that a copied human token authenticates and a wrong one gets 401.
 6. Stops the board and re-hashes the copy, which must be byte-unchanged.
 
-Secrets are never printed.
+Secrets are never printed. The temp folder holds a full copy of the fleet state, tokens included: it is
+removed on every exit path (a failed check, an exception, Ctrl+C) unless --keep, and a removal that
+fails raises naming the folder (qa m-d125eafce3: a silent cleanup left a 2.9 GB copy in %TEMP%).
 
     v8\\.venv\\Scripts\\python.exe v8\\scripts\\drill_import_copy.py [--keep]
 """
@@ -25,7 +27,9 @@ import socket
 import sqlite3
 import subprocess
 import sys
+import stat
 import tempfile
+import time
 from pathlib import Path
 
 import httpx
@@ -89,11 +93,48 @@ def copy_v8(dst: Path) -> None:
         shutil.copytree(V8 / "uploads", dst / "uploads")
 
 
+class CleanupError(RuntimeError):
+    """The drill's temp copy (fleet state, tokens included) could not be removed."""
+
+
+def cleanup(t: Path, attempts: int = 5) -> None:
+    """Remove the drill's temp folder or raise: read-only files are made writable, and a file a just-stopped
+    process still holds gets a few retries."""
+    def _writable(fn, path, _exc):
+        os.chmod(path, stat.S_IWRITE)
+        fn(path)
+
+    err: OSError | None = None
+    for i in range(attempts):
+        try:
+            shutil.rmtree(_long(t), onexc=_writable)
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            err = e
+        if not _long(t).exists():
+            return
+        time.sleep(0.5 * (i + 1))
+    raise CleanupError(f"could not remove the drill's temp copy {t} (fleet state and tokens): "
+                       f"{err or 'still present after rmtree'}; delete it by hand")
+
+
 def main() -> int:
     keep = "--keep" in sys.argv
     t = Path(tempfile.mkdtemp(prefix="s3-import-"))
-    src, home = t / "v8copy", t / "home"
     print(f"temp {t}", flush=True)
+    try:
+        return _drill(t)
+    finally:
+        if keep:
+            print(f"--keep: the temp copy stays at {t}", flush=True)
+        else:
+            cleanup(t)
+            print(f"removed {t}", flush=True)
+
+
+def _drill(t: Path) -> int:
+    src, home = t / "v8copy", t / "home"
     copy_v8(src)
     before = tree_hash(src)
     want = counts(src / ".data" / "edp8.db")
@@ -141,8 +182,6 @@ def main() -> int:
         s = cli("stop", "--force")
         check(s.returncode == 0, "stop the private board")
     check(tree_hash(src) == before, "the source copy is byte-unchanged (sha256 of every file)")
-    if not keep:
-        shutil.rmtree(_long(t), ignore_errors=True)
     print(f"RESULT: {FAIL} check(s) FAILED" if FAIL else "RESULT: all checks passed")
     return 1 if FAIL else 0
 

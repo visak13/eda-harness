@@ -26,8 +26,9 @@ When a newer release exists:
 
 ### What Apply does
 
-**Apply** and `heronry update` run the same steps (so does **Check for update** in the desktop app,
-once you confirm):
+**Apply** and `heronry update` run the same steps (so does the desktop app's **Check for update**, once
+you confirm, where Heronry was installed with the install script; the installed desktop bundle opens
+the release page instead, see the note below):
 
 1. **Download and verify.** The release is downloaded and every file is checked against the
    release's `SHA256SUMS`. An older release is refused.

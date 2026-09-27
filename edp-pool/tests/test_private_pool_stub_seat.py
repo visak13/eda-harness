@@ -73,9 +73,10 @@ def test_private_pool_spawns_a_stub_seat_and_reaps_it(tmp_path):
     home = tmp_path / "home"
     home.mkdir()
     stub = _stub_bin(tmp_path)
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("EDP_", "EDP8_"))}
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith(("EDP", "HERONRY"))}
     env.update({
         MARK: RUN,
+        "EDP_HOME": str(tmp_path / "edp-home"),  # never the real profile's config.toml
         "EDP_POOL_HOST": "127.0.0.1", "EDP_POOL_PORT": str(port),
         "EDP_POOL_STATE": str(tmp_path / "state" / "pool-state.json"),
         "EDP_POOL_LOG_DIR": str(tmp_path / "pool-logs"),

@@ -1,12 +1,10 @@
 # Heronry
 
 <p align="center">
-  <a href="https://github.com/visak13/eda-harness/blob/main/docs/readme/storefront/heronry-demo.mp4" title="Watch the 90-second product video">
-    <picture>
-      <source srcset="docs/readme/storefront/hero.webp" type="image/webp">
-      <img src="docs/readme/storefront/hero.gif" alt="Heronry in seven seconds: seats spawn, wake on their feed and walk an epic to done" width="720">
-    </picture>
-  </a>
+  <picture>
+    <source srcset="docs/readme/storefront/hero.webp" type="image/webp">
+    <img src="docs/readme/storefront/hero.gif" alt="Heronry in seven seconds: seats spawn, wake on their feed and walk an epic to done" width="720">
+  </picture>
 </p>
 
 <p align="center"><strong>Heronry: your agent team, built on decisions, checked before delivery.</strong></p>
@@ -119,8 +117,10 @@ on the harnesses you picked. **Pi** seats run any provider or key you have, incl
 - **Tray / menu-bar icon:** Open board, Status, Start, Stop and Restart services, Check for update,
   *Stop services on quit*, Quit. Closing the window hides it; Quit leaves the services running unless that option
   is ticked. Each item runs the same `heronry` command you can type in a terminal.
-- **Updates:** Heronry checks for a new release once a day. *Check for update* (or `heronry update --apply`) backs
-  up your board, stops the services, installs the new release and starts it again.
+- **Updates:** Heronry checks for a new release once a day. In the installed desktop app, *Check for update* opens
+  the release page: download the new installer and run it; your board data and settings stay. Where Heronry was
+  installed with the install script, *Check for update* (like `heronry update`) backs up your board, stops the
+  services, installs the new release and starts it again.
 - **Uninstall:** Settings → Apps (Windows), drag to Trash (macOS), `sudo apt remove heronry` (Linux).
   Your board data and settings are kept for a later install.
 - **VS Code:** the Heronry extension warns when its version and the board's differ, and offers the one
@@ -158,9 +158,10 @@ Heronry updates itself from this repository's GitHub Releases, and only when you
 
 - The CLI checks once a day and prints a one-line notice when a release is out (`HERONRY_NO_UPDATE_CHECK=1`
   turns it off). `heronry update --check` reports the installed and latest versions.
-- `heronry update` (or **Check for update**) downloads the release, verifies `SHA256SUMS`, checks your
-  custom workflows against the new version, backs up the board, stops the services, upgrades and starts again.
-  `--dry-run` stops after the download and checks.
+- `heronry update` downloads the release, verifies `SHA256SUMS`, checks your custom workflows against the new
+  version, backs up the board, stops the services, upgrades and starts again. `--dry-run` stops after the
+  download and checks. The installed desktop app updates through its installer instead: its **Check for update**
+  opens the release page for the new `.msi`, `.dmg` or `.deb`.
 - It refuses while seats are live, and when it cannot secure the installed version's wheels for a rollback.
   If the new version does not start, it reinstalls the previous one and restores the backup.
 - The VS Code extension and your agent CLIs (claude, codex, pi) are not updated by Heronry. The extension

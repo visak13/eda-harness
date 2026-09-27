@@ -119,6 +119,11 @@ def test_caller_with_no_home_never_claims_a_listener(home, fake, monkeypatch, tm
     # the old _ours returned True for every installed CLI (no EDP_HOME) when the argv named the module
     monkeypatch.delenv("EDP_HOME")
     monkeypatch.setenv("EDP8_RUN_DIR", str(tmp_path / "run-nohome"))
+    # no home = the platform dirs; root them in tmp so the real profile's config.toml never answers
+    from types import SimpleNamespace
+    from edp_contracts.settings import _core
+    plat = SimpleNamespace(**{f"user_{d}_dir": str(tmp_path / "platform" / d) for d in ("config", "data", "state", "log")})
+    monkeypatch.setattr(_core, "_platform", lambda: plat)
     assert settings.home() is None
     lid = fake(home["port"], {"ok": True}, "-m", "edp8.service")
     assert launcher._ours("board", lid) is False

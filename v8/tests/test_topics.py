@@ -232,6 +232,7 @@ def test_app_keeps_writing_its_own_tokens_file_after_the_env_is_unset(board, poo
     fleet.write_text(json.dumps({"owner": "fleet", "agents": {"x": "y"}}), encoding="utf-8")
     monkeypatch.chdir(cwd)
     monkeypatch.delenv("EDP8_HOME", raising=False)
+    monkeypatch.setenv("EDP_HOME", str(tmp_path / "home"))  # a temp home: never the real profile's config
     c = TestClient(create_app(board, admin_token="t"))
     c.post("/v1/participants", json={"type": "human", "role": "owner", "handle": "owner", "id": "owner"}, headers=ADMIN)
     t = c.post("/v1/topics", json={"title": "x"}, headers=OWNER).json()["value"]["topic"]

@@ -471,7 +471,7 @@ def _pins(vendor: Path) -> tuple[list[tuple[str, str]], dict[str, Any]]:
 def _terminal_profiles() -> dict[str, Any]:
     if sys.platform != "win32":
         return {}
-    root = os.environ.get("SystemRoot") or r"C:\Windows"
+    root = settings.get("SystemRoot") or r"C:\Windows"
     profiles: dict[str, Any] = {
         "PowerShell": {"path": str(Path(root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"),
                        "icon": "terminal-powershell"},

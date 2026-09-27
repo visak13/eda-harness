@@ -127,3 +127,7 @@ v8/.env
 v8/ui-settings.json
 .coverage
 .coverage.*
+
+# Owner PII needles for the PII gate (CI: the PII_NEEDLES secret) and the gitleaks config built from them
+.pii-needles.toml
+.gitleaks.pii.toml

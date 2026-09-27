@@ -57,9 +57,11 @@ jobs:
           EDP8_WEB_AUTOBUILD: "0"
         run: for p in edp-contracts edp-pool edp-broker v8; do uv build --out-dir dist "$p"; done
       - name: Manifest guard (no evidence/tests/.data, size ceilings) and PII gate
+        env:
+          PII_NEEDLES: ${{ secrets.PII_NEEDLES }}
         run: |
           python3 .github/scripts/check_dist.py dist
-          python3 .github/scripts/pii_gate.py --dir dist
+          python3 .github/scripts/pii_gate.py --dir dist --require-needles
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist-python
@@ -118,7 +120,9 @@ jobs:
           cat SHA256SUMS
           sha256sum -c SHA256SUMS
       - name: PII gate over the release assets
-        run: python3 .github/scripts/pii_gate.py --dir assets
+        env:
+          PII_NEEDLES: ${{ secrets.PII_NEEDLES }}
+        run: python3 .github/scripts/pii_gate.py --dir assets --require-needles
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-assets

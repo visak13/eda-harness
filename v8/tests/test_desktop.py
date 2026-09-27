@@ -288,3 +288,73 @@ def test_capture_run_writes_messages_instead_of_a_dialog_and_still_quits(monkeyp
     assert "capture failed: no webview" in (tmp_path / "messages.txt").read_text(encoding="utf-8")
     assert not [c for c in app.window.calls if c[0] == "create_confirmation_dialog"]
     assert ("destroy",) in app.window.calls
+
+
+def tray_menu_dump(monkeypatch, *, bundled: bool = False, stop_on_quit: bool = False) -> list[tuple[str, str]]:
+    """S21 c-b73a4537db without a window capture (a capture tripped the antivirus in S8): build the real tray
+    menu against a fake pystray, click every item on the calling thread (each from the same fresh prefs), and
+    record what each one runs."""
+    class MenuItem:
+        def __init__(self, text, action, **kw):
+            self.text, self.action, self.kw = text, action, kw
+
+    class Menu:
+        SEPARATOR = MenuItem("-", None)
+
+        def __init__(self, *items):
+            self.items = items
+
+    made = {}
+    monkeypatch.setitem(sys.modules, "pystray", types.SimpleNamespace(
+        MenuItem=MenuItem, Menu=Menu, Icon=lambda name, image, title, menu: made.update(menu=menu) or types.SimpleNamespace(stop=lambda: None)))
+    monkeypatch.setattr(desktop.threading, "Thread", lambda target, daemon: types.SimpleNamespace(start=target))
+    calls: list[str] = []
+    monkeypatch.setattr(desktop, "run_cli", lambda verb, *a: calls.append("heronry " + " ".join((verb, *a))) or (0, "ok"))
+    monkeypatch.setattr(desktop, "status_text", lambda: calls.append("launcher.status_rows() (heronry status's rows)") or "")
+    monkeypatch.setattr(desktop, "board_url", lambda: "http://127.0.0.1:9400")
+    from edp8 import launcher, updater
+    monkeypatch.setattr(updater, "check", lambda **kw: {"newer": True, "latest": "9.9.9", "current": "0.9.0",
+                                                         "url": "https://github.com/<repo>/releases/tag/v9.9.9"})
+    monkeypatch.setattr(launcher, "bundled", lambda: bundled)
+    import webbrowser
+    monkeypatch.setattr(webbrowser, "open", lambda u: calls.append(f"webbrowser.open({u})"))
+    app = desktop.Desktop("Heronry Desktop")
+    app.window = FakeWindow()
+    app.window.load_url = lambda u: calls.append(f"window.load_url({u})")
+    app.window.show = lambda: calls.append("window.show()")
+    monkeypatch.setattr(desktop, "save_prefs", lambda p: calls.append(f"save_prefs(stop_services_on_quit={p['stop_services_on_quit']})"))
+    app.make_tray()
+    rows: list[tuple[str, str]] = []
+    for it in made["menu"].items:
+        if it.action is None:
+            rows.append(("----", ""))
+            continue
+        calls.clear()
+        app.prefs, app.quitting = {"stop_services_on_quit": stop_on_quit}, False
+        it.action(None, it)
+        rows.append((it.text, "; ".join(calls) or "(no command)"))
+    return rows
+
+
+def test_tray_menu_model_dump(monkeypatch, capsys):
+    """Prints the tray menu model for the S21 report (`pytest -s -k tray_menu_model_dump`): every item and the
+    command it calls. Start/stop/restart are `heronry` CLI verbs, the terminal's own code path."""
+    rows = tray_menu_dump(monkeypatch)
+    bundled = dict(tray_menu_dump(monkeypatch, bundled=True))
+    stopping = dict(tray_menu_dump(monkeypatch, stop_on_quit=True))
+    got = dict(rows)
+    assert got["Start services"] == "heronry start --no-browser"
+    assert got["Stop services"] == "heronry stop"
+    assert got["Restart services"] == "heronry restart"
+    assert got["Start code server"] == "heronry start code" and got["Stop code server"] == "heronry stop code"
+    assert got["Check for update"] == "heronry update"
+    assert bundled["Check for update"].startswith("webbrowser.open(https://github.com/")
+    assert got["Open board"] == "window.show()"
+    assert got["Quit"] == "(no command)"  # services stay up unless "Stop services on quit" is set
+    assert stopping["Quit"] == "heronry stop"
+    with capsys.disabled():
+        print("\n== tray menu model (edp8.desktop.Desktop.make_tray), item -> what a click runs")
+        for text, run in rows:
+            print(f"  {text:<24} {run}")
+        print(f"  {'Check for update':<24} {bundled['Check for update']}   <- bundled (installed) app")
+        print(f"  {'Quit':<24} {stopping['Quit']}   <- with 'Stop services on quit' set")

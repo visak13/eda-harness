@@ -57,13 +57,16 @@ jobs:
       - name: PII scan of the built site
         run: $SITE_RUN python docs/site/hooks/pii_scan.py docs/site/site
       - name: gitleaks over the built site (with the repo's rules, once they exist)
+        env:
+          PII_NEEDLES: ${{ secrets.PII_NEEDLES }}
         run: |
           if [ ! -f .gitleaks.toml ]; then echo "no .gitleaks.toml yet: the PII scan above is the gate"; exit 0; fi
           curl -sSLO "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           curl -sSLO "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
           grep " gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz$" "gitleaks_${GITLEAKS_VERSION}_checksums.txt" | sha256sum -c -
           tar -xzf "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" gitleaks
-          ./gitleaks dir docs/site/site --config .gitleaks.toml --redact --no-banner
+          python3 .github/scripts/pii_gate.py --gitleaks-config .gitleaks.pii.toml
+          ./gitleaks dir docs/site/site --config .gitleaks.pii.toml --redact --no-banner
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: site-preview

@@ -33,7 +33,7 @@ BOARD_AUTHOR = "board"
 def _roots() -> tuple[tuple[Path, ...], tuple[Path, ...]]:
     """(claude roots, codex roots): EDP8_HARVEST_LOG_ROOTS (os.pathsep list) overrides both — a board
     whose home is not the fleet agent home (a private audit board) still finds the host's seat logs."""
-    extra = [Path(x) for x in os.environ.get("EDP8_HARVEST_LOG_ROOTS", "").split(os.pathsep) if x]
+    extra = [Path(x) for x in (settings.get("EDP8_HARVEST_LOG_ROOTS") or "").split(os.pathsep) if x]
     return (tuple(extra), tuple(extra)) if extra else (CLAUDE_ROOTS, CODEX_ROOTS)
 
 

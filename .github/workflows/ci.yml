@@ -40,8 +40,15 @@ jobs:
           tar -xzf gl.tgz gitleaks && sudo mv gitleaks /usr/local/bin/ && rm gl.tgz
           gitleaks version
 
+      - name: gitleaks config with the owner rules (needles from the PII_NEEDLES secret, never the tree)
+        env:
+          PII_NEEDLES: ${{ secrets.PII_NEEDLES }}
+        run: |
+          python3 .github/scripts/pii_gate.py --gitleaks-config .gitleaks.pii.toml
+          if [ -z "$PII_NEEDLES" ]; then echo "::warning::PII_NEEDLES secret not set: the owner-name rules are off for this run"; fi
+
       - name: gitleaks over the tree
-        run: gitleaks dir . -c .gitleaks.toml --redact --no-banner
+        run: gitleaks dir . -c .gitleaks.pii.toml --redact --no-banner
 
       - name: gitleaks over the new commits
         env:
@@ -54,9 +61,11 @@ jobs:
             RANGE="$BASE..HEAD"
           fi
           echo "scanning $RANGE"
-          gitleaks git . -c .gitleaks.toml --redact --no-banner --log-opts="$RANGE"
+          gitleaks git . -c .gitleaks.pii.toml --redact --no-banner --log-opts="$RANGE"
 
       - name: PII gate over every tracked file (bytes, archives included)
+        env:
+          PII_NEEDLES: ${{ secrets.PII_NEEDLES }}
         run: python3 .github/scripts/pii_gate.py
 
   test:

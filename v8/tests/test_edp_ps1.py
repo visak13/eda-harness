@@ -381,11 +381,22 @@ def test_failed_update_keeps_stderr_and_restores_the_supervisor_it_paused(tmp_pa
 def test_unexpected_exception_still_restores_the_paused_supervisor(tmp_path):
     """qa S16 (adversary #5): restoration lived only in explicit FailDown calls; a thrown exception
     (here: `uv` is not on PATH, so `uv sync` throws after the supervisor was paused and the broker
-    stopped) skipped it. A script-level trap routes every exception through FailDown."""
+    stopped) skipped it. A script-level trap routes every exception through FailDown.
+
+    The reduced PATH holds no git of its own (qa m-d125eafce3: Git for Windows' mingw64 git.exe cannot
+    pull without its sibling dirs on PATH): a `git.cmd` shim runs the resolved git under this process's
+    full PATH, so only edp.ps1 itself, not git, misses uv."""
     git = shutil.which("git")
-    path = os.pathsep.join([str(Path(git).parent), r"C:\Windows\System32", r"C:\Windows\System32\WindowsPowerShell\v1.0"])
-    if not git or shutil.which("uv", path=path):
-        pytest.skip("needs git on PATH and a PATH without uv")
+    if not git:
+        pytest.skip("needs git (the upstream repo fixture is built with it)")
+    shim = tmp_path / "gitshim"
+    shim.mkdir()
+    (shim / "git.cmd").write_text(f'@echo off\r\nsetlocal\r\nset "PATH={os.environ["PATH"]}"\r\n'
+                                  f'"{git}" %*\r\nexit /b %ERRORLEVEL%\r\n', encoding="utf-8", newline="")
+    sysroot = os.environ.get("SystemRoot") or r"C:\Windows"
+    path = os.pathsep.join([str(shim), rf"{sysroot}\System32", rf"{sysroot}\System32\WindowsPowerShell\v1.0"])
+    if shutil.which("uv", path=path):
+        pytest.skip("needs a PATH without uv")
     work = _repo_with_upstream_change(tmp_path, ("edp-broker/svc.py",))
     cwd = tmp_path / "cwd"
     _fake_heronry(work, cwd)

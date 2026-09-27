@@ -120,6 +120,12 @@ declare("rsi.warm_s", "EDP8_RSI_WARM_S", "float", 900.0, "Limits/tuning",
         tier="advanced", label='Search check warm-up',
         help='How long the search check waits for the search index to load.')
 
+# ---- harvest cost (edp8.harvest_cost)
+declare("harvest.log_roots", "EDP8_HARVEST_LOG_ROOTS", "str", None, "Limits/tuning",
+        "Seat session-log roots (os.pathsep list) harvest_cost searches instead of the agent-home defaults; "
+        "a private audit board still finds the host's seat logs.",
+        tier="internal")
+
 # ---- integrations
 declare("plane.url", "EDP8_PLANE_URL", "url", None, "Integrations",
         "Plane base URL; set turns on the Plane mirror and webhook.", restart_required="board",
