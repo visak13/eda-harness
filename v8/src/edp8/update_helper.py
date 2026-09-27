@@ -6,9 +6,11 @@ loaded (measured os error 32). This file is stdlib-only for that reason and impo
 
 Plan (JSON, written by the updater): ``caller_pid``, ``install_argv``, ``rollback_install_argv`` (or
 null), ``start_argv``, ``stop_argv``, ``health_url``, ``db``, ``backup``, ``log``, ``result``,
-``from_version``, ``to_version``. Steps: wait for the caller to exit → install → start → health; any
-failure → stop, reinstall the previous artefacts when cached, restore the pre-update DB backup, start.
-The outcome is written to ``result`` (``ok`` | ``rolled_back`` | ``failed``) and every step to ``log``.
+``from_version``, ``to_version``, ``recover_hint``. Steps: wait for the caller to exit → install → start →
+health; any failure → stop, reinstall the previous artefacts when cached, restore the pre-update DB
+backup (when one was taken), start. The outcome is written to ``result`` on every path, a crash included:
+``ok``, ``rolled_back`` (only when the previous code was reinstalled and came up) or ``failed`` (with
+``recover_hint``). Every step goes to ``log``.
 """
 
 from __future__ import annotations
@@ -79,6 +81,9 @@ def _healthy(url: str, wait_s: float = 90.0) -> bool:
 
 
 def _restore(plan: dict) -> None:
+    if not plan.get("backup"):  # no DB existed before the update, so none was backed up (S11 F5)
+        _log(plan, "no DB backup was taken (no DB before the update); DB left as is")
+        return
     db, backup = Path(plan["db"]), Path(plan["backup"])
     for side in ("-wal", "-shm"):
         db.with_name(db.name + side).unlink(missing_ok=True)
@@ -89,13 +94,30 @@ def _restore(plan: dict) -> None:
 def main(plan_path: str) -> int:
     plan = json.loads(Path(plan_path).read_text(encoding="utf-8"))
     result = {"from": plan["from_version"], "to": plan["to_version"], "state": "failed", "reason": ""}
+    done: list[int] = []
 
     def finish(state: str, reason: str = "") -> int:
         result.update(state=state, reason=reason, finished_at=datetime.now(UTC).isoformat(timespec="seconds"))
         Path(plan["result"]).write_text(json.dumps(result, indent=1), encoding="utf-8")
-        _log(plan, f"result {state} {reason}".rstrip())
-        return 0 if state == "ok" else 1
+        done.append(0 if state == "ok" else 1)
+        try:
+            _log(plan, f"result {state} {reason}".rstrip())
+        except OSError:
+            pass
+        return done[-1]
 
+    try:
+        return _steps(plan, finish)
+    except BaseException as e:  # every terminal path writes an outcome (S11 F5), a crash included
+        if not done:
+            hint = plan.get("recover_hint") or "reinstall the previous version with the install script"
+            finish("failed", f"the update helper crashed ({type(e).__name__}: {e}); {hint}")
+        if isinstance(e, Exception):
+            return 1
+        raise
+
+
+def _steps(plan: dict, finish) -> int:
     _log(plan, f"helper up (pid {os.getpid()}): {plan['from_version']} -> {plan['to_version']}")
     deadline = time.monotonic() + 120.0
     while _pid_alive(int(plan["caller_pid"])) and time.monotonic() < deadline:
@@ -113,16 +135,19 @@ def main(plan_path: str) -> int:
 
     _log(plan, f"rolling back: {reason}")
     _run(plan, "stop", plan["stop_argv"], timeout=300)
-    note = ""
-    if plan.get("rollback_install_argv"):
-        if not _run(plan, "reinstall previous", plan["rollback_install_argv"]):
-            note = "; reinstalling the previous version failed"
-    elif reason != "install failed":
-        note = "; the previous version's artefacts were not cached, reinstall it with the install script"
+    hint = plan.get("recover_hint") or "reinstall the previous version with the install script"
+    # rolled_back only when the previous code was reinstalled (S11 F7); anything short of that is failed
+    reinstalled = bool(plan.get("rollback_install_argv")) and _run(plan, "reinstall previous",
+                                                                    plan["rollback_install_argv"])
+    note = "" if reinstalled else ("; reinstalling the previous version failed" if plan.get("rollback_install_argv")
+                                   else "; the previous version's wheels were not cached, so it was not reinstalled")
     _restore(plan)
-    if _run(plan, "start previous", plan["start_argv"], timeout=300) and _healthy(plan["health_url"]):
-        return finish("rolled_back", reason + note)
-    return finish("failed", reason + note + "; the rollback did not come up either")
+    up = _run(plan, "start previous", plan["start_argv"], timeout=300) and _healthy(plan["health_url"])
+    if reinstalled and up:
+        return finish("rolled_back", reason)
+    if not up:
+        note += "; the rollback did not come up either"
+    return finish("failed", f"{reason}{note}; {hint}")
 
 
 if __name__ == "__main__":

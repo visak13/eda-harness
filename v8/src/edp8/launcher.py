@@ -469,6 +469,17 @@ def live_seats() -> list[str] | None:
             if isinstance(r, dict) and r.get("state") == "active"]
 
 
+def seat_block(seats: list[str] | None, alt: str = "use --force to take them offline") -> str | None:
+    """Why an update must not run now, or None when it may. `seats` is a live-seat list; None (the pool
+    cannot say) fails closed like a live seat (S11 F3). `alt` names the caller's override. Shared by the
+    app update (CLI and admin) and the harness update."""
+    if seats is None:
+        return f"couldn't confirm no seats are working (the pool cannot say which seats are live); retry, or {alt}"
+    if seats:
+        return f"{len(seats)} seat(s) are live ({', '.join(seats[:5])}); let them finish or park them, or {alt}"
+    return None
+
+
 def stop(svc: str, *, keep_seats: bool = False, grace: float = 4.0) -> dict[str, Any]:
     """Stop `svc` and verify it is gone: snapshot-first kill_tree of every recorded identity plus its
     listener, and its named job (Windows). `keep_seats` (pool restart) stops only the pool's own chain.

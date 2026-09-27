@@ -28,6 +28,7 @@ class ApplyIn(BaseModel):
     force: bool = False         # take live seats offline
     skip_compat: bool = False   # skip the custom-workflow compatibility check
     release_url: str | None = None  # a release folder/URL instead of GitHub's latest (tests, air-gapped)
+    previous_url: str | None = None  # the installed version's release, for the rollback wheels (S11 F7)
 
 
 def _read_json(f: Path) -> dict[str, Any] | None:
@@ -61,10 +62,8 @@ def refusal(force: bool) -> str | None:
     if not updater._uv_tool_env() and not settings.env_raw("EDP_UPDATE_INSTALL_CMD"):
         return "this install was not made by `uv tool install`; re-run the install script instead"
     if not force:
-        seats = launcher.live_seats() if launcher.running("pool") else []
-        if seats:
-            return (f"{len(seats)} seat(s) are live ({', '.join(seats[:5])}); let them finish or park them, "
-                    "or apply with force to take them offline")
+        return launcher.seat_block(launcher.live_seats() if launcher.running("pool") else [],
+                                   "apply with force to take them offline")
     return None
 
 
@@ -88,7 +87,7 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
         if why:
             raise HTTPException(409, f"update refused: {why}")
         body = {"by": a.handle.lstrip("@"), "force": b.force, "skip_compat": b.skip_compat,
-                "release_url": b.release_url}
+                "release_url": b.release_url, "previous_url": b.previous_url}
         try:
             code, out = control.request("/update", body, timeout=60.0)
         except control.ControlUnavailable as e:

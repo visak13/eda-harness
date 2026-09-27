@@ -145,7 +145,9 @@ def test_admin_update_check_and_apply_backup_stop_upgrade_start(inst, tmp_path):
         before = tu._status(inst)
         health_before = httpx.get(f"{url}/healthz", timeout=10).json()["started_at"]
         rel = tu._release(tmp_path / "rel")
-        r = httpx.post(f"{url}/v1/admin/updates/apply", headers=h, json={"release_url": str(rel)}, timeout=90)
+        r = httpx.post(f"{url}/v1/admin/updates/apply", headers=h, json={"release_url": str(rel),
+                                                                           "previous_url": tu._prev(tmp_path)[1]},
+                       timeout=90)
         assert r.status_code == 202, r.text
         assert r.json()["value"]["by"] == "owner" and r.json()["value"]["state"] == "updating"
         res = tu._wait_result(inst)

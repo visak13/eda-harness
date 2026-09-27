@@ -25,7 +25,7 @@ from pydantic import BaseModel
 
 from edp_contracts.toolpath import find_tool, probe_version, tool_argv
 
-from .. import harness, pool_adapter, seat_choice, settings
+from .. import harness, launcher, pool_adapter, seat_choice, settings
 from ..schemas import Participant
 from . import net
 from .context import AdminContext
@@ -210,11 +210,10 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
             raise HTTPException(409, f"an update of {h} is already {updater.state(h)['state']}")
         update_argv(h, path)  # refuse now (409) when the vendor command cannot run at all
         live = live_seats_by_harness()
-        busy = live is None or bool(live.get(h))
+        block = launcher.seat_block(None if live is None else live.get(h, []), "ask to wait")
+        busy = block is not None
         if busy and not b.wait:
-            who = "the pool cannot say which seats are live" if live is None else \
-                f"{len(live[h])} {h} seat(s) are live: {', '.join(live[h][:5])}"
-            raise HTTPException(409, f"update when idle: {who}; let them finish or park them, or ask to wait")
+            raise HTTPException(409, f"update {h} when idle: {block}")
         if busy:
             updater.wait_then_run(h, path, a.handle.lstrip("@"))
             return {"ok": True, "value": updater.state(h),

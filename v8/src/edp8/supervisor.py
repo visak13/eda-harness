@@ -202,8 +202,9 @@ def start_update(body: dict, who: str) -> tuple[int, dict]:
     from edp_contracts.proc import detach
 
     argv = [sys.executable, "-m", "edp8.cli", "update"]
-    if isinstance(body.get("release_url"), str) and body["release_url"]:
-        argv += ["--release-url", body["release_url"]]
+    for key in ("release_url", "previous_url"):
+        if isinstance(body.get(key), str) and body[key]:
+            argv += ["--" + key.replace("_", "-"), body[key]]
     for flag in ("force", "skip_compat"):
         if body.get(flag):
             argv.append("--" + flag.replace("_", "-"))

@@ -9,7 +9,9 @@ opt-out ``HERONRY_NO_UPDATE_CHECK=1``); ``start`` runs the same check quietly. `
 2. **compat check** (S13, architect m-3ab493d55b): the NEW release's ``heronry workflows check --db <live
    db> --json`` through ``uv tool run``. Exit 1 aborts with a per-workflow report; exit 2 (usage error or
    no DB) refuses unless ``--skip-compat``. Nothing has changed at this point;
-3. refuse while seats are live (unless ``--force``: the pool stop takes them offline);
+3. refuse while seats are live, or when the pool cannot say (unless ``--force``: the pool stop takes them
+   offline); secure the installed version's wheels for a rollback (the cache, else its release, or
+   ``--previous-url``) and refuse without them unless ``--force``;
 4. back up the DB (SQLite backup + ``integrity_check``) to ``<data>/backups/edp8-<old>-<ts>.db``, keep 5;
 5. stop the supervisor and every service;
 6. start the detached helper (:mod:`edp8.update_helper`) outside the tool venv and exit, so no process
@@ -112,20 +114,21 @@ def parse_sums(text: str) -> dict[str, str]:
     return out
 
 
-def releases_url() -> str:
-    """GitHub's latest-release endpoint for `update.repo` under `update.api_url`."""
-    return f"{str(settings.get('EDP_UPDATE_API')).rstrip('/')}/repos/{settings.get('EDP_UPDATE_REPO')}/releases/latest"
+def releases_url(tag: str | None = None) -> str:
+    """GitHub's latest-release endpoint (or the release tagged `tag`) for `update.repo` under `update.api_url`."""
+    base = f"{str(settings.get('EDP_UPDATE_API')).rstrip('/')}/repos/{settings.get('EDP_UPDATE_REPO')}/releases"
+    return f"{base}/tags/{tag}" if tag else f"{base}/latest"
 
 
-def fetch_release(url: str | None) -> Release:
+def fetch_release(url: str | None, tag: str | None = None) -> Release:
     """The release at `url` (a local dir or an http base holding SHA256SUMS and the wheels), else GitHub's
-    latest release of `update.repo`."""
+    release tagged `tag`, else its latest release of `update.repo`."""
     if url:
         base = url.rstrip("/")
         sums = parse_sums(_read(f"{base}/SHA256SUMS").decode("utf-8"))
         files = {n: f"{base}/{n}" for n in sums}
     else:
-        r = _get(releases_url(),
+        r = _get(releases_url(tag),
                  headers={"Accept": "application/vnd.github+json"})
         r.raise_for_status()
         rel = r.json()
@@ -174,6 +177,30 @@ def cached(version: str) -> dict[str, Path] | None:
         if dist and p.is_file() and hashlib.sha256(p.read_bytes()).hexdigest() == want:
             out[dist[0]] = p
     return out if all(w in out for w in WHEELS) else None
+
+
+def secure_previous(version: str, url: str | None = None) -> dict[str, Path] | None:
+    """The installed version's wheels for a rollback, secured before anything stops (S11 F7): the cache,
+    else that release (`url`, else GitHub's tag v<version>) downloaded and verified into the cache. The
+    install scripts do not seed the cache, so a first update needs the fetch. None when neither works."""
+    got = cached(version)
+    if got:
+        return got
+    try:
+        rel = fetch_release(url, tag=None if url else f"v{version}")
+        if _v(rel.version) != _v(version):
+            return None
+        download(rel)
+    except Exception:  # noqa: BLE001 — offline, no such release, a bad sum: all mean "not secured"
+        return None
+    return cached(version)
+
+
+def recover_hint(version: str) -> str:
+    """The manual recovery line for when a rollback cannot reinstall `version`."""
+    tag = f"v{version}"
+    return (f"reinstall {version} with the install script: `.\\install.ps1 -Version {tag} -Force` "
+            f"(Windows) or `sh install.sh --version {tag} --force`, then `heronry start`")
 
 
 # ------------------------------------------------------------------------------------------ commands
@@ -374,10 +401,20 @@ def apply(opts: dict[str, Any]) -> int:
                               "nothing changed. `--skip-compat` updates without it")
         print(f"compat check passed ({len(rows)} workflow(s))")
 
-    seats = launcher.live_seats() if launcher.running("pool") else []
-    if seats and not opts.get("force"):
-        raise UpdateError(f"{len(seats)} seat(s) are live ({', '.join(seats[:5])}); let them finish or park "
-                          "them, or repeat with --force to take them offline")
+    if not opts.get("force"):
+        block = launcher.seat_block(launcher.live_seats() if launcher.running("pool") else [])
+        if block:
+            raise UpdateError(f"{block}; nothing changed")
+    prev_url = opts.get("previous-url") if isinstance(opts.get("previous-url"), str) else None
+    prev = secure_previous(cur, prev_url)
+    if prev:
+        print(f"the installed {cur}'s wheels are cached for a rollback")
+    elif not opts.get("force"):
+        raise UpdateError(f"couldn't secure the installed {cur}'s wheels for a rollback (not cached, and its release "
+                          f"could not be fetched); nothing changed. Retry online, give `--previous-url <dir|http base>` "
+                          f"of the {cur} release, or use --force to update without a way back")
+    else:
+        print(f"WARNING: --force: no rollback to {cur} is possible if the update fails; {recover_hint(cur)}")
     if opts.get("dry-run"):
         print("dry run: would back up the DB, stop, install and start; nothing changed")
         return 0
@@ -388,7 +425,6 @@ def apply(opts: dict[str, Any]) -> int:
     _stop_all()
     print("stopped the supervisor and services")
 
-    prev = cached(cur)
     run = settings.run_dir()
     run.mkdir(parents=True, exist_ok=True)
     result = run / "update-result.json"
@@ -402,7 +438,7 @@ def apply(opts: dict[str, Any]) -> int:
             "install_argv": install_argv(wheels), "rollback_install_argv": install_argv(prev) if prev else None,
             "start_argv": [*me, "start"], "stop_argv": [*me, "stop", "--force"],
             "health_url": f"{launcher.url('board')}/v1/health", "db": str(db), "backup": str(backup or ""),
-            "log": str(log), "result": str(result)}
+            "log": str(log), "result": str(result), "recover_hint": recover_hint(cur)}
     plan_f = run / "update-plan.json"
     plan_f.write_text(json.dumps(plan, indent=1), encoding="utf-8")
     from edp_contracts.proc import detach

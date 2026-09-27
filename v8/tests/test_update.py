@@ -49,6 +49,14 @@ ROWS_FAIL = [{"workflow": "custom-review", "version": 3, "ok": False, "errors": 
              {"workflow": "standard", "version": 1, "ok": True, "errors": []}]
 PRINT_ROWS = "import json,sys; print(sys.argv[1]); sys.exit(int(sys.argv[2]))"
 RECORD = "import json,sys,pathlib; pathlib.Path(sys.argv[1]).write_text(json.dumps(sys.argv[2:])); sys.exit(int(sys.argv[2]))"
+FAIL_NEW = ("import json,sys,pathlib; w=sys.argv[2]; pathlib.Path(sys.argv[1]).write_text(json.dumps([w]))"
+            " if '-99.0.0-' not in w else None; sys.exit(3 if '-99.0.0-' in w else 0)")
+
+
+def _prev(tmp_path: Path) -> list[str]:
+    """`--previous-url` of a fake release of the installed version: the N-1 wheels a rollback needs (S11 F7)."""
+    from importlib.metadata import version
+    return ["--previous-url", str(_release(tmp_path / "prev", version("edp8")))]
 
 
 def _status(inst) -> dict:
@@ -141,7 +149,7 @@ def test_update_backs_up_stops_installs_starts_and_keeps_pins(inst, tmp_path):
         rel = _release(tmp_path / "rel")
         inst["env"]["EDP_UPDATE_COMPAT_CMD"] = _fake(PRINT_ROWS, json.dumps([ROWS_FAIL[1]]), "0")
         inst["env"]["EDP_UPDATE_INSTALL_CMD"] = _fake(RECORD, str(tmp_path / "installed.json"), "0", "{wheel}", "{with}")
-        r = cli(inst, "update", "--release-url", str(rel))
+        r = cli(inst, "update", "--release-url", str(rel), *_prev(tmp_path))
         assert r.returncode == 0, r.stdout + r.stderr
         assert "compat check passed (1 workflow(s))" in r.stdout and "backed up the DB to" in r.stdout, r.stdout
         res = _wait_result(inst)
@@ -169,11 +177,14 @@ def test_failed_install_rolls_back_to_the_backup_and_restarts(inst, tmp_path):
     try:
         db = _db(inst)
         pins = _pins(db)
-        inst["env"]["EDP_UPDATE_INSTALL_CMD"] = _fake(RECORD, str(tmp_path / "installed.json"), "3")
-        r = cli(inst, "update", "--release-url", str(_release(tmp_path / "rel")), "--skip-compat")
+        # the new wheels fail to install; the previous version's (secured before the stop) reinstall fine
+        inst["env"]["EDP_UPDATE_INSTALL_CMD"] = _fake(FAIL_NEW, str(tmp_path / "installed.json"), "{wheel}")
+        r = cli(inst, "update", "--release-url", str(_release(tmp_path / "rel")), "--skip-compat", *_prev(tmp_path))
         assert r.returncode == 0 and "WARNING: --skip-compat" in r.stdout, r.stdout + r.stderr
+        assert "wheels are cached for a rollback" in r.stdout, r.stdout
         res = _wait_result(inst)
         assert res["state"] == "rolled_back" and res["reason"].startswith("install failed"), res
+        assert "-99.0.0-" not in json.loads((tmp_path / "installed.json").read_text(encoding="utf-8"))[0]
         assert _status(inst)["board"]["state"] == "up"
         assert _pins(db) == pins
     finally:

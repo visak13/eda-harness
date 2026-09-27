@@ -105,7 +105,8 @@ def _split(argv: list[str]) -> tuple[list[str], dict[str, str | bool]]:
 
 #: flags that take a value (everything else is a switch)
 _VALUED = {"harness", "owner", "admin-token", "from", "ports", "board-port", "mcp-port", "pool-port", "broker-port",
-           "code-port", "version", "spec", "db", "by", "timeout", "release-url", "agent-home-source"}
+           "code-port", "version", "spec", "db", "by", "timeout", "release-url", "previous-url",
+           "agent-home-source"}
 
 
 def _targets(pos: list[str]) -> list[str]:
@@ -428,10 +429,12 @@ COMMANDS: tuple[Command, ...] = (
     Command("update", "update", "check for a new release and install it (backup, stop, upgrade, start)", (
         ("--check", "only report the current and latest versions"),
         ("--dry-run", "check, download and verify, then stop before changing anything"),
-        ("--force", "reinstall the same version, or update with live seats (takes them offline)"),
+        ("--force", "reinstall the same version, update with live seats or an unanswering pool (takes them "
+                    "offline), or update with no way back when the installed version's wheels can't be secured"),
         ("--allow-downgrade", "install an older release"),
         ("--skip-compat", "skip the custom-workflow compatibility check"),
         ("--release-url URL", "update from this release instead of the latest"),
+        ("--previous-url URL", "the installed version's release, for the rollback wheels (default: its GitHub tag)"),
     )),
     Command("import", "import --from DIR", "copy an existing v8 install's state (dry run first)", (
         ("--from DIR", "the v8 folder to copy from (never written)"),
