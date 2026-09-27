@@ -44,10 +44,14 @@ declare("board.tool_call_cap_s", "EDP8_TOOL_CALL_CAP_S", "float", 30.0, "Limits/
         "Seconds one MCP tool call may take before it is answered as still running.", restart_required="mcp",
         tier="advanced", label='Agent tool time limit',
         help='How long one agent request to the board may run before the agent is told it is still running.')
-declare("board.context_budget_b", "EDP8_CONTEXT_BUDGET_B", "int", 40_000, "Limits/tuning",
+declare("board.context_budget_b", "EDP8_CONTEXT_BUDGET_B", "int", 8_000, "Limits/tuning",
         "Byte cap of the bounded context() snapshot (floor 4000).", restart_required="mcp",
         tier="advanced", label='Agent briefing size',
         help="The most an agent's starting briefing may hold. Larger gives agents more detail but uses more of their context.")
+declare("board.tool_page_b", "EDP8_TOOL_PAGE_B", "int", 8_000, "Limits/tuning",
+        "Byte cap of one list/query tool page (ticket_query, doc_query, participants, ...; floor 2000).",
+        restart_required="mcp", tier="advanced", label='Agent list page size',
+        help='The most one list an agent asks for may hold before it is split into pages.')
 declare("board.delta_budget_b", "EDP8_DELTA_BUDGET_B", "int", 12_000, "Limits/tuning",
         "Byte cap of one context_delta page (floor 4000).", restart_required="board",
         tier="advanced", label='Agent update size',
