@@ -1337,12 +1337,13 @@ class WorkflowRegistry:
         ours = self.get(wf_id, ver)
         latest = self.latest_published(parse_ref(up["source"])[0])
         m = workflow_design.merge3(self.snapshot(up["source"]), ours, latest)
-        last = self._row(wf_id, None)
-        body = {**m["body"], "id": wf_id, "version": (last.version if last else ver) + 1, "source": latest.ref,
-                "builtin": False, "published": False}
-        d = WorkflowDef.model_validate(body)
-        self._snap(latest)
-        self._put(d, by)
+        with self.store._lock:  # R2-C2: allocate the next version and write it in one step
+            last = self._row(wf_id, None)
+            body = {**m["body"], "id": wf_id, "version": (last.version if last else ver) + 1, "source": latest.ref,
+                    "builtin": False, "published": False}
+            d = WorkflowDef.model_validate(body)
+            self._snap(latest)
+            self._put(d, by, new=True)
         return {"draft": dump(d), "conflicts": m["conflicts"], "taken": m["taken"], "problems": validate(d)}
 
     def resolve(self, wf_ref: str) -> Workflow:
@@ -1357,8 +1358,19 @@ class WorkflowRegistry:
             return w
 
     # ---- writes
-    def _put(self, d: WorkflowDef, by: str) -> None:
+    def _put(self, d: WorkflowDef, by: str, *, new: bool = False) -> None:
+        """The one write to workflow_defs. R2-C2: the stored row's state is checked and the write made in one
+        step under the store lock (the lock publish, delete and pinning hold), so a caller that checked earlier
+        and paused can never write over a version published meanwhile; `new` (a version allocated by duplicate
+        or merge) also refuses a row that now exists."""
         with self.store._lock, self.store._conn:
+            row = self.store._conn.execute("SELECT published FROM workflow_defs WHERE id=? AND version=?",
+                                           (d.id, d.version)).fetchone()
+            if row and row[0]:
+                raise WorkflowError("immutable", f"version {d.version} of {d.id} is published; duplicate to edit",
+                                    f"duplicate it to a new draft version of {d.id} and edit that")
+            if row and new:
+                raise WorkflowError("conflict", f"{d.ref} was created meanwhile", "reload and try again")
             self.store._conn.execute(
                 "INSERT OR REPLACE INTO workflow_defs (id, version, body, published, created_at, created_by) "
                 "VALUES (?,?,?,?,?,?)", (d.id, d.version, d.model_dump_json(by_alias=True), int(d.published),
@@ -1378,28 +1390,31 @@ class WorkflowRegistry:
         if cur is not None and cur.published:
             raise WorkflowError("immutable", f"{d.ref} is published and immutable",
                                 f"duplicate it to {d.id}@{d.version + 1} (a new draft version) and edit that")
-        self._put(d, by)
+        self._put(d, by)  # R2-C2: _put re-checks under the store lock (a publish may land after the check above)
         return d
 
     def duplicate(self, src_ref: str, *, new_id: str | None = None, by: str) -> WorkflowDef:
         """Copy a version into a new draft: `new_id@1`, or the next version of the same id."""
         sid, sver = parse_ref(src_ref)
         src = self.get(sid, sver)
-        if new_id and new_id != sid:
-            if new_id in BUILTIN_BUILDERS or self._row(new_id, None) is not None:
-                raise WorkflowError("conflict", f"workflow id {new_id} already exists", "pick another id")
-            wf_id, ver = new_id, 1
-        else:
-            if sid in BUILTIN_BUILDERS:
-                raise WorkflowError("immutable", f"{sid} is built in; duplicate it under a new id")
-            last = self._row(sid, None)
-            wf_id, ver = sid, (last.version if last else sver) + 1
-        d = src.model_copy(deep=True, update={"id": wf_id, "version": ver, "builtin": False, "published": False,
-                                              "name": src.name if wf_id == sid else f"{src.name} (copy)",
-                                              # a new version of the same id keeps the upstream it tracks
-                                              "source": src.source if wf_id == sid and src.source else src.ref})
-        self._snap(src)
-        self._put(d, by)
+        # R2-C2: the id/version is allocated and written under the store lock, so two duplicates (or a save)
+        # never land on the same new version and one never replaces the other
+        with self.store._lock:
+            if new_id and new_id != sid:
+                if new_id in BUILTIN_BUILDERS or self._row(new_id, None) is not None:
+                    raise WorkflowError("conflict", f"workflow id {new_id} already exists", "pick another id")
+                wf_id, ver = new_id, 1
+            else:
+                if sid in BUILTIN_BUILDERS:
+                    raise WorkflowError("immutable", f"{sid} is built in; duplicate it under a new id")
+                last = self._row(sid, None)
+                wf_id, ver = sid, (last.version if last else sver) + 1
+            d = src.model_copy(deep=True, update={"id": wf_id, "version": ver, "builtin": False, "published": False,
+                                                  "name": src.name if wf_id == sid else f"{src.name} (copy)",
+                                                  # a new version of the same id keeps the upstream it tracks
+                                                  "source": src.source if wf_id == sid and src.source else src.ref})
+            self._snap(src)
+            self._put(d, by, new=True)
         return d
 
     def publish(self, wf_id: str, version: int, *, by: str) -> WorkflowDef:

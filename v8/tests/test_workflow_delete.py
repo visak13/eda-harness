@@ -221,3 +221,67 @@ def test_r2c_restore_of_an_archived_version_then_pin_is_allowed(env):
     assert b.workflows.restore("race@1")["outcome"] == "restored"
     eid = _epic(c, "race@1").json()["value"]["id"]
     assert b.workflows.pin_of(eid) == "race@1"
+
+
+def test_r2c2_a_stale_save_never_replaces_a_version_published_and_pinned_meanwhile(env, monkeypatch):
+    """R2-C2: save checked "still a draft", paused before its write; publish + an epic pin landed; the write must
+    refuse (409 immutable), and a fresh registry still resolves the pinned version with its published contents."""
+    b, c = env
+    reg = b.workflows
+    draft = wflow.dump(reg.duplicate("standard@1", new_id="save-race", by="owner"))
+    draft["description"] = "stale save contents"
+    entered, resume = threading.Event(), threading.Event()
+    orig = reg._put
+
+    def paused(d, by, **kw):
+        if threading.current_thread().name.startswith("r2c2-save"):
+            entered.set()
+            assert resume.wait(20)
+        return orig(d, by, **kw)
+
+    monkeypatch.setattr(reg, "_put", paused)
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="r2c2-save") as pool:
+        saved = pool.submit(reg.save, draft, by="owner")
+        try:
+            assert entered.wait(10)
+            published = reg.publish("save-race", 1, by="owner")
+            eid = _epic(c, "save-race@1").json()["value"]["id"]
+        finally:
+            resume.set()
+        with pytest.raises(wflow.WorkflowError) as e:
+            saved.result(timeout=20)
+    assert e.value.code == "immutable" and "version 1 of save-race is published" in e.value.message
+    fresh = type(reg)(b.store).resolve("save-race@1").d
+    assert fresh.published and fresh == published and fresh.description != draft["description"]
+    assert reg.pin_of(eid) == "save-race@1"
+    r = c.put("/v1/workflows", json=draft, headers=O)  # the route answers 409 too
+    assert r.status_code == 409 and r.json()["error"]["code"] == "immutable"
+
+
+def test_r2c2_every_write_refuses_a_published_row_and_a_new_version_refuses_any_row(env):
+    """The check lives in _put, the one writer, so every caller (save, duplicate, merge, publish) is covered."""
+    b, _ = env
+    reg = b.workflows
+    d = reg.duplicate("standard@1", new_id="put-guard", by="owner")
+    with pytest.raises(wflow.WorkflowError) as e:  # a duplicate allocating a version that now exists
+        reg._put(d, "owner", new=True)
+    assert e.value.code == "conflict"
+    reg.publish("put-guard", 1, by="owner")
+    for pub in (False, True):  # neither a draft nor a re-publish writes over a published row
+        with pytest.raises(wflow.WorkflowError) as e:
+            reg._put(d.model_copy(update={"published": pub, "description": "x"}), "owner")
+        assert e.value.code == "immutable"
+    assert reg.delete("put-guard@1", by="owner")["outcome"] == "archived"
+    with pytest.raises(wflow.WorkflowError):  # archived is still published: immutable
+        reg._put(d.model_copy(update={"description": "x"}), "owner")
+    nxt = reg.duplicate("put-guard@1", by="owner")  # the next version is a fresh draft
+    assert nxt.version == 2 and not nxt.published
+
+
+def test_r2c2_concurrent_duplicates_get_distinct_versions(env):
+    b, _ = env
+    reg = b.workflows
+    reg.duplicate("standard@1", new_id="dup-race", by="owner")
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        got = list(pool.map(lambda _: reg.duplicate("dup-race@1", by="owner").version, range(6)))
+    assert sorted(got) == [2, 3, 4, 5, 6, 7]
