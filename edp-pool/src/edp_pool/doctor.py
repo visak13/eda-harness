@@ -37,9 +37,9 @@ import httpx
 from edp_contracts import settings as edp_settings
 
 from .pty_launcher import (
-    _CLAUDE_POOL_CONFIG_DIR,
     ClaudeInstallError,
     claude_bin_needs_repair,
+    claude_pool_config_dir,
     repair_claude_install,
     resolve_claude_bin,
 )
@@ -266,7 +266,7 @@ def check_config_parity() -> dict:
     import json as _json
     from pathlib import Path
     problems: list[str] = []
-    pool_settings = _CLAUDE_POOL_CONFIG_DIR / "settings.json"
+    pool_settings = claude_pool_config_dir() / "settings.json"
     project_hooks_dir = Path(home) / ".claude" / "hooks"
     if not project_hooks_dir.is_dir():
         problems.append(f"project hooks dir missing: {project_hooks_dir}")

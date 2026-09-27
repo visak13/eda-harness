@@ -295,4 +295,6 @@ def _child_env() -> dict:
     the interpreter/venv (inherit the parent) but is safe to extend. Kept a
     helper so criterion 4's intent (which vars are FORCED) reads clearly."""
     import os
-    return dict(os.environ)
+    # EDP_AGENT_HOME without the EDP_HOME that located it would point config_parity at the
+    # installed-mode pool dir; this criterion is about the services, so parity stays unchecked.
+    return {k: v for k, v in os.environ.items() if k != "EDP_AGENT_HOME"}

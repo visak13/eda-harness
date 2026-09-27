@@ -74,7 +74,9 @@ def _ready_timeout_default() -> float:
 # config so a spawn never pollutes the user's foreground install. The
 # registry default of EDP_CLAUDE_CONFIG_DIR (dev mode: <repo>/edp-pool/.claude-pool,
 # installed: <data>/claude-pool) — the skeleton, before any explicit override.
-_CLAUDE_POOL_CONFIG_DIR = settings.setting("EDP_CLAUDE_CONFIG_DIR").default_value()
+# Resolved on call, not at import: the mode (EDP_HOME, EDP8_DATA) is read when a spawn needs it.
+def claude_pool_config_dir() -> Path:
+    return settings.setting("EDP_CLAUDE_CONFIG_DIR").default_value()
 
 
 def resolve_claude_bin(override: str | None = None) -> str:
@@ -593,7 +595,7 @@ def build_env(session_id: str, role: str, handle: str,
     # operator's intentional override knob), matching the stack-pin style
     # where every pinned value respects a deliberate pre-set override.
     env["CLAUDE_CONFIG_DIR"] = env.get(
-        "EDP_CLAUDE_CONFIG_DIR", str(_CLAUDE_POOL_CONFIG_DIR))
+        "EDP_CLAUDE_CONFIG_DIR", str(claude_pool_config_dir()))
     # W6.1 (gated wiring half of the reactive-toolkit rollout): stamp
     # EDP_RTK into the spawned shell only when the pool's own env/config
     # requests it — read from `base` exactly like EDP_SHELL_OTEL below,

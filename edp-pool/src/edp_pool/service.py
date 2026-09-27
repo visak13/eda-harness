@@ -1615,7 +1615,7 @@ class PoolService(Microservice):
         shell's cwd with every non-alphanumeric character replaced by '-'
         (Claude Code's own scheme, e.g. C:\\x\\claude → C--x-claude); the
         spawned shells' cwd is the spawner's agent-home pin."""
-        cfg = edp_settings.get("EDP_CLAUDE_CONFIG_DIR")  # default: pty_launcher._CLAUDE_POOL_CONFIG_DIR
+        cfg = edp_settings.get("EDP_CLAUDE_CONFIG_DIR")  # default: pty_launcher.claude_pool_config_dir()
         cwd = (getattr(self.spawner, "cwd", None)
                or edp_settings.env_raw("EDP_AGENT_HOME") or os.getcwd())
         key = "".join(c if c.isalnum() else "-" for c in str(cwd))
