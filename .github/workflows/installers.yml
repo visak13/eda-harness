@@ -5,23 +5,33 @@ name: installers
 # (Windows .msi per-user, macOS universal2 .dmg, Linux .deb for ubuntu:noble), unsigned (--adhoc-sign, R10),
 # and the service re-entry drill on the built bundle (v8/desktop/scripts/drill_bundle_{windows.ps1,posix.sh}):
 # init -> start -> every service is the bundle re-entered with --heronry-service <svc> -> /v1/health + /ui ->
-# stop, nothing left. The installers are uploaded as run artifacts; tagging a release attaches them.
+# stop, nothing left. The installers are uploaded as run artifacts; release.yml calls this workflow on a `v*`
+# tag (S9) and attaches them to the draft release.
 
 on:
-  push:
-    tags: ["v*"]
-    paths: ["v8/**", "edp-contracts/**", "edp-pool/**", "edp-broker/**", ".github/workflows/installers.yml"]
+  workflow_call:
+    inputs:
+      ref:
+        description: "The git ref (release tag) to build"
+        type: string
+        required: false
+        default: ""
   pull_request:
     paths: ["v8/desktop/**", "v8/src/edp8/desktop.py", "v8/src/edp8/launcher.py", "v8/vscode-ext/edp-code/**", ".github/workflows/installers.yml"]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   wheels:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - name: Build the SPA bundle
@@ -38,7 +48,7 @@ jobs:
           # pywebview's proxy_tools ships only an sdist; Briefcase installs binaries only
           uvx --from pip pip wheel --no-deps -w wheels "proxy_tools==0.1.0"
           cd wheels && sha256sum *.whl > SHA256SUMS && cat SHA256SUMS
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: wheels
           path: wheels/
@@ -49,9 +59,11 @@ jobs:
     env:
       PYTHONUTF8: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: wheels
           path: wheels
@@ -61,7 +73,7 @@ jobs:
       - name: Service re-entry drill on the built bundle
         shell: powershell
         run: .\v8\desktop\scripts\drill_bundle_windows.ps1 -AppDir "$PWD\v8\desktop\build\heronry\windows\app\src"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: heronry-desktop-windows-msi
           path: v8/desktop/dist/*.msi
@@ -72,11 +84,13 @@ jobs:
     env:
       PYTHONUTF8: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: wheels
           path: v8/desktop/wheels
@@ -96,7 +110,7 @@ jobs:
           find "$APP" -name '*.so' | head -n 20 | while read -r so; do echo "$(lipo -archs "$so") $so"; done
       - name: Service re-entry drill on the built bundle
         run: bash v8/desktop/scripts/drill_bundle_posix.sh "$PWD/v8/desktop/build/heronry/macos/app/Heronry Desktop.app/Contents/MacOS/Heronry Desktop"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: heronry-desktop-macos-dmg
           path: v8/desktop/dist/*.dmg
@@ -107,11 +121,13 @@ jobs:
     env:
       PYTHONUTF8: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: wheels
           path: v8/desktop/wheels
@@ -128,7 +144,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ./v8/desktop/dist/*.deb
           bash v8/desktop/scripts/drill_bundle_posix.sh "$(command -v heronry)"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: heronry-desktop-linux-deb
           path: v8/desktop/dist/*.deb
@@ -137,8 +153,10 @@ jobs:
     # the extension ships beside the installers: its version prompt installs edp-code-<release>.vsix from the release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - name: Test and package the VS Code extension (Apache-2.0)
@@ -150,7 +168,7 @@ jobs:
           REL=$(node -p "require('./package.json').heronry.release")
           mv edp-code.vsix "edp-code-$REL.vsix"
           unzip -l "edp-code-$REL.vsix" | grep -i license
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: edp-code-vsix
           path: v8/vscode-ext/edp-code/edp-code-*.vsix

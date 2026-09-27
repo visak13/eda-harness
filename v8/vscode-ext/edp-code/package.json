@@ -8,7 +8,7 @@
   "private": true,
   "license": "Apache-2.0",
   "heronry": {
-    "release": "0.8.0"
+    "release": "0.9.0"
   },
   "engines": {
     "vscode": "^1.138.0"

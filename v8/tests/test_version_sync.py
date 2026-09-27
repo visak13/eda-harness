@@ -36,6 +36,8 @@ def test_every_manifest_carries_the_edp8_version():
         "v8/desktop/pyproject.toml": _pyproject(V8 / "desktop" / "pyproject.toml"),
         "v8/web/package.json": _json_version(V8 / "web" / "package.json"),
         "edp-code/package.json": _json_version(V8 / "vscode-ext" / "edp-code" / "package.json"),
+        "edp-code heronry.release": json.loads((V8 / "vscode-ext" / "edp-code" / "package.json").read_text(encoding="utf-8"))
+        ["heronry"]["release"],
     }
     for pkg, mod in (("edp-contracts", "edp_contracts"), ("edp-pool", "edp_pool"), ("edp-broker", "edp_broker")):
         found[f"{pkg}/pyproject.toml"] = _pyproject(REPO / pkg / "pyproject.toml")
