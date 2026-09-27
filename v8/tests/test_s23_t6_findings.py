@@ -144,11 +144,25 @@ def test_short_bodies_are_untouched(rig):
     assert v["text"] == "short" and "echo" not in v
 
 
+def test_write_receipts_leave_out_unset_fields_the_read_returns(rig):
+    """S23 qa (report-bcef24a36a): a receipt carries what the write set; null/[]/{} fields are left out and the
+    named read still returns every field of the row, so no fact is lost and no write grows bytes."""
+    v = call(rig["owner"], "message_send", ticket_id=rig["epic"], kind="note", text="short")["value"]
+    assert isinstance(v["seq"], int) and not [f for f, x in v.items() if x is None or x == [] or x == {}], v
+    full = call(rig["owner"], "message_read", id=v["id"])["value"]
+    assert all(full[f] == x for f, x in v.items() if f in full)  # what the receipt shows matches the row
+    assert all(x is None or x == [] or x == {} for f, x in full.items() if f not in v)  # only unset fields left out
+    d = call(rig["owner"], "doc_create", doc_type="note", title="n", body_md="v1", scope=rig["epic"])["value"]
+    assert "source_url" not in d and d["version"] == 1
+
+
 def test_doc_update_defaults_to_a_receipt(rig):
     d = call(rig["owner"], "doc_create", doc_type="note", title="n", body_md="v1", scope=rig["epic"])["value"]
     out = call(rig["owner"], "doc_update", id=d["id"], body_md=BIG)
     assert out["ok"] and _bytes(out) < 600, out
-    assert out["value"]["version"] == 2 and out["value"]["bytes"] == len(BIG.encode())
+    v = out["value"]  # S23 qa (report-bcef24a36a): the size sits behind read_ref, not in the receipt
+    assert v["version"] == 2 and "bytes" not in v and v["read_ref"] == {"tool": "doc_read", "id": d["id"], "version": 2}
+    assert call(rig["owner"], "doc_read", id=d["id"])["value"]["body_md"] == BIG  # the named read loses nothing
     assert ALL_TOOLS["doc_update"].input_schema["properties"]["compact"] == {"default": True, "type": "boolean"}
     full = call(rig["owner"], "doc_update", id=d["id"], body_md=BIG + "!", compact=False)["value"]
     assert full["body_md"] == BIG + "!"  # the kept compatibility flag still returns the doc
@@ -243,3 +257,24 @@ def test_zero_ok_calls_is_not_measured():
         assert row[std] == "not_measured" and "0 of 1 calls succeeded" in row[f"{std}_reason"], row
     m = tool_audit.matrix_summary({"topic_research": {"standards": row}})
     assert "topic_research.3_clear_output" in m["not_measured"] and not m["unexplained"]
+
+
+def test_describe_schema_drops_only_generated_titles():
+    """S23 qa (report-bcef24a36a): describe's schema leaves out pydantic's generated titles, which restate their
+    key; every property, type, default, enum and $ref stays, and a hand-written title is kept."""
+    from edp8.bundles import _lean_schema
+    from edp8.schemas import Message, Session
+
+    for model in (Session, Message):
+        full = model.model_json_schema()
+        lean = _lean_schema(full)
+
+        def strip(node):
+            if isinstance(node, list):
+                return [strip(x) for x in node]
+            return {k: strip(v) for k, v in node.items() if k != "title"} if isinstance(node, dict) else node
+        assert strip(lean) == strip(full)  # nothing but titles differs
+        assert all("title" not in p for p in lean["properties"].values()), lean["properties"]
+        assert len(json.dumps(lean)) < len(json.dumps(full))
+    custom = {"properties": {"a_b": {"title": "Something else", "type": "string"}}}
+    assert _lean_schema(custom) == custom

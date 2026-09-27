@@ -874,11 +874,27 @@ def _links_for(t: str) -> dict[str, Any]:
     return {"tools": tools_by_object().get(t, []), "skills": list(OBJECT_SKILLS.get(t, ()))}
 
 
+def _lean_schema(node: Any) -> Any:
+    """A JSON schema without pydantic's generated titles: a property's "Created At" for `created_at`, a $def's
+    "SessionState" under its own name. Each restates its key, so dropping it loses nothing; a hand-written
+    title stays (S23 qa report-bcef24a36a: describe_objects may not grow bytes as objects are added)."""
+    if isinstance(node, list):
+        return [_lean_schema(x) for x in node]
+    if not isinstance(node, dict):
+        return node
+    out = {k: _lean_schema(v) for k, v in node.items()}
+    for key, auto in (("properties", lambda k: k.replace("_", " ").title()), ("$defs", lambda k: k)):
+        if isinstance(out.get(key), dict):
+            out[key] = {k: ({f: x for f, x in v.items() if not (f == "title" and x == auto(k))}
+                            if isinstance(v, dict) else v) for k, v in out[key].items()}
+    return out
+
+
 def _describe(args: DescribeArgs) -> dict[str, Any]:
     from .context_contracts import CONTEXT_TYPES
     t = args.type
     if t in CONTEXT_TYPES:
-        return {"ok": True, "value": {"schema": CONTEXT_TYPES[t].model_json_schema(),
+        return {"ok": True, "value": {"schema": _lean_schema(CONTEXT_TYPES[t].model_json_schema()),
                 "relationships": ["ticket", "doc", "message", "event"],
                 "guides": ["context-refresh"], "tools": ["context", "context_delta"],
                 "contract": "Full orientation or bounded reference changes; signed cursors are caller-owned, resync_required means context()."}, "hint": "get_guide('context-refresh')"}
@@ -903,6 +919,8 @@ def _describe(args: DescribeArgs) -> dict[str, Any]:
         return {"ok": True, "value": {"type": t, **LOCAL_OBJECTS[t], **_links_for(t)}, "hint": ""}
     out = get_client().describe(t)
     if out.get("ok"):
+        if isinstance(out["value"].get("schema"), dict):
+            out["value"]["schema"] = _lean_schema(out["value"]["schema"])
         out["value"].update(_links_for(t))
         out["value"]["relationships"] = {"ticket": ["criterion", "doc", "message", "link"],
             "doc": ["ticket", "link", "criterion"], "artifact": ["message", "ticket", "link"]}.get(t, ["ticket"])
@@ -1051,16 +1069,17 @@ def _receipt(resp: dict[str, Any], fields: tuple[str, ...], read: Callable[[dict
     """S23-T6 N2 (report-36481f7a4e; architect ruling m-44ae9118d1): a write replies with what it made, not what
     it was sent. Each body field over ECHO_CLIP chars is clipped ("… (+N chars)") and `echo` names its byte
     count and the read call that returns it whole: the named read is the opt-in, never an arg. `key` picks a
-    nested record (topic_propose: value.doc)."""
+    nested record (topic_propose: value.doc). Unset fields (null, [], {}) are left out: the writer set nothing
+    there and the named read returns the whole row (S23 qa report-bcef24a36a: no task may grow bytes)."""
     v = resp.get("value") if resp.get("ok") else None
     rec = (v.get(key) if key else v) if isinstance(v, dict) else None
     if not isinstance(rec, dict):
         return resp
+    rec = {f: x for f, x in rec.items() if x is not None and x != [] and x != {}}
     long = {f: rec[f] for f in fields if isinstance(rec.get(f), str) and len(rec[f]) > ECHO_CLIP}
-    if not long:
-        return resp
-    rec = {**rec, **{f: tool_paging.clip(s, ECHO_CLIP) for f, s in long.items()},
-           "echo": {"bytes": {f: len(s.encode("utf-8")) for f, s in long.items()}, "read": read(rec)}}
+    if long:
+        rec = {**rec, **{f: tool_paging.clip(s, ECHO_CLIP) for f, s in long.items()},
+               "echo": {"bytes": {f: len(s.encode("utf-8")) for f, s in long.items()}, "read": read(rec)}}
     return {**resp, "value": {**v, key: rec} if key else rec}
 
 

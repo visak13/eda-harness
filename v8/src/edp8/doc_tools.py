@@ -34,7 +34,8 @@ def edited_body(body: str, edits: list[TextEdit]) -> str:
 
 
 def receipt(doc, fields: list[str]) -> dict:
-    return {"id": doc.id, "version": doc.version, "changed_fields": fields, "bytes": len(doc.body_md.encode("utf-8")),
+    """A doc write's receipt; the body (and its size) is behind read_ref (S23 qa: no task may grow bytes)."""
+    return {"id": doc.id, "version": doc.version, "changed_fields": fields,
             "read_ref": {"tool": "doc_read", "id": doc.id, "version": doc.version}}
 
 

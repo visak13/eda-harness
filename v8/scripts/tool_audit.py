@@ -117,6 +117,27 @@ def encoded(obj: object) -> bytes:
     return json.dumps(obj, ensure_ascii=False, default=str, separators=(",", ":")).encode("utf-8")
 
 
+def _image(result: dict) -> dict | None:
+    content = (result.get("value") or {}).get("content") if isinstance(result.get("value"), dict) else None
+    return content if isinstance(content, dict) and content.get("base64") else None
+
+
+def wire_text(result: dict) -> dict:
+    """The reply's text as the MCP layer sends it: mcp_server._as_content pops an artifact_read image's
+    value.content.base64 into an image block, so the base64 is never text the agent reads."""
+    content = _image(result)
+    if content is None:
+        return result
+    return {**result, "value": {**result["value"], "content": {k: v for k, v in content.items() if k != "base64"}}}
+
+
+def image_bytes(result: dict) -> int:
+    """An image block counts at its raw size: the measure the baseline used for the HTTP content read it replaced."""
+    import base64
+    content = _image(result)
+    return len(base64.b64decode(content["base64"])) if content else 0
+
+
 def free_port(preferred: int) -> int:
     if preferred in (9300, 9301, 9400, 9402):
         raise ValueError("fleet port refused")
@@ -308,7 +329,7 @@ class Audit:
                 result = invoke(ALL_TOOLS[name], args or {}, seat=pid)
         except Exception as exc:  # diagnostic: keep the whole matrix even if one tool crashes
             result = {"ok": False, "error": {"code": "exception", "message": repr(exc)}, "hint": ""}
-        raw = encoded(result)
+        raw = encoded(wire_text(result))
         error = result.get("error") or {}
         ledger_args = {key: (str(value).replace(str(ROOT), "<workspace>") if key == "path" else value)
                        for key, value in (args or {}).items()}
@@ -317,7 +338,8 @@ class Audit:
                            "result_id": (result.get("value") or {}).get("id") if isinstance(result.get("value"), dict) else None,
                            "error": str(error.get("message") or "")[:400],
                            "hint": str(result.get("hint") or "")[:400],
-                           "bytes_out": len(raw), "max_line_bytes": max(map(len, raw.splitlines()), default=0),
+                           "bytes_out": len(raw) + image_bytes(result),
+                           "max_line_bytes": max(map(len, raw.splitlines()), default=0),
                            "duration_ms": round((time.monotonic() - t0) * 1000)})
         return result
 
@@ -493,17 +515,21 @@ def workflow(a: Audit) -> None:
     def harvest_cost():
         # T6 N4: hermetic Claude and codex transcripts (the private home's own roots), so the task passes from
         # either kind of seat; a seat with no log gets an error naming the roots, with no `since` advice
+        # The codex leg is its own task (harvest_cost_codex), so this one stays like-for-like with the baseline.
         claude = a.call("qa", "harvest_cost", {"participant_id": a.claude_seat}, task="harvest_cost")
-        codex = a.call("qa", "harvest_cost", {"participant_id": a.codex_seat}, task="harvest_cost")
         missing = a.call("qa", "harvest_cost", {"participant_id": a.roles["qa"][0]}, task="harvest_cost")
         err = missing.get("error") or {}
         named = err.get("code") == "not_found" and all(str(r) in str(err.get("message")) for r in a.log_roots) \
             and "since" not in str(missing.get("hint") or "") + str(err.get("hint") or "")
-        kinds = [(x.get("value") or {}).get("seat") for x in (claude, codex)]
-        return bool(claude.get("ok") and codex.get("ok") and kinds == ["claude", "codex"] and named), \
-            f"claude={(claude.get('value') or {}).get('tokens')}; codex={(codex.get('value') or {}).get('tokens')}; " \
-            f"no-log seat -> {err.get('code')} naming both roots={named}"
+        return bool(claude.get("ok") and (claude.get("value") or {}).get("seat") == "claude" and named), \
+            f"claude={(claude.get('value') or {}).get('tokens')}; no-log seat -> {err.get('code')} naming both roots={named}"
     a.task("harvest_cost", harvest_cost)
+
+    def harvest_cost_codex():
+        codex = a.call("qa", "harvest_cost", {"participant_id": a.codex_seat}, task="harvest_cost_codex")
+        return bool(codex.get("ok") and (codex.get("value") or {}).get("seat") == "codex"), \
+            f"codex={(codex.get('value') or {}).get('tokens')}"
+    a.task("harvest_cost_codex", harvest_cost_codex)
 
     def teammate_access():
         made = a.call("owner", "teammate", {"action": "create", "handle": "audit.alex", "role": "qa"},
@@ -877,6 +903,8 @@ def main() -> int:
     p.add_argument("--home", type=Path, help="private home (default: a new temp dir)")
     p.add_argument("--board-port", type=int, default=19400)
     p.add_argument("--pool-port", type=int, default=19301)
+    p.add_argument("--baseline", type=Path, help="an earlier --out ledger (pre-S23: docs/evidence/s23-t1/audit.json): "
+                                                 "adds the per-task before/after and fails on any regressed task")
     args = p.parse_args()
     home = (args.home or Path(tempfile.mkdtemp(prefix="edp-tool-audit-"))).resolve()
     if home == ROOT or ROOT in home.parents or SOURCE_DB in home.parents:
@@ -898,15 +926,61 @@ def main() -> int:
         workaround_hits = scan_workarounds()
         tools = scores(audit)
         matrix = matrix_summary(tools)
+        delta = compare(json.loads(args.baseline.read_text(encoding="utf-8")),
+                        {"tasks": audit.tasks, "calls": audit.calls}) if args.baseline else None
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_bytes(encoded({"source_db": ".data/edp8.db", "private_home": "<temporary-private-home>",
                                       "board_port": audit.board_port, "pool_port": audit.pool_port,
                                       "tasks": audit.tasks, "calls": audit.calls, "tools": tools,
                                       "matrix": matrix, "workaround_hits": workaround_hits,
-                                      "completeness_exempt": COMPLETENESS_EXEMPT}))
+                                      "completeness_exempt": COMPLETENESS_EXEMPT,
+                                      **({"baseline": delta} if delta else {})}))
         print(json.dumps({"type": "matrix", **matrix, "completeness_exempt": COMPLETENESS_EXEMPT},
                          ensure_ascii=True), flush=True)
-    return 0 if all(t["pass"] for t in audit.tasks) and not matrix["failing"] and not matrix["unexplained"] else 1
+        if delta:
+            print(json.dumps({"type": "baseline", "total": delta["total"], "regressed": delta["regressed"]},
+                             ensure_ascii=True), flush=True)
+    return 0 if all(t["pass"] for t in audit.tasks) and not matrix["failing"] and not matrix["unexplained"] \
+        and not (delta and delta["regressed"]) else 1
+
+
+CONTINUATION_ARGS = {"cursor", "offset", "since_seq", "since", "page"}
+_ID = re.compile(r"\b[a-z]+-[0-9a-f]{6,}\b")
+
+
+def call_key(c: dict) -> tuple:
+    """What a call asks, independent of the run: record ids become <id>, and continuation args are dropped, so a
+    paged follow-up has the same key as its first call (and counts against the baseline, never as new scope)."""
+    args = {k: v for k, v in (c.get("args") or {}).items() if k not in CONTINUATION_ARGS}
+    return c["role"], c["tool"], _ID.sub("<id>", json.dumps(args, sort_keys=True, default=str))
+
+
+def compare(baseline: dict, current: dict) -> dict:
+    """S23 qa (report-bcef24a36a): the before/after per task. A current call is like-for-like when the baseline
+    task asked the same thing (call_key); the rest is new scope: a tool or probe the baseline did not have, or a
+    task it could only do by a workaround (0 calls). A task regresses when its like-for-like calls outnumber the
+    baseline task's calls, or their bytes exceed the baseline task's bytes."""
+    def by_task(ledger: dict) -> dict[str, list[dict]]:
+        out: dict[str, list[dict]] = defaultdict(list)
+        for c in ledger["calls"]:
+            out[c["task"]].append(c)
+        return out
+    before, after = by_task(baseline), by_task(current)
+    rows, regressed = [], []
+    for name in dict.fromkeys([t["task"] for t in baseline["tasks"]] + [t["task"] for t in current["tasks"]]):
+        b, n = before.get(name, []), after.get(name, [])
+        known = {call_key(c) for c in b}
+        like = [c for c in n if call_key(c) in known]
+        row = {"task": name, "calls_before": len(b), "calls_after": len(n),
+               "bytes_before": sum(c["bytes_out"] for c in b), "bytes_after": sum(c["bytes_out"] for c in n),
+               "like_calls_after": len(like), "like_bytes_after": sum(c["bytes_out"] for c in like),
+               "new_scope_calls": len(n) - len(like),
+               "new_scope": sorted({f"{c['role']}:{c['tool']}" for c in n if call_key(c) not in known})}
+        if b and (row["like_calls_after"] > row["calls_before"] or row["like_bytes_after"] > row["bytes_before"]):
+            regressed.append(name)
+        rows.append(row)
+    total = {k: sum(r[k] for r in rows) for k in rows[0] if k not in ("task", "new_scope")} if rows else {}
+    return {"tasks": rows, "total": total, "regressed": regressed}
 
 
 def matrix_summary(tools: dict) -> dict:
