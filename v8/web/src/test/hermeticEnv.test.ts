@@ -66,3 +66,27 @@ describe("hermeticEnv", () => {
     expect(out).not.toHaveProperty("CLAUDE_CONFIG_DIR");
   });
 });
+
+describe("seedAgentHome (t-67d19c5807)", () => {
+  it("copies the repo's role cards and models.json into a private <home>/agent-home, leaving the repo alone", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const { seedAgentHome } = await import("../../e2e/hermeticEnv");
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), "repo-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "home-"));
+    try {
+      fs.mkdirSync(path.join(repo, ".claude", "commands"), { recursive: true });
+      for (const f of ["engineer.md", "qa.md", "notes.txt"]) fs.writeFileSync(path.join(repo, ".claude", "commands", f), f);
+      fs.writeFileSync(path.join(repo, "models.json"), "{}");
+      const agentHome = seedAgentHome(repo, home);
+      expect(agentHome).toBe(path.join(home, "agent-home"));
+      expect(fs.readdirSync(path.join(agentHome, ".claude", "commands")).sort()).toEqual(["engineer.md", "qa.md"]);
+      expect(fs.readFileSync(path.join(agentHome, ".claude", "commands", "qa.md"), "utf8")).toBe("qa.md");
+      expect(fs.readFileSync(path.join(agentHome, "models.json"), "utf8")).toBe("{}"); // the role-model picker's catalog
+      expect(fs.readdirSync(path.join(repo, ".claude", "commands")).sort()).toEqual(["engineer.md", "notes.txt", "qa.md"]);
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+});

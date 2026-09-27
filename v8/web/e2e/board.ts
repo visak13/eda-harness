@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { hermeticEnv } from "./hermeticEnv";
+import { hermeticEnv, seedAgentHome } from "./hermeticEnv";
 import { e2eBoardDistEnv } from "./distDir";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -69,6 +69,8 @@ export async function startBoard(extraEnv: Record<string, string> = {}): Promise
   const port = await freePort();
   const base = `http://127.0.0.1:${port}`;
   tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "edp8-e2e-"));
+  // t-67d19c5807: a private copy of the repo's role cards + models.json at <home>/agent-home, where a non-dev board looks
+  seedAgentHome(REPO_DIR, tmpHome);
 
   // Default to the documented `uv run edp8-board`; EDP8_BOARD_CMD overrides it (e.g. the
   // venv console script `edp8-board`) to skip a cold `uv` sync on CI / pool shells.

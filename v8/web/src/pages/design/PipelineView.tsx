@@ -1,16 +1,30 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Transition, WorkflowDef } from "../../api/workflows";
 import styles from "./Design.module.css";
 import { GATE_EDGE, GATE_LABEL, MAIN_PATH, checksByRole, plain, preconditionText, roleLabel, roleLayers, whoTakes } from "./model";
+import { CHAR_W, FLOW, GRID, cellRect, flowSlots, flowWidth, polyline, routeRoles, wrapWords, type EdgeIn } from "./pipelineLayout";
 
 // S14 (§4.14(c)): the pipeline at a glance — who spawns whom and who checks what (roles graph), then the
 // status flow with the gates between stages. Every edge comes from the definition; the full transition
 // table underneath lists each edge's declared preconditions, so nothing the board enforces is hidden.
+// t-67d19c5807: the geometry lives in pipelineLayout.ts — the flow wraps into rows that fit its box, actor
+// labels wrap at words, and roles-graph edges run between the boxes, never through them.
 
-const NODE_W = 150;
-const NODE_H = 46;
-const COL = 210;
-const ROW = 66;
+/** The box's inner width, tracked; 0 until measured (and in jsdom, which has no layout). */
+function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
+  const ref = useRef<T>(null);
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setW(el.clientWidth);
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setW(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, w];
+}
 
 export function PipelineView({ wf }: { wf: WorkflowDef }): React.JSX.Element {
   const [picked, setPicked] = useState<string | null>(null);
@@ -33,51 +47,58 @@ function RolesGraph({ wf }: { wf: WorkflowDef }): React.JSX.Element {
   const { layers, unreached, idle } = roleLayers(wf);
   const checks = checksByRole(wf);
   const cols = [...layers, ...(unreached.length ? [unreached] : [])];
-  const pos = new Map<string, { x: number; y: number }>();
-  cols.forEach((col, ci) => col.forEach((id, ri) => pos.set(id, { x: 20 + ci * COL, y: 20 + ri * ROW })));
-  const width = Math.max(720, 40 + cols.length * COL);
-  const height = Math.max(120, 40 + Math.max(1, ...cols.map((c) => c.length)) * ROW);
+  const cells = new Map<string, { col: number; row: number }>();
+  cols.forEach((col, ci) => col.forEach((id, ri) => cells.set(id, { col: ci, row: ri })));
   const byId = new Map(wf.roles.map((r) => [r.id, r]));
-  const spawnEdges = wf.roles.flatMap((r) => (r.may_spawn ?? []).filter((s) => pos.has(s) && pos.has(r.id)).map((s) => [r.id, s] as const));
-  const builders = wf.roles.filter((r) => r.capacity_class === "builder" && pos.has(r.id)).map((r) => r.id);
-  const checkEdges = Object.entries(checks).flatMap(([checker, kinds]) =>
-    pos.has(checker) ? builders.filter((b) => b !== checker).map((b) => [checker, b, kinds.join(", ")] as const) : []);
+  const builders = wf.roles.filter((r) => r.capacity_class === "builder" && cells.has(r.id)).map((r) => r.id);
+  const edges: (EdgeIn & { kind: "spawn" | "check" })[] = [
+    ...wf.roles.flatMap((r) => (r.may_spawn ?? []).filter((s) => cells.has(s) && cells.has(r.id))
+      .map((s) => ({ id: `spawn-edge-${r.id}-${s}`, from: r.id, to: s, kind: "spawn" as const }))),
+    ...Object.entries(checks).flatMap(([checker, kinds]) => cells.has(checker)
+      ? builders.filter((b) => b !== checker).map((b) => ({ id: `check-edge-${checker}-${b}`, from: checker, to: b, kind: "check" as const, label: `checks ${kinds.join(", ")}` }))
+      : []),
+  ];
+  const kindOf = new Map(edges.map((e) => [e.id, e.kind]));
+  const { routes, extraHeight, rows } = routeRoles(cells, edges);
+  const width = GRID.PADX + cols.length * (GRID.W + GRID.COLGAP);
+  const height = Math.max(120, GRID.PADY + rows * (GRID.H + GRID.ROWGAP) + extraHeight);
   const unreachedSet = new Set(unreached);
+  const fit = (text: string, room: number) => (text.length * CHAR_W <= room ? text : null);
   return (
     <>
       <div className={styles.svgWrap}>
-        <svg className={styles.svg} width={width} height={height} role="img" data-testid="pipeline-roles"
+        <svg className={`${styles.svg} ${styles.svgFit}`} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" data-testid="pipeline-roles"
           aria-label={`Roles: ${cols.flat().map((id) => `${id}${byId.get(id)?.human ? " (human)" : ""} spawns ${(byId.get(id)?.may_spawn ?? []).join(", ") || "nobody"}`).join("; ")}`}>
           <defs>
             <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M0 0L10 5L0 10z" fill="currentColor" />
             </marker>
           </defs>
-          {spawnEdges.map(([a, b]) => {
-            const p = pos.get(a)!; const q = pos.get(b)!;
-            return <path key={`s-${a}-${b}`} className={styles.edgeSpawn} markerEnd="url(#arrow)" data-testid={`spawn-edge-${a}-${b}`}
-              d={`M${p.x + NODE_W} ${p.y + NODE_H / 2} C${p.x + NODE_W + 30} ${p.y + NODE_H / 2} ${q.x - 30} ${q.y + NODE_H / 2} ${q.x} ${q.y + NODE_H / 2}`} />;
-          })}
-          {checkEdges.map(([a, b, kinds]) => {
-            const p = pos.get(a)!; const q = pos.get(b)!;
-            const mx = (p.x + q.x + NODE_W) / 2; const my = (p.y + q.y) / 2 + NODE_H;
-            return (
-              <g key={`c-${a}-${b}`} data-testid={`check-edge-${a}-${b}`}>
-                <path className={styles.edgeCheck} markerEnd="url(#arrow)"
-                  d={`M${p.x + NODE_W / 2} ${p.y + NODE_H} Q${mx} ${my + 30} ${q.x + NODE_W / 2} ${q.y + NODE_H}`} />
-                <text className={styles.edgeLabel} x={mx} y={my + 22} textAnchor="middle">checks {kinds}</text>
-              </g>
-            );
-          })}
+          {routes.map((r) => kindOf.get(r.id) === "spawn" ? (
+            <path key={r.id} className={styles.edgeSpawn} markerEnd="url(#arrow)" data-testid={r.id} data-from={r.from} data-to={r.to} d={polyline(r.points)}>
+              <title>{r.from} starts seats of {r.to}</title>
+            </path>
+          ) : (
+            <g key={r.id} data-testid={r.id} data-from={r.from} data-to={r.to}>
+              <path className={styles.edgeCheck} markerEnd="url(#arrow)" d={polyline(r.points)}>
+                <title>{r.from} {r.label?.text} work of {r.to}</title>
+              </path>
+              {r.label ? <text className={`${styles.edgeLabel} ${styles.halo}`} x={r.label.x} y={r.label.y} textAnchor="middle">{r.label.text}</text> : null}
+            </g>
+          ))}
           {cols.flat().map((id) => {
-            const r = byId.get(id)!; const p = pos.get(id)!;
+            const r = byId.get(id)!; const p = cellRect(cells.get(id)!.col, cells.get(id)!.row);
             const cls = [styles.node, r.human ? styles.nodeHuman : "", unreachedSet.has(id) ? styles.nodeUnreached : ""].join(" ");
             const sub = r.human ? "human" : `${r.capacity_class ?? "no class"}${r.max_concurrent ? ` · max ${r.max_concurrent}` : ""}`;
+            const full = `${unreachedSet.has(id) ? "no spawner" : sub}${checks[id] ? ` · checks ${checks[id].join(", ")}` : ""}`;
+            // the sub line never ends mid-word: the full line when it fits, else the class alone (full text in the tooltip)
+            const shown = fit(full, GRID.W - 20) ?? (unreachedSet.has(id) ? "no spawner" : sub);
             return (
               <g key={id} className={cls} transform={`translate(${p.x} ${p.y})`} data-testid={`role-node-${id}`}>
-                <rect width={NODE_W} height={NODE_H} rx={8} />
+                <title>{`${roleLabel(r)}: ${full}`}</title>
+                <rect width={GRID.W} height={GRID.H} rx={8} />
                 <text className={styles.nodeLabel} x={10} y={19}>{roleLabel(r)}</text>
-                <text className={styles.nodeSub} x={10} y={36}>{unreachedSet.has(id) ? "no spawner" : sub}{checks[id] ? ` · checks ${checks[id].join(",")}` : ""}</text>
+                <text className={styles.nodeSub} x={10} y={36}>{shown}</text>
               </g>
             );
           })}
@@ -94,42 +115,78 @@ function RolesGraph({ wf }: { wf: WorkflowDef }): React.JSX.Element {
 }
 
 function StatusFlow({ wf, onPick, picked }: { wf: WorkflowDef; onPick: (k: string) => void; picked: string | null }): React.JSX.Element {
+  const [wrapRef, avail] = useWidth<HTMLDivElement>();
   const main = MAIN_PATH.filter((s) => wf.statuses.includes(s));
   const side = wf.statuses.filter((s) => !main.includes(s));
-  const SW = 118; const GAP = 150;
-  const x = (i: number) => 20 + i * GAP;
-  const width = Math.max(720, 40 + main.length * GAP);
-  const height = side.length ? 200 : 120;
-  const terminal = new Set(wf.terminal);
+  const { SW, SH, GAP, PAD, TAIL, LINE } = FLOW;
+  const who = (t: Transition | undefined) => (t ? whoTakes(wf, t) : "");
+  const labelLines = (t: Transition | undefined) => (t ? wrapWords(who(t), Math.floor((GAP - 12) / CHAR_W)) : ["no edge"]);
+  const maxLines = Math.max(1, ...main.slice(0, -1).map((s, i) => labelLines(wf.transitions.find((e) => e.from === s && e.to === main[i + 1])).length));
+  const { perRow, at } = flowSlots(main.length, avail);
   const gatesOn = (a: string, b: string) => wf.gates.filter((g) => {
     const e = GATE_EDGE[g.id];
     return e && e[0] === a && e[1] === b;
   });
+  const maxGates = Math.max(0, ...main.slice(0, -1).map((s, i) => gatesOn(s, main[i + 1]).length));
+  // one row: gate chips, the status pills, the wrapped actor labels, then the corridor the row-wrap arrow runs along
+  const TOP = 8 + Math.max(1, maxGates) * 18;
+  const LABEL_Y = SH + 18; // first label baseline, below the pills
+  const COR = LABEL_Y + (maxLines - 1) * LINE + 12; // the corridor under a row's labels
+  const ROW_H = COR + TOP + 6;
+  const nRows = Math.max(...at.map((a) => a.row)) + 1;
+  const x = (slot: number) => PAD + slot * GAP;
+  const y = (row: number) => TOP + row * ROW_H; // top of the pills of `row`
+  const width = Math.max(720, flowWidth(perRow));
+  const lastBottom = y(nRows - 1) + COR;
+  const sideY = lastBottom + 8;
+  const height = side.length ? sideY + SH + 16 : lastBottom + 4;
+  const terminal = new Set(wf.terminal);
   return (
-    <div className={styles.svgWrap}>
+    <div className={styles.svgWrap} ref={wrapRef}>
       <svg className={styles.svg} width={width} height={height} role="img" data-testid="pipeline-flow"
         aria-label={`How a ticket moves: ${main.map(plain).join(" → ")}${side.length ? `; it can also be ${side.map(plain).join(", ")}` : ""}`}>
+        <defs>
+          <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0L10 5L0 10z" fill="currentColor" />
+          </marker>
+        </defs>
         {main.slice(0, -1).map((s, i) => {
           const to = main[i + 1];
           const t = wf.transitions.find((e) => e.from === s && e.to === to);
           const key = `${s}→${to}`;
-          const x1 = x(i) + SW; const x2 = x(i + 1);
+          const a = at[i]; const b = at[i + 1];
+          const wraps = b.row !== a.row;
+          const cy = y(b.row) + SH / 2;
+          // a wrap comes in from slot 0's centre on the next row, after a drop down the right-hand side
+          const x1 = wraps ? x(0) + SW / 2 : x(a.slot) + SW; const x2 = x(b.slot);
+          const d = wraps
+            ? (() => {
+              const ex = x(a.slot) + SW; const ay = y(a.row) + SH / 2; const rx = ex + TAIL - 6;
+              const cor = y(a.row) + COR;
+              return `M${ex} ${ay} L${rx} ${ay} L${rx} ${cor} L${x1} ${cor} L${x1} ${cy} L${x2 - 2} ${cy}`;
+            })()
+            : `M${x1} ${cy} L${x2 - 2} ${cy}`;
           const gates = gatesOn(s, to);
+          const lines = labelLines(t);
+          const mid = (x1 + x2) / 2;
           return (
             <g key={key}>
               {t ? (
-                <g className={styles.edgeHit} tabIndex={0} role="button" aria-label={`${key}: ${whoTakes(wf, t)}`}
+                <g className={styles.edgeHit} tabIndex={0} role="button" aria-label={`${key}: ${who(t)}`}
                   aria-pressed={picked === key} data-testid={`flow-edge-${s}-${to}`}
                   onClick={() => onPick(key)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(key); } }}>
-                  <line className={t.requires.length ? styles.flowEdge : styles.flowEdgeBare} x1={x1} y1={56} x2={x2 - 2} y2={56} markerEnd="url(#arrow2)" />
-                  <rect x={x1} y={40} width={x2 - x1} height={32} fill="transparent" />
-                  <text className={styles.edgeLabel} x={(x1 + x2) / 2} y={90} textAnchor="middle">{whoTakes(wf, t).slice(0, 22)}</text>
+                  <title>{`${plain(s)} → ${plain(to)}: ${who(t)}`}</title>
+                  <path className={t.requires.length ? styles.flowEdge : styles.flowEdgeBare} d={d} markerEnd="url(#arrow2)" />
+                  <rect x={x1} y={cy - 16} width={Math.max(8, x2 - x1)} height={32} fill="transparent" />
+                  <text className={styles.edgeLabel} x={mid} y={y(b.row) + LABEL_Y} textAnchor="middle">
+                    {lines.map((l, li) => <tspan key={li} x={mid} dy={li ? LINE : 0}>{l}</tspan>)}
+                  </text>
                 </g>
               ) : (
-                <text className={styles.edgeLabel} x={(x1 + x2) / 2} y={60} textAnchor="middle">no edge</text>
+                <text className={styles.edgeLabel} x={mid} y={cy + 4} textAnchor="middle">no edge</text>
               )}
               {gates.map((g, gi) => (
-                <g key={g.id} className={styles.gateChip} transform={`translate(${(x1 + x2) / 2 - 50} ${14 - gi * 18})`} data-testid={`flow-gate-${g.id}`}>
+                <g key={g.id} className={styles.gateChip} transform={`translate(${wraps ? Math.max(mid - 50, x1 + 6) : mid - 50} ${y(b.row) - 22 - gi * 18})`} data-testid={`flow-gate-${g.id}`}>
                   <rect width={100} height={18} rx={9} />
                   <text className={styles.gateText} x={50} y={12.5} textAnchor="middle">{GATE_LABEL[g.id] ?? plain(g.id)}</text>
                 </g>
@@ -137,24 +194,19 @@ function StatusFlow({ wf, onPick, picked }: { wf: WorkflowDef; onPick: (k: strin
             </g>
           );
         })}
-        <defs>
-          <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0 0L10 5L0 10z" fill="currentColor" />
-          </marker>
-        </defs>
         {main.map((s, i) => (
-          <g key={s} className={`${styles.status} ${terminal.has(s) ? styles.statusTerminal : ""}`} transform={`translate(${x(i)} 40)`} data-testid={`flow-status-${s}`}>
-            <rect width={SW} height={32} rx={16} />
+          <g key={s} className={`${styles.status} ${terminal.has(s) ? styles.statusTerminal : ""}`} transform={`translate(${x(at[i].slot)} ${y(at[i].row)})`} data-testid={`flow-status-${s}`}>
+            <rect width={SW} height={SH} rx={16} />
             <text className={styles.nodeLabel} x={SW / 2} y={21} textAnchor="middle">{plain(s)}</text>
           </g>
         ))}
         {side.map((s, i) => (
-          <g key={s} className={`${styles.status} ${terminal.has(s) ? styles.statusTerminal : ""}`} transform={`translate(${x(i + 1)} 140)`} data-testid={`flow-status-${s}`}>
-            <rect width={SW} height={32} rx={16} />
+          <g key={s} className={`${styles.status} ${terminal.has(s) ? styles.statusTerminal : ""}`} transform={`translate(${x(i + 1)} ${sideY})`} data-testid={`flow-status-${s}`}>
+            <rect width={SW} height={SH} rx={16} />
             <text className={styles.nodeLabel} x={SW / 2} y={21} textAnchor="middle">{plain(s)}</text>
           </g>
         ))}
-        {side.length ? <text className={styles.edgeLabel} x={20} y={160}>can also be:</text> : null}
+        {side.length ? <text className={styles.edgeLabel} x={PAD} y={sideY + 20}>can also be:</text> : null}
       </svg>
     </div>
   );

@@ -17,7 +17,9 @@ const shot = (page: Page, name: string) => page.screenshot({ path: path.join(EVI
 test.use({ boardFile: "s14-design" });
 test.describe.configure({ mode: "serial" });
 
-const tab = (page: Page, name: string) => page.getByRole("tab", { name, exact: true }).click();
+// t-0c16c00424 folded the panels into five sections; the walk keeps naming the panel it means (t-67d19c5807)
+const SECTION: Record<string, string> = { Hooks: "Hooks and caps", Caps: "Hooks and caps", Gates: "Checks and gates", Diff: "Validate and publish" };
+const tab = (page: Page, name: string) => page.getByRole("tab", { name: SECTION[name] ?? name, exact: true }).click();
 
 async function validateClean(page: Page) {
   await page.getByTestId("design-validate-run").click();

@@ -68,6 +68,8 @@
 /* pipeline */
 .svgWrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
 .svg { display: block; min-width: 720px; }
+/* t-67d19c5807: the roles graph scales down to its box instead of hiding its last column off-canvas */
+.svgFit { min-width: 0; max-width: 100%; height: auto; }
 .node rect { fill: var(--panel); stroke: var(--strongline); }
 .nodeHuman rect { fill: var(--accentwash); stroke: var(--accent); }
 .nodeUnreached rect { stroke: var(--danger); stroke-dasharray: 4 3; }
@@ -76,6 +78,7 @@
 .edgeSpawn { stroke: var(--ink); stroke-width: 1.5; fill: none; }
 .edgeCheck { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 4; fill: none; }
 .edgeLabel { fill: var(--muted); font: 11px/1 system-ui, sans-serif; }
+.halo { paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
 .status rect { fill: var(--panel); stroke: var(--strongline); }
 .statusTerminal rect { fill: var(--successwash); stroke: var(--success); }
 .flowEdge { stroke: var(--muted); stroke-width: 1.5; fill: none; }
