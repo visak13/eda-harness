@@ -183,3 +183,32 @@ def test_message_pages_cover_the_whole_thread(fleet):
         for field, value in row.items():
             if isinstance(value, str) and value.endswith("chars)"):
                 assert "message_read" in pages[0]["page"]["full_rows"], "a clipped body names no full read"
+
+
+def test_event_pages_equal_the_unbounded_result(fleet):
+    client, board = fleet["client"], fleet["board"]
+    counts = {}
+    for e in board.store.query("event", {}):
+        counts[e.subject_id] = counts.get(e.subject_id, 0) + 1
+    subject = max((s for s in counts if s), key=counts.get)
+    whole = client.events_query(subject_id=subject, since=0, limit=100_000)["value"]
+    got, _ = _page_all(client, "events_query", {"subject_id": subject}, verbose=True)
+    assert got == whole, "events_query pages lost, altered or reordered events"
+    compact, pages = _page_all(client, "events_query", {"subject_id": subject}, verbose=False)
+    assert _ids(compact) == _ids(whole), "default event pages lost or reordered events"
+    for page in pages:
+        if any(str(r.get("data", "")).endswith("chars)") for r in page["items"]):
+            assert page["page"].get("full_rows"), "a clipped event page names no full read"
+
+
+def test_context_verbose_is_the_unbounded_snapshot_and_default_names_every_cut(fleet):
+    client = fleet["client"]
+    set_client(client)
+    epic = next(t for t in client.ticket_query()["value"] if t.get("kind") == "epic")
+    whole = client.context(ticket_id=epic["id"])["value"]
+    full = invoke(ALL_TOOLS["context"], {"ticket_id": epic["id"], "verbose": True}, seat="parity.owner")["value"]
+    # the cursor is minted per call (it carries the read's position), every other field must match
+    assert {k: v for k, v in full.items() if k != "cursor"} == {k: v for k, v in whole.items() if k != "cursor"},         "context(verbose=True) differs from the pre-S23 unbounded snapshot"
+    bounded = invoke(ALL_TOOLS["context"], {"ticket_id": epic["id"]}, seat="parity.owner")["value"]
+    if {k: v for k, v in bounded.items() if k != "cursor"} != {k: v for k, v in whole.items() if k != "cursor"}:  # anything cut is named, with the exact call that returns the whole snapshot
+        assert bounded["omitted"]["full_snapshot"] == "context(verbose=True)", bounded.get("omitted")

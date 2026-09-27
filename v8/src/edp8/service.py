@@ -1301,8 +1301,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     @app.get("/v1/events")
     def events(subject_id: str | None = None, since: int = 0, limit: int = 200, watch: bool = False,
                a: Participant = Depends(actor)):
-        if subject_id:
-            return ok(_dump(board.store.query("event", {"subject_id": subject_id}, limit=limit)))
+        if subject_id:  # seq on every row and `since` honoured, so a capped page can resume (S23 no-loss)
+            return ok([{"seq": s, **_dump(e)} for s, e in
+                       board.store.query_seq("event", {"subject_id": subject_id}, since_seq=since, limit=limit)])
         return ok([{"seq": s, **_dump(e)} for s, e in board.iter_replay(a, since, watch=watch, limit=limit)])
 
     @app.get("/v1/find")
