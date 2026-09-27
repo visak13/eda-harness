@@ -35,7 +35,7 @@ The check never prints a token value. Rows: BLOCKER (must fix), WARN, OK, INFO.
 | admin token | `EDP8_ADMIN_TOKEN` is unset or `dev` | `apply` generates one into v8\.env (not shown) |
 | bind | `EDP8_HOST` unset or not loopback | `apply` pins 127.0.0.1 |
 | real env | a key is set in the User/Machine environment, which beats v8\.env | remove it from that scope |
-| tokens.json | no human or no agent credential: the board refuses a public start | mint (below) |
+| tokens.json | no human or no agent credential: the board refuses a public start | invite or mint (§5) |
 | seats | a **live seat without a minted token**: its MCP calls and feed 401 after the switch | close it, or reap + respawn it once 2ffb89d is live (below) |
 | humans | a human on the board without a token cannot sign in | mint one if they are a real person (`x` is stale: ignore) |
 | certificates | tailnet HTTPS certificates off | owner: admin console → DNS → HTTPS Certificates |
@@ -92,7 +92,7 @@ mcp (+ supervisor). The board is back in trusted mode on 127.0.0.1. Manual equiv
 reset`, delete the lines between `# >>> edp tailnet` and `# <<< edp tailnet` in `v8\.env`, then
 `.\edp.ps1 restart board` and `.\edp.ps1 restart mcp` from a fresh shell.
 
-## 5. Add a teammate
+## 5. Add a teammate (owner only)
 
 From the UI there is a shorter path. Admin → Teammates → Invite gives a one-time link. A person without a token can also press **Request access** on the sign-in page; an admin approves it under Admin → Teammates → Requests, and that person's browser signs itself in. To take a teammate off the board, use Admin → Teammates → Remove. The manual steps below are the fallback. `alex` is a placeholder handle.
 
@@ -100,27 +100,21 @@ From the UI there is a shorter path. Admin → Teammates → Invite gives a one-
    Invite), or share just this machine (Machines → msi → Share…). Shared-in users reach the machine but
    not the rest of the tailnet. They install Tailscale and sign in; `tailscale status` on their side
    lists `msi`.
-2. **Board participant** — register them as a human (role `qa`, `engineer`, … as the owner decides),
-   once, from `eda-base3`:
-   ```powershell
-   $h = "alex"; $role = "qa"
-   $admin = (Get-Content v8\.env | Where-Object { $_ -like "EDP8_ADMIN_TOKEN=*" } | Select-Object -Last 1).Split("=",2)[1]
-   Invoke-RestMethod http://127.0.0.1:9400/v1/participants -Method Post -Headers @{ "X-Admin" = $admin } `
-     -ContentType application/json -Body (@{ type = "human"; role = $role; handle = $h; id = $h } | ConvertTo-Json)
-   ```
-3. **Mint their token** — written straight into `v8\tokens.json` and put on the clipboard, never
-   printed (the board re-reads the file on its next request; do it when no spawn is in flight, the board
-   writes the same file when it mints seat tokens):
-   ```powershell
-   v8\.venv\Scripts\python.exe -c "import json,secrets,pathlib,subprocess;f=pathlib.Path(r'v8\tokens.json');d=json.loads(f.read_text(encoding='utf-8'));s=secrets.token_urlsafe(24);d['alex']=s;t=f.with_suffix('.json.tmp');t.write_text(json.dumps(d,indent=2),encoding='utf-8');t.replace(f);subprocess.run(['clip'],input=s.encode())"
-   ```
-   Send the secret to them over a private channel (not the board, not Slack channels).
+2. **Board participant + invite** — Admin → Teammates → Invite, or from an owner seat's MCP tools
+   `teammate(action='create', handle='alex', role='qa')`: registers the human and returns a one-time
+   invite link (24 h) that signs them in. Nobody edits `tokens.json` by hand and no shell reads it.
+3. **Mint a token** (a teammate without a browser, e.g. VS Code only) — Admin → Teammates → Rotate, or
+   `teammate(action='mint', handle='alex')`. The secret is in that one reply only: the board never writes
+   it to its events or logs and it cannot be read back; minting again replaces it. The admin routes behind
+   the tool need an admin human's token, so an agent seat is refused. Send the secret over a private
+   channel (not the board, not Slack channels).
 4. **SPA sign-in** — they open `https://msi.tail884b19.ts.net/ui?as=alex&token=<secret>` once. The SPA
    moves the token into the tab's session storage and strips it from the address bar; a new tab asks again.
 5. **VS Code extension** — install the edp-code vsix, set `edp.boardUrl` to
    `https://msi.tail884b19.ts.net` (machine setting; credentials are only sent to a loopback or https URL),
    then run **EDP: Sign in to board** with their handle and secret (kept in VS Code SecretStorage).
-6. **Revoke** — delete their key from `v8\tokens.json` (same care as step 3); the next request 401s.
+6. **Revoke** — Admin → Teammates → Revoke (or Remove), or `teammate(action='revoke', handle='alex')`; the
+   next request 401s. `teammate(action='list')` shows who has a token.
 
 ## Not exposed
 

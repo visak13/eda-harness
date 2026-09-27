@@ -16,11 +16,10 @@ verify, handoff.
 For files (architect/engineer/adversary only): artifact_upload(path, note) → message_send(artifacts=[id], ...). Upload is staged
 until the message finalizes it. The caller owns the upload; existing MIME sniffing/25 MB/auth
 rules remain. Never paste image base64 into a model tool argument. Related skill: demo.
-MCP artifact_upload refuses (`unavailable`, HTTP uploads disabled / request not local — the shared
-proxy's default)? Store the bytes over REST instead, never as a `workspace:` artifact_create ref (the
-board holds no bytes for one: the card can only say "not uploaded — <path>"):
-`curl -s -X POST $EDP8_BOARD_URL/v1/artifacts/upload -H "X-Token: $EDP8_TOKEN" -H "X-Participant: <your id>" -F "file=@<path>" -F "note=<what it shows>"`
-returns the staged artifact; attach it with `message_send(artifacts=[id])` as above (PowerShell: `curl.exe`).
+MCP artifact_upload refuses (`unavailable`: HTTP uploads disabled or the request is not local)? Say so
+on your ticket thread (`message_send(kind='blocked')`) with the path — never curl the board with a token
+and never a `workspace:` artifact_create ref (the board holds no bytes for one).
+(engineer/qa/adversary only) `artifact_read(id)` returns the file too: an image as an image block, text inline 6 KB at a time (`offset=next_offset`).
 
 ## Explicit review handoff
 Evidence refs may describe incomplete or failed work. Attaching them, editing a doc, or posting

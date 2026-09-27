@@ -80,14 +80,16 @@ class FakePool(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(n) or b"{}")
         if self.path == "/v1/spawn":
+            pid = body.get("participant_id") or body.get("handle")  # the pool contract sends `handle`
             row = {"session_id": f"audit-session-{len(self.sessions) + 1}",
-                   "participant_id": body.get("participant_id"), "role": body.get("role"),
-                   "handle": body.get("participant_id"), "state": "alive"}
+                   "participant_id": pid, "role": body.get("role"),
+                   "handle": pid, "state": "alive",
+                   "spawn_settings": {"env": body.get("env") or {}}}  # the real pool records the spawn env
             self.sessions.append(row)
             return self.reply({"session_id": row["session_id"], "handle": row["handle"]})
         if self.path.endswith("/reap") or self.path.endswith("/release_self"):
             for row in self.sessions:
-                if row.get("participant_id") == body.get("participant_id"):
+                if row.get("participant_id") in (body.get("participant_id"), body.get("handle")):
                     row["state"] = "dead"
         return self.reply({"ok": True, "value": {"participant_id": body.get("participant_id"), "state": "done"}})
 
@@ -137,7 +139,9 @@ class Audit:
                     EDP8_DB=str(self.home / "edp8.db"), EDP8_TOKENS=str(self.home / "tokens.json"),
                     EDP8_HOST="127.0.0.1", EDP8_PORT=str(self.board_port),
                     EDP8_ADMIN_TOKEN=self.admin, EDP8_EMBEDDER="none", EDP8_LOG="warning",
-                    EDP8_RSI="0", EDP_POOL_URL=f"http://127.0.0.1:{self.pool_port}",
+                    EDP8_RSI="0", EDP8_OWNER="audit.owner", EDP8_PAIN_FILE=str(self.home / "pain.jsonl"),
+                    EDP8_HARVEST_LOG_ROOTS=str(ROOT.parent / "edp-pool" / ".claude-pool" / "projects"),
+                    EDP_POOL_URL=f"http://127.0.0.1:{self.pool_port}",
                     PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
         flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         log = (self.home / "board.log").open("ab")
@@ -293,6 +297,7 @@ def workflow(a: Audit) -> None:
     a.task("thread", thread)
 
     def image():
+        import base64
         path = ROOT / "web" / "public" / "brand" / "favicon-32.png"
         uploaded = a.call("engineer", "artifact_upload", {"path": str(path)}, task="image")
         if not uploaded.get("ok"):
@@ -302,10 +307,10 @@ def workflow(a: Audit) -> None:
         attached = a.call("engineer", "message_send", {"ticket_id": a.ids["story"], "kind": "note",
             "text": "Image attached", "artifacts": [aid]}, task="image")
         read = a.call("qa", "artifact_read", {"id": aid}, task="image")
-        content = a.image_content("qa", aid, task="image") if read.get("ok") else b""
-        return bool(attached.get("ok") and read.get("ok") and content.startswith(b"\x89PNG")), \
-            f"artifact={aid}; metadata and content need two reads; png={content.startswith(bytes.fromhex('89504e47'))}", \
-            ["HTTP GET /v1/artifacts/{id}/content is required to read image bytes"]
+        content = ((read.get("value") or {}).get("content") or {})
+        png = base64.b64decode(content.get("base64") or "").startswith(b"\x89PNG")
+        return bool(attached.get("ok") and read.get("ok") and content.get("kind") == "image" and png), \
+            f"artifact={aid}; one artifact_read returns the image (MCP image block); png={png}"
     a.task("image", image)
 
     def edit_design():
@@ -359,9 +364,7 @@ def workflow(a: Audit) -> None:
         a.stop_board()
         a.start_board()
         delta = a.call("owner", "context_delta", {"cursor": cursor or "missing"}, task="restart_cursor")
-        recovered = a.call("owner", "context", {}, task="restart_cursor") if not delta.get("ok") else delta
-        return bool(cursor and recovered.get("ok")), \
-            f"post-restart delta={delta.get('error') or 'ok'}; recovered via context={recovered.get('ok')}"
+        return bool(cursor and delta.get("ok")), f"post-restart delta={delta.get('error') or 'ok'} (no context() fallback)"
     a.task("restart_cursor", restart_cursor)
 
     def participants():
@@ -370,32 +373,60 @@ def workflow(a: Audit) -> None:
     a.task("participants", participants)
 
     def file_pain():
-        # The role's /pain skill requires scripts/pain.py; no MCP bundle exposes its list/file/resolve/show.
-        available = [n for n in ROLE_BUNDLES["engineer"] if "pain" in n]
-        return False, f"pain MCP tools={available}", ["scripts/pain.py file/list is required"]
+        found = a.call("engineer", "pain", {"action": "query", "q": "audit probe symptom"}, task="file_pain")
+        filed = a.call("engineer", "pain", {"action": "file", "severity": "low", "area": "tools",
+            "symptom": "audit probe symptom", "expected": "a bounded tool", "evidence": "tool_audit"}, task="file_pain")
+        pid = (filed.get("value") or {}).get("id")
+        again = a.call("engineer", "pain", {"action": "query", "q": "audit probe symptom"}, task="file_pain")
+        shown = a.call("engineer", "pain", {"action": "read", "id": pid or "missing"}, task="file_pain")
+        resolved = a.call("doctor", "pain", {"action": "resolve", "id": pid or "missing", "status": "invalid",
+            "note": "audit probe"}, task="file_pain")
+        hit = [r.get("id") for r in (again.get("value") or {}).get("items", [])] == [pid]
+        return all(x.get("ok") for x in (found, filed, again, shown, resolved)) and hit, \
+            f"query -> file {pid} -> query finds it -> read -> doctor resolves"
     a.task("file_pain", file_pain)
 
     def harvest_cost():
-        available = [n for n in ROLE_BUNDLES["qa"] if "harvest" in n or "cost" in n]
-        return False, f"harvest/cost MCP tools={available}", ["scripts/harvest_cost.py is required"]
+        # a private seat has no transcript, so cost this audit's own seat over the last hour (bounded totals)
+        seat = os.environ.get("EDP_HANDLE") or a.roles["qa"][0]
+        since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 3600))
+        got = a.call("qa", "harvest_cost", {"participant_id": seat, "since": since}, task="harvest_cost")
+        missing = a.call("qa", "harvest_cost", {"participant_id": a.roles["qa"][0]}, task="harvest_cost")
+        named = (missing.get("error") or {}).get("code") == "not_found"
+        return bool(got.get("ok") and named), \
+            f"totals={(got.get('value') or {}).get('tokens')}; no-log seat -> {(missing.get('error') or {}).get('code')}"
     a.task("harvest_cost", harvest_cost)
 
     def teammate_access():
-        available = [n for n in ROLE_BUNDLES["owner"] if "participant" in n or "token" in n]
-        return False, f"owner participant/token MCP tools={available}", \
-            ["manual participants REST and tokens.json edits are required by tailnet-public-mode guide"]
+        made = a.call("owner", "teammate", {"action": "create", "handle": "audit.alex", "role": "qa"},
+                      task="teammate_access")
+        minted = a.call("owner", "teammate", {"action": "mint", "handle": "audit.alex"}, task="teammate_access")
+        once = bool((minted.get("value") or {}).get("token"))
+        listed = a.call("owner", "teammate", {"action": "list"}, task="teammate_access")
+        revoked = a.call("owner", "teammate", {"action": "revoke", "handle": "audit.alex"}, task="teammate_access")
+        agent = a.call("architect", "teammate", {"action": "list"}, task="teammate_access")
+        return all(x.get("ok") for x in (made, minted, listed, revoked)) and once, \
+            f"create -> mint (token once={once}) -> list -> revoke; agent seat refused={not agent.get('ok')}"
     a.task("teammate_access", teammate_access)
 
     def workflow_edit():
-        available = [n for n in ROLE_BUNDLES["owner"] + ROLE_BUNDLES["architect"] if "workflow" in n]
-        return False, f"owner/architect workflow MCP tools={available}", \
-            ["workflow management currently needs the Design UI or direct /v1/workflows REST"]
+        listed = a.call("owner", "workflow", {"action": "list"}, task="workflow_edit")
+        dup = a.call("owner", "workflow", {"action": "duplicate", "ref": "standard@1", "new_id": "audit-flow"},
+                     task="workflow_edit")
+        dv = dup.get("value") or {}
+        dv = dv.get("draft") or dv
+        ref = f"{dv.get('id') or 'audit-flow'}@{dv.get('version') or 1}"
+        full = a.call("owner", "workflow", {"action": "read", "ref": ref, "full": True}, task="workflow_edit")
+        definition = (full.get("value") or {}).get("definition") or {}
+        checked = a.call("owner", "workflow", {"action": "validate", "definition": definition}, task="workflow_edit")
+        saved = a.call("owner", "workflow", {"action": "edit", "definition": definition}, task="workflow_edit")
+        bad = [(x.get("error") or {}).get("message") for x in (listed, dup, full, checked, saved) if not x.get("ok")]
+        return not bad, f"list -> duplicate {ref} -> read full -> validate -> edit; errors={bad}"
     a.task("workflow_edit", workflow_edit)
 
     def service_status():
-        available = [n for n in ROLE_BUNDLES["owner"] if "service" in n or "health" in n]
-        return False, f"owner service MCP tools={available}", \
-            ["edp.ps1 status or direct service health REST is required"]
+        got = a.call("owner", "service_status", {}, task="service_status")
+        return bool(got.get("ok")), f"rows={len(got.get('value') or [])}"
     a.task("service_status", service_status)
 
 
@@ -424,6 +455,8 @@ def sample_args(a: Audit, role: str, name: str) -> dict:
                "doc_read": {"id": ids.get("doc")}, "ticket_read": {"ticket_id": ids.get("story")},
                "ticket_update": {"ticket_id": ids.get("story"), "status": None},
                "artifact_read": {"id": ids.get("artifact")},
+               # S23 action-enum tools: a read-only action for the coverage probe
+               "pain": {"action": "query"}, "workflow": {"action": "list"}, "teammate": {"action": "list"},
                "link_delete": {"id": "lk-audit-missing"}, "message_send": {"ticket_id": ids.get("story"), "kind": "note"},
                "gate_open": {"ticket_id": ids.get("story"), "gate": "demo"},
                "gate_answer": {"ticket_id": ids.get("story"), "gate": "demo", "answer": "approved"},
@@ -544,7 +577,11 @@ def scores(a: Audit) -> dict:
         enums = enum_fields(tool.args_model)
         related = [part for part in name.split("_") if part in object_roots]
         advertises_object = not related or any(part in desc for part in related)
-        advertises_enums = not enums or all(all(str(v).lower() in desc for v in vals) for vals in enums.values())
+        # S23 (architect ruling m-fbd6ae40d3): the description names each enum arg + describe('enums');
+        # the allowed values are advertised once, in the input schema
+        props = schema.get("properties", {})
+        advertises_enums = not enums or ("describe('enums')" in desc and all(
+            f.lower() in desc and set(vals) <= set(props.get(f, {}).get("enum") or []) for f, vals in enums.items()))
         # A linked skill must be named where the tool has one; the mapping is explicit.
         skill = {"ticket": "ticket", "criterion": "verify", "artifact": "demo",
                  "why_stuck": "ticket", "doc_edit": "methodology"}.get(name, None)
@@ -552,7 +589,9 @@ def scores(a: Audit) -> dict:
             skill = next((s for prefix, s in (("ticket_", "ticket"), ("criterion_", "verify"),
                             ("artifact_", "demo")) if name.startswith(prefix)), None)
         advertises_skill = skill is None or skill in desc
-        large = [c for c in calls if c["bytes_out"] > 8192]
+        # S23: an opt-in full/verbose read may exceed the page; the standard is the DEFAULT call
+        large = [c for c in calls if c["bytes_out"] > 8192
+                 and not (c["args"].get("verbose") or c["args"].get("full"))]
         misses = [c for c in calls if c["error_code"] == "schema"]
         guidance = all((c["error"].split("'")[1] if "'" in c["error"] else "") in c["hint"] + c["error"]
                        for c in misses)
@@ -578,16 +617,44 @@ def scores(a: Audit) -> dict:
                                     "2_idempotent": idempotent, "3_clear_output": output_status,
                                     "4_clear_schema": schema_status,
                                     "5_describe": described_status,
-                                    "6_token_efficient": "pass" if not large and len(calls) <= len(ROLES) + 4 else "fail"},
+                                    "6_token_efficient": "pass" if not large else "fail"},  # S23: per call, not harness sweep count
                       "advertises": {"object": advertises_object, "enums": advertises_enums,
                                      "linked_skill": advertises_skill, "skill": skill}}
     return rows
 
 
+# S23: guide hits that are NOT an agent workaround, each with its reason (T2 triage of report-e517e9e87e).
+RULED_OUT = {
+    ("guides/tailnet-public-mode.md", "framework_script"):
+        "owner host operation: tailnet_readiness.py is the human owner's pre-flight on the host, not a seat step",
+    ("guides/tailnet-public-mode.md", "board_rest"):
+        "owner host operation: a curl proving the public route answers 401 without a token (no token sent)",
+    ("guides/tailnet-public-mode.md", "token_file"):
+        "names tokens.json as the readiness check and forbids hand edits; the teammate tool replaces the steps",
+    (".claude/commands/doctor.md", "token_file"):
+        "a prohibition: the doctor must never tell a person to hand-edit tokens.json",
+    ("guides/astra-seat.md", "artifact_disk"):
+        "a historical probe log path in a findings table, not an instruction",
+}
+
+
+def unexplained(hits: list[dict]) -> list[dict]:
+    """Guide hits left after the ruled-out ones: each is a workaround an agent is still told to use."""
+    out = []
+    for h in hits:
+        if h["source"] != "guide":
+            continue
+        left = [c for c in h["categories"] if (h["path"], c) not in RULED_OUT]
+        if left:
+            out.append({**h, "categories": left})
+    return out
+
+
 def scan_workarounds() -> list[dict]:
     """Find framework operations routed outside MCP; record locations, never secret contents."""
     rules = {
-        "pain_cli": re.compile(r"scripts[/\\]pain\.py|/pain\b", re.I),
+        # S23: /pain is the skill (it calls the pain tool now); only the retired CLI counts
+        "pain_cli": re.compile(r"scripts[/\\]pain\.py", re.I),
         "harvest_cli": re.compile(r"scripts[/\\]harvest_cost\.py", re.I),
         "board_rest": re.compile(r"(?:curl|httpx|Invoke-RestMethod|urllib\.request).{0,240}/v1/|/v1/.{0,160}(?:curl|httpx)", re.I),
         "token_file": re.compile(r"tokens\.json", re.I),
@@ -647,8 +714,11 @@ def main() -> int:
         audit.start()
         workflow(audit)
         coverage(audit)
-        audit.task("coverage_grep", lambda: (bool(scan_workarounds()),
-                   "role cards, skills, guides and recent transcripts scanned"))
+        def coverage_grep():
+            left = unexplained(scan_workarounds())
+            return True, f"cards/skills/guides scanned; {len(RULED_OUT)} ruled out with a reason", \
+                [f"{h['path']}:{h['line']} {','.join(h['categories'])}" for h in left]
+        audit.task("coverage_grep", coverage_grep)
     finally:
         audit.stop()
         workaround_hits = scan_workarounds()
@@ -657,7 +727,7 @@ def main() -> int:
                                       "board_port": audit.board_port, "pool_port": audit.pool_port,
                                       "tasks": audit.tasks, "calls": audit.calls, "tools": scores(audit),
                                       "workaround_hits": workaround_hits}))
-    return 0 if all(t["pass"] for t in audit.tasks if t["task"] == "coverage") else 1
+    return 0 if all(t["pass"] for t in audit.tasks) else 1
 
 
 if __name__ == "__main__":

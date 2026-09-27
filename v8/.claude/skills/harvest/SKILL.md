@@ -36,9 +36,9 @@ Do not re-verify anything and do not spawn a reviewer: harvest is one pass over 
 3. **Report.** Add a `## Harvest` section to your qa report (`doc_edit`): one row per record —
    id, kind (lesson | proposed version of <doc id>), one line of why, the evidence ids. Say
    "no lessons" / "no proposals" explicitly when that is the finding.
-4. **Cost.** `.venv/Scripts/python.exe scripts/harvest_cost.py --participant <your id>` — the tokens this
-   harvest spent (from your own session log) and every lesson/proposal written in its window, by author;
-   put its output lines under the Harvest section.
+4. **Cost.** `harvest_cost(participant_id=<your id>)` — the tokens this harvest spent (from your own
+   session log) and the lessons/proposals written in its window, by author (`since=` when the harvest
+   trigger is not in the log); put its totals under the Harvest section.
 
 **Writes**
 Lessons (`record_lesson`) and proposed doc versions (`doc_create status=proposed`), addressed to

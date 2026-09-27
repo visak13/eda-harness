@@ -16,16 +16,16 @@ role cards, skills and guides (`v8/`), and the pool and seat launchers (`edp-poo
 seats). A bug in the project repo your ticket builds (a game, an asset pipeline, any other repo) is NOT pain: report it on your ticket thread (`message_send`) or fix it in the story.
 
 **Do**
-1. `python scripts/pain.py list --area <area>` (open records only, one line each) — an open record with the same symptom
-   already exists? File nothing new; add yours as `"dup_of": "<id>"` (step 2) so the count grows.
-2. `python scripts/pain.py file '<one JSON object>'` with `{"role","handle","severity":"high|medium|low",
-   "area":"prompts|tools|gates|board|memory|wake|spawn|broker|other","symptom","expected","evidence",
-   "workaround","cost"}` — plus `"supersedes":"<id>"` when correcting an earlier record of yours.
-   The script assigns the id and prints one line; say that line and continue where you left off.
+1. `pain(action='query', q='<symptom words>')` (open records, newest first; `area=` narrows) — an open record
+   with the same symptom already exists? File nothing new; file yours with `dup_of='<id>'` (step 2) so the count grows.
+2. `pain(action='file', severity='high|medium|low', area='prompts|tools|gates|board|memory|wake|spawn|broker|other',
+   symptom=..., expected=..., evidence=..., workaround=...)` — plus `supersedes='<id>'` when correcting an earlier
+   record of yours. The board stamps your role, handle, time and id; say the returned id and continue where you left off.
+   A missing required field is named in the error.
 If it also blocks you, escalate via /doubt — this record is telemetry, not a request for help.
-Never read `.pain/pain-points.jsonl` directly: it is append-only and holds every resolved record.
-`list` hides resolved records and the duplicates of resolved records; they are fixed from outside
-the framework, and the fix names the commit.
+`pain(action='read', id=...)` shows one record with its resolution and duplicates. Never read
+`.pain/pain-points.jsonl` directly. Resolving (`action='resolve'`, status fixed|invalid|superseded) is the
+owner's and the doctor's; the fix names the commit.
 
 **Writes**
-One line appended to `v8/.pain/pain-points.jsonl` by `scripts/pain.py`.
+One line appended to the pain log (`<home>/.pain/pain-points.jsonl`) by the board.

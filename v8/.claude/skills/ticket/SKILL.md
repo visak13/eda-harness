@@ -13,7 +13,7 @@ of two things:
   The engineer's design note is the owner's sign-off point, and the owner checks it.
 
 This is the **Standard** workflow. The lifecycle your ticket actually runs, rendered from its epic's
-pinned workflow version, is `ticket_read(ticket_id=<ticket>, include='lifecycle')`; when the `workflow`
+pinned workflow version, is `ticket_read(ticket_id=<ticket>, include='lifecycle')`; when the `ticket.workflow`
 field is not `standard@1`, follow that table instead of the one below (the Design tab `/ui/design` draws
 the same one). For the epic around a story, see /epic.
 
