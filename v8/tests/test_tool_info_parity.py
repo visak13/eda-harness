@@ -31,6 +31,8 @@ from edp8.tool_contracts import LOCAL_OBJECTS, tool_objects
 HERE = Path(__file__).resolve().parent
 FACTS = json.loads((HERE / "data" / "s23_tool_facts_before.json").read_text(encoding="utf-8"))["tools"]
 FLEET_DB = HERE.parent / ".data" / "edp8.db"
+# enum values the owner removed on purpose after the pre-S23 snapshot: not information loss
+RULED_REMOVALS = {("spawn", "role"): {"owner"}}  # a596308, owner m-da9a2ae62f: a person's role is never a seat
 _STOP = set("the a an and or of to for in on by with its it is be as at from your you this that when what then "
             "not no one each any".split())
 
@@ -61,7 +63,8 @@ def test_every_pre_s23_fact_survives(name):
     assert set(before["fields"]) <= fields, f"{name}: fields dropped {set(before['fields']) - fields}"
     now = enum_fields(tool.args_model)
     for field, values in before["enums"].items():
-        assert set(values) <= set(now.get(field, [])), f"{name}.{field}: enum values dropped"
+        kept = set(values) - RULED_REMOVALS.get((name, field), set())
+        assert kept <= set(now.get(field, [])), f"{name}.{field}: enum values dropped"
     roles = {r for r, names in ROLE_BUNDLES.items() if name in names}
     assert set(before["roles"]) <= roles, f"{name}: roles lost it: {set(before['roles']) - roles}"
 
