@@ -1,0 +1,2680 @@
+[
+  {
+    "seat": "architect.epic-7f3d64e6de",
+    "size": "8k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-aa16fab6d3",
+        "ticket": "t-e967ec72b5",
+        "checked_by": "engineer",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-7f77c6c523",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-8093e35929",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-14348c35e8",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-7b1702f845",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-fc3b301a80",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-f8f4c89758",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "architect.epic-7f3d64e6de",
+    "size": "8k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "architect.epic-7f3d64e6de",
+    "size": "8k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-20ec2c5207",
+        "gists": [
+          "Owner m-20ec2c5207 (art-b3bc8315eb): no favicon and no rail logo. dist/brand/* was built, but webapp/serve.py mounts only /ui/assets, so /ui/brand/favicon.ico r… (+279 chars)"
+        ]
+      },
+      {
+        "id": "m-bf83c16da7",
+        "gists": [
+          "Owner m-bf83c16da7 reported that m-d98c7b57c9 (the S17 \"Blocked: pick one\" message, kind=status, to=owner) never reached Needs you. Board.inbox listed only ques… (+405 chars)"
+        ]
+      },
+      {
+        "id": "m-d98c7b57c9",
+        "gists": [
+          "Owner m-bf83c16da7 reported that m-d98c7b57c9 (the S17 \"Blocked: pick one\" message, kind=status, to=owner) never reached Needs you. Board.inbox listed only ques… (+405 chars)"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "qa.epic-7f3d64e6de",
+    "size": "8k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-7f77c6c523",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-8093e35929",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-14348c35e8",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-7b1702f845",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-fc3b301a80",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-f8f4c89758",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-c19f9c4936",
+        "ticket": "s-ec73f74ea9",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-3722df2267",
+        "ticket": "s-ec73f74ea9",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-0dd1b51f61",
+        "ticket": "s-ec73f74ea9",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-6d8e6fe660",
+        "ticket": "s-ec73f74ea9",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-d7bd67f704",
+        "ticket": "s-b7ec13d748",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-ac06d82a6e",
+        "ticket": "s-b7ec13d748",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-85355907fe",
+        "ticket": "s-b7ec13d748",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-5fb36ba3db",
+        "ticket": "s-870e401942",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-3753f0a63a",
+        "ticket": "s-870e401942",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-2d2dfd8976",
+        "ticket": "s-870e401942",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-9a2a84d019",
+        "ticket": "s-870e401942",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-54afa8a81b",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-e7cba464fc",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-0e2611c3f2",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-5c7afde0e8",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-2c02d34d7f",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-328185ac06",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-d1efb29e94",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-9bf2b47192",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-0f247caf7d",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-eb6dc6172f",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-dc617c014b",
+        "ticket": "s-6d5fdf783a",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-cbbe11fb55",
+        "ticket": "s-6d5fdf783a",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-50778c655b",
+        "ticket": "s-54a03afc5a",
+        "checked_by": "qa",
+        "verdict": "fail"
+      },
+      {
+        "id": "c-0b7b0506e6",
+        "ticket": "s-0cfebd3862",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-b73a4537db",
+        "ticket": "s-0cfebd3862",
+        "checked_by": "qa",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "qa.epic-7f3d64e6de",
+    "size": "8k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "qa.epic-7f3d64e6de",
+    "size": "8k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-1998f097c0",
+        "gists": [
+          "Carried from S8 (c-eb38e8c949, ruling on m-1998f097c0): the first tag or workflow_dispatch run of `.github/workflows/ins… (+228 chars)"
+        ]
+      },
+      {
+        "id": "m-1f39866c96",
+        "gists": [
+          "Owner m-1f39866c96: \"the admin UI and heronry context menu both dont provide option to start the code server. how does one start it then?\" The architect's answe… (+2516 chars)"
+        ]
+      },
+      {
+        "id": "m-26ffec400f",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      },
+      {
+        "id": "m-30023429f7",
+        "gists": [
+          "Design design-e963c656f5 §4.14(b) (owner m-30023429f7; R11: in this epic). This is the deepest refactor; refactor in steps, with the full suite green at every c… (+2283 chars)"
+        ]
+      },
+      {
+        "id": "m-3ab3753664",
+        "gists": [
+          "Design design-e963c656f5 §4.15 (owner m-3ab3753664).\n\nBuild:\n- `docs/site/` with MkDocs Material: the brand palette, logo and favicon from S7, light and dark, s… (+891 chars)"
+        ]
+      },
+      {
+        "id": "m-6b6060dd38",
+        "gists": [
+          "Guards as data (owner m-6b6060dd38): the workflow definition declares preconditions per transition and gate, and the boa… (+378 chars)"
+        ]
+      },
+      {
+        "id": "m-767dd93f62",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      },
+      {
+        "id": "m-81bb4cca5e",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      },
+      {
+        "id": "m-f2ce5f4f14",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "qa.s-da61d38c5e",
+    "size": "8k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-de4fa3e6e6",
+        "ticket": "s-da61d38c5e",
+        "checked_by": "qa",
+        "verdict": "fail"
+      },
+      {
+        "id": "c-2c16f5ebf0",
+        "ticket": "s-da61d38c5e",
+        "checked_by": "qa",
+        "verdict": "fail"
+      }
+    ]
+  },
+  {
+    "seat": "qa.s-da61d38c5e",
+    "size": "8k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "qa.s-da61d38c5e",
+    "size": "8k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-538d9896ab",
+        "gists": [
+          "No workarounds (owner m-538d9896ab): every framework task found in the agent home's cards, skills and guides runs throug… (+426 chars)"
+        ]
+      },
+      {
+        "id": "m-79f8b9a5dc",
+        "gists": [
+          "Owner m-79f8b9a5dc, verbatim: \"yes, lets do this now. also, I recommend this exercise: a fresh shell just uses all tools across all shells and reports what is w… (+3161 chars)"
+        ]
+      },
+      {
+        "id": "m-891b9f42bd",
+        "gists": [
+          "No information loss (owner m-891b9f42bd).\n- **Paging parity:** a test pages each bounded tool (ticket_query, doc_query,… (+596 chars)"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "sme.s-1dccea48b5",
+    "size": "8k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": []
+  },
+  {
+    "seat": "sme.s-1dccea48b5",
+    "size": "8k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "sme.s-1dccea48b5",
+    "size": "8k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": "none cited"
+  },
+  {
+    "seat": "engineer.t-8e1ac0c445",
+    "size": "8k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": []
+  },
+  {
+    "seat": "engineer.t-8e1ac0c445",
+    "size": "8k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "engineer.t-8e1ac0c445",
+    "size": "8k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-8fe09cecd4",
+        "gists": [
+          "The owner reviewed the root README.md (m-8fe09cecd4): \"it looks like a mess\". Up to \"See it work\" it is fine. Change the README as follows:\n\n1. **\"See it work\" has half the chapters.** It shows 3 stills (pool, context, board), but the product video (S17, s-54a03afc5a) has 7 chapters. Show o"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-cd4712c855",
+    "size": "8k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-c7976fb9c1",
+        "ticket": "t-cd4712c855",
+        "checked_by": "engineer",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-cd4712c855",
+    "size": "8k",
+    "qid": "Q2",
+    "mark": "ANSWERED",
+    "answer": {
+      "id": "m-a3a8943c39",
+      "sender": "architect.epic-7f3d64e6de",
+      "instruction": "More in your scope, from qa m-d757122a72 (S12 c-c0b35be596 fails). Migration resolve() parity shows 4 diffs, all for role `owner`:\n- **Old behaviour:** the legacy pool binding `roles.owner=judgment` gave claude-opus-4-8.\n- **New behaviour:** migrate() drops it, and default_model() returns claude-fable-5-1. The board's resolve (seat_choice.py:236-237) skips the legacy `roles` binding, while the pool's seat_model_for honours it.\n- **Neither answer is right:** under the owner's ruling, owner has NO seat model.\n**Fix it the non-agent way:**\n1. migrate() drops any legacy `roles` binding for a human role (owner, human, expert), and keeps any other legacy binding as a role_models row, so non-human parity holds.\n2. `resolve()` and `seat_model_for` for a human role raise your non-agent refusal instead of returning a model.\n3. The parity test loads the REAL pre-migration file (`git show cb84bba^:v8/models.json`, saved as a fixture with no PII), iterates role_models ∪ roles, and asserts equality for every agent role and a refusal for owner.\nInclude this in your commit and name c-c0b35be596 in your report, so qa can re-judge S12."
+    }
+  },
+  {
+    "seat": "engineer.t-cd4712c855",
+    "size": "8k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-da9a2ae62f",
+        "gists": [
+          "Owner, verbatim (m-da9a2ae62f): \"reviewer role is removed. please remove it from everywhere. from code, from role cards and wherever else it is mentioned. i don… (+2408 chars)"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-d606b5d93f",
+    "size": "8k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-03438d22fe",
+        "ticket": "t-d606b5d93f",
+        "checked_by": "engineer",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-d606b5d93f",
+    "size": "8k",
+    "qid": "Q2",
+    "mark": "ANSWERED",
+    "answer": {
+      "id": "m-c9abfa3828",
+      "sender": "architect.epic-7f3d64e6de",
+      "instruction": "Two additions:\n1. `guides/context-refresh.md:9` also says \"default 40 KB\". Fix it to 8 KB in the same commit.\n2. The source comment at Ch4Context.tsx:2 also says 40 KB; fix it too.\nThe owner asked whether 40 KB was required. The ruling (m-093790d260 thread) is that 8 KB stays the default, set in S23-T2 8f40bc0. Every place that states it says 8 KB."
+    }
+  },
+  {
+    "seat": "engineer.t-d606b5d93f",
+    "size": "8k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-dbf4b571de",
+        "gists": [
+          "qa finding m-dbf4b571de (fail on c-50778c655b): Ch4Context.tsx:37 and :47 say the context pack is \"40 KB by default\", but bundles.py:602 sets the default to 8_0… (+1401 chars)"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-852e7add63",
+    "size": "8k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": []
+  },
+  {
+    "seat": "engineer.t-852e7add63",
+    "size": "8k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "engineer.t-852e7add63",
+    "size": "8k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-14333c915c",
+        "gists": [
+          "Owner rulings m-8aa6439a77 on m-14333c915c, design-e963c656f5 v34 §4.18. Measured: the owner's list had 21 items on the epic, 18 of them FYI statuses from the a… (+1763 chars)"
+        ]
+      },
+      {
+        "id": "m-8aa6439a77",
+        "gists": [
+          "Owner rulings m-8aa6439a77 on m-14333c915c, design-e963c656f5 v34 §4.18. Measured: the owner's list had 21 items on the epic, 18 of them FYI statuses from the a… (+1763 chars)"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-20f0718990",
+    "size": "8k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": []
+  },
+  {
+    "seat": "engineer.t-20f0718990",
+    "size": "8k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "engineer.t-20f0718990",
+    "size": "8k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-3136ceca05",
+        "gists": [
+          "Owner walkthrough, part 2 (m-3136ceca05). Part 1 (Settings and Teammates) is t-5dd0cc18ea; coordinate with it on shared files and don't overlap.\n\n1. **Remote ac… (+2480 chars)",
+          "Screenshots from a private instance, with vitest, show Admin UX pass 2 (owner m-3136ceca05).\n- **Remote access:** a numb… (+567 chars)"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-32035a77da",
+    "size": "8k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-c0b35be596",
+        "ticket": "s-32035a77da",
+        "checked_by": "qa",
+        "verdict": "fail"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-32035a77da",
+    "size": "8k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "engineer.s-32035a77da",
+    "size": "8k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-30023429f7",
+        "gists": [
+          "Design design-e963c656f5 §4.14(a) (owner m-30023429f7).\n\nBuild:\n- Every `models.json` seat or catalog entry carries `harness: claude|codex|pi` and `provider`. E… (+1624 chars)"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-9648fded35",
+    "size": "8k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-d1efb29e94",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-9bf2b47192",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-0f247caf7d",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-eb6dc6172f",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-c7d47d4f26",
+        "ticket": "t-6129a95a3d",
+        "checked_by": "engineer",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-9648fded35",
+    "size": "8k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "engineer.s-9648fded35",
+    "size": "8k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-1998f097c0",
+        "gists": [
+          "Carried from S8 (c-eb38e8c949, ruling on m-1998f097c0): the first tag or workflow_dispatch run of `.github/workflows/ins… (+228 chars)"
+        ]
+      },
+      {
+        "id": "m-3818ff2a47",
+        "gists": [
+          "Owner m-3818ff2a47 (verbatim): \"please can you ask the agent working on s9 to apply a very light 1px border to the active chat window of epics/tickets/topic cha… (+981 chars)"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-54a03afc5a",
+    "size": "8k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-50778c655b",
+        "ticket": "s-54a03afc5a",
+        "checked_by": "qa",
+        "verdict": "fail"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-54a03afc5a",
+    "size": "8k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "engineer.s-54a03afc5a",
+    "size": "8k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-26ffec400f",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      },
+      {
+        "id": "m-767dd93f62",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      },
+      {
+        "id": "m-81bb4cca5e",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      },
+      {
+        "id": "m-ce21682c2a",
+        "gists": [
+          "From m-ce21682c2a: the board's upload refuses video (\"allowed: images, pdf, text, markdown, json, log, zip, svg\"), so the owner can only review the S17 cut as a… (+900 chars)"
+        ]
+      },
+      {
+        "id": "m-f2ce5f4f14",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-461403ebd1",
+    "size": "8k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-54afa8a81b",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-e7cba464fc",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-0e2611c3f2",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-5c7afde0e8",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-2c02d34d7f",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-328185ac06",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-461403ebd1",
+    "size": "8k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "engineer.s-461403ebd1",
+    "size": "8k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-30023429f7",
+        "gists": [
+          "Design design-e963c656f5 §4.14(b) (owner m-30023429f7; R11: in this epic). This is the deepest refactor; refactor in steps, with the full suite green at every c… (+2283 chars)"
+        ]
+      },
+      {
+        "id": "m-6b6060dd38",
+        "gists": [
+          "Guards as data (owner m-6b6060dd38): the workflow definition declares preconditions per transition and gate, and the boa… (+378 chars)"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-77c3a55b75",
+    "size": "8k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-e7b96160a1",
+        "ticket": "t-77c3a55b75",
+        "checked_by": "engineer",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-77c3a55b75",
+    "size": "8k",
+    "qid": "Q2",
+    "mark": "MISSING",
+    "answer": "No addressed or architect/owner message, nor a thread pointer, appears in this pack."
+  },
+  {
+    "seat": "engineer.t-77c3a55b75",
+    "size": "8k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-0e6940fe2c",
+        "gists": [
+          "lingDrawer never shows it.\n- The vitest covering it went away with Decisions.tsx in S20 (c6c8743).\nThis breaks the owner's words, m-0e6940fe2c: \"waiting on me, I don't know what on\".\n\n**Fix:**\n1. Pass `ask` through `rulingFor()`.\n2. Make it the RulingDrawer heading, in plain words, with a fallback to the gate's generated question from 0df23fa (t-cfd8462f9d) when `ask` is empty.\n3"
+        ]
+      },
+      {
+        "id": "m-1f76018caa",
+        "gists": [
+          "qa finding m-1f76018caa (fail on c-017559b2a9):\n- `signoff_ask` is served as `ask` (views.py:553 and :585), but no component renders it.\n- Ticket.tsx `rulingFor()` (l.249) drops it, and RulingDrawer never shows it.\n- The vitest covering it went away with Decision"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "architect.epic-7f3d64e6de",
+    "size": "16k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-aa16fab6d3",
+        "ticket": "t-e967ec72b5",
+        "checked_by": "engineer",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-7f77c6c523",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-8093e35929",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-14348c35e8",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-7b1702f845",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-fc3b301a80",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-f8f4c89758",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "architect.epic-7f3d64e6de",
+    "size": "16k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "architect.epic-7f3d64e6de",
+    "size": "16k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-20ec2c5207",
+        "gists": [
+          "Owner m-20ec2c5207 (art-b3bc8315eb): no favicon and no rail logo. dist/brand/* was built, but webapp/serve.py mounts only /ui/assets, so /ui/brand/favicon.ico r… (+279 chars)"
+        ]
+      },
+      {
+        "id": "m-bf83c16da7",
+        "gists": [
+          "Owner m-bf83c16da7 reported that m-d98c7b57c9 (the S17 \"Blocked: pick one\" message, kind=status, to=owner) never reached Needs you. Board.inbox listed only ques… (+405 chars)"
+        ]
+      },
+      {
+        "id": "m-d98c7b57c9",
+        "gists": [
+          "Owner m-bf83c16da7 reported that m-d98c7b57c9 (the S17 \"Blocked: pick one\" message, kind=status, to=owner) never reached Needs you. Board.inbox listed only ques… (+405 chars)"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "qa.epic-7f3d64e6de",
+    "size": "16k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-7f77c6c523",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-8093e35929",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-14348c35e8",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-7b1702f845",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-fc3b301a80",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-f8f4c89758",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-c19f9c4936",
+        "ticket": "s-ec73f74ea9",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-3722df2267",
+        "ticket": "s-ec73f74ea9",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-0dd1b51f61",
+        "ticket": "s-ec73f74ea9",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-6d8e6fe660",
+        "ticket": "s-ec73f74ea9",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-d7bd67f704",
+        "ticket": "s-b7ec13d748",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-ac06d82a6e",
+        "ticket": "s-b7ec13d748",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-85355907fe",
+        "ticket": "s-b7ec13d748",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-5fb36ba3db",
+        "ticket": "s-870e401942",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-3753f0a63a",
+        "ticket": "s-870e401942",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-2d2dfd8976",
+        "ticket": "s-870e401942",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-9a2a84d019",
+        "ticket": "s-870e401942",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-54afa8a81b",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-e7cba464fc",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-0e2611c3f2",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-5c7afde0e8",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-2c02d34d7f",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-328185ac06",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-d1efb29e94",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-9bf2b47192",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-0f247caf7d",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-eb6dc6172f",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-dc617c014b",
+        "ticket": "s-6d5fdf783a",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-cbbe11fb55",
+        "ticket": "s-6d5fdf783a",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-50778c655b",
+        "ticket": "s-54a03afc5a",
+        "checked_by": "qa",
+        "verdict": "fail"
+      },
+      {
+        "id": "c-0b7b0506e6",
+        "ticket": "s-0cfebd3862",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-b73a4537db",
+        "ticket": "s-0cfebd3862",
+        "checked_by": "qa",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "qa.epic-7f3d64e6de",
+    "size": "16k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "qa.epic-7f3d64e6de",
+    "size": "16k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-1998f097c0",
+        "gists": [
+          "Carried from S8 (c-eb38e8c949, ruling on m-1998f097c0): the first tag or workflow_dispatch run of `.github/workflows/ins… (+228 chars)"
+        ]
+      },
+      {
+        "id": "m-1f39866c96",
+        "gists": [
+          "Owner m-1f39866c96: \"the admin UI and heronry context menu both dont provide option to start the code server. how does one start it then?\" The architect's answe… (+2516 chars)"
+        ]
+      },
+      {
+        "id": "m-26ffec400f",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      },
+      {
+        "id": "m-30023429f7",
+        "gists": [
+          "Design design-e963c656f5 §4.14(b) (owner m-30023429f7; R11: in this epic). This is the deepest refactor; refactor in steps, with the full suite green at every c… (+2283 chars)"
+        ]
+      },
+      {
+        "id": "m-3ab3753664",
+        "gists": [
+          "Design design-e963c656f5 §4.15 (owner m-3ab3753664).\n\nBuild:\n- `docs/site/` with MkDocs Material: the brand palette, logo and favicon from S7, light and dark, s… (+891 chars)"
+        ]
+      },
+      {
+        "id": "m-6b6060dd38",
+        "gists": [
+          "Guards as data (owner m-6b6060dd38): the workflow definition declares preconditions per transition and gate, and the boa… (+378 chars)"
+        ]
+      },
+      {
+        "id": "m-767dd93f62",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      },
+      {
+        "id": "m-81bb4cca5e",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      },
+      {
+        "id": "m-f2ce5f4f14",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "qa.s-da61d38c5e",
+    "size": "16k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-de4fa3e6e6",
+        "ticket": "s-da61d38c5e",
+        "checked_by": "qa",
+        "verdict": "fail"
+      },
+      {
+        "id": "c-2c16f5ebf0",
+        "ticket": "s-da61d38c5e",
+        "checked_by": "qa",
+        "verdict": "fail"
+      }
+    ]
+  },
+  {
+    "seat": "qa.s-da61d38c5e",
+    "size": "16k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "qa.s-da61d38c5e",
+    "size": "16k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-538d9896ab",
+        "gists": [
+          "No workarounds (owner m-538d9896ab): every framework task found in the agent home's cards, skills and guides runs through MCP tools alone. Those tasks include reading attachments, filing pain records, reading tokens, restarting and resuming seats, and cursor recovery. In to"
+        ]
+      },
+      {
+        "id": "m-79f8b9a5dc",
+        "gists": [
+          "Owner m-79f8b9a5dc, verbatim: \"yes, lets do this now. also, I recommend this exercise: a fresh shell just uses all tools across all shells and reports what is wasting tokens (recommend astra high) and a shell fixes it (recomment opus 5.5). then when everythi"
+        ]
+      },
+      {
+        "id": "m-891b9f42bd",
+        "gists": [
+          "No information loss (owner m-891b9f42bd).\n- **Paging parity:** a test pages each bounded tool (ticket_query, doc_query, session_query, link_query, participants, message_query, events_query, context) to the end on a copy of the fleet DB. The pages add up to exactly the same recor"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "sme.s-1dccea48b5",
+    "size": "16k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": []
+  },
+  {
+    "seat": "sme.s-1dccea48b5",
+    "size": "16k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "sme.s-1dccea48b5",
+    "size": "16k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": "none cited"
+  },
+  {
+    "seat": "engineer.t-8e1ac0c445",
+    "size": "16k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": []
+  },
+  {
+    "seat": "engineer.t-8e1ac0c445",
+    "size": "16k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "engineer.t-8e1ac0c445",
+    "size": "16k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-8fe09cecd4",
+        "gists": [
+          "The owner reviewed the root README.md (m-8fe09cecd4): \"it looks like a mess\". Up to \"See it work\" it is fine. Change the README as follows:\n\n1. **\"See it work\" has half the chapters.** It shows 3 stills (pool, context, board), but the product video (S17, s-54a03afc5a) has 7 chapters. Show o"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-cd4712c855",
+    "size": "16k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-c7976fb9c1",
+        "ticket": "t-cd4712c855",
+        "checked_by": "engineer",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-cd4712c855",
+    "size": "16k",
+    "qid": "Q2",
+    "mark": "ANSWERED",
+    "answer": {
+      "id": "m-a3a8943c39",
+      "sender": "architect.epic-7f3d64e6de",
+      "instruction": "More in your scope, from qa m-d757122a72 (S12 c-c0b35be596 fails). Migration resolve() parity shows 4 diffs, all for role `owner`:\n- **Old behaviour:** the legacy pool binding `roles.owner=judgment` gave claude-opus-4-8.\n- **New behaviour:** migrate() drops it, and default_model() returns claude-fable-5-1. The board's resolve (seat_choice.py:236-237) skips the legacy `roles` binding, while the pool's seat_model_for honours it.\n- **Neither answer is right:** under the owner's ruling, owner has NO seat model.\n**Fix it the non-agent way:**\n1. migrate() drops any legacy `roles` binding for a human role (owner, human, expert), and keeps any other legacy binding as a role_models row, so non-human parity holds.\n2. `resolve()` and `seat_model_for` for a human role raise your non-agent refusal instead of returning a model.\n3. The parity test loads the REAL pre-migration file (`git show cb84bba^:v8/models.json`, saved as a fixture with no PII), iterates role_models ∪ roles, and asserts equality for every agent role and a refusal for owner.\nInclude this in your commit and name c-c0b35be596 in your report, so qa can re-judge S12."
+    }
+  },
+  {
+    "seat": "engineer.t-cd4712c855",
+    "size": "16k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-da9a2ae62f",
+        "gists": [
+          "Owner, verbatim (m-da9a2ae62f): \"reviewer role is removed. please remove it from everywhere. from code, from role cards and wherever else it is mentioned. i dont want it to appear again ever. ensure that human role is non-agent and our app complies with that. no way an"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-d606b5d93f",
+    "size": "16k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-03438d22fe",
+        "ticket": "t-d606b5d93f",
+        "checked_by": "engineer",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-d606b5d93f",
+    "size": "16k",
+    "qid": "Q2",
+    "mark": "ANSWERED",
+    "answer": {
+      "id": "m-c9abfa3828",
+      "sender": "architect.epic-7f3d64e6de",
+      "instruction": "Two additions:\n1. `guides/context-refresh.md:9` also says \"default 40 KB\". Fix it to 8 KB in the same commit.\n2. The source comment at Ch4Context.tsx:2 also says 40 KB; fix it too.\nThe owner asked whether 40 KB was required. The ruling (m-093790d260 thread) is that 8 KB stays the default, set in S23-T2 8f40bc0. Every place that states it says 8 KB."
+    }
+  },
+  {
+    "seat": "engineer.t-d606b5d93f",
+    "size": "16k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-dbf4b571de",
+        "gists": [
+          "qa finding m-dbf4b571de (fail on c-50778c655b): Ch4Context.tsx:37 and :47 say the context pack is \"40 KB by default\", but bundles.py:602 sets the default to 8_000, and has since 0c2c501. The criterion requires each chapter's claim to match the code.\n\n1. Fix the c"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-852e7add63",
+    "size": "16k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": []
+  },
+  {
+    "seat": "engineer.t-852e7add63",
+    "size": "16k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "engineer.t-852e7add63",
+    "size": "16k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-14333c915c",
+        "gists": [
+          "Owner rulings m-8aa6439a77 on m-14333c915c, design-e963c656f5 v34 §4.18. Measured: the owner's list had 21 items on the epic, 18 of them FYI statuses from the architect; the epic page highlighted only 3, and the rest could not be found.\n1. **attention.py / board.inbox:** an item co",
+          "counts for the owner.\n8. **Markdown:** the message renderer accepts a GFM table that starts right after a paragraph line; fixture m-14333c915c must render as a table.\nTests: pytest (rule, clearing, dismiss, cleanup), vitest (panels, marker), and ONE Playwright spec (s20-attention) run alone with ≥1.5 GB free RAM. Rebuild the SPA from PowerShell; the architect deploys. No consult."
+        ]
+      },
+      {
+        "id": "m-584a1c342d",
+        "gists": [
+          "uman on the same ticket, addressed to the asker or with reply_to set to the ask, resolves it. Case: the owner answered the S8 ask m-584a1c342d with m-f5f30e92bb (to the engineer, no reply_to), and it stayed highlighted.\n3. **Reachability:** the Conversation loads back to the oldest waiting message, or shows an \"N earlier waiting\" bar at the thread top whose items load and scroll "
+        ]
+      },
+      {
+        "id": "m-8aa6439a77",
+        "gists": [
+          "Owner rulings m-8aa6439a77 on m-14333c915c, design-e963c656f5 v34 §4.18. Measured: the owner's list had 21 items on the epic, 18 of them FYI statuses from the architect; the epic page highlighted only 3, and the rest could not be found.\n1. **attention.py / board.inb"
+        ]
+      },
+      {
+        "id": "m-f5f30e92bb",
+        "gists": [
+          "icket, addressed to the asker or with reply_to set to the ask, resolves it. Case: the owner answered the S8 ask m-584a1c342d with m-f5f30e92bb (to the engineer, no reply_to), and it stayed highlighted.\n3. **Reachability:** the Conversation loads back to the oldest waiting message, or shows an \"N earlier waiting\" bar at the thread top whose items load and scroll to each one. The W"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-20f0718990",
+    "size": "16k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": []
+  },
+  {
+    "seat": "engineer.t-20f0718990",
+    "size": "16k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "engineer.t-20f0718990",
+    "size": "16k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-3136ceca05",
+        "gists": [
+          "Owner walkthrough, part 2 (m-3136ceca05). Part 1 (Settings and Teammates) is t-5dd0cc18ea; coordinate with it on shared files and don't overlap.\n\n1. **Remote access** is a guided setup, not a bare form.\n   - A numbered walkthrough: what Remote access is for (teammates, or your o",
+          "Screenshots from a private instance, with vitest, show Admin UX pass 2 (owner m-3136ceca05).\n- **Remote access:** a numbered Tailscale setup with live done/not-done per step and a visual guide.\n- **Integrations:** every item says what it does, what it needs and where to get it, with a tested status.\n- **Seats & models:** every g"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-32035a77da",
+    "size": "16k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-c0b35be596",
+        "ticket": "s-32035a77da",
+        "checked_by": "qa",
+        "verdict": "fail"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-32035a77da",
+    "size": "16k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "engineer.s-32035a77da",
+    "size": "16k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-30023429f7",
+        "gists": [
+          "Design design-e963c656f5 §4.14(a) (owner m-30023429f7).\n\nBuild:\n- Every `models.json` seat or catalog entry carries `harness: claude|codex|pi` and `provider`. Effort caps and window are per entry as data (replacing the `_uncapped` prefix logic).\n- Remove prefix sniffing everywhere; routing re"
+        ]
+      },
+      {
+        "id": "m-549b8adc3a",
+        "gists": [
+          "Every spawned role resolves to an explicit catalog model, so no seat launches a harness without a model (owner m-549b8adc3a: a Help doctor seat started with no `--model` and ran on the CLI's own default, Opus 4.8). The shipped catalog lists `doctor`. A role absent from `role_models` (including a S13 custom role) falls back to the catalog's default model, never "
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-9648fded35",
+    "size": "16k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-d1efb29e94",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-9bf2b47192",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-0f247caf7d",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-eb6dc6172f",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-c7d47d4f26",
+        "ticket": "t-6129a95a3d",
+        "checked_by": "engineer",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-9648fded35",
+    "size": "16k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "engineer.s-9648fded35",
+    "size": "16k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-1998f097c0",
+        "gists": [
+          "Carried from S8 (c-eb38e8c949, ruling on m-1998f097c0): the first tag or workflow_dispatch run of `.github/workflows/ins… (+228 chars)"
+        ]
+      },
+      {
+        "id": "m-3818ff2a47",
+        "gists": [
+          "Owner m-3818ff2a47 (verbatim): \"please can you ask the agent working on s9 to apply a very light 1px border to the active chat window of epics/tickets/topic cha… (+981 chars)"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-54a03afc5a",
+    "size": "16k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-50778c655b",
+        "ticket": "s-54a03afc5a",
+        "checked_by": "qa",
+        "verdict": "fail"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-54a03afc5a",
+    "size": "16k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "engineer.s-54a03afc5a",
+    "size": "16k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-26ffec400f",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      },
+      {
+        "id": "m-767dd93f62",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      },
+      {
+        "id": "m-81bb4cca5e",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      },
+      {
+        "id": "m-ce21682c2a",
+        "gists": [
+          "From m-ce21682c2a: the board's upload refuses video (\"allowed: images, pdf, text, markdown, json, log, zip, svg\"), so the owner can only review the S17 cut as a… (+900 chars)"
+        ]
+      },
+      {
+        "id": "m-f2ce5f4f14",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-461403ebd1",
+    "size": "16k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-54afa8a81b",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-e7cba464fc",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-0e2611c3f2",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-5c7afde0e8",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-2c02d34d7f",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-328185ac06",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-461403ebd1",
+    "size": "16k",
+    "qid": "Q2",
+    "mark": "ANSWERED",
+    "answer": {
+      "id": "m-08a12a71e5",
+      "sender": "architect.epic-7f3d64e6de",
+      "instruction": "Accepted, including the deviation that the board writes the card file. Both leftovers move to S14's scope: the web ROLES… (+193 chars)"
+    }
+  },
+  {
+    "seat": "engineer.s-461403ebd1",
+    "size": "16k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-30023429f7",
+        "gists": [
+          "Design design-e963c656f5 §4.14(b) (owner m-30023429f7; R11: in this epic). This is the deepest refactor; refactor in steps, with the full suite green at every commit.\n\nBuild:\n- **Workflow definition** (JSON schema, stored on the board, versioned and immutable once published):\n  - roles: id, c"
+        ]
+      },
+      {
+        "id": "m-6b6060dd38",
+        "gists": [
+          "Guards as data (owner m-6b6060dd38): the workflow definition declares preconditions per transition and gate, and the board enforces them from data by auto-carry, refusal with the missing piece named, and hiding unanswerable gates. A pytest shows that a custom role and trans"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-77c3a55b75",
+    "size": "16k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-e7b96160a1",
+        "ticket": "t-77c3a55b75",
+        "checked_by": "engineer",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-77c3a55b75",
+    "size": "16k",
+    "qid": "Q2",
+    "mark": "MISSING",
+    "answer": "No addressed or architect/owner message, nor a thread pointer, appears in this pack."
+  },
+  {
+    "seat": "engineer.t-77c3a55b75",
+    "size": "16k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-0e6940fe2c",
+        "gists": [
+          "lingDrawer never shows it.\n- The vitest covering it went away with Decisions.tsx in S20 (c6c8743).\nThis breaks the owner's words, m-0e6940fe2c: \"waiting on me, I don't know what on\".\n\n**Fix:**\n1. Pass `ask` through `rulingFor()`.\n2. Make it the RulingDrawer heading, in plain words, with a fallback to the gate's generated question from 0df23fa (t-cfd8462f9d) when `ask` is empty.\n3"
+        ]
+      },
+      {
+        "id": "m-1f76018caa",
+        "gists": [
+          "qa finding m-1f76018caa (fail on c-017559b2a9):\n- `signoff_ask` is served as `ask` (views.py:553 and :585), but no component renders it.\n- Ticket.tsx `rulingFor()` (l.249) drops it, and RulingDrawer never shows it.\n- The vitest covering it went away with Decision"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "architect.epic-7f3d64e6de",
+    "size": "40k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-aa16fab6d3",
+        "ticket": "t-e967ec72b5",
+        "checked_by": "engineer",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-7f77c6c523",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-8093e35929",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-14348c35e8",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-7b1702f845",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-fc3b301a80",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-f8f4c89758",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "architect.epic-7f3d64e6de",
+    "size": "40k",
+    "qid": "Q2",
+    "mark": "ANSWERED",
+    "answer": {
+      "id": "m-98c7821acc",
+      "sender": "architect.epic-7f3d64e6de",
+      "instruction": "The Fable shell is building the 8/16/40 KB exam from this epic's real seat boots. It hands the exam to an Opus 5.5 and a… (+1542 chars)"
+    }
+  },
+  {
+    "seat": "architect.epic-7f3d64e6de",
+    "size": "40k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-20ec2c5207",
+        "gists": [
+          "Owner m-20ec2c5207 (art-b3bc8315eb): no favicon and no rail logo. dist/brand/* was built, but webapp/serve.py mounts only /ui/assets, so /ui/brand/favicon.ico returned index.html (text/html, 1715 B). Fix: spa_index serves any real file under dist (containmen"
+        ]
+      },
+      {
+        "id": "m-bf83c16da7",
+        "gists": [
+          "Owner m-bf83c16da7 reported that m-d98c7b57c9 (the S17 \"Blocked: pick one\" message, kind=status, to=owner) never reached Needs you. Board.inbox listed only question and steer.\n\nFix: for a human participant, inbox also includes kind status, finding and deviat"
+        ]
+      },
+      {
+        "id": "m-d98c7b57c9",
+        "gists": [
+          "Owner m-bf83c16da7 reported that m-d98c7b57c9 (the S17 \"Blocked: pick one\" message, kind=status, to=owner) never reached Needs you. Board.inbox listed only question and steer.\n\nFix: for a human participant, inbox also includes kind status, finding and deviation addressed to them. The "
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "qa.epic-7f3d64e6de",
+    "size": "40k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-7f77c6c523",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-8093e35929",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-14348c35e8",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-7b1702f845",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-fc3b301a80",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-f8f4c89758",
+        "ticket": "epic-7f3d64e6de",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-c19f9c4936",
+        "ticket": "s-ec73f74ea9",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-3722df2267",
+        "ticket": "s-ec73f74ea9",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-0dd1b51f61",
+        "ticket": "s-ec73f74ea9",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-6d8e6fe660",
+        "ticket": "s-ec73f74ea9",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-d7bd67f704",
+        "ticket": "s-b7ec13d748",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-ac06d82a6e",
+        "ticket": "s-b7ec13d748",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-85355907fe",
+        "ticket": "s-b7ec13d748",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-5fb36ba3db",
+        "ticket": "s-870e401942",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-3753f0a63a",
+        "ticket": "s-870e401942",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-2d2dfd8976",
+        "ticket": "s-870e401942",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-9a2a84d019",
+        "ticket": "s-870e401942",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-54afa8a81b",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-e7cba464fc",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-0e2611c3f2",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-5c7afde0e8",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-2c02d34d7f",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-328185ac06",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-d1efb29e94",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-9bf2b47192",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-0f247caf7d",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-eb6dc6172f",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-dc617c014b",
+        "ticket": "s-6d5fdf783a",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-cbbe11fb55",
+        "ticket": "s-6d5fdf783a",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-50778c655b",
+        "ticket": "s-54a03afc5a",
+        "checked_by": "qa",
+        "verdict": "fail"
+      },
+      {
+        "id": "c-0b7b0506e6",
+        "ticket": "s-0cfebd3862",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-b73a4537db",
+        "ticket": "s-0cfebd3862",
+        "checked_by": "qa",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "qa.epic-7f3d64e6de",
+    "size": "40k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "qa.epic-7f3d64e6de",
+    "size": "40k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-1998f097c0",
+        "gists": [
+          "Carried from S8 (c-eb38e8c949, ruling on m-1998f097c0): the first tag or workflow_dispatch run of `.github/workflows/ins… (+228 chars)"
+        ]
+      },
+      {
+        "id": "m-1f39866c96",
+        "gists": [
+          "Owner m-1f39866c96: \"the admin UI and heronry context menu both dont provide option to start the code server. how does one start it then?\" The architect's answe… (+2516 chars)"
+        ]
+      },
+      {
+        "id": "m-26ffec400f",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      },
+      {
+        "id": "m-30023429f7",
+        "gists": [
+          "Design design-e963c656f5 §4.14(b) (owner m-30023429f7; R11: in this epic). This is the deepest refactor; refactor in steps, with the full suite green at every c… (+2283 chars)"
+        ]
+      },
+      {
+        "id": "m-3ab3753664",
+        "gists": [
+          "Design design-e963c656f5 §4.15 (owner m-3ab3753664).\n\nBuild:\n- `docs/site/` with MkDocs Material: the brand palette, logo and favicon from S7, light and dark, s… (+891 chars)"
+        ]
+      },
+      {
+        "id": "m-6b6060dd38",
+        "gists": [
+          "Guards as data (owner m-6b6060dd38): the workflow definition declares preconditions per transition and gate, and the boa… (+378 chars)"
+        ]
+      },
+      {
+        "id": "m-767dd93f62",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      },
+      {
+        "id": "m-81bb4cca5e",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      },
+      {
+        "id": "m-f2ce5f4f14",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remo… (+2732 chars)"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "qa.s-da61d38c5e",
+    "size": "40k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-de4fa3e6e6",
+        "ticket": "s-da61d38c5e",
+        "checked_by": "qa",
+        "verdict": "fail"
+      },
+      {
+        "id": "c-2c16f5ebf0",
+        "ticket": "s-da61d38c5e",
+        "checked_by": "qa",
+        "verdict": "fail"
+      }
+    ]
+  },
+  {
+    "seat": "qa.s-da61d38c5e",
+    "size": "40k",
+    "qid": "Q2",
+    "mark": "ANSWERED",
+    "answer": {
+      "id": "m-6cc4b4e352",
+      "sender": "architect.epic-7f3d64e6de",
+      "instruction": "S23-T3 brief for the owner-sanctioned Opus verify seat (m-79f8b9a5dc). This covers THIS story only; you don't verdict any other ticket.\n**Scope:** verdict S23's five qa criteria (c-1e44b92059, c-72983… (+1547 chars)"
+    }
+  },
+  {
+    "seat": "qa.s-da61d38c5e",
+    "size": "40k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-538d9896ab",
+        "gists": [
+          "No workarounds (owner m-538d9896ab): every framework task found in the agent home's cards, skills and guides runs through MCP tools alone. Those tasks include reading attachments, filing pain records, reading tokens, restarting and resuming seats, and cursor recovery. In to"
+        ]
+      },
+      {
+        "id": "m-79f8b9a5dc",
+        "gists": [
+          "Owner m-79f8b9a5dc, verbatim: \"yes, lets do this now. also, I recommend this exercise: a fresh shell just uses all tools across all shells and reports what is wasting tokens (recommend astra high) and a shell fixes it (recomment opus 5.5). then when everythi"
+        ]
+      },
+      {
+        "id": "m-891b9f42bd",
+        "gists": [
+          "No information loss (owner m-891b9f42bd).\n- **Paging parity:** a test pages each bounded tool (ticket_query, doc_query, session_query, link_query, participants, message_query, events_query, context) to the end on a copy of the fleet DB. The pages add up to exactly the same recor"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "sme.s-1dccea48b5",
+    "size": "40k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": []
+  },
+  {
+    "seat": "sme.s-1dccea48b5",
+    "size": "40k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "sme.s-1dccea48b5",
+    "size": "40k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": "none cited"
+  },
+  {
+    "seat": "engineer.t-8e1ac0c445",
+    "size": "40k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": []
+  },
+  {
+    "seat": "engineer.t-8e1ac0c445",
+    "size": "40k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "engineer.t-8e1ac0c445",
+    "size": "40k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-8fe09cecd4",
+        "gists": [
+          "The owner reviewed the root README.md (m-8fe09cecd4): \"it looks like a mess\". Up to \"See it work\" it is fine. Change the README as follows:\n\n1. **\"See it work\" has half the chapters.** It shows 3 stills (pool, context, board), but the product video (S17, s-54a03afc5a) has 7 chapters. Show o"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-cd4712c855",
+    "size": "40k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-c7976fb9c1",
+        "ticket": "t-cd4712c855",
+        "checked_by": "engineer",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-cd4712c855",
+    "size": "40k",
+    "qid": "Q2",
+    "mark": "ANSWERED",
+    "answer": {
+      "id": "m-a3a8943c39",
+      "sender": "architect.epic-7f3d64e6de",
+      "instruction": "More in your scope, from qa m-d757122a72 (S12 c-c0b35be596 fails). Migration resolve() parity shows 4 diffs, all for role `owner`:\n- **Old behaviour:** the legacy pool binding `roles.owner=judgment` gave claude-opus-4-8.\n- **New behaviour:** migrate() drops it, and default_model() returns claude-fable-5-1. The board's resolve (seat_choice.py:236-237) skips the legacy `roles` binding, while the pool's seat_model_for honours it.\n- **Neither answer is right:** under the owner's ruling, owner has NO seat model.\n**Fix it the non-agent way:**\n1. migrate() drops any legacy `roles` binding for a human role (owner, human, expert), and keeps any other legacy binding as a role_models row, so non-human parity holds.\n2. `resolve()` and `seat_model_for` for a human role raise your non-agent refusal instead of returning a model.\n3. The parity test loads the REAL pre-migration file (`git show cb84bba^:v8/models.json`, saved as a fixture with no PII), iterates role_models ∪ roles, and asserts equality for every agent role and a refusal for owner.\nInclude this in your commit and name c-c0b35be596 in your report, so qa can re-judge S12."
+    }
+  },
+  {
+    "seat": "engineer.t-cd4712c855",
+    "size": "40k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-da9a2ae62f",
+        "gists": [
+          "Owner, verbatim (m-da9a2ae62f): \"reviewer role is removed. please remove it from everywhere. from code, from role cards and wherever else it is mentioned. i dont want it to appear again ever. ensure that human role is non-agent and our app complies with that. no way an"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-d606b5d93f",
+    "size": "40k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-03438d22fe",
+        "ticket": "t-d606b5d93f",
+        "checked_by": "engineer",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-d606b5d93f",
+    "size": "40k",
+    "qid": "Q2",
+    "mark": "ANSWERED",
+    "answer": {
+      "id": "m-c9abfa3828",
+      "sender": "architect.epic-7f3d64e6de",
+      "instruction": "Two additions:\n1. `guides/context-refresh.md:9` also says \"default 40 KB\". Fix it to 8 KB in the same commit.\n2. The source comment at Ch4Context.tsx:2 also says 40 KB; fix it too.\nThe owner asked whether 40 KB was required. The ruling (m-093790d260 thread) is that 8 KB stays the default, set in S23-T2 8f40bc0. Every place that states it says 8 KB."
+    }
+  },
+  {
+    "seat": "engineer.t-d606b5d93f",
+    "size": "40k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-dbf4b571de",
+        "gists": [
+          "qa finding m-dbf4b571de (fail on c-50778c655b): Ch4Context.tsx:37 and :47 say the context pack is \"40 KB by default\", but bundles.py:602 sets the default to 8_000, and has since 0c2c501. The criterion requires each chapter's claim to match the code.\n\n1. Fix the c"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-852e7add63",
+    "size": "40k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": []
+  },
+  {
+    "seat": "engineer.t-852e7add63",
+    "size": "40k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "engineer.t-852e7add63",
+    "size": "40k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-14333c915c",
+        "gists": [
+          "Owner rulings m-8aa6439a77 on m-14333c915c, design-e963c656f5 v34 §4.18. Measured: the owner's list had 21 items on the epic, 18 of them FYI statuses from the architect; the epic page highlighted only 3, and the rest could not be found.\n1. **attention.py / board.inbox:** an item co",
+          "counts for the owner.\n8. **Markdown:** the message renderer accepts a GFM table that starts right after a paragraph line; fixture m-14333c915c must render as a table.\nTests: pytest (rule, clearing, dismiss, cleanup), vitest (panels, marker), and ONE Playwright spec (s20-attention) run alone with ≥1.5 GB free RAM. Rebuild the SPA from PowerShell; the architect deploys. No consult."
+        ]
+      },
+      {
+        "id": "m-584a1c342d",
+        "gists": [
+          "uman on the same ticket, addressed to the asker or with reply_to set to the ask, resolves it. Case: the owner answered the S8 ask m-584a1c342d with m-f5f30e92bb (to the engineer, no reply_to), and it stayed highlighted.\n3. **Reachability:** the Conversation loads back to the oldest waiting message, or shows an \"N earlier waiting\" bar at the thread top whose items load and scroll "
+        ]
+      },
+      {
+        "id": "m-8aa6439a77",
+        "gists": [
+          "Owner rulings m-8aa6439a77 on m-14333c915c, design-e963c656f5 v34 §4.18. Measured: the owner's list had 21 items on the epic, 18 of them FYI statuses from the architect; the epic page highlighted only 3, and the rest could not be found.\n1. **attention.py / board.inb"
+        ]
+      },
+      {
+        "id": "m-f5f30e92bb",
+        "gists": [
+          "icket, addressed to the asker or with reply_to set to the ask, resolves it. Case: the owner answered the S8 ask m-584a1c342d with m-f5f30e92bb (to the engineer, no reply_to), and it stayed highlighted.\n3. **Reachability:** the Conversation loads back to the oldest waiting message, or shows an \"N earlier waiting\" bar at the thread top whose items load and scroll to each one. The W"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-20f0718990",
+    "size": "40k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": []
+  },
+  {
+    "seat": "engineer.t-20f0718990",
+    "size": "40k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "engineer.t-20f0718990",
+    "size": "40k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-3136ceca05",
+        "gists": [
+          "Owner walkthrough, part 2 (m-3136ceca05). Part 1 (Settings and Teammates) is t-5dd0cc18ea; coordinate with it on shared files and don't overlap.\n\n1. **Remote access** is a guided setup, not a bare form.\n   - A numbered walkthrough: what Remote access is for (teammates, or your o",
+          "Screenshots from a private instance, with vitest, show Admin UX pass 2 (owner m-3136ceca05).\n- **Remote access:** a numbered Tailscale setup with live done/not-done per step and a visual guide.\n- **Integrations:** every item says what it does, what it needs and where to get it, with a tested status.\n- **Seats & models:** every g"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-32035a77da",
+    "size": "40k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-c0b35be596",
+        "ticket": "s-32035a77da",
+        "checked_by": "qa",
+        "verdict": "fail"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-32035a77da",
+    "size": "40k",
+    "qid": "Q2",
+    "mark": "FETCH",
+    "answer": "context(verbose=True)"
+  },
+  {
+    "seat": "engineer.s-32035a77da",
+    "size": "40k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-30023429f7",
+        "gists": [
+          "Design design-e963c656f5 §4.14(a) (owner m-30023429f7).\n\nBuild:\n- Every `models.json` seat or catalog entry carries `harness: claude|codex|pi` and `provider`. Effort caps and window are per entry as data (replacing the `_uncapped` prefix logic).\n- Remove prefix sniffing everywhere; routing re"
+        ]
+      },
+      {
+        "id": "m-3c93cccc7e",
+        "gists": [
+          "ript.\n- **Also yours:** edp-pool's existing codex launcher tests have failing model-default assertions (reported by t-8218a6367e, m-3c93cccc7e). Fix them as part of moving the defaults into the catalog.\n\nPrivate boards and pools only. Never restart fleet services; the architect does. No consult."
+        ]
+      },
+      {
+        "id": "m-549b8adc3a",
+        "gists": [
+          "Every spawned role resolves to an explicit catalog model, so no seat launches a harness without a model (owner m-549b8adc3a: a Help doctor seat started with no `--model` and ran on the CLI's own default, Opus 4.8). The shipped catalog lists `doctor`. A role absent from `role_models` (including a S13 custom role) falls back to the catalog's default model, never "
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-9648fded35",
+    "size": "40k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-d1efb29e94",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-9bf2b47192",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-0f247caf7d",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-eb6dc6172f",
+        "ticket": "s-9648fded35",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-c7d47d4f26",
+        "ticket": "t-6129a95a3d",
+        "checked_by": "engineer",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-9648fded35",
+    "size": "40k",
+    "qid": "Q2",
+    "mark": "ANSWERED",
+    "answer": {
+      "id": "m-7f1c5a58a2",
+      "sender": "architect.epic-7f3d64e6de",
+      "instruction": "Accepted. whoami returned 200, and the SPA signed in as owner. Close the seat; there's no need to run the drill again now. S21 and S22 still change runtime code and block S9, so the epic-end qa reruns… (+211 chars)"
+    }
+  },
+  {
+    "seat": "engineer.s-9648fded35",
+    "size": "40k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-1998f097c0",
+        "gists": [
+          "Carried from S8 (c-eb38e8c949, ruling on m-1998f097c0): the first tag or workflow_dispatch run of `.github/workflows/installers.yml` after the owner's push is green on macOS and Linux. It shows the DMG and deb artifacts, `drill_bundle_posix.sh` logs with 0 survivors, and `lipo -archs` listing"
+        ]
+      },
+      {
+        "id": "m-3818ff2a47",
+        "gists": [
+          "Owner m-3818ff2a47 (verbatim): \"please can you ask the agent working on s9 to apply a very light 1px border to the active chat window of epics/tickets/topic chats? When I tried to scroll and mouse was out of chat it didnt scroll and I was left wondering why\""
+        ]
+      },
+      {
+        "id": "m-819bee2c22",
+        "gists": [
+          "it, for the repo and every workspace member. uv.lock currently lags pyproject.toml (pystray, nh3, markdown, found by t-cf72f6962f m-819bee2c22), and this host blocks PyPI from seat shells (os error 10013). Refresh it on a networked run (CI or an owner shell) and commit it before the tag."
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-54a03afc5a",
+    "size": "40k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-50778c655b",
+        "ticket": "s-54a03afc5a",
+        "checked_by": "qa",
+        "verdict": "fail"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-54a03afc5a",
+    "size": "40k",
+    "qid": "Q2",
+    "mark": "ANSWERED",
+    "answer": {
+      "id": "m-4a1af7db57",
+      "sender": "owner",
+      "instruction": "[demo] approved. amazing job!"
+    }
+  },
+  {
+    "seat": "engineer.s-54a03afc5a",
+    "size": "40k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-26ffec400f",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remotion-dev/skills` for the seat). The project lives in `docs/video/`, outside every shipped package. It renders an MP4 and also plays li"
+        ]
+      },
+      {
+        "id": "m-767dd93f62",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remotion-dev/skills` for the seat). The project lives in `docs/video/`, outside every shipped package. It renders an MP4 and also plays live through `@remotion/player"
+        ]
+      },
+      {
+        "id": "m-81bb4cca5e",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remotion-dev/skills` for the seat). The project lives in `docs/video/`, outside every shipped package. It renders an MP4 and also plays live through `@remotion/player` (the S15 site embeds it). Add "
+        ]
+      },
+      {
+        "id": "m-b42de746e3",
+        "gists": [
+          " and a caption per chapter, 8 chapters in the §4.17 v24 order (including 2b, cross-human and cross-agent collaboration, per owner m-b42de746e3). The owner approved it through a `demo` gate on this story, opened by the engineer with a direct link, before the full cut was rendered. Every scene is generated (no host screenshots, no real names, paths or ticket ids)."
+        ]
+      },
+      {
+        "id": "m-ce21682c2a",
+        "gists": [
+          "From m-ce21682c2a: the board's upload refuses video (\"allowed: images, pdf, text, markdown, json, log, zip, svg\"), so the owner can only review the S17 cut as a zip to download and unpack. Owners review demo gates in the board, so the board must play video "
+        ]
+      },
+      {
+        "id": "m-f2ce5f4f14",
+        "gists": [
+          "Design design-e963c656f5 §4.17 v22 (owner m-26ffec400f, m-f2ce5f4f14, m-767dd93f62; scope approved in m-81bb4cca5e).\n\n**Medium:** Remotion (`npx skills add remotion-dev/skills` for the seat). The project lives in `docs/video/`, outside every shipped package. It renders an MP4 and also plays live through `@r"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-461403ebd1",
+    "size": "40k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-54afa8a81b",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-e7cba464fc",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-0e2611c3f2",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-5c7afde0e8",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-2c02d34d7f",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      },
+      {
+        "id": "c-328185ac06",
+        "ticket": "s-461403ebd1",
+        "checked_by": "qa",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.s-461403ebd1",
+    "size": "40k",
+    "qid": "Q2",
+    "mark": "ANSWERED",
+    "answer": {
+      "id": "m-08a12a71e5",
+      "sender": "architect.epic-7f3d64e6de",
+      "instruction": "Accepted, including the deviation that the board writes the card file. Both leftovers move to S14's scope: the web ROLES list from the API, and the full declared tool bundle at the proxy for custom ro… (+113 chars)"
+    }
+  },
+  {
+    "seat": "engineer.s-461403ebd1",
+    "size": "40k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-30023429f7",
+        "gists": [
+          "Design design-e963c656f5 §4.14(b) (owner m-30023429f7; R11: in this epic). This is the deepest refactor; refactor in steps, with the full suite green at every commit.\n\nBuild:\n- **Workflow definition** (JSON schema, stored on the board, versioned and immutable once published):\n  - roles: id, c"
+        ]
+      },
+      {
+        "id": "m-6b6060dd38",
+        "gists": [
+          "Guards as data (owner m-6b6060dd38): the workflow definition declares preconditions per transition and gate, and the board enforces them from data by auto-carry, refusal with the missing piece named, and hiding unanswerable gates. A pytest shows that a custom role and trans"
+        ]
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-77c3a55b75",
+    "size": "40k",
+    "qid": "Q1",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "c-e7b96160a1",
+        "ticket": "t-77c3a55b75",
+        "checked_by": "engineer",
+        "verdict": "pending"
+      }
+    ]
+  },
+  {
+    "seat": "engineer.t-77c3a55b75",
+    "size": "40k",
+    "qid": "Q2",
+    "mark": "MISSING",
+    "answer": "No addressed or architect/owner message, nor a thread pointer, appears in this pack."
+  },
+  {
+    "seat": "engineer.t-77c3a55b75",
+    "size": "40k",
+    "qid": "Q3",
+    "mark": "ANSWERED",
+    "answer": [
+      {
+        "id": "m-0e6940fe2c",
+        "gists": [
+          "lingDrawer never shows it.\n- The vitest covering it went away with Decisions.tsx in S20 (c6c8743).\nThis breaks the owner's words, m-0e6940fe2c: \"waiting on me, I don't know what on\".\n\n**Fix:**\n1. Pass `ask` through `rulingFor()`.\n2. Make it the RulingDrawer heading, in plain words, with a fallback to the gate's generated question from 0df23fa (t-cfd8462f9d) when `ask` is empty.\n3"
+        ]
+      },
+      {
+        "id": "m-1f76018caa",
+        "gists": [
+          "qa finding m-1f76018caa (fail on c-017559b2a9):\n- `signoff_ask` is served as `ask` (views.py:553 and :585), but no component renders it.\n- Ticket.tsx `rulingFor()` (l.249) drops it, and RulingDrawer never shows it.\n- The vitest covering it went away with Decision"
+        ]
+      }
+    ]
+  }
+]

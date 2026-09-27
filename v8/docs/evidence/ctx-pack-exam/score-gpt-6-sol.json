@@ -1,0 +1,1178 @@
+{
+  "model": "gpt-6-sol",
+  "method": "Self-score against key.json; FETCH correctness assumes context(verbose=True) restores full unbounded ticket/message content, as its tool contract states. ANSWERED Q3 gist judged by cited pack text, not lexical overlap with key.",
+  "summary": {
+    "8k": {
+      "correct": 22,
+      "fetch_correct": 9,
+      "wrong": 10,
+      "missing": 1,
+      "tokens_read": 26230,
+      "fable": {
+        "in_pack": 18,
+        "one_fetch": 21,
+        "n/a": 3
+      }
+    },
+    "16k": {
+      "correct": 24,
+      "fetch_correct": 8,
+      "wrong": 9,
+      "missing": 1,
+      "tokens_read": 41840,
+      "fable": {
+        "in_pack": 19,
+        "one_fetch": 20,
+        "n/a": 3
+      }
+    },
+    "40k": {
+      "correct": 25,
+      "fetch_correct": 4,
+      "wrong": 12,
+      "missing": 1,
+      "tokens_read": 59809,
+      "fable": {
+        "in_pack": 21,
+        "one_fetch": 18,
+        "n/a": 3
+      }
+    }
+  },
+  "rows": [
+    {
+      "seat": "architect.epic-7f3d64e6de",
+      "size": "8k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "architect.epic-7f3d64e6de",
+      "size": "8k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "architect.epic-7f3d64e6de",
+      "size": "8k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=[], extra=['m-d98c7b57c9'].",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "qa.epic-7f3d64e6de",
+      "size": "8k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "qa.epic-7f3d64e6de",
+      "size": "8k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "qa.epic-7f3d64e6de",
+      "size": "8k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=['m-b42de746e3'], extra=['m-1998f097c0'].",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "qa.s-da61d38c5e",
+      "size": "8k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "qa.s-da61d38c5e",
+      "size": "8k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "qa.s-da61d38c5e",
+      "size": "8k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Owner-message id set matches; pack-derived gist supplied.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "sme.s-1dccea48b5",
+      "size": "8k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "sme.s-1dccea48b5",
+      "size": "8k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "wrong",
+      "reason": "Fetch call does not identify a keyed answer.",
+      "fable": "n/a"
+    },
+    {
+      "seat": "sme.s-1dccea48b5",
+      "size": "8k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Owner-message id set matches; pack-derived gist supplied.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-8e1ac0c445",
+      "size": "8k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-8e1ac0c445",
+      "size": "8k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-8e1ac0c445",
+      "size": "8k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Owner-message id set matches; pack-derived gist supplied.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-cd4712c855",
+      "size": "8k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-cd4712c855",
+      "size": "8k",
+      "qid": "Q2",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Message id and instruction match the key.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-cd4712c855",
+      "size": "8k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Owner-message id set matches; pack-derived gist supplied.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-d606b5d93f",
+      "size": "8k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-d606b5d93f",
+      "size": "8k",
+      "qid": "Q2",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Message id and instruction match the key.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-d606b5d93f",
+      "size": "8k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=[], extra=['m-dbf4b571de'].",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-852e7add63",
+      "size": "8k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-852e7add63",
+      "size": "8k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-852e7add63",
+      "size": "8k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=['m-f5f30e92bb'], extra=['m-14333c915c'].",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-20f0718990",
+      "size": "8k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-20f0718990",
+      "size": "8k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "wrong",
+      "reason": "Fetch call does not identify a keyed answer.",
+      "fable": "n/a"
+    },
+    {
+      "seat": "engineer.t-20f0718990",
+      "size": "8k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Owner-message id set matches; pack-derived gist supplied.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.s-32035a77da",
+      "size": "8k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.s-32035a77da",
+      "size": "8k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.s-32035a77da",
+      "size": "8k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=['m-549b8adc3a'], extra=[].",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.s-9648fded35",
+      "size": "8k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.s-9648fded35",
+      "size": "8k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.s-9648fded35",
+      "size": "8k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=[], extra=['m-1998f097c0'].",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.s-54a03afc5a",
+      "size": "8k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.s-54a03afc5a",
+      "size": "8k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.s-54a03afc5a",
+      "size": "8k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=['m-b42de746e3'], extra=['m-ce21682c2a'].",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.s-461403ebd1",
+      "size": "8k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.s-461403ebd1",
+      "size": "8k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.s-461403ebd1",
+      "size": "8k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Owner-message id set matches; pack-derived gist supplied.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-77c3a55b75",
+      "size": "8k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-77c3a55b75",
+      "size": "8k",
+      "qid": "Q2",
+      "mark": "MISSING",
+      "result": "missing",
+      "reason": "No answer or usable pointer identified in this pack.",
+      "fable": "n/a"
+    },
+    {
+      "seat": "engineer.t-77c3a55b75",
+      "size": "8k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=[], extra=['m-1f76018caa'].",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "architect.epic-7f3d64e6de",
+      "size": "16k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "architect.epic-7f3d64e6de",
+      "size": "16k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "architect.epic-7f3d64e6de",
+      "size": "16k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=[], extra=['m-d98c7b57c9'].",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "qa.epic-7f3d64e6de",
+      "size": "16k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "qa.epic-7f3d64e6de",
+      "size": "16k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "qa.epic-7f3d64e6de",
+      "size": "16k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=['m-b42de746e3'], extra=['m-1998f097c0'].",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "qa.s-da61d38c5e",
+      "size": "16k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "qa.s-da61d38c5e",
+      "size": "16k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "qa.s-da61d38c5e",
+      "size": "16k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Owner-message id set matches; pack-derived gist supplied.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "sme.s-1dccea48b5",
+      "size": "16k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "sme.s-1dccea48b5",
+      "size": "16k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "wrong",
+      "reason": "Fetch call does not identify a keyed answer.",
+      "fable": "n/a"
+    },
+    {
+      "seat": "sme.s-1dccea48b5",
+      "size": "16k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Owner-message id set matches; pack-derived gist supplied.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-8e1ac0c445",
+      "size": "16k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-8e1ac0c445",
+      "size": "16k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-8e1ac0c445",
+      "size": "16k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Owner-message id set matches; pack-derived gist supplied.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-cd4712c855",
+      "size": "16k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-cd4712c855",
+      "size": "16k",
+      "qid": "Q2",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Message id and instruction match the key.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-cd4712c855",
+      "size": "16k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Owner-message id set matches; pack-derived gist supplied.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-d606b5d93f",
+      "size": "16k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-d606b5d93f",
+      "size": "16k",
+      "qid": "Q2",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Message id and instruction match the key.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-d606b5d93f",
+      "size": "16k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=[], extra=['m-dbf4b571de'].",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-852e7add63",
+      "size": "16k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-852e7add63",
+      "size": "16k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-852e7add63",
+      "size": "16k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=[], extra=['m-14333c915c', 'm-584a1c342d'].",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-20f0718990",
+      "size": "16k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-20f0718990",
+      "size": "16k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "wrong",
+      "reason": "Fetch call does not identify a keyed answer.",
+      "fable": "n/a"
+    },
+    {
+      "seat": "engineer.t-20f0718990",
+      "size": "16k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Owner-message id set matches; pack-derived gist supplied.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.s-32035a77da",
+      "size": "16k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.s-32035a77da",
+      "size": "16k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.s-32035a77da",
+      "size": "16k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Owner-message id set matches; pack-derived gist supplied.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.s-9648fded35",
+      "size": "16k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.s-9648fded35",
+      "size": "16k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.s-9648fded35",
+      "size": "16k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=[], extra=['m-1998f097c0'].",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.s-54a03afc5a",
+      "size": "16k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.s-54a03afc5a",
+      "size": "16k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.s-54a03afc5a",
+      "size": "16k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=['m-b42de746e3'], extra=['m-ce21682c2a'].",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.s-461403ebd1",
+      "size": "16k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.s-461403ebd1",
+      "size": "16k",
+      "qid": "Q2",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Message id and instruction match the key.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.s-461403ebd1",
+      "size": "16k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Owner-message id set matches; pack-derived gist supplied.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-77c3a55b75",
+      "size": "16k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-77c3a55b75",
+      "size": "16k",
+      "qid": "Q2",
+      "mark": "MISSING",
+      "result": "missing",
+      "reason": "No answer or usable pointer identified in this pack.",
+      "fable": "n/a"
+    },
+    {
+      "seat": "engineer.t-77c3a55b75",
+      "size": "16k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=[], extra=['m-1f76018caa'].",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "architect.epic-7f3d64e6de",
+      "size": "40k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "architect.epic-7f3d64e6de",
+      "size": "40k",
+      "qid": "Q2",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Message id differs from key.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "architect.epic-7f3d64e6de",
+      "size": "40k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=[], extra=['m-d98c7b57c9'].",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "qa.epic-7f3d64e6de",
+      "size": "40k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "qa.epic-7f3d64e6de",
+      "size": "40k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "qa.epic-7f3d64e6de",
+      "size": "40k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=['m-b42de746e3'], extra=['m-1998f097c0'].",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "qa.s-da61d38c5e",
+      "size": "40k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "qa.s-da61d38c5e",
+      "size": "40k",
+      "qid": "Q2",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Message id and instruction match the key.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "qa.s-da61d38c5e",
+      "size": "40k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Owner-message id set matches; pack-derived gist supplied.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "sme.s-1dccea48b5",
+      "size": "40k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "sme.s-1dccea48b5",
+      "size": "40k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "wrong",
+      "reason": "Fetch call does not identify a keyed answer.",
+      "fable": "n/a"
+    },
+    {
+      "seat": "sme.s-1dccea48b5",
+      "size": "40k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Owner-message id set matches; pack-derived gist supplied.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-8e1ac0c445",
+      "size": "40k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-8e1ac0c445",
+      "size": "40k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-8e1ac0c445",
+      "size": "40k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Owner-message id set matches; pack-derived gist supplied.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-cd4712c855",
+      "size": "40k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-cd4712c855",
+      "size": "40k",
+      "qid": "Q2",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Message id and instruction match the key.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-cd4712c855",
+      "size": "40k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Owner-message id set matches; pack-derived gist supplied.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-d606b5d93f",
+      "size": "40k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-d606b5d93f",
+      "size": "40k",
+      "qid": "Q2",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Message id and instruction match the key.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-d606b5d93f",
+      "size": "40k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=[], extra=['m-dbf4b571de'].",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-852e7add63",
+      "size": "40k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-852e7add63",
+      "size": "40k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-852e7add63",
+      "size": "40k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=[], extra=['m-14333c915c', 'm-584a1c342d'].",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-20f0718990",
+      "size": "40k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-20f0718990",
+      "size": "40k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "wrong",
+      "reason": "Fetch call does not identify a keyed answer.",
+      "fable": "n/a"
+    },
+    {
+      "seat": "engineer.t-20f0718990",
+      "size": "40k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Owner-message id set matches; pack-derived gist supplied.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.s-32035a77da",
+      "size": "40k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.s-32035a77da",
+      "size": "40k",
+      "qid": "Q2",
+      "mark": "FETCH",
+      "result": "fetch_correct",
+      "reason": "Unbounded context on this seat supplies its ticket thread and addressed message.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.s-32035a77da",
+      "size": "40k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=[], extra=['m-3c93cccc7e'].",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.s-9648fded35",
+      "size": "40k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.s-9648fded35",
+      "size": "40k",
+      "qid": "Q2",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Message id and instruction match the key.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.s-9648fded35",
+      "size": "40k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=[], extra=['m-1998f097c0', 'm-819bee2c22'].",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.s-54a03afc5a",
+      "size": "40k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.s-54a03afc5a",
+      "size": "40k",
+      "qid": "Q2",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Message id differs from key.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.s-54a03afc5a",
+      "size": "40k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=[], extra=['m-ce21682c2a'].",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.s-461403ebd1",
+      "size": "40k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.s-461403ebd1",
+      "size": "40k",
+      "qid": "Q2",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Message id and instruction match the key.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.s-461403ebd1",
+      "size": "40k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Owner-message id set matches; pack-derived gist supplied.",
+      "fable": "one_fetch"
+    },
+    {
+      "seat": "engineer.t-77c3a55b75",
+      "size": "40k",
+      "qid": "Q1",
+      "mark": "ANSWERED",
+      "result": "correct",
+      "reason": "Criterion id, ticket, checker and verdict sets match.",
+      "fable": "in_pack"
+    },
+    {
+      "seat": "engineer.t-77c3a55b75",
+      "size": "40k",
+      "qid": "Q2",
+      "mark": "MISSING",
+      "result": "missing",
+      "reason": "No answer or usable pointer identified in this pack.",
+      "fable": "n/a"
+    },
+    {
+      "seat": "engineer.t-77c3a55b75",
+      "size": "40k",
+      "qid": "Q3",
+      "mark": "ANSWERED",
+      "result": "wrong",
+      "reason": "Owner-message ids differ: missing=[], extra=['m-1f76018caa'].",
+      "fable": "one_fetch"
+    }
+  ]
+}
