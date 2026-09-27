@@ -230,6 +230,21 @@ describe("upstream changed", () => {
 });
 
 describe("Design page", () => {
+  it("renders when an older board leaves out pinned_by and other fields (t-b2f8859d30)", async () => {
+    // art-678346d6e2: "can't access property 'length', e.pinned_by is undefined". The rows and the workflow come back
+    // without pinned_by, source, roles-count and most arrays; the page lists them as unpinned instead of crashing.
+    const { pinned_by: _p, source: _s, roles: _r, ...bare } = rowOf(STANDARD);
+    void _p; void _s; void _r;
+    const { transitions: _t, gates: _g, checkers: _c, problems: _pr, hooks: _h, caps: _cp, ...wf } = STANDARD;
+    void _t; void _g; void _c; void _pr; void _h; void _cp;
+    server.use(whoami(false), http.get("/v1/workflows", () => ok([bare])), http.get("/v1/workflows/:ref", () => ok(wf)),
+      ...workflowHandlers()); // msw: the first matching handler wins
+    renderRoute("/design", "/design", <DesignPage />);
+    expect(await screen.findByTestId("wf-pins-standard@1")).toHaveTextContent("no epic pins it");
+    expect(await screen.findByTestId("pipeline-roles")).toBeInTheDocument();
+    expect(screen.getByTestId("design-title")).toHaveTextContent("standard@1");
+  });
+
   it("a non-admin reads every version read-only: no Duplicate, no Publish", async () => {
     server.use(whoami(false), ...workflowHandlers());
     renderRoute("/design", "/design", <DesignPage />);

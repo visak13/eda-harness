@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { REPO_DIR, WEB_DIR } from "./board";
+import { e2eBuildEnv, e2eDist, sharedDist } from "./distDir";
 
 // Ensure the SPA bundle the board serves at /ui exists, is built for the /ui base AND is not older
 // than the sources — then leave the board to the per-file worker fixture (fixtures.ts).
@@ -34,13 +35,17 @@ export function newestSourceMtime(): number {
 }
 
 export default async function globalSetup(): Promise<void> {
-  const dist = path.join(REPO_DIR, "src", "edp8", "webapp", "dist", "index.html");
+  // t-b2f8859d30: the PRIVATE e2e dist (distDir.ts), never the shared dist the fleet board serves.
+  const dist = path.join(e2eDist(REPO_DIR), "index.html");
+  // Recorded so private-dist.spec.ts can prove the run left the shared dist alone.
+  const shared = path.join(sharedDist(REPO_DIR), "index.html");
+  process.env.EDP8_E2E_SHARED_MTIME = fs.existsSync(shared) ? String(fs.statSync(shared).mtimeMs) : "absent";
   const builtForUi = fs.existsSync(dist) && fs.readFileSync(dist, "utf8").includes(`${WEB_BASE}assets/`);
   const fresh = builtForUi && fs.statSync(dist).mtimeMs >= newestSourceMtime();
   if (!fresh) {
     console.log(`[e2e] dist ${builtForUi ? "is older than web/src" : "is missing or not built for /ui"} — rebuilding`);
     // Pin the base so a stray EDP8_WEB_BASE in the launching shell can't build a mismatched bundle.
-    execSync("npm run build", { cwd: WEB_DIR, stdio: "inherit", env: { ...process.env, EDP8_WEB_BASE: WEB_BASE } });
+    execSync("npm run build", { cwd: WEB_DIR, stdio: "inherit", env: e2eBuildEnv(REPO_DIR) });
   }
   // The board itself is per spec FILE now — see fixtures.ts (`board` worker fixture).
 }

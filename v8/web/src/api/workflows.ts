@@ -121,8 +121,32 @@ export interface MergeResult { draft: WorkflowDef; conflicts: { path: string; ba
 
 export const refOf = (d: { id: string; version: number }) => `${d.id}@${d.version}`;
 
-export const listWorkflows = () => api<WorkflowRow[]>("/v1/workflows");
-export const getWorkflow = (ref: string) => api<WorkflowRead>(`/v1/workflows/${encodeURIComponent(ref)}`);
+// t-b2f8859d30 (owner art-678346d6e2): a board older than this bundle answered without `pinned_by` and the Design
+// page crashed on `.length`. Every list/array field a page reads is filled in here, so an older or partial board
+// answer renders as "none" instead of throwing.
+const arr = <T,>(v: T[] | null | undefined): T[] => (Array.isArray(v) ? v : []);
+const obj = <T extends object>(v: T | null | undefined): T => (v && typeof v === "object" && !Array.isArray(v) ? v : ({} as T));
+
+export function normaliseRow(r: Partial<WorkflowRow> & { id: string; version: number }): WorkflowRow {
+  return {
+    ...r, ref: r.ref ?? refOf(r), name: r.name ?? "", description: r.description ?? "", builtin: Boolean(r.builtin),
+    published: Boolean(r.published), source: r.source ?? null, pinned_by: arr(r.pinned_by),
+    roles: typeof r.roles === "number" ? r.roles : Array.isArray(r.roles) ? (r.roles as unknown[]).length : 0,
+  };
+}
+
+export function normaliseWorkflow(d: Partial<WorkflowRead> & { id: string; version: number }): WorkflowRead {
+  return {
+    ...d, name: d.name ?? "", description: d.description ?? "", builtin: Boolean(d.builtin), published: Boolean(d.published),
+    roles: arr(d.roles), kinds: arr(d.kinds), statuses: arr(d.statuses), terminal: arr(d.terminal),
+    transitions: arr(d.transitions), checkers: arr(d.checkers), gates: arr(d.gates), problems: arr(d.problems),
+    caps: obj(d.caps), permissions: obj(d.permissions), hooks: obj(d.hooks),
+  };
+}
+
+export const listWorkflows = async () => arr(await api<WorkflowRow[] | null>("/v1/workflows")).map(normaliseRow);
+export const getWorkflow = async (ref: string) =>
+  normaliseWorkflow(await api<WorkflowRead>(`/v1/workflows/${encodeURIComponent(ref)}`));
 export const getTemplates = () => api<Templates>("/v1/workflows/templates");
 export const duplicateWorkflow = (ref: string, newId?: string) =>
   postJson<WorkflowDef>("/v1/workflows/duplicate", { ref, ...(newId ? { new_id: newId } : {}) });

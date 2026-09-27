@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { hermeticEnv } from "./hermeticEnv";
+import { e2eBoardDistEnv } from "./distDir";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const WEB_DIR = path.resolve(HERE, "..");
@@ -91,6 +92,8 @@ export async function startBoard(extraEnv: Record<string, string> = {}): Promise
       // pinned here so a stray EDP8_UI=legacy in the launching shell can't flip the board to serve
       // the SPA at /app and 404 every spec's /ui/* navigation.
       EDP8_UI: "folio",
+      // t-b2f8859d30: serve the private e2e build (globalSetup), never the shared dist the fleet board serves.
+      ...e2eBoardDistEnv(REPO_DIR),
       ...extraEnv,
     },
   });

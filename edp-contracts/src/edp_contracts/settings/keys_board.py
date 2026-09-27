@@ -9,6 +9,11 @@ declare("board.ui", "EDP8_UI", "str", "folio", "Limits/tuning",
         restart_required="board",
         tier="advanced", label='Web app style',
         help='Which web app the board serves: folio is the current app, legacy the old one.', choices=("folio", "legacy"))
+declare("board.web_dist", "EDP8_WEB_DIST", "str", None, "Platform",
+        "Directory of the SPA bundle the board serves at /ui; unset = the packaged src/edp8/webapp/dist. An e2e "
+        "board points it at its private build (t-b2f8859d30), so a seat's build never ships to the fleet.",
+        env_only=True, restart_required="board",
+        tier="internal")
 declare("board.log_level", "EDP8_LOG", "str", "warning", "Limits/tuning", "The board's uvicorn log level.",
         restart_required="board",
         tier="advanced", label='Board log detail',

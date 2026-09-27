@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from "react-router";
 import type { RouteObject } from "react-router";
 import { AppShell } from "./components/AppShell";
+import { PageError } from "./components/PageError";
 import { RecordsPage } from "./pages/Records";
 import { SettingsPage } from "./pages/Settings";
 import { AdminPage } from "./pages/admin/Admin";
@@ -33,7 +34,9 @@ export const appRoutes: RouteObject[] = [
   {
     path: "/",
     element: <AppShell />,
-    children: [
+    // t-b2f8859d30: one pathless layout route holds every page, so a page's render error shows PageError in the
+    // page's place (inside the shell's Outlet) and the rail keeps working, never the router's full-screen error.
+    children: [{ errorElement: <PageError />, children: [
       // S20 (design-e963c656f5 §4.18): the Needs you page is gone; what waits on you is a trail of dots from the
       // Epics list (v34: the rail's Waiting on you entry is gone too). Old /me links land on the Epics list.
       { index: true, element: <RedirectTo to="/epics" /> },
@@ -60,7 +63,7 @@ export const appRoutes: RouteObject[] = [
       { path: "tickets", element: <RedirectTo to="/library/tickets" /> },
       { path: "activity", element: <RedirectTo to="/library/history" /> },
       { path: "*", element: <NotFoundPage /> },
-    ],
+    ] }],
   },
   // S6: the teammate invite landing and the first-run wizard stand outside the shell (no session yet)
   { path: "/join", element: <JoinPage /> },

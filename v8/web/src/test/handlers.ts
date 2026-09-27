@@ -19,6 +19,8 @@ export const MODEL_CATALOG = {
 };
 
 export const handlers = [
+  // t-b2f8859d30: the board started just now, i.e. after this bundle was built, so no restart banner by default
+  http.get("/v1/health", () => HttpResponse.json({ ok: true, service: "board", git_rev: "test", started_at: new Date().toISOString() })),
   http.get("/v1/docs/:id/sources", () => HttpResponse.json({ ok: true, value: [{ id: "epic-1", title: "Source work" }] })),
   http.get("/v1/artifacts/:id", ({ params }) => HttpResponse.json({ ok: true, value: { id: params.id, form: "repo_ref", uri: "git:example", note: "Reference", created_by: "owner", created_at: "2026-09-18" } })),
   http.get("/v1/tickets/:id/contextual", ({ params, request }) => HttpResponse.json({ ok: true, value: {

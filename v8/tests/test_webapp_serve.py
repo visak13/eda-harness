@@ -138,6 +138,22 @@ def test_real_create_app_boots_even_if_bundle_absent(monkeypatch, tmp_path):
     assert c.get("/healthz").json()["ok"] is True
 
 
+def test_board_serves_the_private_dist_named_by_edp8_web_dist(monkeypatch, tmp_path):
+    """t-b2f8859d30: an e2e board serves its private build (EDP8_WEB_DIST), never the shared packaged dist, so a
+    seat's e2e build can't ship to the fleet board."""
+    private = tmp_path / "e2e-dist"
+    (private / "assets").mkdir(parents=True)
+    (private / "index.html").write_text("<!doctype html><title>private-e2e-bundle</title>", encoding="utf-8")
+    (private / "assets" / "app-abc.js").write_text("console.log(1)", encoding="utf-8")
+    monkeypatch.setenv("EDP8_UI", "folio")
+    monkeypatch.setenv("EDP8_WEB_DIST", str(private))
+    monkeypatch.setattr("edp8.webapp.serve.DIST_DIR", tmp_path / "shared-must-not-serve")
+    monkeypatch.setattr(broker_adapter, "publish", lambda *a: True)
+    c = TestClient(create_app(Board(Store(":memory:")), admin_token="t"))
+    assert "private-e2e-bundle" in c.get("/ui/design").text
+    assert c.get("/ui/assets/app-abc.js").status_code == 200
+
+
 def test_repeated_leading_slashes_redirect_to_the_single_slash_path(client):
     """t-67dad8c6aa: `//ui/library/topics/<id>` (typed by hand) was a bare 404; it now redirects to `/ui/…`,
     query kept, and never to a protocol-relative `//host` Location."""

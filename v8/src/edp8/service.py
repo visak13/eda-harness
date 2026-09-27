@@ -1840,7 +1840,8 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         app.include_router(ui_router(board, verify=human_verify, public=public, prefix="/ui"))
     else:  # folio
         app.include_router(ui_router(board, verify=human_verify, public=public, prefix="/ui-legacy"))
-        mount_spa(app, "/ui")
+        # t-b2f8859d30: an e2e board serves its private build (EDP8_WEB_DIST); unset = the packaged dist
+        mount_spa(app, "/ui", settings.get("EDP8_WEB_DIST") or None)
 
     if settings.get("EDP8_PLANE_URL"):
         from .plane_adapter import start_mirror_thread, webhook_router

@@ -3,6 +3,7 @@ import { Link, Outlet, useLocation } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, BoardApiError } from "../api/client";
 import { getEpicPage } from "../api/endpoints";
+import { BoardVersionBanner } from "./BoardVersionBanner";
 import { useCurrentEpicId } from "./currentEpic";
 import { identity, signOut, SIGNED_OUT_EVENT } from "../auth/identity";
 import { IdentityPanel } from "./IdentityPanel";
@@ -302,6 +303,7 @@ function AppShellChrome(): React.JSX.Element {
 
       <main className={styles.main}>
         <p className={styles.pageFraming} data-testid="page-framing" data-route={location.pathname}>{pageFraming}</p>
+        <BoardVersionBanner />
         <DocDrawerProvider>
           <Outlet />
         </DocDrawerProvider>
