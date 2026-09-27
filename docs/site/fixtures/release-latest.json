@@ -1,11 +1,11 @@
 {
-  "_note": "A fixture in the shape of GET /repos/{owner}/{repo}/releases/latest (only the fields the site reads). {repo_url} is filled from edp8.brand. Build with HERONRY_SITE_RELEASE_JSON=docs/site/fixtures/release-latest.json.",
+  "_note": "A fixture in the shape of GET /repos/{owner}/{repo}/releases/latest (only the fields the site reads; sizes are illustrative). {repo_url} is filled from edp8.brand. Build with HERONRY_SITE_RELEASE_JSON=docs/site/fixtures/release-latest.json.",
   "tag_name": "v0.9.0",
   "html_url": "{repo_url}/releases/tag/v0.9.0",
   "assets": [
-    {"name": "Heronry Desktop-0.9.0.msi", "browser_download_url": "{repo_url}/releases/download/v0.9.0/Heronry.Desktop-0.9.0.msi"},
-    {"name": "Heronry Desktop-0.9.0.dmg", "browser_download_url": "{repo_url}/releases/download/v0.9.0/Heronry.Desktop-0.9.0.dmg"},
-    {"name": "heronry_0.9.0-1~ubuntu-noble_amd64.deb", "browser_download_url": "{repo_url}/releases/download/v0.9.0/heronry_0.9.0-1.ubuntu-noble_amd64.deb"},
+    {"name": "Heronry Desktop-0.9.0.msi", "size": 61237248, "browser_download_url": "{repo_url}/releases/download/v0.9.0/Heronry.Desktop-0.9.0.msi"},
+    {"name": "Heronry Desktop-0.9.0.dmg", "size": 74973184, "browser_download_url": "{repo_url}/releases/download/v0.9.0/Heronry.Desktop-0.9.0.dmg"},
+    {"name": "heronry_0.9.0-1~ubuntu-noble_amd64.deb", "size": 48918528, "browser_download_url": "{repo_url}/releases/download/v0.9.0/heronry_0.9.0-1.ubuntu-noble_amd64.deb"},
     {"name": "install.ps1", "browser_download_url": "{repo_url}/releases/download/v0.9.0/install.ps1"},
     {"name": "install.sh", "browser_download_url": "{repo_url}/releases/download/v0.9.0/install.sh"},
     {"name": "SHA256SUMS", "browser_download_url": "{repo_url}/releases/download/v0.9.0/SHA256SUMS"},

@@ -15,6 +15,7 @@ results as generated files at build time. Sources:
 """
 from __future__ import annotations
 
+import html
 import json
 import os
 import subprocess
@@ -107,11 +108,17 @@ def _default_text(s: Any) -> str:
     return _code(json.dumps(s.default) if isinstance(s.default, bool) else s.default)
 
 
+#: settings groups the reference leaves out: the brand values name the product; they are `internal`, not a user
+#: knob (owner m-da9a2ae62f)
+SETTINGS_OMIT_GROUPS = frozenset({"brand"})
+
+
 def settings_md() -> str:
     from edp_contracts import settings
     rows_by_group: dict[str, list[Any]] = {}
     for s in settings.all_settings():
-        rows_by_group.setdefault(s.group, []).append(s)
+        if s.group not in SETTINGS_OMIT_GROUPS:
+            rows_by_group.setdefault(s.group, []).append(s)
     total = sum(len(v) for v in rows_by_group.values())
     parts = ["# Settings", "",
              f"Generated at build from the settings registry ({total} settings). Each value resolves "
@@ -330,26 +337,63 @@ def load_release(fixture: str | None = None, timeout: float = 15.0) -> dict[str,
         return None
 
 
-#: the native installers the release ships (no AppImage: design §4.9)
-INSTALLERS = (("windows", "Windows 10/11", ".msi", "Windows installer (MSI)"),
-              ("macos", "macOS (Apple Silicon and Intel)", ".dmg", "macOS disk image (DMG)"),
-              ("linux", "Ubuntu 24.04+ / Debian 13", ".deb", "Linux package (deb)"))
+#: the native installers the release ships (no AppImage: design §4.9):
+#: key, OS name on the card, systems it runs on, file suffix, file type, the command-line script for that OS
+INSTALLERS = (("windows", "Windows", "Windows 10/11", ".msi", "MSI installer", "install.ps1"),
+              ("macos", "macOS", "Apple Silicon and Intel", ".dmg", "Disk image (DMG)", "install.sh"),
+              ("linux", "Linux", "Ubuntu 24.04+ / Debian 13", ".deb", "Debian package (deb)", "install.sh"))
+
+
+def _size(n: Any) -> str | None:
+    """A release asset's `size` (bytes) as the button shows it, or None when the release does not say."""
+    if not isinstance(n, int) or n <= 0:
+        return None
+    for unit, div in (("GB", 1 << 30), ("MB", 1 << 20), ("KB", 1 << 10)):
+        if n >= div:
+            return f"{n / div:.1f} {unit}"
+    return f"{n} B"
 
 
 def downloads(release: dict[str, Any] | None) -> dict[str, Any]:
     b = brand()
-    assets = {a["name"]: a["browser_download_url"] for a in (release or {}).get("assets", [])}
+    rows = (release or {}).get("assets", [])
+    assets = {a["name"]: a["browser_download_url"] for a in rows}
+    sizes = {a["name"]: _size(a.get("size")) for a in rows}
     tag = (release or {}).get("tag_name")
     out: dict[str, Any] = {"tag": tag, "release_url": (release or {}).get("html_url") or b["releases_url"],
-                           "installers": [], "sums": assets.get("SHA256SUMS")}
-    for key, os_name, suffix, label in INSTALLERS:
-        name = next((n for n in sorted(assets) if n.lower().endswith(suffix)), None)
-        out["installers"].append({"key": key, "os": os_name, "label": label, "file": name,
-                                  "url": assets[name] if name else b["releases_url"]})
+                           "installers": [], "sums": assets.get("SHA256SUMS"),
+                           "attestations": f"{b['repo_url']}/attestations"}
     base = f"{b['releases_url']}/download" if not tag else f"{b['repo_url']}/releases/download/{tag}"
     out["ps1"] = assets.get("install.ps1") or f"{base}/install.ps1"
     out["sh"] = assets.get("install.sh") or f"{base}/install.sh"
+    for key, os_name, runs_on, suffix, kind, script in INSTALLERS:
+        name = next((n for n in sorted(assets) if n.lower().endswith(suffix)), None)
+        out["installers"].append({"key": key, "os": os_name, "runs_on": runs_on, "kind": kind, "file": name,
+                                  "size": sizes.get(name) if name else None,
+                                  "url": assets[name] if name else b["releases_url"],
+                                  "script": script, "script_url": out["ps1" if script.endswith(".ps1") else "sh"]})
     return out
+
+
+def _esc(text: Any) -> str:
+    return html.escape(str(text), quote=True)
+
+
+def _download_card(i: dict[str, Any], d: dict[str, Any]) -> str:
+    """One OS: a single primary button (OS, file type, size), the file name, and the quiet secondary links."""
+    meta = " · ".join(x for x in (i["kind"], i["size"]) if x) if i["file"] else "on the releases page"
+    quiet = [f'<a href="{_esc(i["script_url"])}">{_esc(i["script"])}</a> (command line)']
+    if d["sums"]:
+        quiet.append(f'<a href="{_esc(d["sums"])}">SHA256SUMS</a>')
+    quiet.append(f'<a href="{_esc(d["attestations"])}">attestation</a>')
+    file = (f'<p class="hy-dl-file" title="{_esc(i["file"])}">{_esc(i["file"])}</p>' if i["file"] else "")
+    return (f'<div class="hy-dl-card" data-os="{i["key"]}">'
+            f'<p class="hy-dl-head"><span class="hy-dl-os">{_esc(i["os"])}</span>'
+            f'<span class="hy-dl-runs">{_esc(i["runs_on"])}</span></p>'
+            f'<a class="md-button md-button--primary hy-dl" data-os="{i["key"]}" href="{_esc(i["url"])}">'
+            f'<span class="hy-dl-label">Download for {_esc(i["os"])}</span>'
+            f'<span class="hy-dl-meta">{_esc(meta)}</span></a>'
+            f'{file}<p class="hy-dl-more">{" · ".join(quiet)}</p></div>')
 
 
 def downloads_md(release: dict[str, Any] | None) -> str:
@@ -360,12 +404,11 @@ def downloads_md(release: dict[str, Any] | None) -> str:
         lines += [f"Latest release: **[{d['tag']}]({d['release_url']})**.", ""]
     else:
         lines += [f"No release is published yet; the buttons open the [releases page]({d['release_url']}).", ""]
-    lines.append('<div class="hy-downloads" markdown>')
-    for i in d["installers"]:
-        file = f"<small>{i['file']}</small>" if i["file"] else "<small>on the releases page</small>"
-        lines += ["", f'<a class="md-button md-button--primary hy-dl" data-os="{i["key"]}" href="{i["url"]}">'
-                      f'{i["label"]}<br>{file}</a>']
-    lines += ["", "</div>", "", "### Command line", "",
+    # one raw-HTML block (no blank line inside, so Markdown leaves it whole)
+    lines.append('<div class="hy-downloads">' + "".join(_download_card(i, d) for i in d["installers"]) + "</div>")
+    lines += ["", f'<p class="hy-dl-all">Python wheels, sdists, the VS Code extension and every other file: '
+                  f'<a href="{_esc(d["release_url"])}">all release files</a>.</p>']
+    lines += ["", "### Command line", "",
               "Windows (PowerShell):", "", "```powershell", f"irm {d['ps1']} | iex", "```", "",
               "macOS and Linux:", "", "```sh", f"curl -LsSf {d['sh']} | sh", "```", "",
               f"Then open a new terminal and run `{b['cli_name']} init`, then `{b['cli_name']} start`."]

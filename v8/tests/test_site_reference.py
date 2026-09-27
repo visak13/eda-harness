@@ -57,7 +57,10 @@ def test_every_command_and_setting_is_in_the_reference(sitegen):
         for flag, _ in c.flags:
             assert flag in cli_page
     for s in _core.all_settings():
-        assert f"`{s.env}`" in settings_page
+        # the brand values are not user settings: no brand table (owner m-da9a2ae62f)
+        omitted = s.group in sitegen.SETTINGS_OMIT_GROUPS
+        assert (f"`{s.env}`" in settings_page) is not omitted
+    assert "## brand" not in settings_page and "(#brand)" not in settings_page
 
 
 def test_downloads_come_from_the_release_and_the_one_slug(sitegen):
@@ -68,6 +71,10 @@ def test_downloads_come_from_the_release_and_the_one_slug(sitegen):
     assert [i["file"].rsplit(".", 1)[1] for i in d["installers"]] == ["msi", "dmg", "deb"]
     assert all(i["url"].startswith(brand.REPO_URL + "/releases/download/v0.9.0/") for i in d["installers"])
     assert d["ps1"].endswith("/install.ps1") and d["sh"].endswith("/install.sh") and d["sums"]
+    # one primary button per OS carrying the file type and size; the rest are quiet links (owner m-da9a2ae62f)
+    page = sitegen.downloads_md(rel)
+    assert page.count("md-button--primary") == 3 and page.count('class="hy-dl-card"') == 3
+    assert "MSI installer · 58.4 MB" in page and "SHA256SUMS</a>" in page and "/attestations" in page
     # no release yet (or GitHub unreachable): every button still resolves, to the releases page
     none = sitegen.downloads(None)
     assert all(i["url"] == brand.RELEASES_URL for i in none["installers"])

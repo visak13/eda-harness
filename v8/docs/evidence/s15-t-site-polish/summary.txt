@@ -1,0 +1,11 @@
+before: desktop (1280/1440/1920 x light/dark x 6 reference pages) rows=36 with a clipped/overflowing table=12 (reference/settings/, reference/mcp-tools/); phone 390 page-level horizontal scroll rows=0
+after: desktop (1280/1440/1920 x light/dark x 6 reference pages) rows=36 with a clipped/overflowing table=0 (); phone 390 page-level horizontal scroll rows=0
+
+checks (2026-09-27, this host, offline mkdocs 1.6.1 / material 9.7.7 venv; HERONRY_SITE_RELEASE_JSON=docs/site/fixtures/release-latest.json):
+- mkdocs build --strict -f docs/site/mkdocs.yml: exit 0, hook PII scan clean
+- pytest tests/test_site_reference.py: 5 passed (built-site test ran, not skipped)
+- .github/scripts/pii_gate.py --root . : 0 findings in tracked tree; --dir <built site>: 0 findings
+- settings page: 170 settings, no brand group/anchor (was 174 with a brand table); TOC hidden on Settings only
+- WCAG contrast (download cards): light button 5.96, muted/surface 5.75, link/surface 6.01; dark button 7.58,
+  muted/surface 6.83, link/surface 7.0; hover 13.5/14.4 (all >= 4.5 AA)
+- phone 390: reference tables that are still wider than the column scroll inside it; the page never scrolls sideways

@@ -55,14 +55,45 @@
 .hy-logo { width: 72px !important; border: 0 !important; border-radius: 16px; }
 @media (max-width: 760px) { .hy-hero { grid-template-columns: 1fr; } }
 
-/* downloads */
-.hy-downloads { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .8rem; margin: 1rem 0; }
-.hy-downloads .hy-dl { text-align: center; margin: 0; }
-.hy-downloads small { opacity: .85; font-weight: 400; overflow-wrap: anywhere; word-break: normal; }
+/* downloads: one row per OS = the OS (and the file), one primary button (file type + size), quiet links under */
+.hy-downloads { display: flex; flex-direction: column; gap: .8rem; margin: 1.2rem 0 .6rem; }
+.md-typeset .hy-dl-card {
+  display: grid; grid-template-columns: minmax(0, 1fr) 17rem; grid-template-areas: "head btn" "file more";
+  align-items: center; gap: .35rem 1.2rem; padding: .9rem 1.1rem;
+  background: var(--hy-surface); border: 1px solid var(--hy-border); border-radius: 12px;
+}
+.md-typeset .hy-dl-card p { margin: 0; }
+.md-typeset .hy-dl-head { grid-area: head; display: flex; flex-direction: column; line-height: 1.3; }
+.md-typeset .hy-dl-os { font-size: 1.05rem; font-weight: 700; color: var(--hy-text); }
+.md-typeset .hy-dl-runs { font-size: .72rem; color: var(--hy-muted); }
+.md-typeset .hy-dl-card .hy-dl {
+  grid-area: btn; display: flex; flex-direction: column; align-items: center; gap: .1rem; margin: 0;
+  padding: .55rem 1.2rem; text-align: center; line-height: 1.3;
+}
+.md-typeset .hy-dl-label { font-size: .82rem; font-weight: 700; }
+.md-typeset .hy-dl-meta { font-size: .68rem; font-weight: 400; }
+.md-typeset .hy-dl-file {
+  grid-area: file; min-width: 0; font-family: var(--md-code-font-family); font-size: .62rem; color: var(--hy-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.md-typeset .hy-dl-more { grid-area: more; font-size: .68rem; color: var(--hy-muted); text-align: center; }
+.md-typeset .hy-dl-more a, .md-typeset .hy-dl-all a { text-decoration: underline; text-underline-offset: 2px; }
+.md-typeset .hy-dl-all { font-size: .72rem; color: var(--hy-muted); }
+@media (max-width: 36em) {
+  .md-typeset .hy-dl-card { grid-template-columns: 1fr; grid-template-areas: "head" "btn" "more" "file"; }
+  .md-typeset .hy-dl-file { text-align: center; }
+}
 
-/* generated reference tables: identifiers never split mid-word; a wide table scrolls */
-.md-typeset table:not([class]) code { white-space: nowrap; word-break: normal; }
+/* tables fit the content column (owner m-da9a2ae62f: a Settings table ran under the TOC). The first column's
+   identifier never splits; later code breaks only at its hyphens/spaces, later prose anywhere it must. Tighter
+   cells and no Material 5rem header floor leave the room; a table still too wide (phone) scrolls in the column. */
 .md-typeset table:not([class]) { font-size: .7rem; }
+.md-typeset table:not([class]) th, .md-typeset table:not([class]) td { padding: .7em .8em; }
+.md-typeset table:not([class]) th { min-width: 0; }
+.md-typeset table:not([class]) td:first-child code { white-space: nowrap; word-break: normal; }
+.md-typeset table:not([class]) td:not(:first-child) { overflow-wrap: anywhere; }
+.md-typeset table:not([class]) td:not(:first-child) code { white-space: normal; overflow-wrap: break-word; word-break: normal; }
+.md-typeset__scrollwrap { max-width: 100%; }
 
 /* the product video player */
 .hy-video { display: grid; grid-template-columns: 1.6fr 1fr; gap: 1.5rem; align-items: start; }

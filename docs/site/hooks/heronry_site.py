@@ -43,6 +43,11 @@ REFERENCE = {
 }
 
 
+#: reference pages whose six-column tables need the TOC's width too (owner m-da9a2ae62f: a Settings table ran under
+#: the TOC); their group index under the intro is the in-page navigation
+WIDE_TABLES_NO_TOC = frozenset({"reference/settings.md"})
+
+
 def _openapi() -> dict[str, Any]:
     if "openapi" not in _state:
         _state["openapi"] = sitegen.openapi()
@@ -95,7 +100,8 @@ def _changelog() -> str:
 
 def on_files(files: Files, config: Any) -> Files:
     for uri, gen in REFERENCE.items():  # wide tables: the page drops the left nav (the tabs and the index remain)
-        files.append(File.generated(config, uri, content="---\nhide:\n  - navigation\n---\n\n" + gen()))
+        hide = "".join(f"  - {h}\n" for h in ("navigation", "toc") if h != "toc" or uri in WIDE_TABLES_NO_TOC)
+        files.append(File.generated(config, uri, content=f"---\nhide:\n{hide}---\n\n" + gen()))
     files.append(File.generated(config, "reference/openapi.json",
                                 content=__import__("json").dumps(_openapi(), indent=2) + "\n"))
     files.append(File.generated(config, "reference/workflow.schema.json", content=sitegen.workflow_schema_json()))

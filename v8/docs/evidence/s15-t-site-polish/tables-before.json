@@ -1,0 +1,2364 @@
+[
+ {
+  "scheme": "slate",
+  "w": 1280,
+  "page": "reference/cli/",
+  "tables": 12,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1280,
+  "page": "reference/settings/",
+  "tables": 10,
+  "bad": [
+   {
+    "i": 0,
+    "right": 1073,
+    "overflow": 89,
+    "underToc": true
+   },
+   {
+    "i": 1,
+    "right": 1202,
+    "overflow": 218,
+    "underToc": true
+   },
+   {
+    "i": 2,
+    "right": 1046,
+    "overflow": 62,
+    "underToc": true
+   },
+   {
+    "i": 3,
+    "right": 1111,
+    "overflow": 127,
+    "underToc": true
+   },
+   {
+    "i": 4,
+    "right": 1105,
+    "overflow": 121,
+    "underToc": true
+   },
+   {
+    "i": 5,
+    "right": 1366,
+    "overflow": 382,
+    "underToc": true
+   },
+   {
+    "i": 7,
+    "right": 1112,
+    "overflow": 128,
+    "underToc": true
+   },
+   {
+    "i": 8,
+    "right": 1012,
+    "overflow": 28,
+    "underToc": true
+   },
+   {
+    "i": 9,
+    "right": 1204,
+    "overflow": 220,
+    "underToc": true
+   }
+  ],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1280,
+  "page": "reference/rest-api/",
+  "tables": 69,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1280,
+  "page": "reference/mcp-tools/",
+  "tables": 58,
+  "bad": [
+   {
+    "i": 16,
+    "right": 1196,
+    "overflow": 212,
+    "underToc": true
+   }
+  ],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1280,
+  "page": "reference/workflow-schema/",
+  "tables": 8,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1280,
+  "page": "reference/models/",
+  "tables": 2,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1280,
+  "page": "download/",
+  "tables": 0,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1440,
+  "page": "reference/cli/",
+  "tables": 12,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1440,
+  "page": "reference/settings/",
+  "tables": 10,
+  "bad": [
+   {
+    "i": 0,
+    "right": 1153,
+    "overflow": 89,
+    "underToc": true
+   },
+   {
+    "i": 1,
+    "right": 1282,
+    "overflow": 218,
+    "underToc": true
+   },
+   {
+    "i": 2,
+    "right": 1126,
+    "overflow": 62,
+    "underToc": true
+   },
+   {
+    "i": 3,
+    "right": 1191,
+    "overflow": 127,
+    "underToc": true
+   },
+   {
+    "i": 4,
+    "right": 1185,
+    "overflow": 121,
+    "underToc": true
+   },
+   {
+    "i": 5,
+    "right": 1446,
+    "overflow": 382,
+    "underToc": true
+   },
+   {
+    "i": 7,
+    "right": 1192,
+    "overflow": 128,
+    "underToc": true
+   },
+   {
+    "i": 8,
+    "right": 1092,
+    "overflow": 28,
+    "underToc": true
+   },
+   {
+    "i": 9,
+    "right": 1284,
+    "overflow": 220,
+    "underToc": true
+   }
+  ],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1440,
+  "page": "reference/rest-api/",
+  "tables": 69,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1440,
+  "page": "reference/mcp-tools/",
+  "tables": 58,
+  "bad": [
+   {
+    "i": 16,
+    "right": 1276,
+    "overflow": 212,
+    "underToc": true
+   }
+  ],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1440,
+  "page": "reference/workflow-schema/",
+  "tables": 8,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1440,
+  "page": "reference/models/",
+  "tables": 2,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1440,
+  "page": "download/",
+  "tables": 0,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1920,
+  "page": "reference/cli/",
+  "tables": 12,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1920,
+  "page": "reference/settings/",
+  "tables": 10,
+  "bad": [
+   {
+    "i": 0,
+    "right": 1436,
+    "overflow": 98,
+    "underToc": true
+   },
+   {
+    "i": 1,
+    "right": 1577,
+    "overflow": 239,
+    "underToc": true
+   },
+   {
+    "i": 2,
+    "right": 1406,
+    "overflow": 68,
+    "underToc": true
+   },
+   {
+    "i": 3,
+    "right": 1478,
+    "overflow": 139,
+    "underToc": true
+   },
+   {
+    "i": 4,
+    "right": 1471,
+    "overflow": 133,
+    "underToc": true
+   },
+   {
+    "i": 5,
+    "right": 1759,
+    "overflow": 420,
+    "underToc": true
+   },
+   {
+    "i": 7,
+    "right": 1479,
+    "overflow": 141,
+    "underToc": true
+   },
+   {
+    "i": 8,
+    "right": 1369,
+    "overflow": 30,
+    "underToc": true
+   },
+   {
+    "i": 9,
+    "right": 1581,
+    "overflow": 242,
+    "underToc": true
+   }
+  ],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1920,
+  "page": "reference/rest-api/",
+  "tables": 69,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1920,
+  "page": "reference/mcp-tools/",
+  "tables": 58,
+  "bad": [
+   {
+    "i": 16,
+    "right": 1572,
+    "overflow": 233,
+    "underToc": true
+   }
+  ],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1920,
+  "page": "reference/workflow-schema/",
+  "tables": 8,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1920,
+  "page": "reference/models/",
+  "tables": 2,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 1920,
+  "page": "download/",
+  "tables": 0,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 390,
+  "page": "reference/cli/",
+  "tables": 12,
+  "bad": [
+   {
+    "i": 0,
+    "right": 443,
+    "overflow": 69,
+    "underToc": false
+   },
+   {
+    "i": 1,
+    "right": 672,
+    "overflow": 298,
+    "underToc": false
+   }
+  ],
+  "toc": false,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 390,
+  "page": "reference/settings/",
+  "tables": 10,
+  "bad": [
+   {
+    "i": 0,
+    "right": 1043,
+    "overflow": 669,
+    "underToc": false
+   },
+   {
+    "i": 1,
+    "right": 1172,
+    "overflow": 798,
+    "underToc": false
+   },
+   {
+    "i": 2,
+    "right": 1016,
+    "overflow": 642,
+    "underToc": false
+   },
+   {
+    "i": 3,
+    "right": 1081,
+    "overflow": 707,
+    "underToc": false
+   },
+   {
+    "i": 4,
+    "right": 1075,
+    "overflow": 701,
+    "underToc": false
+   },
+   {
+    "i": 5,
+    "right": 1336,
+    "overflow": 962,
+    "underToc": false
+   },
+   {
+    "i": 6,
+    "right": 780,
+    "overflow": 406,
+    "underToc": false
+   },
+   {
+    "i": 7,
+    "right": 1082,
+    "overflow": 708,
+    "underToc": false
+   },
+   {
+    "i": 8,
+    "right": 982,
+    "overflow": 608,
+    "underToc": false
+   },
+   {
+    "i": 9,
+    "right": 1174,
+    "overflow": 800,
+    "underToc": false
+   }
+  ],
+  "toc": false,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 390,
+  "page": "reference/rest-api/",
+  "tables": 69,
+  "bad": [
+   {
+    "i": 2,
+    "right": 496,
+    "overflow": 122,
+    "underToc": false
+   },
+   {
+    "i": 3,
+    "right": 467,
+    "overflow": 93,
+    "underToc": false
+   },
+   {
+    "i": 5,
+    "right": 560,
+    "overflow": 186,
+    "underToc": false
+   },
+   {
+    "i": 6,
+    "right": 389,
+    "overflow": 15,
+    "underToc": false
+   },
+   {
+    "i": 7,
+    "right": 489,
+    "overflow": 115,
+    "underToc": false
+   },
+   {
+    "i": 8,
+    "right": 476,
+    "overflow": 102,
+    "underToc": false
+   },
+   {
+    "i": 9,
+    "right": 548,
+    "overflow": 174,
+    "underToc": false
+   },
+   {
+    "i": 10,
+    "right": 453,
+    "overflow": 79,
+    "underToc": false
+   },
+   {
+    "i": 11,
+    "right": 481,
+    "overflow": 107,
+    "underToc": false
+   },
+   {
+    "i": 12,
+    "right": 389,
+    "overflow": 15,
+    "underToc": false
+   },
+   {
+    "i": 13,
+    "right": 531,
+    "overflow": 157,
+    "underToc": false
+   },
+   {
+    "i": 14,
+    "right": 431,
+    "overflow": 57,
+    "underToc": false
+   },
+   {
+    "i": 15,
+    "right": 581,
+    "overflow": 207,
+    "underToc": false
+   },
+   {
+    "i": 16,
+    "right": 489,
+    "overflow": 115,
+    "underToc": false
+   },
+   {
+    "i": 17,
+    "right": 424,
+    "overflow": 50,
+    "underToc": false
+   },
+   {
+    "i": 18,
+    "right": 505,
+    "overflow": 131,
+    "underToc": false
+   },
+   {
+    "i": 19,
+    "right": 466,
+    "overflow": 92,
+    "underToc": false
+   },
+   {
+    "i": 20,
+    "right": 396,
+    "overflow": 22,
+    "underToc": false
+   },
+   {
+    "i": 21,
+    "right": 439,
+    "overflow": 65,
+    "underToc": false
+   },
+   {
+    "i": 23,
+    "right": 908,
+    "overflow": 534,
+    "underToc": false
+   },
+   {
+    "i": 25,
+    "right": 381,
+    "overflow": 7,
+    "underToc": false
+   },
+   {
+    "i": 26,
+    "right": 389,
+    "overflow": 15,
+    "underToc": false
+   },
+   {
+    "i": 27,
+    "right": 501,
+    "overflow": 127,
+    "underToc": false
+   },
+   {
+    "i": 28,
+    "right": 403,
+    "overflow": 29,
+    "underToc": false
+   },
+   {
+    "i": 29,
+    "right": 428,
+    "overflow": 54,
+    "underToc": false
+   },
+   {
+    "i": 30,
+    "right": 489,
+    "overflow": 115,
+    "underToc": false
+   },
+   {
+    "i": 31,
+    "right": 431,
+    "overflow": 57,
+    "underToc": false
+   },
+   {
+    "i": 33,
+    "right": 389,
+    "overflow": 15,
+    "underToc": false
+   },
+   {
+    "i": 37,
+    "right": 510,
+    "overflow": 136,
+    "underToc": false
+   },
+   {
+    "i": 38,
+    "right": 439,
+    "overflow": 65,
+    "underToc": false
+   },
+   {
+    "i": 43,
+    "right": 526,
+    "overflow": 152,
+    "underToc": false
+   },
+   {
+    "i": 47,
+    "right": 389,
+    "overflow": 15,
+    "underToc": false
+   },
+   {
+    "i": 51,
+    "right": 470,
+    "overflow": 96,
+    "underToc": false
+   },
+   {
+    "i": 52,
+    "right": 403,
+    "overflow": 29,
+    "underToc": false
+   },
+   {
+    "i": 54,
+    "right": 453,
+    "overflow": 79,
+    "underToc": false
+   },
+   {
+    "i": 55,
+    "right": 427,
+    "overflow": 53,
+    "underToc": false
+   },
+   {
+    "i": 56,
+    "right": 421,
+    "overflow": 47,
+    "underToc": false
+   },
+   {
+    "i": 57,
+    "right": 423,
+    "overflow": 49,
+    "underToc": false
+   },
+   {
+    "i": 58,
+    "right": 376,
+    "overflow": 2,
+    "underToc": false
+   },
+   {
+    "i": 60,
+    "right": 450,
+    "overflow": 76,
+    "underToc": false
+   },
+   {
+    "i": 61,
+    "right": 396,
+    "overflow": 22,
+    "underToc": false
+   },
+   {
+    "i": 62,
+    "right": 488,
+    "overflow": 114,
+    "underToc": false
+   },
+   {
+    "i": 65,
+    "right": 514,
+    "overflow": 140,
+    "underToc": false
+   },
+   {
+    "i": 66,
+    "right": 553,
+    "overflow": 179,
+    "underToc": false
+   },
+   {
+    "i": 68,
+    "right": 552,
+    "overflow": 178,
+    "underToc": false
+   }
+  ],
+  "toc": false,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 390,
+  "page": "reference/mcp-tools/",
+  "tables": 58,
+  "bad": [
+   {
+    "i": 0,
+    "right": 467,
+    "overflow": 93,
+    "underToc": false
+   },
+   {
+    "i": 1,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 2,
+    "right": 421,
+    "overflow": 47,
+    "underToc": false
+   },
+   {
+    "i": 3,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 4,
+    "right": 431,
+    "overflow": 57,
+    "underToc": false
+   },
+   {
+    "i": 5,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 6,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 7,
+    "right": 552,
+    "overflow": 178,
+    "underToc": false
+   },
+   {
+    "i": 8,
+    "right": 520,
+    "overflow": 146,
+    "underToc": false
+   },
+   {
+    "i": 9,
+    "right": 437,
+    "overflow": 63,
+    "underToc": false
+   },
+   {
+    "i": 10,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 11,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 12,
+    "right": 441,
+    "overflow": 67,
+    "underToc": false
+   },
+   {
+    "i": 13,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 14,
+    "right": 441,
+    "overflow": 67,
+    "underToc": false
+   },
+   {
+    "i": 15,
+    "right": 702,
+    "overflow": 328,
+    "underToc": false
+   },
+   {
+    "i": 16,
+    "right": 1166,
+    "overflow": 792,
+    "underToc": false
+   },
+   {
+    "i": 17,
+    "right": 424,
+    "overflow": 50,
+    "underToc": false
+   },
+   {
+    "i": 18,
+    "right": 429,
+    "overflow": 55,
+    "underToc": false
+   },
+   {
+    "i": 19,
+    "right": 460,
+    "overflow": 86,
+    "underToc": false
+   },
+   {
+    "i": 20,
+    "right": 431,
+    "overflow": 57,
+    "underToc": false
+   },
+   {
+    "i": 21,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 22,
+    "right": 431,
+    "overflow": 57,
+    "underToc": false
+   },
+   {
+    "i": 23,
+    "right": 429,
+    "overflow": 55,
+    "underToc": false
+   },
+   {
+    "i": 24,
+    "right": 443,
+    "overflow": 69,
+    "underToc": false
+   },
+   {
+    "i": 25,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 26,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 27,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 28,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 29,
+    "right": 462,
+    "overflow": 88,
+    "underToc": false
+   },
+   {
+    "i": 30,
+    "right": 581,
+    "overflow": 207,
+    "underToc": false
+   },
+   {
+    "i": 31,
+    "right": 474,
+    "overflow": 100,
+    "underToc": false
+   },
+   {
+    "i": 32,
+    "right": 467,
+    "overflow": 93,
+    "underToc": false
+   },
+   {
+    "i": 33,
+    "right": 439,
+    "overflow": 65,
+    "underToc": false
+   },
+   {
+    "i": 34,
+    "right": 499,
+    "overflow": 125,
+    "underToc": false
+   },
+   {
+    "i": 35,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 36,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 37,
+    "right": 439,
+    "overflow": 65,
+    "underToc": false
+   },
+   {
+    "i": 38,
+    "right": 460,
+    "overflow": 86,
+    "underToc": false
+   },
+   {
+    "i": 39,
+    "right": 430,
+    "overflow": 56,
+    "underToc": false
+   },
+   {
+    "i": 40,
+    "right": 460,
+    "overflow": 86,
+    "underToc": false
+   },
+   {
+    "i": 41,
+    "right": 460,
+    "overflow": 86,
+    "underToc": false
+   },
+   {
+    "i": 42,
+    "right": 506,
+    "overflow": 132,
+    "underToc": false
+   },
+   {
+    "i": 43,
+    "right": 462,
+    "overflow": 88,
+    "underToc": false
+   },
+   {
+    "i": 44,
+    "right": 527,
+    "overflow": 153,
+    "underToc": false
+   },
+   {
+    "i": 45,
+    "right": 454,
+    "overflow": 80,
+    "underToc": false
+   },
+   {
+    "i": 46,
+    "right": 454,
+    "overflow": 80,
+    "underToc": false
+   },
+   {
+    "i": 47,
+    "right": 424,
+    "overflow": 50,
+    "underToc": false
+   },
+   {
+    "i": 48,
+    "right": 431,
+    "overflow": 57,
+    "underToc": false
+   },
+   {
+    "i": 49,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 50,
+    "right": 506,
+    "overflow": 132,
+    "underToc": false
+   },
+   {
+    "i": 51,
+    "right": 469,
+    "overflow": 95,
+    "underToc": false
+   },
+   {
+    "i": 52,
+    "right": 424,
+    "overflow": 50,
+    "underToc": false
+   },
+   {
+    "i": 53,
+    "right": 488,
+    "overflow": 114,
+    "underToc": false
+   },
+   {
+    "i": 54,
+    "right": 474,
+    "overflow": 100,
+    "underToc": false
+   },
+   {
+    "i": 55,
+    "right": 508,
+    "overflow": 134,
+    "underToc": false
+   },
+   {
+    "i": 56,
+    "right": 716,
+    "overflow": 342,
+    "underToc": false
+   },
+   {
+    "i": 57,
+    "right": 492,
+    "overflow": 118,
+    "underToc": false
+   }
+  ],
+  "toc": false,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 390,
+  "page": "reference/workflow-schema/",
+  "tables": 8,
+  "bad": [
+   {
+    "i": 0,
+    "right": 478,
+    "overflow": 104,
+    "underToc": false
+   },
+   {
+    "i": 1,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 2,
+    "right": 481,
+    "overflow": 107,
+    "underToc": false
+   },
+   {
+    "i": 3,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 4,
+    "right": 446,
+    "overflow": 72,
+    "underToc": false
+   },
+   {
+    "i": 5,
+    "right": 481,
+    "overflow": 107,
+    "underToc": false
+   },
+   {
+    "i": 6,
+    "right": 438,
+    "overflow": 64,
+    "underToc": false
+   },
+   {
+    "i": 7,
+    "right": 439,
+    "overflow": 65,
+    "underToc": false
+   }
+  ],
+  "toc": false,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 390,
+  "page": "reference/models/",
+  "tables": 2,
+  "bad": [],
+  "toc": false,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "slate",
+  "w": 390,
+  "page": "download/",
+  "tables": 0,
+  "bad": [],
+  "toc": false,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1280,
+  "page": "reference/cli/",
+  "tables": 12,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1280,
+  "page": "reference/settings/",
+  "tables": 10,
+  "bad": [
+   {
+    "i": 0,
+    "right": 1073,
+    "overflow": 89,
+    "underToc": true
+   },
+   {
+    "i": 1,
+    "right": 1202,
+    "overflow": 218,
+    "underToc": true
+   },
+   {
+    "i": 2,
+    "right": 1046,
+    "overflow": 62,
+    "underToc": true
+   },
+   {
+    "i": 3,
+    "right": 1111,
+    "overflow": 127,
+    "underToc": true
+   },
+   {
+    "i": 4,
+    "right": 1105,
+    "overflow": 121,
+    "underToc": true
+   },
+   {
+    "i": 5,
+    "right": 1366,
+    "overflow": 382,
+    "underToc": true
+   },
+   {
+    "i": 7,
+    "right": 1112,
+    "overflow": 128,
+    "underToc": true
+   },
+   {
+    "i": 8,
+    "right": 1012,
+    "overflow": 28,
+    "underToc": true
+   },
+   {
+    "i": 9,
+    "right": 1204,
+    "overflow": 220,
+    "underToc": true
+   }
+  ],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1280,
+  "page": "reference/rest-api/",
+  "tables": 69,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1280,
+  "page": "reference/mcp-tools/",
+  "tables": 58,
+  "bad": [
+   {
+    "i": 16,
+    "right": 1196,
+    "overflow": 212,
+    "underToc": true
+   }
+  ],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1280,
+  "page": "reference/workflow-schema/",
+  "tables": 8,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1280,
+  "page": "reference/models/",
+  "tables": 2,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1280,
+  "page": "download/",
+  "tables": 0,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1440,
+  "page": "reference/cli/",
+  "tables": 12,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1440,
+  "page": "reference/settings/",
+  "tables": 10,
+  "bad": [
+   {
+    "i": 0,
+    "right": 1153,
+    "overflow": 89,
+    "underToc": true
+   },
+   {
+    "i": 1,
+    "right": 1282,
+    "overflow": 218,
+    "underToc": true
+   },
+   {
+    "i": 2,
+    "right": 1126,
+    "overflow": 62,
+    "underToc": true
+   },
+   {
+    "i": 3,
+    "right": 1191,
+    "overflow": 127,
+    "underToc": true
+   },
+   {
+    "i": 4,
+    "right": 1185,
+    "overflow": 121,
+    "underToc": true
+   },
+   {
+    "i": 5,
+    "right": 1446,
+    "overflow": 382,
+    "underToc": true
+   },
+   {
+    "i": 7,
+    "right": 1192,
+    "overflow": 128,
+    "underToc": true
+   },
+   {
+    "i": 8,
+    "right": 1092,
+    "overflow": 28,
+    "underToc": true
+   },
+   {
+    "i": 9,
+    "right": 1284,
+    "overflow": 220,
+    "underToc": true
+   }
+  ],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1440,
+  "page": "reference/rest-api/",
+  "tables": 69,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1440,
+  "page": "reference/mcp-tools/",
+  "tables": 58,
+  "bad": [
+   {
+    "i": 16,
+    "right": 1276,
+    "overflow": 212,
+    "underToc": true
+   }
+  ],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1440,
+  "page": "reference/workflow-schema/",
+  "tables": 8,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1440,
+  "page": "reference/models/",
+  "tables": 2,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1440,
+  "page": "download/",
+  "tables": 0,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1920,
+  "page": "reference/cli/",
+  "tables": 12,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1920,
+  "page": "reference/settings/",
+  "tables": 10,
+  "bad": [
+   {
+    "i": 0,
+    "right": 1436,
+    "overflow": 98,
+    "underToc": true
+   },
+   {
+    "i": 1,
+    "right": 1577,
+    "overflow": 239,
+    "underToc": true
+   },
+   {
+    "i": 2,
+    "right": 1406,
+    "overflow": 68,
+    "underToc": true
+   },
+   {
+    "i": 3,
+    "right": 1478,
+    "overflow": 139,
+    "underToc": true
+   },
+   {
+    "i": 4,
+    "right": 1471,
+    "overflow": 133,
+    "underToc": true
+   },
+   {
+    "i": 5,
+    "right": 1759,
+    "overflow": 420,
+    "underToc": true
+   },
+   {
+    "i": 7,
+    "right": 1479,
+    "overflow": 141,
+    "underToc": true
+   },
+   {
+    "i": 8,
+    "right": 1369,
+    "overflow": 30,
+    "underToc": true
+   },
+   {
+    "i": 9,
+    "right": 1581,
+    "overflow": 242,
+    "underToc": true
+   }
+  ],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1920,
+  "page": "reference/rest-api/",
+  "tables": 69,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1920,
+  "page": "reference/mcp-tools/",
+  "tables": 58,
+  "bad": [
+   {
+    "i": 16,
+    "right": 1572,
+    "overflow": 233,
+    "underToc": true
+   }
+  ],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1920,
+  "page": "reference/workflow-schema/",
+  "tables": 8,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1920,
+  "page": "reference/models/",
+  "tables": 2,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 1920,
+  "page": "download/",
+  "tables": 0,
+  "bad": [],
+  "toc": true,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 390,
+  "page": "reference/cli/",
+  "tables": 12,
+  "bad": [
+   {
+    "i": 0,
+    "right": 443,
+    "overflow": 69,
+    "underToc": false
+   },
+   {
+    "i": 1,
+    "right": 672,
+    "overflow": 298,
+    "underToc": false
+   }
+  ],
+  "toc": false,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 390,
+  "page": "reference/settings/",
+  "tables": 10,
+  "bad": [
+   {
+    "i": 0,
+    "right": 1043,
+    "overflow": 669,
+    "underToc": false
+   },
+   {
+    "i": 1,
+    "right": 1172,
+    "overflow": 798,
+    "underToc": false
+   },
+   {
+    "i": 2,
+    "right": 1016,
+    "overflow": 642,
+    "underToc": false
+   },
+   {
+    "i": 3,
+    "right": 1081,
+    "overflow": 707,
+    "underToc": false
+   },
+   {
+    "i": 4,
+    "right": 1075,
+    "overflow": 701,
+    "underToc": false
+   },
+   {
+    "i": 5,
+    "right": 1336,
+    "overflow": 962,
+    "underToc": false
+   },
+   {
+    "i": 6,
+    "right": 780,
+    "overflow": 406,
+    "underToc": false
+   },
+   {
+    "i": 7,
+    "right": 1082,
+    "overflow": 708,
+    "underToc": false
+   },
+   {
+    "i": 8,
+    "right": 982,
+    "overflow": 608,
+    "underToc": false
+   },
+   {
+    "i": 9,
+    "right": 1174,
+    "overflow": 800,
+    "underToc": false
+   }
+  ],
+  "toc": false,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 390,
+  "page": "reference/rest-api/",
+  "tables": 69,
+  "bad": [
+   {
+    "i": 2,
+    "right": 496,
+    "overflow": 122,
+    "underToc": false
+   },
+   {
+    "i": 3,
+    "right": 467,
+    "overflow": 93,
+    "underToc": false
+   },
+   {
+    "i": 5,
+    "right": 560,
+    "overflow": 186,
+    "underToc": false
+   },
+   {
+    "i": 6,
+    "right": 389,
+    "overflow": 15,
+    "underToc": false
+   },
+   {
+    "i": 7,
+    "right": 489,
+    "overflow": 115,
+    "underToc": false
+   },
+   {
+    "i": 8,
+    "right": 476,
+    "overflow": 102,
+    "underToc": false
+   },
+   {
+    "i": 9,
+    "right": 548,
+    "overflow": 174,
+    "underToc": false
+   },
+   {
+    "i": 10,
+    "right": 453,
+    "overflow": 79,
+    "underToc": false
+   },
+   {
+    "i": 11,
+    "right": 481,
+    "overflow": 107,
+    "underToc": false
+   },
+   {
+    "i": 12,
+    "right": 389,
+    "overflow": 15,
+    "underToc": false
+   },
+   {
+    "i": 13,
+    "right": 531,
+    "overflow": 157,
+    "underToc": false
+   },
+   {
+    "i": 14,
+    "right": 431,
+    "overflow": 57,
+    "underToc": false
+   },
+   {
+    "i": 15,
+    "right": 581,
+    "overflow": 207,
+    "underToc": false
+   },
+   {
+    "i": 16,
+    "right": 489,
+    "overflow": 115,
+    "underToc": false
+   },
+   {
+    "i": 17,
+    "right": 424,
+    "overflow": 50,
+    "underToc": false
+   },
+   {
+    "i": 18,
+    "right": 505,
+    "overflow": 131,
+    "underToc": false
+   },
+   {
+    "i": 19,
+    "right": 466,
+    "overflow": 92,
+    "underToc": false
+   },
+   {
+    "i": 20,
+    "right": 396,
+    "overflow": 22,
+    "underToc": false
+   },
+   {
+    "i": 21,
+    "right": 439,
+    "overflow": 65,
+    "underToc": false
+   },
+   {
+    "i": 23,
+    "right": 908,
+    "overflow": 534,
+    "underToc": false
+   },
+   {
+    "i": 25,
+    "right": 381,
+    "overflow": 7,
+    "underToc": false
+   },
+   {
+    "i": 26,
+    "right": 389,
+    "overflow": 15,
+    "underToc": false
+   },
+   {
+    "i": 27,
+    "right": 501,
+    "overflow": 127,
+    "underToc": false
+   },
+   {
+    "i": 28,
+    "right": 403,
+    "overflow": 29,
+    "underToc": false
+   },
+   {
+    "i": 29,
+    "right": 428,
+    "overflow": 54,
+    "underToc": false
+   },
+   {
+    "i": 30,
+    "right": 489,
+    "overflow": 115,
+    "underToc": false
+   },
+   {
+    "i": 31,
+    "right": 431,
+    "overflow": 57,
+    "underToc": false
+   },
+   {
+    "i": 33,
+    "right": 389,
+    "overflow": 15,
+    "underToc": false
+   },
+   {
+    "i": 37,
+    "right": 510,
+    "overflow": 136,
+    "underToc": false
+   },
+   {
+    "i": 38,
+    "right": 439,
+    "overflow": 65,
+    "underToc": false
+   },
+   {
+    "i": 43,
+    "right": 526,
+    "overflow": 152,
+    "underToc": false
+   },
+   {
+    "i": 47,
+    "right": 389,
+    "overflow": 15,
+    "underToc": false
+   },
+   {
+    "i": 51,
+    "right": 470,
+    "overflow": 96,
+    "underToc": false
+   },
+   {
+    "i": 52,
+    "right": 403,
+    "overflow": 29,
+    "underToc": false
+   },
+   {
+    "i": 54,
+    "right": 453,
+    "overflow": 79,
+    "underToc": false
+   },
+   {
+    "i": 55,
+    "right": 427,
+    "overflow": 53,
+    "underToc": false
+   },
+   {
+    "i": 56,
+    "right": 421,
+    "overflow": 47,
+    "underToc": false
+   },
+   {
+    "i": 57,
+    "right": 423,
+    "overflow": 49,
+    "underToc": false
+   },
+   {
+    "i": 58,
+    "right": 376,
+    "overflow": 2,
+    "underToc": false
+   },
+   {
+    "i": 60,
+    "right": 450,
+    "overflow": 76,
+    "underToc": false
+   },
+   {
+    "i": 61,
+    "right": 396,
+    "overflow": 22,
+    "underToc": false
+   },
+   {
+    "i": 62,
+    "right": 488,
+    "overflow": 114,
+    "underToc": false
+   },
+   {
+    "i": 65,
+    "right": 514,
+    "overflow": 140,
+    "underToc": false
+   },
+   {
+    "i": 66,
+    "right": 553,
+    "overflow": 179,
+    "underToc": false
+   },
+   {
+    "i": 68,
+    "right": 552,
+    "overflow": 178,
+    "underToc": false
+   }
+  ],
+  "toc": false,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 390,
+  "page": "reference/mcp-tools/",
+  "tables": 58,
+  "bad": [
+   {
+    "i": 0,
+    "right": 467,
+    "overflow": 93,
+    "underToc": false
+   },
+   {
+    "i": 1,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 2,
+    "right": 421,
+    "overflow": 47,
+    "underToc": false
+   },
+   {
+    "i": 3,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 4,
+    "right": 431,
+    "overflow": 57,
+    "underToc": false
+   },
+   {
+    "i": 5,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 6,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 7,
+    "right": 552,
+    "overflow": 178,
+    "underToc": false
+   },
+   {
+    "i": 8,
+    "right": 520,
+    "overflow": 146,
+    "underToc": false
+   },
+   {
+    "i": 9,
+    "right": 437,
+    "overflow": 63,
+    "underToc": false
+   },
+   {
+    "i": 10,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 11,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 12,
+    "right": 441,
+    "overflow": 67,
+    "underToc": false
+   },
+   {
+    "i": 13,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 14,
+    "right": 441,
+    "overflow": 67,
+    "underToc": false
+   },
+   {
+    "i": 15,
+    "right": 702,
+    "overflow": 328,
+    "underToc": false
+   },
+   {
+    "i": 16,
+    "right": 1166,
+    "overflow": 792,
+    "underToc": false
+   },
+   {
+    "i": 17,
+    "right": 424,
+    "overflow": 50,
+    "underToc": false
+   },
+   {
+    "i": 18,
+    "right": 429,
+    "overflow": 55,
+    "underToc": false
+   },
+   {
+    "i": 19,
+    "right": 460,
+    "overflow": 86,
+    "underToc": false
+   },
+   {
+    "i": 20,
+    "right": 431,
+    "overflow": 57,
+    "underToc": false
+   },
+   {
+    "i": 21,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 22,
+    "right": 431,
+    "overflow": 57,
+    "underToc": false
+   },
+   {
+    "i": 23,
+    "right": 429,
+    "overflow": 55,
+    "underToc": false
+   },
+   {
+    "i": 24,
+    "right": 443,
+    "overflow": 69,
+    "underToc": false
+   },
+   {
+    "i": 25,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 26,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 27,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 28,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 29,
+    "right": 462,
+    "overflow": 88,
+    "underToc": false
+   },
+   {
+    "i": 30,
+    "right": 581,
+    "overflow": 207,
+    "underToc": false
+   },
+   {
+    "i": 31,
+    "right": 474,
+    "overflow": 100,
+    "underToc": false
+   },
+   {
+    "i": 32,
+    "right": 467,
+    "overflow": 93,
+    "underToc": false
+   },
+   {
+    "i": 33,
+    "right": 439,
+    "overflow": 65,
+    "underToc": false
+   },
+   {
+    "i": 34,
+    "right": 499,
+    "overflow": 125,
+    "underToc": false
+   },
+   {
+    "i": 35,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 36,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 37,
+    "right": 439,
+    "overflow": 65,
+    "underToc": false
+   },
+   {
+    "i": 38,
+    "right": 460,
+    "overflow": 86,
+    "underToc": false
+   },
+   {
+    "i": 39,
+    "right": 430,
+    "overflow": 56,
+    "underToc": false
+   },
+   {
+    "i": 40,
+    "right": 460,
+    "overflow": 86,
+    "underToc": false
+   },
+   {
+    "i": 41,
+    "right": 460,
+    "overflow": 86,
+    "underToc": false
+   },
+   {
+    "i": 42,
+    "right": 506,
+    "overflow": 132,
+    "underToc": false
+   },
+   {
+    "i": 43,
+    "right": 462,
+    "overflow": 88,
+    "underToc": false
+   },
+   {
+    "i": 44,
+    "right": 527,
+    "overflow": 153,
+    "underToc": false
+   },
+   {
+    "i": 45,
+    "right": 454,
+    "overflow": 80,
+    "underToc": false
+   },
+   {
+    "i": 46,
+    "right": 454,
+    "overflow": 80,
+    "underToc": false
+   },
+   {
+    "i": 47,
+    "right": 424,
+    "overflow": 50,
+    "underToc": false
+   },
+   {
+    "i": 48,
+    "right": 431,
+    "overflow": 57,
+    "underToc": false
+   },
+   {
+    "i": 49,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 50,
+    "right": 506,
+    "overflow": 132,
+    "underToc": false
+   },
+   {
+    "i": 51,
+    "right": 469,
+    "overflow": 95,
+    "underToc": false
+   },
+   {
+    "i": 52,
+    "right": 424,
+    "overflow": 50,
+    "underToc": false
+   },
+   {
+    "i": 53,
+    "right": 488,
+    "overflow": 114,
+    "underToc": false
+   },
+   {
+    "i": 54,
+    "right": 474,
+    "overflow": 100,
+    "underToc": false
+   },
+   {
+    "i": 55,
+    "right": 508,
+    "overflow": 134,
+    "underToc": false
+   },
+   {
+    "i": 56,
+    "right": 716,
+    "overflow": 342,
+    "underToc": false
+   },
+   {
+    "i": 57,
+    "right": 492,
+    "overflow": 118,
+    "underToc": false
+   }
+  ],
+  "toc": false,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 390,
+  "page": "reference/workflow-schema/",
+  "tables": 8,
+  "bad": [
+   {
+    "i": 0,
+    "right": 478,
+    "overflow": 104,
+    "underToc": false
+   },
+   {
+    "i": 1,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 2,
+    "right": 481,
+    "overflow": 107,
+    "underToc": false
+   },
+   {
+    "i": 3,
+    "right": 418,
+    "overflow": 44,
+    "underToc": false
+   },
+   {
+    "i": 4,
+    "right": 446,
+    "overflow": 72,
+    "underToc": false
+   },
+   {
+    "i": 5,
+    "right": 481,
+    "overflow": 107,
+    "underToc": false
+   },
+   {
+    "i": 6,
+    "right": 438,
+    "overflow": 64,
+    "underToc": false
+   },
+   {
+    "i": 7,
+    "right": 439,
+    "overflow": 65,
+    "underToc": false
+   }
+  ],
+  "toc": false,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 390,
+  "page": "reference/models/",
+  "tables": 2,
+  "bad": [],
+  "toc": false,
+  "docOverflow": 0
+ },
+ {
+  "scheme": "heronry-light",
+  "w": 390,
+  "page": "download/",
+  "tables": 0,
+  "bad": [],
+  "toc": false,
+  "docOverflow": 0
+ }
+]
