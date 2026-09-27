@@ -412,6 +412,19 @@ def doctor_cmd(argv: list[str]) -> int:
     if "--agent" in argv:
         from .help import agent_cmd
         return agent_cmd([a for a in argv if a != "--agent"])
+    stop_flag, stop_pid = _flag_value(argv, "--stop-orphan")
+    if stop_flag:
+        from . import orphans
+        if not (stop_pid or "").isdigit():
+            print("usage: heronry doctor --stop-orphan <pid>  (the pid `heronry doctor` printed)")
+            return 2
+        out = orphans.stop(int(stop_pid))
+        if out["stopped"] is None or out.get("refused"):
+            print(f"not stopped: {out['refused']}")
+            return 1
+        print(f"stopped {out['killed']} process(es) under pid {stop_pid}"
+              + (f"; still running: {out['survivors']}" if out["survivors"] else ""))
+        return 1 if out["survivors"] else 0
     return _doctor_checks()
 
 
@@ -534,6 +547,15 @@ def _doctor_checks() -> int:
                     "protocol=tcp` and pick EDP_CONTROL_PORT outside them") if sys.platform == "win32" else ""
             r.fail("control port", f"cannot bind 127.0.0.1:{cport}: {e}{hint}")
     _ = control  # the control module is what the supervisor serves; imported so a broken install shows here
+
+    print("test runners")  # S22: a vitest/pytest left behind by a closed seat eats a core and GBs silently
+    from . import orphans
+    found = orphans.find(exclude=[os.getpid()])
+    for o in found:
+        r.warn(f"orphaned {o.kind}", f"pid {o.pid}, {o.age_s / 3600:.1f} h old, {o.rss_mb:.0f} MB, its seat is gone: "
+               f"{o.stop_command}")
+    if not found:
+        r.ok("orphaned test runners", f"none older than {orphans.MIN_AGE_S / 3600:g} h")
 
     print()
     print(f"{r.fails} failure(s), {r.warns} warning(s)")

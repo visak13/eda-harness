@@ -50,6 +50,9 @@ export default defineConfig({
   // SEPARATE runner (`npm run e2e`, win32-only) and MUST be excluded here so `npm test` (and
   // the Linux CI job) never tries to collect them (design §4.4, S17 CI criterion).
   test: {
+    // S22 host hygiene: a seat's shell is a PTY, so a bare `vitest` / `npm test` started WATCH mode and never
+    // exited — one outlived its closed seat for 2 h at 85% of a core. Run once; `vitest --watch` still watches.
+    watch: false,
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],

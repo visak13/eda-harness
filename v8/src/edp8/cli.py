@@ -470,6 +470,7 @@ COMMANDS: tuple[Command, ...] = (
     Command("doctor", "doctor", "check prerequisites, harnesses, ports, secrets and claude folder trust", (
         ("--agent [text]", "ask the Help seat (an agent that diagnoses and proposes fixes you approve)"),
         ("--bundle [PATH]", "write a redacted diagnostics zip to attach to a GitHub issue"),
+        ("--stop-orphan PID", "stop an orphaned test runner doctor reported (its whole process tree)"),
     )),
     Command("prereqs", "prereqs [install]", "list the tools Heronry needs; install installs the missing ones", (
         ("--yes", "install without asking"),
