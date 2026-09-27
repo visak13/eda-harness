@@ -77,3 +77,10 @@ def test_cli_exits_1_on_a_planted_file_and_0_when_clean(tmp_path):
     (tmp_path / "planted.md").write_text(f"see {PROJ}")
     r = run()
     assert r.returncode == 1 and "planted.md:1: projects root" in r.stdout
+
+
+def test_the_gate_passes_on_its_own_tracked_tree():
+    # adversary m-66e0b46c22 / architect m-321f649a41: the gate, its config and its tests never hold a needle
+    root = GATE.parents[2]
+    r = subprocess.run([sys.executable, str(GATE), "--root", str(root)], capture_output=True, text=True, timeout=300)
+    assert r.returncode == 0, r.stdout[-2000:]
