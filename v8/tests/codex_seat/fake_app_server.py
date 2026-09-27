@@ -165,8 +165,24 @@ def main():
 def sandbox(argv):
     import subprocess
     if os.environ.get("FAKE_SANDBOX_LOG"):
-        with open(os.environ["FAKE_SANDBOX_LOG"], "a", encoding="utf-8") as f:
-            f.write(json.dumps(argv) + "\n")
+        # warm and cold sandboxes start together; Windows O_APPEND is seek+write, not atomic, so two records
+        # could overwrite each other. An O_EXCL lock file serialises the appends.
+        import time
+        log = os.environ["FAKE_SANDBOX_LOG"]
+        lock, deadline = log + ".lock", time.monotonic() + 10
+        while True:
+            try:
+                os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+                break
+            except FileExistsError:
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(0.01)
+        try:
+            with open(log, "a", encoding="utf-8") as f:
+                f.write(json.dumps(argv) + "\n")
+        finally:
+            os.remove(lock)
     return subprocess.call(argv[argv.index("--") + 1:])
 
 

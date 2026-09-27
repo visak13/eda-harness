@@ -119,7 +119,8 @@ def test_1_seat_wraps_every_monitor_in_its_role_sandbox(tmp_path, monkeypatch):
         assert wait_for(lambda: sb_log.exists() and sb_log.read_text(encoding="utf-8").strip(), 10)
     finally:
         s.stop()
-    for line in sb_log.read_text(encoding="utf-8").splitlines():  # warm shells and any cold start alike
+    # complete lines only: a warm shell may still be appending its record when we read
+    for line in sb_log.read_text(encoding="utf-8").split("\n")[:-1]:  # warm shells and any cold start alike
         argv = json.loads(line)
         assert argv[:3] == ["sandbox", "-c", "sandbox_mode=read-only"] and argv[-2] == "-c"
         assert argv[-1] in (tools_mod.SANDBOX_STUB, tools_mod.WARM_STUB)
