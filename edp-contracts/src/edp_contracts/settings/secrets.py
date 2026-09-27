@@ -84,6 +84,12 @@ def _restrict_windows(path: Path) -> None:
     Not `icacls /inheritance:r /grant:r`: that drops inherited aces and re-grants the two SIDs but KEEPS
     every other explicit ace, and an elevated creator's new file carries explicit OWNER RIGHTS (S-1-3-4) and
     Administrators (S-1-5-32-544) aces (GitHub's windows runner, CI run 36323612069)."""
+    set_protected_dacl(path, f"D:P(A;;FA;;;{current_user_sid()})(A;;FA;;;{SYSTEM_SID})")
+
+
+def set_protected_dacl(path: str | Path, sddl: str) -> None:
+    """Windows: replace `path`'s DACL with the one in `sddl` (e.g. "D:P(A;OICI;FA;;;<sid>)"), inheritance
+    off. Every ace the path held before, inherited or explicit, is gone."""
     import ctypes
     from ctypes import wintypes
 
@@ -96,7 +102,6 @@ def _restrict_windows(path: Path) -> None:
     adv.SetFileSecurityW.restype = wintypes.BOOL
     k32.LocalFree.argtypes = [ctypes.c_void_p]
 
-    sddl = f"D:P(A;;FA;;;{current_user_sid()})(A;;FA;;;{SYSTEM_SID})"
     sd = ctypes.c_void_p()
     if not adv.ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, 1, ctypes.byref(sd), None):
         raise OSError(ctypes.get_last_error(), f"cannot build the private ACL for {path}")

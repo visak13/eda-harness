@@ -39,9 +39,10 @@ def private_dir(path: Path) -> Path:
     """A directory only this user can open (codex refuses a non-private socket/token dir, measured)."""
     path.mkdir(parents=True, exist_ok=True)
     if os.name == "nt":
-        user = settings.get("USERNAME") or ""
-        subprocess.run(["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:(OI)(CI)F"],
-                       capture_output=True, check=True)
+        # a protected DACL holding this user alone, inherited by the token file; not `icacls /inheritance:r
+        # /grant:r`, which keeps every other explicit ace (GitHub's runner: SYSTEM, Administrators, CI 36326185339)
+        from edp_contracts.settings.secrets import current_user_sid, set_protected_dacl
+        set_protected_dacl(path, f"D:P(A;OICI;FA;;;{current_user_sid()})")
     else:
         os.chmod(path, 0o700)
     return path

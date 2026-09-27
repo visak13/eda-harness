@@ -35,7 +35,12 @@ $Python = "3.12"
 function Say($s) { Write-Host "heronry-install: $s" }
 function Die($s) { [Console]::Error.WriteLine("heronry-install: $s"); exit 1 }
 function VersionOf($text) { if ("$text" -match '(\d+)\.(\d+)\.(\d+)') { [version]"$($Matches[1]).$($Matches[2]).$($Matches[3])" } else { $null } }
-function Sha256($path) { (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLower() }
+function Sha256($path) {  # .NET, not Get-FileHash: 5.1 started from pwsh 7 inherits its PSModulePath and
+  # cannot autoload Microsoft.PowerShell.Utility ("Get-FileHash is not recognized", CI 36326185339)
+  $s = [IO.File]::OpenRead($path)
+  try { $h = [Security.Cryptography.SHA256]::Create(); -join ($h.ComputeHash($s) | ForEach-Object { $_.ToString("x2") }) }
+  finally { $s.Dispose() }
+}
 function Fetch($src, $dest) {
   if ($src -match '^https?://') { Invoke-WebRequest -Uri $src -OutFile $dest -UseBasicParsing }
   else { Copy-Item -LiteralPath ($src -replace '^file://', '') -Destination $dest }
@@ -62,7 +67,9 @@ try {
     if ((Sha256 (Join-Path $work $asset)) -ne $want) { Die "uv archive SHA-256 mismatch; nothing installed" }
     $bin = Join-Path $env:USERPROFILE ".local\bin"
     New-Item -ItemType Directory -Force -Path $bin | Out-Null
-    Expand-Archive -LiteralPath (Join-Path $work $asset) -DestinationPath (Join-Path $work "uv") -Force
+    # .NET, not Expand-Archive: the same PSModulePath leak hides Microsoft.PowerShell.Archive
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [IO.Compression.ZipFile]::ExtractToDirectory((Join-Path $work $asset), (Join-Path $work "uv"))
     Get-ChildItem (Join-Path $work "uv") -Recurse -Include "uv.exe", "uvx.exe", "uvw.exe" | Copy-Item -Destination $bin -Force
     $env:PATH = "$bin;$env:PATH"
     $uv = Join-Path $bin "uv.exe"

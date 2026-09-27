@@ -20,6 +20,12 @@ if (-not $Lock) { $Lock = Join-Path $v8 "vscode-ext\code-server.lock.json" }
 if (-not $ToolsDir) { $ToolsDir = Join-Path $v8 ".tools\code-server" }
 
 function Fail($code, $msg) { [Console]::Error.WriteLine("install-code-server: $msg"); exit $code }
+function Sha256($path) {  # .NET, not Get-FileHash: 5.1 started from pwsh 7 inherits its PSModulePath and
+  # cannot autoload Microsoft.PowerShell.Utility ("Get-FileHash is not recognized", CI 36326185339)
+  $s = [IO.File]::OpenRead($path)
+  try { $h = [Security.Cryptography.SHA256]::Create(); -join ($h.ComputeHash($s) | ForEach-Object { $_.ToString("x2") }) }
+  finally { $s.Dispose() }
+}
 
 $l = Get-Content $Lock -Raw | ConvertFrom-Json
 $sha = ("" + $l.sha256).ToLower()
@@ -50,7 +56,7 @@ if (-not $Archive) {
 }
 if (-not (Test-Path $Archive)) { Fail 2 "archive $Archive not found" }
 
-$got = (Get-FileHash -Algorithm SHA256 $Archive).Hash.ToLower()
+$got = Sha256 $Archive
 if ($got -ne $sha) {
   if ($downloaded) { Remove-Item -Force $Archive }
   Fail 2 "sha256 mismatch for $Archive`n  lock: $sha`n  file: $got`nnothing was extracted"
