@@ -12,7 +12,9 @@
 .order:hover { background: var(--secondary); border-color: var(--strongline); color: var(--ink); }
 .order:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
 .empty { color: var(--muted); font-size: 14px; margin: 0; min-height: var(--thread-fill, 0px); }
-.messages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; max-height: min(56vh, 720px); min-height: var(--thread-fill, 0px); overflow-y: auto; scroll-margin-top: 12px; }
+/* t-6129a95a3d (owner m-3818ff2a47): a very light 1px frame on the scroll container itself, so it is clear where
+   the wheel scrolls the thread; the focus ring (outline) still draws over it. */
+.messages { list-style: none; margin: 0; padding: 10px 8px 0; border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; max-height: min(56vh, 720px); min-height: var(--thread-fill, 0px); overflow-y: auto; scroll-margin-top: 12px; }
 .messages:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
 .msg { display: grid; grid-template-columns: 36px 1fr; gap: 12px; padding: 0 4px 18px; border-radius: 8px; }
 .msg:target { background: var(--accentwash); }

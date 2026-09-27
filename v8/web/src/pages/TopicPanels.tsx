@@ -35,7 +35,7 @@ export function TopicThread({ page }: { page: TopicPage }): React.JSX.Element {
     <section className={styles.panel} aria-label="Thread" data-testid="topic-thread">
       <span className={ui.sectionLabel}>Thread</span>
       {page.thread.length === 0 ? <p className={styles.muted}>No messages yet. Ask the sme anything about this topic.</p> : (
-        <ul className={styles.list}>
+        <ul className={`${styles.list} ${styles.threadList}`} data-testid="topic-thread-list">
           {page.thread.map((m) => (
             <li key={m.id} id={m.id} className={`${styles.msg} ${waiting.has(m.id) ? attentionMark : ""}`} data-testid="topic-message"
               data-attention={waiting.has(m.id) ? "true" : undefined}>
