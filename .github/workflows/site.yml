@@ -1,0 +1,115 @@
+name: Project site
+
+# The Heronry project site (docs/site, design-e963c656f5 §4.15). Every PR that touches the site or what its
+# generated reference reads gets a build-only check: `mkdocs build --strict` (no broken link or anchor), the site
+# tests (a new setting or CLI flag reaches the reference with no hand edit), and the PII scan over the built
+# site. A published release deploys the site to GitHub Pages with mike (one version per minor, `latest` alias)
+# on the gh-pages branch. The owner enables Pages (Settings -> Pages -> Deploy from a branch: gh-pages / root).
+# Third-party actions are pinned by commit SHA; only the deploy job may write.
+
+on:
+  pull_request:
+    paths: ["docs/site/**", "v8/src/**", "edp-contracts/**", "v8/docs/video/**", "v8/assets/brand/**",
+            "docs/readme/storefront/**", "CHANGELOG.md", ".github/workflows/site.yml"]
+  push:
+    branches: [main]
+    paths: ["docs/site/**", "v8/src/**", "edp-contracts/**", "v8/docs/video/**", "v8/assets/brand/**",
+            "docs/readme/storefront/**", "CHANGELOG.md", ".github/workflows/site.yml"]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SITE_RUN: uv run --project v8 --with-requirements docs/site/requirements.txt
+  GITLEAKS_VERSION: "8.28.0"
+
+jobs:
+  check:
+    if: github.event_name != 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: 24
+      - name: Python and the product (the reference generator imports it)
+        run: |
+          uv python install 3.14
+          uv sync --project v8 --extra dev
+      - name: The product video player (the Watch page embeds it)
+        run: |
+          npm --prefix v8/docs/video ci
+          npm --prefix v8/docs/video run player:build
+      - name: Build the site (strict)
+        env:
+          HERONRY_SITE_RELEASE_JSON: docs/site/fixtures/release-latest.json  # a PR never depends on a live release
+          EDP8_EMBEDDER: none
+        run: $SITE_RUN mkdocs build --strict -f docs/site/mkdocs.yml
+      - name: Site tests (generated reference, downloads, PII rules)
+        env:
+          EDP8_EMBEDDER: none
+        working-directory: v8
+        run: uv run --with-requirements ../docs/site/requirements.txt pytest -q tests/test_site_reference.py tests/test_cli_command_table.py
+      - name: PII scan of the built site
+        run: $SITE_RUN python docs/site/hooks/pii_scan.py docs/site/site
+      - name: gitleaks over the built site (with the repo's rules, once they exist)
+        run: |
+          if [ ! -f .gitleaks.toml ]; then echo "no .gitleaks.toml yet: the PII scan above is the gate"; exit 0; fi
+          curl -sSLO "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSLO "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          grep " gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz$" "gitleaks_${GITLEAKS_VERSION}_checksums.txt" | sha256sum -c -
+          tar -xzf "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" gitleaks
+          ./gitleaks dir docs/site/site --config .gitleaks.toml --redact --no-banner
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: site-preview
+          path: docs/site/site
+          retention-days: 7
+
+  deploy:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # mike pushes the built site to the gh-pages branch; nothing broader
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0  # mike commits onto the existing gh-pages history
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: 24
+      - name: Python and the product
+        run: |
+          uv python install 3.14
+          uv sync --project v8
+      - name: The product video player
+        run: |
+          npm --prefix v8/docs/video ci
+          npm --prefix v8/docs/video run player:build
+      - name: Build (strict) and scan before anything is pushed
+        env:
+          GITHUB_TOKEN: ${{ github.token }}  # the Download page reads this release from the Releases API
+          EDP8_EMBEDDER: none
+        run: |
+          $SITE_RUN mkdocs build --strict -f docs/site/mkdocs.yml
+          $SITE_RUN python docs/site/hooks/pii_scan.py docs/site/site
+      - name: Deploy this version with mike
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EDP8_EMBEDDER: none
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          ver="${TAG#v}"; ver="${ver%.*}"   # v0.9.0 -> 0.9: one docs version per minor
+          $SITE_RUN mike deploy --config-file docs/site/mkdocs.yml --push --update-aliases "$ver" latest
+          $SITE_RUN mike set-default --config-file docs/site/mkdocs.yml --push latest

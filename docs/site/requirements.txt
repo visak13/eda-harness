@@ -1,0 +1,6 @@
+# The project site's build tools (docs/site). The reference generator also imports the product (edp8,
+# edp_contracts), so the site builds inside v8's environment:
+#   uv run --project v8 --with-requirements docs/site/requirements.txt mkdocs build --strict -f docs/site/mkdocs.yml
+mkdocs==1.6.1
+mkdocs-material==9.7.7
+mike==2.2.0

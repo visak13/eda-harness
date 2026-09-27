@@ -1,0 +1,101 @@
+# The Heronry project site (design-e963c656f5 §4.15). Build (from the repo root):
+#   uv run --project v8 --with-requirements docs/site/requirements.txt mkdocs build --strict -f docs/site/mkdocs.yml
+# Names, URLs, the version and the latest release are filled in by hooks/heronry_site.py from the product
+# (edp8.brand); the values below are placeholders it replaces.
+site_name: Heronry
+site_url: https://example.invalid/
+docs_dir: docs
+site_dir: site
+
+hooks:
+  - hooks/heronry_site.py
+
+theme:
+  name: material
+  logo: assets/brand/heronry-logo.png
+  favicon: assets/brand/favicon-32.png
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: heronry-light
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - toc.follow
+
+extra_css:
+  - stylesheets/heronry.css
+
+extra:
+  version:
+    provider: mike
+    default: latest
+  generator: false
+
+plugins:
+  - search
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - Download: download.md
+  - Watch: watch.md
+  - Setup guide:
+      - setup/index.md
+      - First run: setup/first-run.md
+      - Harnesses and models: setup/harnesses.md
+      - Remote access and teammates: setup/remote-access.md
+      - Integrations: setup/integrations.md
+  - Docs:
+      - Concepts: docs/concepts.md
+      - The Design tab: docs/design-tab.md
+      - Updates: docs/updates.md
+      - Troubleshooting: docs/troubleshooting.md
+  - Reference:
+      - reference/index.md
+      - Command line: reference/cli.md
+      - Settings: reference/settings.md
+      - REST API: reference/rest-api.md
+      - MCP tools: reference/mcp-tools.md
+      - Workflow schema: reference/workflow-schema.md
+      - Models catalog: reference/models.md
+  - Changelog: changelog.md
