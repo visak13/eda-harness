@@ -125,6 +125,7 @@ CRITERIA_CAP = 6  # criteria written fresh on a story (a folded story carries wh
 # `quick`, usually with no epic parent. Its words are the design (it starts `ready`, no design_ref), its
 # engineer writes the criteria, and the owner checks them from Needs you — no architect, no qa seat.
 QUICK_TAG = "quick"
+FOR_YOU_KEEP = 5  # context(): newest messages addressed to the seat kept per ticket, ahead of the thread window
 RECALL_TICKETS = 3  # context() without a ticket_id carries recall for at most this many tickets (S-IMPLICIT)
 
 
@@ -2207,8 +2208,14 @@ class Board:
         tickets = [self.ticket(ticket_id)] if ticket_id else self.my_tickets(p)
         out: dict[str, Any] = {"participant": p.model_dump(mode="json"), "tickets": [], "asks_for_me": [],
                                "hint": ""}
+        answered = {m.reply_to for m in self.store.query("message", {"created_by": p.id}, limit=100000)
+                    if m.reply_to}
         for t in tickets:
             view = self.ticket_view(t.id)
+            if "thread" in view:  # dec-7581ebda87: what is addressed to the seat rides before the newest-N window
+                for_you = self._for_you(p, t.id, answered)
+                view = {k2: v2 for k, v in view.items()
+                        for k2, v2 in ((("for_you", for_you), (k, v)) if k == "thread" else ((k, v),))}
             strategy_links = view.get("strategy_links", False)
             if ticket_id or len(tickets) <= RECALL_TICKETS:
                 # S-IMPLICIT: recall hits ride along (records.recall: FTS + graph, capped, no model call)
@@ -2221,6 +2228,17 @@ class Board:
         if not tickets:
             out["hint"] = "no ticket assigned or created by you yet"
         return out
+
+    def _for_you(self, p: Participant, ticket_id: str, answered: set[str]) -> list[dict[str, Any]]:
+        """Owner ruling m-9f2b933578 (dec-7581ebda87): the exam's Q2 miss was a message addressed to the seat
+        buried under newer posts. Rows on this ticket addressed to the seat (its handle, or its role) and not
+        its own, oldest first, newest FOR_YOU_KEEP. context() is the boot read and has no cursor, so every
+        such row is "since the cursor"; one the seat already replied to carries `answered: true`."""
+        rows = self.store.query_seq("message", {"ticket_id": ticket_id}, limit=100000)
+        hits = [(seq, m) for seq, m in rows if m.to in (p.id, p.role.value) and m.created_by != p.id]
+        return [with_quotes({**m.model_dump(mode="json"), **code_row(m), "seq": seq,
+                             **({"answered": True} if m.id in answered else {})}, m, capped=True)
+                for seq, m in hits[-FOR_YOU_KEEP:]]
 
     def inbox(self, p: Participant) -> list[dict[str, Any]]:
         """Unanswered questions AND steers addressed to this participant, oldest first. A directed

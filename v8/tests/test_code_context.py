@@ -176,7 +176,7 @@ def test_missing_field_is_named(client, story):
 # ------------------------------------------------------------------------------ agent rendering
 
 def test_context_and_delta_render_the_anchor_within_the_caps(client, story, monkeypatch):
-    monkeypatch.setenv("EDP8_CONTEXT_BUDGET_B", "40000")  # the anchor rendering, not the S23 8 KB default
+    monkeypatch.setenv("EDP8_CONTEXT_BUDGET_B", "40000")  # the anchor rendering, not the default budget
     set_client(BoardClient(participant="eng", admin_token="t", client=client))
     ctx, dl = ALL_TOOLS["context"], ALL_TOOLS["context_delta"]
     base = ctx.handler(ctx.args_model())["value"]
@@ -187,7 +187,8 @@ def test_context_and_delta_render_the_anchor_within_the_caps(client, story, monk
 
     # context(): the bounded (default) snapshot carries `code_anchor`, snippet capped, no raw snippet
     snap = ctx.handler(ctx.args_model())["value"]
-    rows = [r for r in snap["tickets"][0]["thread"] if r.get("code_anchor")]
+    tv = snap["tickets"][0]  # addressed to the seat, so the rows ride in for_you (dec-7581ebda87)
+    rows = [r for r in tv["for_you"] + tv["thread"] if r.get("code_anchor")]
     assert len(rows) == 2
     first, second = rows
     assert first["code_anchor"].startswith("`src/edp8/board.py:L1-60 @0123456`")
@@ -243,7 +244,8 @@ def test_tighter_context_pass_keeps_only_the_anchor_line(client, story):
     ctx = ALL_TOOLS["context"]
     full = ctx.handler(ctx.args_model(verbose=True))["value"]
     snap, _ = _bound_snapshot(full, thread_keep=1, thread_head=120, doc_head=120, words_head=400)  # pass 2
-    rows = [r for r in snap["tickets"][0]["thread"] if r.get("code_anchor")]
+    tv = snap["tickets"][0]  # addressed to the seat, so the rows ride in for_you (dec-7581ebda87)
+    rows = [r for r in tv["for_you"] + tv["thread"] if r.get("code_anchor")]
     assert rows and all("\n" not in r["code_anchor"] for r in rows)
     assert rows[-1]["code_anchor"].startswith("`src/edp8/board.py:L10-12 @0123456` (snippet clipped")
 

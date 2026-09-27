@@ -601,10 +601,11 @@ def _subscribe(_: SubscribeArgs) -> dict[str, Any]:
 # overflowed the MCP client cap. The snapshot is bounded HERE, in the tool layer, so board.py
 # _context_snapshot / ticket_view (shared by context_delta) stay unchanged. Default is bounded;
 # verbose=True hands back the full snapshot. The budget is deliberately below the client cap.
-_CONTEXT_BUDGET_B = 8_000         # default byte cap for the bounded snapshot (env-overridable)
+_CONTEXT_BUDGET_B = 16_000        # default byte cap for the bounded snapshot (env-overridable; dec-7581ebda87)
 _THREAD_HEAD = 200                # per-message body kept in a bounded thread
 _THREAD_KEEP = 3                  # newest messages kept per ticket by default
 _DOC_SUMMARY_HEAD = 200           # doc summary kept in a bounded snapshot
+_FOR_YOU_HEAD = 400               # per-message body kept for a message addressed to the seat
 
 
 def _context_budget() -> int:
@@ -620,30 +621,44 @@ def _clip(s: Any, n: int) -> Any:
     return s[:n].rstrip() + f"… (+{len(s) - n} chars)"
 
 
+def _thread_row(r: dict[str, Any], head: int, tight: bool) -> dict[str, Any]:
+    return {**r, "text": _clip(r.get("text"), head),
+            # C18: the rendered quotes get a few bodies' room, never unbounded; a tighter
+            # pass drops the compact refs too (message_read has them)
+            **({"quoted": _clip(r["quoted"], 4 * head)} if r.get("quoted") else {}),
+            **({"quotes": []} if r.get("quotes") and tight else {}),
+            # S4: a tighter pass keeps a code anchor's first line (path:Lx-y @sha) only
+            **({"code_anchor": r["code_anchor"].split("\n", 1)[0]} if r.get("code_anchor") and tight else {})}
+
+
 def _bound_snapshot(snap: dict[str, Any], *, thread_keep: int, thread_head: int,
                     doc_head: int, words_head: int | None,
-                    desc_head: int | None = None) -> tuple[dict[str, Any], set[str]]:
+                    desc_head: int | None = None, for_you_keep: int = 5,
+                    for_you_head: int = _FOR_YOU_HEAD) -> tuple[dict[str, Any], set[str]]:
     """Return a byte-bounded copy of a context snapshot and the set of categories trimmed
     ('thread'/'docs'/'words'). Per-ticket summaries + read_refs stay; thread bodies and doc
     summaries are clipped/paged. Never touches `cursor`, `asks_for_me`, criteria, chain or the
-    ticket record."""
+    ticket record. dec-7581ebda87: `for_you` (messages addressed to the seat) is kept ahead of the thread,
+    and the newest-N window never holds the seat's own posts or a row already in `for_you`."""
     hit: set[str] = set()
     out = dict(snap)
+    me = (snap.get("participant") or {}).get("id")
     tickets_in = snap.get("tickets") or []
     new_tickets: list[dict[str, Any]] = []
     for tv in tickets_in:
         tv = dict(tv)
         rows = tv.get("thread") or []
         total = tv.get("thread_total", len(rows))
-        kept = rows[-thread_keep:] if thread_keep > 0 else []
-        tv["thread"] = [{**r, "text": _clip(r.get("text"), thread_head),
-                         # C18: the rendered quotes get a few bodies' room, never unbounded; a tighter
-                         # pass drops the compact refs too (message_read has them)
-                         **({"quoted": _clip(r["quoted"], 4 * thread_head)} if r.get("quoted") else {}),
-                         **({"quotes": []} if r.get("quotes") and thread_head < _THREAD_HEAD else {}),
-                         # S4: a tighter pass keeps a code anchor's first line (path:Lx-y @sha) only
-                         **({"code_anchor": r["code_anchor"].split("\n", 1)[0]}
-                            if r.get("code_anchor") and thread_head < _THREAD_HEAD else {})} for r in kept]
+        tight = thread_head < _THREAD_HEAD
+        mine = [r for r in tv.get("for_you") or [] if isinstance(r, dict)]
+        if "for_you" in tv:
+            tv["for_you"] = [_thread_row(r, for_you_head, tight) for r in mine[-for_you_keep:]]
+            if len(mine) > for_you_keep or any(len(r.get("text") or "") > for_you_head for r in mine):
+                hit.add("thread")
+        shown = {r.get("id") for r in mine[-for_you_keep:]}
+        window = [r for r in rows if r.get("created_by") != me and r.get("id") not in shown]
+        kept = window[-thread_keep:] if thread_keep > 0 else []
+        tv["thread"] = [_thread_row(r, thread_head, tight) for r in kept]
         if total > len(kept) or any(len(r.get("text") or "") > thread_head
                                     or len(r.get("quoted") or "") > 4 * thread_head for r in rows):
             hit.add("thread")
@@ -663,7 +678,7 @@ def _bound_snapshot(snap: dict[str, Any], *, thread_keep: int, thread_head: int,
             hit.add("words")
         rec = tv.get("ticket")
         if desc_head is not None and isinstance(rec, dict) and len(rec.get("description") or "") > desc_head:
-            # S23: the 8 KB default budget — a long ticket description is the usual floor; ticket_read has it
+            # S23: a tight budget — a long ticket description is the usual floor; ticket_read has it
             tv["ticket"] = {**rec, "description": _clip(rec["description"], desc_head)}
             hit.add("description")
         if desc_head is not None and isinstance(tv.get("recall"), dict) and tv["recall"].get("items"):
@@ -675,10 +690,11 @@ def _bound_snapshot(snap: dict[str, Any], *, thread_keep: int, thread_head: int,
 
 
 def _compact_snapshot(snap: dict[str, Any]) -> tuple[dict[str, Any], set[str]]:
-    """S23 floor pass (8 KB default): each ticket keeps its record, chain and criteria as compact rows
+    """S23 floor pass (tight budget): each ticket keeps its record, chain and criteria as compact rows
     (id/status/verdict, text clipped) and its docs/children/links as refs; recall becomes a count. Every
     dropped field has a named fetch in `omitted`."""
     out = dict(snap)
+    me = (snap.get("participant") or {}).get("id")
     tickets = []
     for tv in snap.get("tickets") or []:
         rec = tv.get("ticket") or {}
@@ -697,10 +713,16 @@ def _compact_snapshot(snap: dict[str, Any]) -> tuple[dict[str, Any], set[str]]:
             "links": [f"{x.get('from_id')} {x.get('relation')} {x.get('to_id')}" for x in tv.get("links") or []],
             **({"open_gates": tv["open_gates"]} if tv.get("open_gates") else {}),
             **({"blockers": tv["blockers"]} if tv.get("blockers") else {}),
-            # the newest message stays readable (clipped); older bodies are the named thread fetch
-            "thread": [{k: (_clip(m.get(k), 120) if k == "body" else m.get(k))
-                        for k in ("id", "kind", "from_id", "created_at", "body") if m.get(k)}
-                       for m in (tv.get("thread") or [])[-1:] if isinstance(m, dict)],
+            # dec-7581ebda87: messages addressed to the seat first, then the newest one not its own (clipped);
+            # older bodies are the named thread fetch
+            "for_you": [{k: (_clip(m.get(k), 160) if k == "text" else m.get(k))
+                         for k in ("id", "kind", "created_by", "created_at", "text", "answered") if m.get(k)}
+                        for m in (tv.get("for_you") or [])[-3:] if isinstance(m, dict)],
+            "thread": [{k: (_clip(m.get(k), 120) if k == "text" else m.get(k))
+                        for k in ("id", "kind", "created_by", "created_at", "text") if m.get(k)}
+                       for m in [m for m in tv.get("thread") or [] if isinstance(m, dict)
+                                 and m.get("created_by") != me
+                                 and m.get("id") not in {f.get("id") for f in tv.get("for_you") or []}][-1:]],
             "thread_total": tv.get("thread_total", len(tv.get("thread") or [])),
             "recall_count": len((tv.get("recall") or {}).get("items") or []),
         })
@@ -727,8 +749,10 @@ def _context(args: ContextArgs) -> dict[str, Any]:
     # per-ticket records + criteria + asks are the irreducible floor and are never dropped).
     passes = [
         dict(thread_keep=_THREAD_KEEP, thread_head=_THREAD_HEAD, doc_head=_DOC_SUMMARY_HEAD, words_head=800),
-        dict(thread_keep=1, thread_head=120, doc_head=120, words_head=400, desc_head=1500),
-        dict(thread_keep=0, thread_head=0, doc_head=0, words_head=200, desc_head=600),
+        dict(thread_keep=1, thread_head=120, doc_head=120, words_head=400, desc_head=1500,
+             for_you_keep=3, for_you_head=240),
+        dict(thread_keep=0, thread_head=0, doc_head=0, words_head=200, desc_head=600,
+             for_you_keep=2, for_you_head=160),
     ]
     bounded: dict[str, Any] = {}
     hit: set[str] = set()

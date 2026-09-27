@@ -438,8 +438,8 @@
      "set": false,
      "read_only": false,
      "read_only_reason": null,
-     "value": 8000,
-     "default": 8000
+     "value": 16000,
+     "default": 16000
     },
     {
      "key": "board.delta_budget_b",

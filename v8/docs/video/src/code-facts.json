@@ -1,5 +1,5 @@
 {
-  "contextBudgetBytes": 8000,
+  "contextBudgetBytes": 16000,
   "contextBudgetBytesSource": "v8/src/edp8/bundles.py _CONTEXT_BUDGET_B = edp_contracts/settings/keys_board.py board.context_budget_b",
   "harvestMaxLessons": 5,
   "harvestMaxLessonsSource": "v8/.claude/skills/harvest/SKILL.md step 1"
