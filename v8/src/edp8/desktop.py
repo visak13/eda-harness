@@ -399,6 +399,10 @@ class Desktop:
             time.sleep(0.5)
 
     def menu(self) -> list[Any]:
+        """The window's menu. None on Windows: the tray carries every item, and a WinForms menu strip under the
+        title bar reads as a second title bar (owner look, S8 step 6)."""
+        if sys.platform == "win32":
+            return []
         from webview.menu import Menu, MenuAction, MenuSeparator
         items: list[Any] = [MenuAction(label, fn) for label, fn in self.actions()]
         items += [MenuSeparator(), MenuAction("Stop services on quit (toggle)", self.toggle_stop_on_quit),

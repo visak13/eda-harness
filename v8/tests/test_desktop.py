@@ -217,6 +217,12 @@ def test_tray_menu_has_every_action_plus_the_quit_option(monkeypatch):
     assert [i for i in made["menu"].items if i.text == "Open board"][0].kw.get("default") is True
 
 
+def test_no_window_menu_on_windows_because_the_tray_carries_every_item(monkeypatch):
+    """Owner look, S8 step 6: the WinForms menu strip read as a duplicate title bar."""
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert desktop.Desktop("Heronry Desktop").menu() == []
+
+
 def test_no_webview2_check_off_windows(monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
     assert desktop.webview2_version() is None
