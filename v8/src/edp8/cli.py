@@ -349,13 +349,9 @@ def restart(argv: list[str]) -> int:
 # ------------------------------------------------------------------------------------------ misc
 
 def _version_string() -> str:
+    from . import __version__  # the internal package name stays (R8b)
     from .brand import PRODUCT_NAME
-    try:
-        from importlib.metadata import version
-        ver = version("edp8")  # the internal distribution name stays (R8b)
-    except Exception:  # noqa: BLE001 — a source checkout without an install still answers
-        ver = "unknown"
-    return f"{PRODUCT_NAME} {ver}"
+    return f"{PRODUCT_NAME} {__version__}"
 
 
 def version_cmd(_argv: list[str]) -> int:

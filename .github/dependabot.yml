@@ -1,0 +1,42 @@
+# Libraries stay current by pull request (design-e963c656f5 §4.10; strategyhl-d76b06a3dd §3).
+# Weekly, minor + patch grouped per ecosystem, a short cooldown so fresh releases settle first.
+# A Dependabot PR merges only on the same 3-OS green as any PR (.github/workflows/ci.yml).
+# Seat harnesses (claude, codex, pi) are not dependencies; the user updates them.
+version: 2
+updates:
+  # The app lock: v8/uv.lock pins what edp8 (and edp-contracts through its path source) ships.
+  - package-ecosystem: "uv"
+    directory: "/v8"
+    schedule: { interval: "weekly", day: "monday" }
+    cooldown: { default-days: 5 }
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # The three sibling libraries keep no lock (their uv.lock is git-ignored), so their pyproject ranges
+  # are watched through pip. docs/site pins the site generator in requirements.txt.
+  - package-ecosystem: "pip"
+    directories: ["/edp-contracts", "/edp-pool", "/edp-broker", "/docs/site"]
+    schedule: { interval: "weekly", day: "monday" }
+    cooldown: { default-days: 5 }
+    open-pull-requests-limit: 5
+    groups:
+      pip-minor-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "npm"
+    directories: ["/v8/web", "/v8/vscode-ext/edp-code"]
+    schedule: { interval: "weekly", day: "monday" }
+    cooldown: { default-days: 5 }
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule: { interval: "weekly", day: "monday" }
+    groups:
+      actions:
+        patterns: ["*"]

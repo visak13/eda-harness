@@ -4,14 +4,15 @@ name: install
 # wheels (edp8 + edp_contracts + edp_pool + edp_broker) with SHA256SUMS like a release, then runs
 # install.sh (Linux, macOS) or install.ps1 (Windows) in a clean temp HOME/profile and drives the installed
 # `heronry`: init (refuses with no harness; Fable notice codex-less) → start → status → start again →
-# /v1/health 200 → stop, leaving no process. The drills are v8/scripts/drill_install_{posix.sh,windows.ps1}.
+# /v1/health 200 and /ui → a stub seat through the installed pool (S9) → stop, leaving no process. The drills are v8/scripts/drill_install_{posix.sh,windows.ps1}.
 
 on:
-  push:
-    paths: ["install.sh", "install.ps1", "v8/**", "edp-contracts/**", "edp-pool/**", "edp-broker/**", ".github/workflows/install.yml"]
-  pull_request:
-    paths: ["install.sh", "install.ps1", "v8/**", "edp-contracts/**", "edp-pool/**", "edp-broker/**", ".github/workflows/install.yml"]
+  # Called by ci.yml on every push and PR as its install-smoke job (S9); runnable on its own too.
+  workflow_call:
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   wheels:

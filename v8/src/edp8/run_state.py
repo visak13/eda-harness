@@ -12,7 +12,6 @@ service was never started by the launcher (or the file was cleaned) → reported
 
 from __future__ import annotations
 
-import importlib.metadata
 import json
 import os
 from datetime import datetime
@@ -20,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from . import settings
+
 
 # The five shared services the launcher owns (design §22 rule 1). `port` is the listener the
 # supervisor probes; the bridge has no port (matched by command line) so its port is None. Ports
@@ -79,10 +79,8 @@ def git_rev() -> str:
 
 
 def _package_rev() -> str:
-    try:
-        return "v" + importlib.metadata.version("edp8")
-    except importlib.metadata.PackageNotFoundError:
-        return "unknown"
+    from . import __version__
+    return "v" + __version__
 
 
 def run_dir() -> Path:

@@ -47,6 +47,13 @@ Check ($LASTEXITCODE -eq 2 -and $o -match "no harness selected") "init with no h
 $o = & $h init --harness claude 2>&1 | Out-String; $o -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { "   $_" }
 Check ($LASTEXITCODE -eq 0 -and $o -match "NOTICE:" -and $o -match "Fable") "codex-less init prints the Fable notice"
 Check ($o -notmatch [regex]::Escape($root)) "the install home is outside the repo"
+# The stub harness (edp-pool\tests\fixtures\stub_harness.py) stands in for claude: copied under $T and run by
+# the tool's own python, so the leftover-process check below also covers the seat and its grandchild.
+$toolPy = Join-Path $env:UV_TOOL_DIR "edp8\Scripts\python.exe"
+if (-not (Test-Path $toolPy)) { $toolPy = "python" }
+Copy-Item "$root\edp-pool\tests\fixtures\stub_harness.py" "$T\stub_harness.py"
+Set-Content -Path "$T\claude-stub.cmd" -Value "@`"$toolPy`" `"$T\stub_harness.py`" %*" -Encoding ascii
+$env:EDP_CLAUDE_BIN = "$T\claude-stub.cmd"; $env:EDP_SPAWN_MODE = "headless"; $env:EDP_SHADOW = "0"
 try {
   "== heronry start"
   & $h start 2>&1 | ForEach-Object { "   $_" }
@@ -63,13 +70,32 @@ try {
   Check (($o -split "`n" | Where-Object { $_ -match "^(board|mcp|pool|broker)\s+already running" }).Count -eq 4) "a second start says already running"
   $code = 0; try { $code = (Invoke-WebRequest "http://127.0.0.1:$env:EDP8_PORT/v1/health" -UseBasicParsing -TimeoutSec 10).StatusCode } catch { }
   Check ($code -eq 200) "/v1/health returns 200"
+  $ui = ""; try { $ui = (Invoke-WebRequest "http://127.0.0.1:$env:EDP8_PORT/ui/" -UseBasicParsing -TimeoutSec 10).Content } catch { }
+  Check ($ui -match "<title>Heronry") "/ui serves the Heronry SPA"
+  "== stub seat through the installed pool (S9 install smoke)"
+  $pool = "http://127.0.0.1:$env:EDP_POOL_PORT"
+  $sp = $null
+  try { $sp = Invoke-RestMethod -Method Post "$pool/v1/spawn" -ContentType "application/json" -TimeoutSec 90 `
+          -Body '{"role":"worker","handle":"stub:smoke","mode":"headless"}' } catch { "   spawn error: $_" }
+  "   spawn: $($sp | ConvertTo-Json -Compress)"
+  Check ($sp -and $sp.session_id) "the pool spawned a stub seat"
+  $st = ""
+  for ($i = 0; $i -lt 60; $i++) {
+    try { $st = (Invoke-RestMethod "$pool/v1/liveness/stub:smoke" -TimeoutSec 5).state } catch { }
+    if (@("alive", "active", "busy", "idle") -contains $st) { break }
+    Start-Sleep -Milliseconds 500
+  }
+  Check (@("alive", "active", "busy", "idle") -contains $st) "the stub seat is live (state=$st)"
+  try { "   reap: $((Invoke-RestMethod -Method Post "$pool/v1/reap/stub:smoke" -TimeoutSec 60) | ConvertTo-Json -Compress)" } catch { "   reap error: $_" }
 } finally {
   "== heronry stop"
   & $h stop --force 2>&1 | ForEach-Object { "   $_" }
   Check ($LASTEXITCODE -eq 0) "stop exit 0"
 }
 Start-Sleep -Seconds 2
-$left = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($T, [StringComparison]::OrdinalIgnoreCase) })
+$left = @(Get-CimInstance Win32_Process | Where-Object {
+  ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($T, [StringComparison]::OrdinalIgnoreCase)) -or
+  ($_.CommandLine -and $_.CommandLine.IndexOf($T, [StringComparison]::OrdinalIgnoreCase) -ge 0) })
 Check ($left.Count -eq 0) "stop leaves no process running from the install ($($left.Count) found)"
 foreach ($p in @($env:EDP8_PORT, $env:EDP8_MCP_PORT, $env:EDP_POOL_PORT, $env:EDP_BROKER_PORT)) {
   Check (-not (Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue)) "port $p is free"

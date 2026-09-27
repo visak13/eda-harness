@@ -43,6 +43,12 @@ OUT="$("$H" init --harness claude 2>&1)"; RC=$?; echo "$OUT" | sed 's/^/   /'
 [ $RC = 0 ] && echo "$OUT" | grep -q "NOTICE:" && echo "$OUT" | grep -q "Fable"; check $? "codex-less init prints the Fable notice"
 echo "$OUT" | grep -qF "$ROOT"; [ $? != 0 ]; check $? "the install home is outside the repo"
 
+# The stub harness (edp-pool/tests/fixtures/stub_harness.py) stands in for claude: copied under $T and
+# run by the tool's own python, so the leftover-process check below also covers the seat and its grandchild.
+TOOLPY="$(ls "$UV_TOOL_DIR"/edp8/bin/python 2>/dev/null | head -1)"
+cp "$ROOT/edp-pool/tests/fixtures/stub_harness.py" "$T/stub_harness.py"
+printf '#!/bin/sh\nexec "%s" "%s" "$@"\n' "${TOOLPY:-python3}" "$T/stub_harness.py" > "$T/claude-stub" && chmod 755 "$T/claude-stub"
+export EDP_CLAUDE_BIN="$T/claude-stub" EDP_SPAWN_MODE=headless EDP_SHADOW=0
 echo "== heronry start"
 "$H" start 2>&1 | sed 's/^/   /'; check "${PIPESTATUS[0]}" "start exit 0"
 echo "== heronry status"
@@ -62,6 +68,19 @@ OUT="$("$H" start 2>&1)"; echo "$OUT" | sed 's/^/   /'
 [ "$(echo "$OUT" | grep -cE '^(board|mcp|pool|broker) +already running')" = 4 ]; check $? "a second start says already running"
 CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$EDP8_PORT/v1/health")"
 [ "$CODE" = 200 ]; check $? "/v1/health returns 200 (got $CODE)"
+UI="$(curl -sL "http://127.0.0.1:$EDP8_PORT/ui/")"
+echo "$UI" | grep -q "<title>Heronry"; check $? "/ui serves the Heronry SPA"
+echo "== stub seat through the installed pool (S9 install smoke)"
+POOL="http://127.0.0.1:$EDP_POOL_PORT"
+R="$(curl -s -X POST -H 'Content-Type: application/json' -d '{"role":"worker","handle":"stub:smoke","mode":"headless"}' --max-time 90 "$POOL/v1/spawn")"
+echo "   spawn: $R"
+echo "$R" | grep -q '"session_id"'; check $? "the pool spawned a stub seat"
+ST=""; for _ in $(seq 1 60); do
+  ST="$(curl -s "$POOL/v1/liveness/stub:smoke" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("state",""))' 2>/dev/null)"
+  case "$ST" in alive|active|busy|idle) break;; esac; sleep 0.5
+done
+case "$ST" in alive|active|busy|idle) true;; *) false;; esac; check $? "the stub seat is live (state=$ST)"
+curl -s -X POST --max-time 60 "$POOL/v1/reap/stub:smoke" | sed 's/^/   reap: /'; echo
 echo "== heronry stop"
 "$H" stop --force 2>&1 | sed 's/^/   /'; check "${PIPESTATUS[0]}" "stop exit 0"
 sleep 2

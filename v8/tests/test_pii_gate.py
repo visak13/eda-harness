@@ -71,7 +71,8 @@ def test_binary_files_are_scanned_as_bytes(tmp_path):
 
 def test_cli_exits_1_on_a_planted_file_and_0_when_clean(tmp_path):
     (tmp_path / "clean.txt").write_text("nothing here")
-    run = lambda: subprocess.run([sys.executable, str(GATE), "--dir", str(tmp_path)], capture_output=True, text=True)
+    def run():
+        return subprocess.run([sys.executable, str(GATE), "--dir", str(tmp_path)], capture_output=True, text=True)
     assert run().returncode == 0
     (tmp_path / "planted.md").write_text(f"see {PROJ}")
     r = run()

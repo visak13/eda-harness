@@ -1,47 +1,112 @@
-name: v8 CI
+name: CI
 
-# Keeps the cross-platform promise honest (design §15, S17): the board's Python suite and the
-# web app's unit tests both run on Linux on every push, so a change that only works on Windows
-# is caught here. The Playwright visual/e2e specs are win32-only (a pinned local Chromium) and
-# are NOT run in CI — `npm test` (vitest) is scoped to src unit tests and excludes e2e/.
+# Every push and pull request (design-e963c656f5 §4.5; strategyhl-d76b06a3dd §1, S9 s-9648fded35):
+#   pii-gate      gitleaks (default + PII rules, .gitleaks.toml) over the tree and the new commits, then the
+#                 byte-level PII gate over every tracked file. Blocking.
+#   test          windows, macos, ubuntu: pytest for edp-contracts, edp-pool, edp-broker and v8, vitest for the
+#                 web app and the VS Code extension.
+#   install-smoke build the wheels, install.sh / install.ps1 into a clean home, init, start, /v1/health and
+#                 /ui, a stub seat through the installed pool, stop with no process left (install.yml).
+# Third-party actions are pinned by commit SHA; Dependabot (github-actions) keeps the pins current.
 
 on:
   push:
-    paths: ["v8/**", ".github/workflows/ci.yml"]
   pull_request:
-    paths: ["v8/**", ".github/workflows/ci.yml"]
   workflow_dispatch:
 
-jobs:
-  linux:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: v8
-    steps:
-      - uses: actions/checkout@v4
+permissions:
+  contents: read
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pii-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITLEAKS_VERSION: "8.30.1"
+      GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks (pinned, checksum-verified)
+        run: |
+          curl -sSfL -o gl.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gl.tgz" | sha256sum -c -
+          tar -xzf gl.tgz gitleaks && sudo mv gitleaks /usr/local/bin/ && rm gl.tgz
+          gitleaks version
+
+      - name: gitleaks over the tree
+        run: gitleaks dir . -c .gitleaks.toml --redact --no-banner
+
+      - name: gitleaks over the new commits
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # History before this change is not rewritten (R9); only commits this push or PR adds are scanned.
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
+            RANGE="HEAD~1..HEAD"
+          else
+            RANGE="$BASE..HEAD"
+          fi
+          echo "scanning $RANGE"
+          gitleaks git . -c .gitleaks.toml --redact --no-banner --log-opts="$RANGE"
+
+      - name: PII gate over every tracked file (bytes, archives included)
+        run: python3 .github/scripts/pii_gate.py
+
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      PYTHONUTF8: "1"
+      EDP8_EMBEDDER: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
 
       - name: Set up Python
         run: uv python install 3.14
 
-      - name: Sync Python deps
-        run: uv sync --extra dev
+      - name: pytest edp-contracts
+        working-directory: edp-contracts
+        run: uv sync --python 3.14 --extra dev && uv run --no-sync pytest -q -p no:cacheprovider
 
-      - name: Board tests (pytest)
-        env:
-          EDP8_EMBEDDER: none
-        run: uv run pytest -q
+      - name: pytest edp-pool
+        working-directory: edp-pool
+        run: uv sync --python 3.14 --extra dev && uv run --no-sync pytest -q -p no:cacheprovider
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - name: pytest edp-broker
+        working-directory: edp-broker
+        run: uv sync --python 3.14 --extra dev && uv run --no-sync pytest -q -p no:cacheprovider
+
+      - name: pytest v8 (board, MCP, supervisor, CLI)
+        working-directory: v8
+        run: uv sync --python 3.14 --extra dev --locked && uv run --no-sync pytest -q -p no:cacheprovider
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
 
-      - name: Install web deps
-        run: npm --prefix web ci
+      - name: vitest web app (unit; Playwright e2e is qa's, win32-only)
+        working-directory: v8/web
+        run: npm ci && npx vitest run --pool=forks
 
-      - name: Web unit tests (vitest; visual/e2e skipped off win32)
-        run: npm --prefix web test -- --run
+      - name: vitest VS Code extension
+        working-directory: v8/vscode-ext/edp-code
+        run: npm ci && npm test
+
+  install-smoke:
+    uses: ./.github/workflows/install.yml

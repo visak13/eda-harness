@@ -52,11 +52,8 @@ class UpdateError(RuntimeError):
 # ------------------------------------------------------------------------------------------ versions
 
 def current_version() -> str:
-    from importlib.metadata import version
-    try:
-        return version("edp8")
-    except Exception:  # noqa: BLE001
-        return "0"
+    from . import __version__
+    return __version__
 
 
 def _v(s: str) -> tuple[int, ...]:
