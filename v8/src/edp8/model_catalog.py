@@ -88,12 +88,19 @@ def read(agent_home: Path | None = None) -> dict[str, Any]:
 
 
 def shipped_path() -> Path:
-    """The catalog this version ships: the agent home's copy, else the package source tree's."""
+    """The catalog this version ships: the agent home's copy, else the package's (wheel data, or the source
+    checkout the running code is imported from — a dev board on a private EDP_HOME, t-96df382440)."""
     source = settings.agent_home() / "models.json"
-    if not source.is_file():
-        from .materialise import source_root
-        source = source_root() / "models.json"
-    return source
+    if source.is_file():
+        return source
+    from .materialise import source_root
+    try:
+        return source_root() / "models.json"
+    except FileNotFoundError:
+        checkout = Path(__file__).resolve().parents[2] / "models.json"  # <v8>/src/edp8/model_catalog.py
+        if checkout.is_file():
+            return checkout
+        raise
 
 
 def snapshot(shipped: dict[str, Any]) -> dict[str, Any]:
@@ -189,6 +196,16 @@ def materialise() -> Path:
     raw[SHIPPED_KEY] = snapshot(raw)
     write(raw, dest)
     return dest
+
+
+def ensure() -> list[str]:
+    """Board start (t-96df382440): the data-dir copy exists after this, whether or not `init` ran — a
+    hermetic e2e home, a home made before S12 or a deleted models.json. Returns what changed."""
+    dest = path()
+    if dest.is_file():
+        return sync(dest)
+    materialise()
+    return [f"created {dest} from {shipped_path()}"]
 
 
 _codex_windows: dict[str, dict[str, int]] | None = None

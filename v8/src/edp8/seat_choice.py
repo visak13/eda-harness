@@ -126,7 +126,13 @@ def _registry(home: str | os.PathLike | None) -> dict[str, Any]:
         return {}
     try:
         from edp_contracts.seats import config_path
-        raw = json.loads(config_path(home).read_text(encoding="utf-8"))
+        source = config_path(home)
+        if not source.is_file() and Path(home) == settings.agent_home():
+            # t-96df382440: no data-dir copy (materialise failed) and no home copy — the shipped catalog,
+            # read-only, never an empty one
+            from .model_catalog import migrate, shipped_path
+            return migrate(json.loads(shipped_path().read_text(encoding="utf-8")))
+        raw = json.loads(source.read_text(encoding="utf-8"))
         return raw if isinstance(raw, dict) else {}
     except (OSError, ValueError):
         return {}

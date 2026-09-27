@@ -390,6 +390,15 @@ def public_startup_error(admin_token: str | None, tokens_path: Path | None = Non
 
 def create_app(board: Board | None = None, admin_token: str | None = None) -> FastAPI:
     if board is None:
+        # S12 (m-cea5526782) + t-96df382440: every real board start creates the data-dir catalog when it is
+        # missing (no `init`: e2e homes, pre-S12 homes, a deleted file) and merges newer shipped rows into it
+        log = logging.getLogger("edp8.service")
+        try:
+            from . import model_catalog
+            for change in model_catalog.ensure():
+                log.warning("models: %s", change)
+        except (OSError, ValueError) as e:  # /v1/models then reads the shipped catalog (seat_choice._registry)
+            log.warning("models: catalog materialise failed, serving the shipped catalog read-only: %s", e)
         db = str(settings.get("EDP8_DB"))
         Path(db).parent.mkdir(parents=True, exist_ok=True)
         index = None
@@ -1939,12 +1948,6 @@ def run() -> None:
 
     host = resolve_host()  # 0.0.0.0 in public mode (EDP8_PUBLIC_URL), else 127.0.0.1; EDP8_HOST overrides
     port = settings.get("EDP8_PORT")
-    try:  # S12 (m-cea5526782): new shipped models/roles reach the data-dir catalog at every board start
-        from . import model_catalog
-        for change in model_catalog.sync():
-            print(f"models: {change}", file=sys.stderr)
-    except (OSError, ValueError) as e:
-        print(f"models: catalog merge skipped: {e}", file=sys.stderr)
     try:
         app = create_app()  # public mode fails closed here with a plain message
     except RuntimeError as e:
