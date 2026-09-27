@@ -76,7 +76,13 @@ INSTALL_HINTS = {
 
 
 class CodeError(RuntimeError):
-    """The code service could not be started or stopped; the message is one plain line for the user."""
+    """The code service could not be started or stopped; the message is one plain line for the user.
+    `exit` is the CLI's exit code: 2 a refused setting, 3 a port this home does not own, 1 anything else
+    (the codes the old start-code.ps1 used)."""
+
+    def __init__(self, msg: str, exit: int = 1):
+        super().__init__(msg)
+        self.exit = exit
 
 
 def install_hint(platform: str | None = None) -> str:
@@ -93,7 +99,7 @@ def bind_host() -> str:
     """Loopback only: anyone who reaches code-server owns the host through its terminal."""
     raw = str(settings.get("EDP_CODE_HOST") or LOOPBACK).strip()
     if raw.lower() not in (LOOPBACK, "localhost"):
-        raise CodeError(f"refusing EDP_CODE_HOST={raw}: code-server (behind its guard) binds {LOOPBACK} only")
+        raise CodeError(f"refusing EDP_CODE_HOST={raw}: code-server (behind its guard) binds {LOOPBACK} only", exit=2)
     return LOOPBACK
 
 
@@ -146,6 +152,7 @@ class Install:
     tag: str               # the install path: the record's install_dir, the guard's --tag
     version: str | None
     source: str            # setting | pinned | path
+    sha256: str | None = None  # the pinned release asset's digest (a checkout's lock)
 
 
 def _pinned() -> Install | None:
@@ -163,7 +170,7 @@ def _pinned() -> Install | None:
         return None
     if not ((install / ".verified").is_file() and node.is_file()):
         return None
-    return Install([str(node), str(server)], str(install), str(lock["version"]), "pinned")
+    return Install([str(node), str(server)], str(install), str(lock["version"]), "pinned", lock.get("sha256"))
 
 
 def _from_path(path: str, source: str) -> Install | None:
@@ -615,7 +622,8 @@ def guard_argv(args: list[str]) -> list[str]:
 
 
 def _log(name: str) -> Path:
-    d = settings.logs_dir()
+    """Logs beside this instance's data (<data>/code/logs), so two homes never share one."""
+    d = data_root() / "logs"
     d.mkdir(parents=True, exist_ok=True)
     return d / name
 
@@ -644,9 +652,9 @@ def start(*, wait_s: float = 60.0, extensions: bool = True, say=None) -> dict[st
                         "url": url()}
             if st["state"] == "foreign":
                 raise CodeError(f"port {p} is held by pid {st['pid']}, not this Heronry's code server; leaving it "
-                                f"alone (choose another port: code_server.port)")
+                                f"alone (choose another port: code_server.port)", exit=3)
             raise CodeError(f"port {p} is held by this home's code guard, but the recorded code-server behind it is "
-                            "missing, unverified or not serving the workbench: heronry restart code")
+                            "missing, unverified or not serving the workbench: heronry restart code", exit=3)
         inst = locate()
         if inst is None:
             return {"service": SERVICE, "state": "not_installed", "pid": None, "url": None,
@@ -678,6 +686,7 @@ def start(*, wait_s: float = 60.0, extensions: bool = True, say=None) -> dict[st
         # the original app port in a URL-parseable path: the board redirects the browser, never proxies
         senv["VSCODE_PROXY_URI"] = f"{_board_url()}/v1/code/external/{{{{port}}}}/"
         rec: dict[str, Any] = {"service": SERVICE, "port": p, "inner_port": inner, "version": inst.version,
+                               "sha256": inst.sha256,
                                "install_dir": inst.tag, "source": inst.source, "user_dir": str(user_dir()),
                                "started_at": run_state.now_iso(), "git_rev": run_state.git_rev(),
                                "home_id": my_home_id(), "mint_key": mint_key, "restarts": 0,
@@ -710,7 +719,7 @@ def start(*, wait_s: float = 60.0, extensions: bool = True, say=None) -> dict[st
             rep = stop()
             tail = "" if not rep["survivors"] else f"; survivors {rep['survivors']}"
             if isinstance(e, CodeError):
-                raise CodeError(f"{e} (rolled back{tail})") from None
+                raise CodeError(f"{e} (rolled back{tail})", exit=e.exit) from None
             raise
         lp = run_state.listener_pid(p)
         if lp:

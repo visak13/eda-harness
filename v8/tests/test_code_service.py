@@ -1,4 +1,5 @@
 """S2 (s-3c8c2512d6): the `code` service — pinned code-server install, start/stop scripts, edp.ps1 wiring.
+S21 (s-0cfebd3862): the scripts are now thin wrappers over `heronry start|stop code` (edp8.code_service).
 
 Static checks run everywhere on Windows. The install and live-instance tests use the pinned install
 and download cache that `scripts/install-code-server.ps1` leaves under `v8/.tools/code-server/` and
@@ -77,29 +78,33 @@ def test_scripts_never_kill_by_image_or_touch_global_state():
 
 
 def test_start_flags_bind_loopback_and_disable_update_telemetry_proxy():
-    src = SCRIPTS["start-code.ps1"].read_text(encoding="utf-8")
+    """S21: the scripts are thin wrappers over `heronry start|stop code`; the flags live in edp8.code_service."""
+    for name, verb in (("start-code.ps1", "start"), ("stop-code.ps1", "stop")):
+        wrapper = SCRIPTS[name].read_text(encoding="utf-8")
+        assert f'"edp8.cli", "{verb}", "code"' in wrapper or f"edp8.cli {verb} code" in wrapper, name
+        code = "\n".join(line.split("#", 1)[0] for line in wrapper.splitlines())
+        assert not re.search(r"Start-Process|Get-CimInstance|Win32_Process|\.Kill\(", code), name
+    src = (V8 / "src" / "edp8" / "code_service.py").read_text(encoding="utf-8")
     for flag in ("--disable-telemetry", "--disable-update-check", "--disable-proxy",
                  "--config", "--user-data-dir", "--extensions-dir"):
-        assert flag in src, flag
-    assert '$BINDHOST = "127.0.0.1"' in src
+        assert f'"{flag}"' in src, flag
     # s-03c7e9168b: code-server binds a random inner loopback port with --auth password and a per-start
     # secret passed only by environment; the guard holds the service port
-    assert '"--bind-addr", "${BINDHOST}:$INNER", "--auth", "password"' in src and '"--auth", "none"' not in src
-    assert '"edp8.code_guard", "--port", "$PORT", "--upstream", "tcp:${BINDHOST}:$INNER"' in src
-    assert "$env:HASHED_PASSWORD = $s" in src and "CODE_GUARD_SESSION" in src and "$SECRET" not in src.split("$flags = @(")[1].split(")")[0]
+    assert '"--bind-addr", f"{host}:{inner}", "--auth", "password"' in src and '"--auth", "none"' not in src
+    assert 'gargs = ["--port", str(p), "--upstream", f"tcp:{host}:{inner}"]' in src
+    assert 'senv["HASHED_PASSWORD"] = secret' in src and 'genv["CODE_GUARD_SESSION"] = secret' in src
+    server_args = src.split("server_args = [")[1].split("]")[0]
+    assert "secret" not in server_args and "mint_key" not in server_args and "--verbose" not in server_args
     # second opinion 20260925T174116Z-b3066925: trace logging would write the password out (--log info
     # outranks LOG_LEVEL) and an inherited cookie suffix would rename the cookie the guard injects
-    assert '"--log", "info"' in src and '"LOG_LEVEL", "PASSWORD", "CODE_SERVER_COOKIE_SUFFIX", "VSCODE_OPTIONS"' in src
-    assert "--verbose" not in src.split("$flags = @(")[1].split(")")[0]
-    # the env strip is by prefix (dec-ea925a2d30), scoped to the launch and the CLI installs
-    assert "'^EDP8?_'" in src and "WithoutFleetEnv {" in src
-    # s-17c13096e5: the guard-session mint key reaches the guard only after code-server started (its
-    # terminals never inherit it), never on a command line; the board reads it from code.json
-    wrapper = src.split("$body = @(")[1].split("WriteUtf8 $wrap $body")[0]
-    assert "Remove-Item Env:CODE_GUARD_MINT_HANDOFF" in wrapper.split("$p =Start-Process")[0]
-    assert "$env:CODE_GUARD_MINT_KEY = $mk" in wrapper.split("$p =Start-Process")[1]
-    assert "$MINTKEY" not in src.split("$flags = @(")[1].split(")")[0] and "$MINTKEY" not in src.split("$guardFlags = @(")[1].split(")")[0]
-    assert "mint_key = $MINTKEY" in src
+    assert '"--log", "info"' in src
+    assert '_SCRUB = ("LOG_LEVEL", "PASSWORD", "HASHED_PASSWORD", "CODE_SERVER_COOKIE_SUFFIX", "VSCODE_OPTIONS",' in src
+    # the env strip is by prefix (dec-ea925a2d30), for the server and the CLI installs
+    assert 'u.startswith("EDP_") or u.startswith("EDP8_")' in src and "env = server_env()" in src
+    # s-17c13096e5: the mint key reaches only the guard (by env), never a command line; the board reads it
+    # from code.json
+    assert 'genv["CODE_GUARD_MINT_KEY"] = mint_key' in src and '"mint_key": mint_key' in src
+    assert "mint_key" not in src.split("gargs = [")[1].split("]")[0]
 
 
 def test_extension_pins_are_exact_and_locked():
@@ -239,7 +244,6 @@ def test_a_spare_port_instance_starts_healthy_and_stops_only_itself(tmp_path):
     assert _listener(port) is None and not (tmp_path / "run" / "code.json").exists()
     if fleet_code:  # the fleet's code service on :9410 kept running, same pid
         assert _listener(int(os.environ.get("EDP_CODE_PORT_FLEET", "9410"))) == fleet_code
-        assert "sweep skipped" in s.stdout
 
 
 # ── edp.ps1 wiring ──────────────────────────────────────────────────────────────────────────────

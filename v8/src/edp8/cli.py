@@ -124,21 +124,25 @@ def _targets(pos: list[str]) -> list[str]:
     return [want]
 
 
-def _code(verb: str, explicit: bool) -> int:
+def _code(verb: str, explicit: bool, opts: dict | None = None) -> int:
     """`heronry start|stop|restart code` (S21): edp8.code_service directly. The supervisor does not watch the
     code server, so there is nothing to race; the Admin console reaches the same module through the
     supervisor's control port. A missing code-server is a failure only when `code` was asked for by name."""
     from . import code_service
+    opts = opts or {}
+    kw: dict = {"say": lambda m: print(f"code       {m}"), "extensions": not opts.get("skip-extensions")}
+    if opts.get("timeout"):
+        kw["wait_s"] = float(opts["timeout"])
     try:
         if verb == "start":
-            out = code_service.start(say=lambda m: print(f"code       {m}"))
+            out = code_service.start(**kw)
         elif verb == "stop":
             out = code_service.stop()
         else:
-            out = code_service.restart(say=lambda m: print(f"code       {m}"))
+            out = code_service.restart(**kw)
     except code_service.CodeError as e:
         print(f"code       FAILED  {e}", file=sys.stderr)
-        return 1
+        return e.exit
     if out.get("state") == "not_installed":
         print(f"code       not installed  {out.get('install_hint')}", file=sys.stderr if explicit else sys.stdout)
         return 1 if explicit else 0
@@ -216,7 +220,7 @@ def start(argv: list[str]) -> int:
             continue
         _say(out)
     if targets == [launcher.CODE]:
-        return _code("start", explicit=True)
+        return _code("start", explicit=True, opts=opts)
     if not opts.get("no-supervisor") and rc == 0:
         try:
             _say(launcher.ensure_supervisor())
@@ -368,7 +372,7 @@ def restart(argv: list[str]) -> int:
         _say(launcher.ensure_supervisor())
         return 0
     if targets == [launcher.CODE]:
-        return _code("restart", explicit=True)
+        return _code("restart", explicit=True, opts=opts)
     code_too = launcher.CODE in targets
     targets = [t for t in targets if t != launcher.CODE]
     replace = _legacy_supervisor()
@@ -449,6 +453,8 @@ COMMANDS: tuple[Command, ...] = (
     Command("start", "start [svc|all]", "start services (board, broker, pool, mcp, bridge) and the supervisor; "
             "`start code` starts the optional code server (VS Code in the browser)", (
         ("--no-browser", "do not open the setup wizard in a browser on first run"),
+        ("--skip-extensions", "code: leave code-server's extensions as they are"),
+        ("--timeout S", "code: seconds to wait for code-server to answer (default 60)"),
         ("--no-supervisor", "start the services without the supervisor that restarts a crashed one"),
     )),
     Command("stop", "stop [svc|all]", "stop services and verify nothing is left", (
