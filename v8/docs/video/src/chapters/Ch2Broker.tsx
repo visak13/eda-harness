@@ -1,7 +1,8 @@
 // Chapter 2 — the broker carries messages between seats.
 // True to: edp-broker service.publish (resolve alias, strictly increasing timestamp, append to the
 // recipient's append-only JSONL inbox, wake its live stream), store.InboxStore.append, and the
-// dead-mail refusal of an unknown recipient.
+// refusal of a recipient it cannot route (store._safe → BadRecipient → service logs publish_no_route and
+// answers BROKER_NO_ROUTE). A well-formed unknown handle is the board's refusal, not the broker's.
 import React from "react";
 import { interpolate, useCurrentFrame } from "remotion";
 import { C, FONT } from "../theme";
@@ -72,7 +73,7 @@ export const Ch2Broker: React.FC = () => {
       captions={[
         { at: 30, text: <>Every seat has a <T>mailbox</T> — an append-only log the broker keeps.</> },
         { at: 120, text: <>Publishing stamps the message, appends it and <T>wakes</T> the recipient's stream at once. No polling.</> },
-        { at: 255, text: <>An unknown recipient is <T c={C.danger}>refused loudly</T> — never silently dropped.</> },
+        { at: 255, text: <>A recipient it cannot route is <T c={C.danger}>refused loudly</T> — never silently dropped.</> },
       ]}
     >
       <svg width={1120} height={1080} style={{ position: "absolute", left: 0, top: 0 }}>
@@ -109,7 +110,7 @@ export const Ch2Broker: React.FC = () => {
         );
       })}
       <div style={{ position: "absolute", left: CX - 210, top: CY + 150, width: 420, display: "flex", justifyContent: "center", opacity: dead, transform: `scale(${0.8 + 0.2 * dead})` }}>
-        <Pill color={C.danger} size={20}>to: “reviewr” → refused · dead mail logged</Pill>
+        <Pill color={C.danger} size={20}>to: “qa lead” → refused · no route logged</Pill>
       </div>
     </Chapter>
   );

@@ -1,5 +1,6 @@
 // Chapter 6 — one epic walking the board on its own.
-// True to: edp8 board.Board._design_gate_open (opening design_signoff moves the epic to designed),
+// True to: edp8 board.Board.gate_open → auto_carry(trigger="design_signoff opened") (opening design_signoff
+// moves the epic to designed; _design_gate_open then holds stories back while the gate is open),
 // board.Board._record_gate_answer (the owner's approval → signed_off; stories released to ready)
 // and board.Board._auto_advance (every verdict passed → done, "auto: all verdicts passed").
 // Invented demo data only.

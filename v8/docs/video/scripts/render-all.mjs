@@ -13,6 +13,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const out = (f) => path.join(root, "out", f);
 const concurrency = Number(process.env.RENDER_CONCURRENCY ?? 1);
 
+// numbers the captions state come from the code (src/code-facts.json); refresh before bundling
+execFileSync(process.execPath, [path.join(root, "scripts/code-facts.mjs")], { stdio: "inherit" });
+
 const serveUrl = await bundle({ entryPoint: path.join(root, "src/index.ts") });
 
 for (const [id, file] of [["Main", "heronry-demo.mp4"], ["Hero", "hero.mp4"]]) {

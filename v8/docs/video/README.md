@@ -32,3 +32,6 @@ npm run player:build   # static page in player/dist/
 - `src/Main.tsx` — the chapter list and lengths; `src/chapters/Ch*.tsx` — one file per chapter, each
   headed by the code it depicts; `src/Hero.tsx` — the README loop; `src/components/kit.tsx` — shared parts.
 - `scripts/render-all.mjs`, `scripts/stills.mjs` — the render commands.
+- `scripts/code-facts.mjs` — reads the numbers the captions state from the code (the context() budget
+  from `v8/src/edp8/bundles.py` and the settings registry) into `src/code-facts.json`; both render
+  commands run it first and fail if the code moved.

@@ -1,6 +1,7 @@
 // Chapter 3 — reactive subscriptions: seats sleep on their feed and wake only on what concerns them.
 // True to: edp8 board.Board._reason_for (who wakes, and the one-line "why"), service.feed (the
-// server filters the board feed per seat) and feed_driver._stream_board_once (the seat's stream).
+// server filters the board feed per seat; Board._WHY_CLAUSE is the exact why text — a gate party reads
+// "on your ticket", the epic's architect "architect listener") and feed_driver._stream_board_once (the seat's stream).
 import React from "react";
 import { interpolate, useCurrentFrame } from "remotion";
 import { C, FONT } from "../theme";
@@ -12,8 +13,8 @@ const SEATS: Role[] = ["architect", "engineer", "qa", "adversary", "sme"];
 const EVENTS = [
   { at: 60, label: "message → qa", wakes: 2, why: "addressed to you" },
   { at: 125, label: "story → in_review", wakes: 1, why: "on your ticket" },
-  { at: 190, label: "@sme can you check this?", wakes: 4, why: "@mention" },
-  { at: 255, label: "design_signoff gate opened", wakes: 0, why: "a gate you answer" },
+  { at: 190, label: "@sme.t-3f9a check this?", wakes: 4, why: "@mention" },
+  { at: 255, label: "design_signoff gate opened", wakes: 0, why: "architect listener" },
 ];
 
 const X0 = 40;
@@ -29,7 +30,7 @@ export const Ch3Wake: React.FC = () => {
       art="ch3-wake.png"
       captions={[
         { at: 30, text: <>Each seat sleeps on <T>one feed</T>: board events plus its own inbox.</> },
-        { at: 110, text: <>The board decides who wakes — <T>addressed to you</T>, your ticket, a gate you answer, an @mention.</> },
+        { at: 110, text: <>The board decides who wakes — <T>addressed to you</T>, your ticket or its gate, an @mention.</> },
         { at: 230, text: <>Everyone else keeps sleeping. Every wake carries a <T>one-line why</T>.</> },
       ]}
     >

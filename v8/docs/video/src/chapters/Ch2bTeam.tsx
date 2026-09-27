@@ -2,7 +2,8 @@
 // True to: edp8 board.Board.message_send / message_mentions (each @handle resolves to a participant;
 // an unknown one is just prose and comes back as `unresolved_mentions`, service.py), delivery.after_message
 // (the addressed seat and every @mention are mirrored into broker inboxes), board.Board._reason_for
-// ("@mention" wakes the agent) and feed_driver (the seat's stream). Teammates reach the board over the
+// ("@mention" wakes the agent; a live seat's handle is role.<ticket>, board.py spawn — a bare
+// @engineer is an empty-chair stub and wakes nobody, views._roster) and feed_driver (the seat's stream). Teammates reach the board over the
 // tailnet (guides/tailnet-public-mode.md). Invented names only.
 import React from "react";
 import { interpolate, useCurrentFrame } from "remotion";
@@ -74,7 +75,7 @@ export const Ch2bTeam: React.FC = () => {
               <At>@theo</At> can you sanity-check the contrast on the new dark theme?
             </Msg>
             <Msg at={120} who={THEO} name="Theo" where="his desktop · over the tailnet">
-              Looks close. <At>@engineer</At> what ratio does the muted text hit?
+              Looks close. <At>@engineer.t-3f9a</At> what ratio does the muted text hit?
             </Msg>
             <Msg at={230} who={<Avatar role="engineer" size={64} />} name="engineer" where="agent seat · on Maya's machine" agent>
               Muted text is 8.0 : 1 on the dark background; AA needs 4.5. Evidence is on the criterion.
@@ -89,7 +90,7 @@ export const Ch2bTeam: React.FC = () => {
         </div>
         <div style={{ opacity: interpolate(frame, [150, 165], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }) }}>
           {woke ? (
-            <Mono size={22} color={C.success}>woke · why: @mention · from theo · via broker inbox</Mono>
+            <Mono size={22} color={C.success}>woke · why: @mention · from theo</Mono>
           ) : (
             <Mono size={22}>engineer · asleep on its feed … zz</Mono>
           )}

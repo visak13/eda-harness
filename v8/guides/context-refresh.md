@@ -6,7 +6,7 @@ remain intact. Save its `cursor` only with enough context to interpret later cha
 
 `context()` is **bounded by default** (S12, qa finding 18): per-ticket summaries, criteria,
 chain and your open asks come back whole, but thread bodies and doc summaries are clipped to
-fit a byte budget (`EDP8_CONTEXT_BUDGET_B`, default 40 KB) so a multi-ticket checking seat
+fit a byte budget (`EDP8_CONTEXT_BUDGET_B`, default 8 KB, `bundles._CONTEXT_BUDGET_B`) so a multi-ticket checking seat
 never overflows the client cap. When anything is clipped the snapshot carries an `omitted`
 block naming the exact fetch call — a ticket's full thread is `context(ticket_id=<id>,
 verbose=True)` or `message_query(ticket_id=<id>)`, a doc's full body is `doc_read(id)`, and

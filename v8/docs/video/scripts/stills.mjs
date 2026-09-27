@@ -4,6 +4,7 @@
 import path from "node:path";
 import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 import { bundle } from "@remotion/bundler";
 import { renderStill, selectComposition } from "@remotion/renderer";
 import { readFileSync } from "node:fs";
@@ -28,6 +29,9 @@ const shots = storyboard
       { file: "out/stills/readme-2-context.png", frame: at("ch4") },
       { file: "out/stills/readme-3-board.png", frame: at("ch6") },
     ];
+
+// numbers the captions state come from the code (src/code-facts.json); refresh before bundling
+execFileSync(process.execPath, [path.join(root, "scripts/code-facts.mjs")], { stdio: "inherit" });
 
 const serveUrl = await bundle({ entryPoint: path.join(root, "src/index.ts") });
 const composition = await selectComposition({ serveUrl, id: "Main" });

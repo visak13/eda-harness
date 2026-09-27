@@ -1,5 +1,6 @@
 // Chapter 4 — context engineering.
-// True to: edp8 bundles._context (the byte-budgeted snapshot, 40 KB default, EDP8_CONTEXT_BUDGET_B),
+// True to: edp8 bundles._context (the byte-budgeted snapshot; default bundles._CONTEXT_BUDGET_B, read
+// into src/code-facts.json by scripts/code-facts.mjs; env EDP8_CONTEXT_BUDGET_B),
 // context_delta.ContextReader.delta (signed cursor, only what changed), records.recall (up to 8
 // one-line decisions/claims/lessons) and ruleset.assemble_ruleset (layered strategy docs, enforced
 // lines inlined, each doc one index line).
@@ -7,13 +8,18 @@ import React from "react";
 import { interpolate, useCurrentFrame } from "remotion";
 import { C, FONT } from "../theme";
 import { Card, Chapter, Mono, Pill, T, useAppear } from "../components/kit";
+import FACTS from "../code-facts.json";
+
+// the default budget, from the code (8_000 B → "8 KB"); the pack rows are sized to fit under it
+const BUDGET_KB = FACTS.contextBudgetBytes / 1000;
+const kb = (n: number) => (Number.isInteger(n) ? `${n}` : n.toFixed(1));
 
 const PACK = [
-  { label: "ticket + chain", kb: 3, at: 40, c: C.accent },
-  { label: "criteria", kb: 2, at: 55, c: C.success },
-  { label: "design summary", kb: 6, at: 70, c: C.warning },
-  { label: "thread (newest)", kb: 9, at: 85, c: C.muted },
-  { label: "recall: 3 lessons", kb: 2, at: 100, c: "#B9A3E0" },
+  { label: "ticket + chain", kb: 1.6, at: 40, c: C.accent },
+  { label: "criteria", kb: 0.6, at: 55, c: C.success },
+  { label: "design summary", kb: 1.2, at: 70, c: C.warning },
+  { label: "thread (newest)", kb: 1.4, at: 85, c: C.muted },
+  { label: "recall: 3 lessons", kb: 1.0, at: 100, c: "#B9A3E0" },
 ];
 
 const LAYERS = [
@@ -34,7 +40,7 @@ export const Ch4Context: React.FC = () => {
       title="Context, engineered"
       art="ch4-context.png"
       captions={[
-        { at: 30, text: <>A seat boots from one <T>bounded context pack</T> — 40 KB by default, newest first.</> },
+        { at: 30, text: <>A seat boots from one <T>bounded context pack</T> — {kb(BUDGET_KB)} KB by default, newest first.</> },
         { at: 150, text: <>After that, <T>context_delta</T> returns only what changed since its cursor.</> },
         { at: 245, text: <><T>Recall</T> brings past decisions and lessons; linked <T>strategy docs</T> layer the rules.</> },
       ]}
@@ -44,10 +50,10 @@ export const Ch4Context: React.FC = () => {
         <Card style={{ padding: 26 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
             <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: 3, color: C.accent }}>context()</div>
-            <Mono size={20} color={C.text}>{used} KB / 40 KB</Mono>
+            <Mono size={20} color={C.text}>{kb(used)} KB / {kb(BUDGET_KB)} KB</Mono>
           </div>
           <div style={{ height: 12, borderRadius: 6, background: "#4A3C35", marginTop: 14, overflow: "hidden" }}>
-            <div style={{ width: `${(used / 40) * 100}%`, height: "100%", background: C.success }} />
+            <div style={{ width: `${(used / BUDGET_KB) * 100}%`, height: "100%", background: C.success }} />
           </div>
           <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 12 }}>
             {PACK.map((p) => {
@@ -55,7 +61,7 @@ export const Ch4Context: React.FC = () => {
               return (
                 <div key={p.label} style={{ opacity: a, transform: `translateX(${(1 - a) * 60}px)`, display: "flex", alignItems: "center", gap: 14, padding: "12px 16px", borderRadius: 12, background: C.surface2, borderLeft: `6px solid ${p.c}` }}>
                   <span style={{ fontFamily: FONT, fontSize: 24, fontWeight: 700, flex: 1 }}>{p.label}</span>
-                  <Mono size={18}>{p.kb} KB</Mono>
+                  <Mono size={18}>{p.kb.toFixed(1)} KB</Mono>
                 </div>
               );
             })}
