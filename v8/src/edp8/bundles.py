@@ -7,8 +7,8 @@ validated pydantic args instance and return the board's JSON envelope unchanged
 test) via `set_client()` — this keeps `handler: Callable[[BaseModel], dict]` exactly
 as specified, with no client threaded through call sites.
 
-`ROLE_BUNDLES` is the static, per-role allow list: `mcp_server.py` registers only the
-named tools for the running participant's role.
+`ROLE_BUNDLES` is the SOURCE of the Standard workflow's role bundles and is read nowhere else (S13): a
+seat's tools come from its epic's pinned workflow (whoami `bundle`), and `tools_for_role` is Standard's.
 """
 
 from __future__ import annotations
@@ -514,7 +514,7 @@ def _whoami(_: WhoamiArgs) -> dict[str, Any]:
         role = resp["value"]["participant"]["role"]
         resp["value"]["role"] = role
         wf_bundle = resp["value"].pop("bundle", None)  # S13: the board reads it from the epic's workflow
-        resp["value"]["bundles_available"] = wf_bundle if wf_bundle is not None else ROLE_BUNDLES.get(role, [])
+        resp["value"]["bundles_available"] = wf_bundle if wf_bundle is not None else standard_bundle(role) or []
         resp["value"]["lineage"] = _lineage(resp["value"]["participant"].get("id") or "")
         resp["value"]["server_version"] = _server_version  # the tool code you are talking to (git sha)
     return resp
@@ -2827,8 +2827,30 @@ for _role, _add in _S23_FRAMEWORK.items():
 from .workflow import KERNEL_TOOLS  # noqa: E402 - S13 §4.14(e).1: every spawned role carries these
 
 
+@functools.lru_cache(maxsize=1)
+def _standard() -> Any:
+    from .workflow import Workflow, build_standard  # lazy: build_standard reads ROLE_BUNDLES above
+    return Workflow(build_standard())
+
+
+def standard_bundle(role: str) -> list[str] | None:
+    """The role's bundle in Standard@1 (None for a role Standard does not define). A seat on an epic pinned to
+    another workflow is served that workflow's bundle instead (whoami `bundle`, mcp_server.allowed_tool_names)."""
+    return _standard().bundle(role)
+
+
+def standard_roles() -> list[str]:
+    """Standard@1's roles that carry a bundle: the built-in /mcp/<role> endpoints."""
+    return sorted(r.id for r in _standard().d.roles if r.bundle)
+
+
+def is_human_role(role: str) -> bool:
+    r = _standard().roles.get(str(role))
+    return bool(r and r.human)
+
+
 def tools_for_role(role: str) -> list[ToolDef]:
-    # a retired/unknown role never inherits the owner's tools; a workflow's custom role gets the identity
-    # tools plus the kernel bundle, so its seat still boots, reports and closes (S13)
-    names = ROLE_BUNDLES.get(role) or _IDENTITY + [k for k in KERNEL_TOOLS if k not in _IDENTITY]
+    # Standard's bundle for the role. A retired/unknown role never inherits the owner's tools; a workflow's
+    # custom role gets the identity tools plus the kernel bundle, so its seat still boots, reports and closes
+    names = standard_bundle(role) or _IDENTITY + [k for k in KERNEL_TOOLS if k not in _IDENTITY]
     return [ALL_TOOLS[n] for n in names if n in ALL_TOOLS]

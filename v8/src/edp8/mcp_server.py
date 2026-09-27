@@ -45,7 +45,9 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from . import __version__, run_state, settings
-from .bundles import ALL_TOOLS, ROLE_BUNDLES, ToolDef, bind_request, invoke, set_client, tools_for_role
+from .bundles import (ALL_TOOLS, ToolDef, bind_request, invoke, is_human_role, set_client, standard_roles,
+                      tools_for_role)
+from .workflow import KERNEL_TOOLS
 from .client import BoardClient
 from .schemas import Role
 
@@ -85,9 +87,11 @@ def _identity_from(ctx: Context | None) -> tuple[str | None, str | None, str | N
 # path, and a seat naming another role's path gets only the tools both roles share.
 _ROLE_TTL_S = 60.0
 _role_cache: dict[tuple[str, str | None, str | None], tuple[float, str]] = {}
-# S14 (c-e9d095f3a3): a workflow's custom role is served the bundle its pinned version declares (whoami
-# `bundle`: the role's tools clipped by its permissions, plus the kernel tools), cached with the role
+# S13/S14: every seat is served the bundle its epic's pinned workflow declares for its role (whoami `bundle`;
+# a custom role's is clipped by its permissions; the kernel tools always), cached with the role, and the
+# workflow ref it came from so a refusal names it
 _bundle_cache: dict[tuple[str, str | None, str | None], list[str] | None] = {}
+_workflow_cache: dict[tuple[str, str | None, str | None], str | None] = {}
 
 
 def _caller_role(board_url: str, admin_token: str | None, participant: str | None, token: str | None) -> str | None:
@@ -111,6 +115,7 @@ def _caller_role(board_url: str, admin_token: str | None, participant: str | Non
             _bundle_cache[key] = list(resp["value"].get("bundle") or []) or None
         except (KeyError, TypeError, AttributeError):
             _bundle_cache[key] = None
+        _workflow_cache[key] = (resp.get("value") or {}).get("workflow")
     return role
 
 
@@ -120,26 +125,39 @@ def _caller_bundle(board_url: str, participant: str | None, token: str | None) -
 
 
 def allowed_tool_names(path_role: str, caller_role: str | None, caller_bundle: list[str] | None = None) -> set[str]:
-    """Tools a caller with board role `caller_role` may use on /mcp/<path_role>: the intersection of
-    both roles' bundles; nothing at all for an expert or a caller the board refused. S14: a custom role
-    (not a built-in bundle) gets the bundle its epic's pinned workflow declares (`caller_bundle`, from
-    whoami, already clipped by the role's permissions) plus the identity and kernel tools — never more."""
+    """Tools a caller with board role `caller_role` may use on /mcp/<path_role>; nothing at all for an expert
+    or a caller the board refused. The caller's own tools are the bundle its epic's pinned workflow declares
+    for its role (`caller_bundle`, from whoami; S13 owner m-30023429f7 "any workflow"), Standard's when whoami
+    did not say (a seat with no epic resolves to Standard on the board). A seat's kernel tools always stay
+    in; a custom role also keeps the identity tools. On another role's /mcp/<role> path the caller gets only
+    what that path's Standard bundle shares (t-3e246b5e32)."""
     if not caller_role or caller_role == Role.expert.value:
         return set()
-    path = ALL_TOOLS if path_role == CUSTOM_PATH else {t.name for t in tools_for_role(path_role)}
-    if caller_role not in ROLE_BUNDLES:
-        mine = {t.name for t in tools_for_role(caller_role)} | set(caller_bundle or [])
-        return set(path) & mine & set(ALL_TOOLS)
-    return set(path) & {t.name for t in tools_for_role(caller_role)}
+    std = {t.name for t in tools_for_role(caller_role)}
+    if caller_bundle is None:
+        mine = std
+    elif caller_role in standard_roles():
+        mine = set(caller_bundle)
+    else:
+        mine = std | set(caller_bundle)
+    if not is_human_role(caller_role):
+        mine |= set(KERNEL_TOOLS)
+    mine &= set(ALL_TOOLS)
+    if path_role in (CUSTOM_PATH, caller_role):
+        return mine
+    return mine & {t.name for t in tools_for_role(path_role)}
 
 
-def _refused(tool_name: str, path_role: str, caller_role: str | None) -> str:
-    """`unauthorized` when the board refused the caller outright, `forbidden` when its role lacks the tool."""
+def _refused(tool_name: str, path_role: str, caller_role: str | None, workflow: str | None = None) -> str:
+    """`unauthorized` when the board refused the caller outright, `forbidden` when its role lacks the tool
+    (naming the workflow whose bundle it is, S13)."""
     who = f"role {caller_role!r}" if caller_role else "a caller the board refuses"
+    under = f" under workflow {workflow}" if caller_role and workflow else ""
     return json.dumps({"ok": False, "error": {
         "code": "forbidden" if caller_role else "unauthorized",
-        "message": f"tool {tool_name!r} is not available to {who} on /mcp/{path_role}"},
-        "hint": "tools follow your board role (whoami), not the /mcp/<role> path"})
+        "message": f"tool {tool_name!r} is not available to {who}{under} on /mcp/{path_role}"},
+        "hint": "tools follow your board role in your epic's workflow (whoami bundles_available), "
+                "not the /mcp/<role> path"})
 
 
 def _agent_shell_as_human(board_url: str, admin_token: str | None, participant: str | None, session: str | None,
@@ -174,7 +192,8 @@ def _wrap(tool: ToolDef, *, board_url: str, admin_token: str | None, workspace_r
             caller_role = _caller_role(board_url, admin_token, participant, token)
             if tool.name not in allowed_tool_names(path_role, caller_role,
                                                    _caller_bundle(board_url, participant, token)):
-                return _refused(tool.name, path_role, caller_role)
+                return _refused(tool.name, path_role, caller_role,
+                                _workflow_cache.get((board_url, participant, token)))
         client = BoardClient(base_url=board_url, participant=participant, admin_token=admin_token,
                              token=token, workspace_root=workspace_root)
         request_tool = tool
@@ -244,10 +263,9 @@ def build_role_server(role: str, *, board_url: str, admin_token: str | None,
     server = _RoleServer("edp8", version=__version__,
                          instructions=f"edp8 board tools for role {role!r} (server {VERSION})",
                          path_role=role, board_url=board_url, admin_token=admin_token)
-    # S14: the custom-role endpoint registers every tool; tools/list and each call filter them to the
-    # caller's declared bundle (allowed_tool_names)
-    tools = list(ALL_TOOLS.values()) if role == CUSTOM_PATH else tools_for_role(role)
-    for tool in tools:
+    # S13/S14: every endpoint registers every tool; tools/list and each call filter them to the caller's
+    # bundle in its epic's pinned workflow (allowed_tool_names), so a workflow can add a tool to a role
+    for tool in ALL_TOOLS.values():
         server.add_tool(_wrap(tool, board_url=board_url, admin_token=admin_token, workspace_root=workspace_root,
                               http_upload_policy=http_upload_policy, path_role=role),
                         name=tool.name, description=tool.description)
@@ -276,7 +294,7 @@ def _env() -> tuple[str, str | None]:
 
 def build_http_app(roles: list[str] | None = None) -> Starlette:
     board_url, admin_token = _env()
-    roles = roles or sorted(ROLE_BUNDLES)
+    roles = roles or standard_roles()
     upload_policy = HttpUploadPolicy.from_environment(board_url)
     security = TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
