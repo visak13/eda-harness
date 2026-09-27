@@ -172,15 +172,26 @@ class AppServer:
         assert self.proc
         mine = sock.getsockname()[:2]
         peer = sock.getpeername()[:2]
-        owner = None
-        for c in psutil.net_connections(kind="tcp"):
-            if c.laddr and c.raddr and tuple(c.laddr)[:2] == tuple(peer) and tuple(c.raddr)[:2] == tuple(mine):
-                owner = c.pid
-                break
         try:
             ours = {self.proc.pid, *(p.pid for p in psutil.Process(self.proc.pid).children(recursive=True))}
         except psutil.Error:
             ours = {self.proc.pid}
+        try:
+            conns = [(c, c.pid) for c in psutil.net_connections(kind="tcp")]
+        except psutil.AccessDenied:
+            # macOS: the host-wide scan needs root (CI 36326185339). Our own tree's sockets are readable, and
+            # a listener outside our tree is refused either way, so scanning only ours decides the same
+            conns = []
+            for pid in ours:
+                try:
+                    conns += [(c, pid) for c in psutil.Process(pid).net_connections(kind="tcp")]
+                except psutil.Error:
+                    continue
+        owner = None
+        for c, pid in conns:
+            if c.laddr and c.raddr and tuple(c.laddr)[:2] == tuple(peer) and tuple(c.raddr)[:2] == tuple(mine):
+                owner = pid
+                break
         if owner is None or owner not in ours:
             raise ListenerNotOurs("connect", {"message": f"{self.ws_url} is served by pid {owner}, not this seat's "
                                                         f"app-server {self.proc.pid}: the token was not sent"})

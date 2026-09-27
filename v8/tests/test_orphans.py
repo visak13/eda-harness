@@ -80,6 +80,14 @@ def test_reused_parent_pid_counts_as_gone():
     assert [o.pid for o in orphans.find(table=t, now=NOW)] == [50]
 
 
+def test_posix_reaper_parent_counts_as_gone():
+    # POSIX re-parents an orphan to init or a subreaper, so its ppid always names a live, older process
+    for reaper in (P(1, 0, "systemd", ["/sbin/init"], 9), P(900, 1, "launchd", ["/sbin/launchd"], 9),
+                   P(901, 1, "systemd", ["/lib/systemd/systemd", "--user"], 9)):
+        t = _t(reaper, P(70, reaper.pid, "python3", ["python3", "-m", "pytest"], 2))
+        assert [o.pid for o in orphans.find(table=t, now=NOW)] == [70], reaper
+
+
 # ------------------------------------------------------------------------------ the drill (real processes)
 
 def _plant(argv: list[str]) -> int:

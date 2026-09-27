@@ -47,6 +47,17 @@ def _handle_path(file) -> Path:
         elif path.startswith('\\\\?\\'):
             path = path[4:]
         return Path(path)
+    if sys.platform == 'darwin':
+        # macOS has no /proc: F_GETPATH asks the kernel for the opened vnode's path (MAXPATHLEN buffer)
+        import fcntl
+        try:
+            raw = fcntl.fcntl(file.fileno(), getattr(fcntl, 'F_GETPATH', 50), bytes(1024))
+        except OSError as exc:
+            raise UploadRefused('cannot verify opened file handle') from exc
+        path = raw.split(b'\0', 1)[0]
+        if not path:
+            raise UploadRefused('cannot verify opened file handle')
+        return Path(os.fsdecode(path))
     fd = Path(f'/proc/self/fd/{file.fileno()}')
     if not fd.exists():
         raise UploadRefused('this platform has no supported opened-handle verifier')

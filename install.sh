@@ -62,7 +62,8 @@ file_url() {  # file_url <abs path>: a file:// URL, with %, space and # percent-
   case "$u" in /*) echo "file://$u" ;; *) echo "file:///$u" ;; esac
 }
 
-WORK="$(mktemp -d 2>/dev/null || mktemp -d -t heronry)"
+# an explicit template: macOS mktemp -d ignores TMPDIR without one (CI 36326185339 landed in /var/folders)
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/heronry.XXXXXX" 2>/dev/null || mktemp -d 2>/dev/null || mktemp -d -t heronry)"
 trap 'rm -rf "$WORK"' EXIT INT TERM
 export NO_COLOR=1
 

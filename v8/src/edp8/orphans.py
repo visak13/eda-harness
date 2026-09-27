@@ -6,8 +6,9 @@ doctor` prints each with pid, age, memory and the stop command, and `heronry doc
 stops that tree by process identity (ProcId + kill_tree), never by name.
 
 "Its seat is gone" = walking up from the runner through launcher processes (shells, npm/npx, uv) the chain
-breaks: a parent that no longer exists, or a pid now naming a NEWER process (Windows reuses pids and keeps
-the stale ppid, so a parent must be at least as old as its child). A runner under a live claude/codex shell,
+breaks: a parent that no longer exists, a pid now naming a NEWER process (Windows reuses pids and keeps
+the stale ppid, so a parent must be at least as old as its child), or on POSIX the init/subreaper that
+adopted the orphan. A runner under a live claude/codex shell,
 an editor or a terminal is attached and never reported.
 """
 from __future__ import annotations
@@ -25,6 +26,7 @@ MIN_AGE_S = 3600.0
 _TOL = 1.0  # create_time rounding across psutil calls
 # wrappers too: coreutils `timeout 3000 pytest` sits between a reaped shell and its runner (2026-09-27)
 _SHELLS = {"bash", "sh", "zsh", "dash", "cmd", "powershell", "pwsh", "conhost", "uv", "uvx", "timeout", "env", "nohup"}
+_REAPERS = {"init", "launchd", "systemd"}
 
 
 @dataclass(frozen=True)
@@ -110,10 +112,17 @@ def snapshot() -> dict[int, Proc]:
     return out
 
 
+def _reaper(q: Proc) -> bool:
+    """POSIX re-parents an orphan to init or the nearest subreaper (launchd, systemd --user): that parent
+    is where orphans go, not a seat (CI 36326185339 ubuntu/macOS: every planted orphan read as attached)."""
+    return q.pid == 1 or _base(q.name) in _REAPERS
+
+
 def _parent(table: dict[int, Proc], p: Proc) -> Proc | None:
-    """p's parent iff it still exists AND is not younger than p (a reused pid names a newer process)."""
+    """p's parent iff it still exists AND is not younger than p (a reused pid names a newer process)
+    AND is not the POSIX reaper that adopted it."""
     q = table.get(p.ppid)
-    if q is None or q.pid == p.pid or q.create_time > p.create_time + _TOL:
+    if q is None or q.pid == p.pid or q.create_time > p.create_time + _TOL or _reaper(q):
         return None
     return q
 

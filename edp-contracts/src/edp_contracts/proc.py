@@ -78,6 +78,9 @@ class ProcId:
                 return None
             if self.name and not same_image(_name(p), self.name):
                 return None
+            # a zombie has exited; only its parent's wait() is left (CI ubuntu/macos: stop looked like a survivor)
+            if p.status() == psutil.STATUS_ZOMBIE:
+                return None
             return p
         except (psutil.Error, ValueError, OSError):
             return None

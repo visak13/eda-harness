@@ -243,6 +243,8 @@ async def open_upstream(spec: str):
         return await asyncio.open_connection(host, int(p))
     if kind == "pipe":
         loop = asyncio.get_running_loop()
+        if not hasattr(loop, "create_pipe_connection"):  # a POSIX loop: an unreachable upstream (502), not a crash
+            raise OSError(f"named pipe upstreams are Windows-only: {addr}")
         reader = asyncio.StreamReader(limit=MAX_HEAD)
         proto = asyncio.StreamReaderProtocol(reader)
         tr, _ = await loop.create_pipe_connection(lambda: proto, addr)

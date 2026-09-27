@@ -179,3 +179,20 @@ def test_live_survives_a_python_rename_but_not_another_image():
     finally:
         p.kill()
         p.wait()
+
+
+def test_a_zombie_is_not_live():
+    # stop killed the service, but its parent had not reaped it yet: psutil still lists it (CI 36326185339)
+    p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    real = ProcId.of(p.pid)
+    p.kill()
+    if sys.platform == "win32":  # Windows has no zombies: the exited process is simply gone
+        p.wait()
+    else:
+        deadline = time.time() + 10
+        while time.time() < deadline and psutil.Process(p.pid).status() != psutil.STATUS_ZOMBIE:
+            time.sleep(0.05)
+    try:
+        assert real.live() is None and not real.alive() and real.probe() is False
+    finally:
+        p.wait()
