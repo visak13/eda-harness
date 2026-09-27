@@ -14,6 +14,7 @@ import psutil
 
 from edp8 import orphans
 from edp8.orphans import Proc
+from edp_contracts.proc import ProcId
 
 NOW = 1_000_000.0
 H = 3600.0
@@ -119,7 +120,8 @@ def test_drill_planted_orphans_are_found_and_stopped():
         for pid in planted:
             out = orphans.stop(found[pid].stop_pid, min_age_s=0)
             assert out["stopped"] == found[pid].stop_pid and not out["survivors"], out
-            assert not psutil.pid_exists(pid) or psutil.Process(pid).create_time() != found[pid].create_time
+            # gone, a newer process on the pid, or an unreaped zombie (CI 36327983784 ubuntu: status=terminated)
+            assert ProcId(pid, found[pid].create_time).live() is None
     finally:
         for pid in planted:
             try:
