@@ -1,10 +1,12 @@
 [project]
 name = "edp-pool"
-version = "0.1.0"
+version = "0.9.0"
 description = "Spawn-on-demand shell pool for eda-base. Lock-by-spawn-lifetime; env-capped capacity (EDP_MAX_WORKERS/PLANNERS/TOTAL_SHELLS); park/fork-resume; registers relative-ref aliases into the broker."
 requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 dependencies = [
-    "edp-contracts==0.1.0",
+    "edp-contracts==0.9.0",
     "fastapi>=0.110",
     "uvicorn>=0.27",
     "httpx>=0.27",
@@ -35,6 +37,13 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/edp_pool"]
+
+# S9 (adversary F10): the sdist carries the package source plus its licence files and the changelog only.
+[tool.hatch.build.targets.sdist]
+only-include = ["src", "LICENSE", "NOTICE"]
+
+[tool.hatch.build.targets.sdist.force-include]
+"../CHANGELOG.md" = "CHANGELOG.md"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

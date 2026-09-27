@@ -29,7 +29,7 @@ regex = '''(?i)\bv[i]shal\b|\bo[u]lkar\b'''
 
 [[rules]]
 id = "pii-projects-root"
-description = "The maintainer's checkout root (C:\\Projects\\…, /c/Projects/…)"
+description = "The maintainer's checkout root: a Projects folder at a drive root (Windows or Git Bash form)"
 regex = '''(?i)(?:\b[a-z]:(?:\\\\|\\|/)+|/[a-z]/|/[a-z]:/)projects(?:\\|/|$)'''
 
 # Test fixtures that look like tokens. Scoped: the path AND the fixture shape must both match,

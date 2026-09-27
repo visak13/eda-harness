@@ -16,7 +16,7 @@ from .store import BadRecipient, InboxStore
 # Writes to the daily-rolling edp-broker.log under EDP_LOG_DIR.
 _log = get_logger("edp-broker")
 
-_VERSION = "1.0.0"
+from . import __version__ as _VERSION  # one version across the packages (S9)
 # S3b: extracted. 409 = "the request is well-formed but the broker refuses
 # it" (unregistered kind / unroutable recipient) — distinct from a 500.
 _ENVELOPE_HTTP_STATUS = 409

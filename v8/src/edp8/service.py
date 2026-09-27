@@ -23,7 +23,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, 
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from . import pool_adapter, seat_choice, settings
+from . import __version__, pool_adapter, seat_choice, settings
 from . import workflow as wflow
 from edp_contracts.settings import secrets as secret_files
 from . import rsi  # S18: imported at boot so rsi.LOADED hashes the retrieval code this process runs
@@ -439,7 +439,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     moved = getattr(board.store, "migrated_reviewer", None)
     if moved and any(moved.values()):  # S-ROLES: reviewer -> qa at open (Store._migrate_reviewer_locked)
         logging.getLogger("edp8.service").warning("migrated reviewer -> qa: %s", moved)
-    app = FastAPI(title="edp8 board", version="0.8.0")
+    app = FastAPI(title="edp8 board", version=__version__)
     app.state.board = board
 
     # Reach-from-another-machine (S17, design §15). Public mode fails closed BEFORE the app is

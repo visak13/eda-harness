@@ -26,7 +26,7 @@ from .spawner import FakeSpawner, Spawner
 # edp-pool.log under EDP_LOG_DIR.
 _log = get_logger("edp-pool")
 
-_VERSION = "1.0.0"
+from . import __version__ as _VERSION  # one version across the packages (S9)
 
 
 def _env_int(name: str, default: int) -> int:

@@ -41,7 +41,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from . import run_state, settings
+from . import __version__, run_state, settings
 from .bundles import ALL_TOOLS, ROLE_BUNDLES, ToolDef, bind_request, invoke, set_client, tools_for_role
 from .client import BoardClient
 from .schemas import Role
@@ -204,7 +204,7 @@ class _RoleServer(MCPServer):
 def build_role_server(role: str, *, board_url: str, admin_token: str | None,
                       workspace_root: Path | None = None,
                       http_upload_policy: HttpUploadPolicy | None = None) -> MCPServer:
-    server = _RoleServer("edp8", version="0.8.0",
+    server = _RoleServer("edp8", version=__version__,
                          instructions=f"edp8 board tools for role {role!r} (server {VERSION})",
                          path_role=role, board_url=board_url, admin_token=admin_token)
     # S14: the custom-role endpoint registers every tool; tools/list and each call filter them to the

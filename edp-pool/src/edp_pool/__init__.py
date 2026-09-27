@@ -1,7 +1,7 @@
+__version__ = "0.9.0"  # first: service.py imports it (one version across the packages, S9)
 from .service import PoolService, create_app
 from .spawner import FakeSpawner, Spawner, SubprocessSpawner
 
-__version__ = "0.1.0"
 __all__ = [
     "PoolService",
     "create_app",
