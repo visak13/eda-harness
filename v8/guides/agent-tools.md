@@ -17,9 +17,17 @@ For files (architect/engineer/adversary only): artifact_upload(path, note) → m
 until the message finalizes it. The caller owns the upload; existing MIME sniffing/25 MB/auth
 rules remain. Never paste image base64 into a model tool argument. Related skill: demo.
 MCP artifact_upload refuses (`unavailable`: HTTP uploads disabled or the request is not local)? Say so
-on your ticket thread (`message_send(kind='blocked')`) with the path — never curl the board with a token
+on your ticket thread (`message_send(kind='deviation', to='architect')`) with the path — never curl the board with a token
 and never a `workspace:` artifact_create ref (the board holds no bytes for one).
 (engineer/qa/adversary only) `artifact_read(id)` returns the file too: an image as an image block, text inline 6 KB at a time (`offset=next_offset`).
+
+## Retrying a create
+Every create tool (ticket_create, doc_create, artifact_create, criterion_create, message_send, record_decision,
+record_claim, record_lesson, topic_propose, propose_fix) takes an optional `idempotency_key`. Retrying with the
+same key and args returns the FIRST result (`value.replay: true`, same id) for 24 h; the board keeps the key, so
+it holds across an MCP-proxy restart. The same key with different args is a `conflict`. Without a key, an
+identical create by the same seat within 10 minutes also replays, but that window resets when the proxy
+restarts. Pass a key whenever you retry after a timeout; pass a new key to make a deliberate twin.
 
 ## Explicit review handoff
 Evidence refs may describe incomplete or failed work. Attaching them, editing a doc, or posting

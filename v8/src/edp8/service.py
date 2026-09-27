@@ -32,6 +32,7 @@ from .contextual_work import HistoryCategory, contextual_work
 from .design_review import DocumentComment, ReviewDecision, comment, decide, source_context
 from .doc_tools import DocEdit
 from .schemas import (
+    ParticipantType,
     DESCRIBE,
     OBJECT_TYPES,
     ArtifactForm,
@@ -802,8 +803,10 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         return ok(_dump(p))
 
     @app.get("/v1/participants")
-    def participants(role: Role | None = None, a: Participant = Depends(actor)):
-        return ok(_dump(board.store.query("participant", {"role": role})))
+    def participants(role: Role | None = None, type: ParticipantType | None = None,
+                     a: Participant = Depends(actor)):
+        rows = board.store.query("participant", {"role": role})
+        return ok(_dump([p for p in rows if type is None or p.type == type.value]))
 
     @app.get("/v1/participants/{id_}")
     def participant_get(id_: str, a: Participant = Depends(actor)):
@@ -1891,10 +1894,12 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
         threading.Thread(target=_pool_watch, name="edp8-pool-watch", daemon=True).start()
 
+    from .idempotency import IdempotencyMiddleware
     from .ui import router as ui_router
     from .webapp import mount_spa
     from .webapp.serve import CollapseLeadingSlashes
 
+    app.add_middleware(IdempotencyMiddleware, store=board.store)  # T3 F2: innermost, sees the raw JSON reply
     app.add_middleware(CollapseLeadingSlashes)  # t-67dad8c6aa: `//ui/…` redirects to `/ui/…`, never a bare 404
     # S22: nothing was compressed — an epic page is ~220 KB of JSON refetched on every feed event, the SPA entry
     # ~290 KB; over the tailnet that was the lag. GZip skips text/event-stream (the feed), images and video.

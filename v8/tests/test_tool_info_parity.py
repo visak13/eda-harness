@@ -201,6 +201,47 @@ def test_event_pages_equal_the_unbounded_result(fleet):
             assert page["page"].get("full_rows"), "a clipped event page names no full read"
 
 
+# T3 F1 (report-6971109e05): an agent that follows the HINT, not next_cursor, must see every row too. The REST
+# hint once named the board batch's last seq after the page was fitted to 8 KB, so following it skipped rows.
+SEQ_TOOLS = [("message_query", "since_seq"), ("events_query", "since")]
+
+
+def follow_hint(client: BoardClient, tool: str, since_arg: str, args: dict, seat: str) -> list:
+    set_client(client)
+    items, since = [], 0
+    for _ in range(2_000):
+        out = invoke(ALL_TOOLS[tool], {**args, since_arg: since, "limit": 100}, seat=seat)
+        assert out["ok"], (tool, out)
+        page = out["value"]["items"]
+        if not page:
+            return items
+        items += page
+        m = re.search(rf"{since_arg}=(\d+)", out.get("hint") or "")
+        assert m, f"{tool}: a page with rows names no {since_arg} to continue: {out.get('hint')!r}"
+        named = int(m.group(1))
+        assert named == out["value"]["last_seq"], f"{tool}: hint names {named}, page ends at {out['value']['last_seq']}"
+        since = named
+    raise AssertionError(f"{tool} never ended")
+
+
+@pytest.mark.parametrize("tool,since_arg", SEQ_TOOLS, ids=[t for t, _ in SEQ_TOOLS])
+def test_following_the_hint_loses_nothing(fleet, tool, since_arg):
+    client, board = fleet["client"], fleet["board"]
+    if tool == "message_query":
+        counts: dict = {}
+        for m in board.store.query("message", {}):
+            counts[m.ticket_id] = counts.get(m.ticket_id, 0) + 1
+        args = {"ticket_id": max(counts, key=counts.get)}
+        whole = [r["id"] for r in client.message_query(since_seq=0, limit=100_000, **args)["value"]]
+    else:
+        counts = {}
+        for e in board.store.query("event", {}):
+            counts[e.subject_id] = counts.get(e.subject_id, 0) + 1
+        args = {"subject_id": max((s for s in counts if s), key=counts.get)}
+        whole = _ids(client.events_query(since=0, limit=100_000, **args)["value"])
+    assert _ids(follow_hint(client, tool, since_arg, args, "parity.owner")) == whole, f"{tool}: the hint skips rows"
+
+
 def test_context_verbose_is_the_unbounded_snapshot_and_default_names_every_cut(fleet):
     client = fleet["client"]
     set_client(client)

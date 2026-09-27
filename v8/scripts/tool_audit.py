@@ -29,7 +29,9 @@ import psutil
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from edp8.bundles import ALL_TOOLS, ROLE_BUNDLES, bind_request, enum_fields, invoke  # noqa: E402
+from edp8 import tool_idem  # noqa: E402
 from edp8.client import BoardClient  # noqa: E402
+from edp8.tool_contracts import IDEMPOTENT_CREATES  # noqa: E402
 from edp_contracts.settings.secrets import write_secret  # noqa: E402
 
 ROLES = ("owner", "architect", "engineer", "qa", "adversary", "sme", "doctor")
@@ -547,13 +549,34 @@ def coverage(a: Audit) -> None:
                     "ticket_id": a.ids["story"]}),
                   ("architect", "ticket_create", {"kind": "task", "work_type": "chore",
                     "parent_id": a.ids["story"], "title": "Repeated task"})]
+        # T3 F2: every other create, retried with an idempotency_key after the tool process forgot it (an
+        # MCP-proxy restart): the board's key must replay the first record. topic_propose and propose_fix are
+        # scored from the contract test (IDEM_NOT_MEASURED): the audit board has no fetched page or help thread.
+        # the audit story is done by now and takes no criteria: probe on a fresh one
+        fresh = a.call("architect", "ticket_create", {"kind": "story", "work_type": "chore", "parent_id": a.ids["epic"],
+                       "title": "Idempotency probe story"}, task="idempotency_setup")
+        target = (fresh.get("value") or {}).get("id") or a.ids["story"]
+        keyed = [("engineer", "message_send", {"ticket_id": a.ids["story"], "kind": "note", "text": "Repeated note"}),
+                 ("architect", "criterion_create", {"ticket_id": target, "text": "Repeated criterion",
+                   "check": "command"}),
+                 ("architect", "record_decision", {"scope": a.ids["epic"], "text": "Repeated decision"}),
+                 ("engineer", "record_claim", {"scope": a.ids["epic"], "text": "Repeated claim"}),
+                 ("engineer", "record_lesson", {"domain": "tool-layer", "topic": "idem", "text": "Repeated lesson"})]
         same = 0
         for role, name, args in probes:
             first = a.call(role, name, args, task="idempotency")
             second = a.call(role, name, args, task="idempotency")
             same += bool(first.get("ok") and second.get("ok") and
                          (first.get("value") or {}).get("id") == (second.get("value") or {}).get("id"))
-        return same == len(probes), f"{same}/{len(probes)} duplicate creates returned same id"
+        for role, name, args in keyed:
+            args = {**args, "idempotency_key": f"audit-{name}"}
+            first = a.call(role, name, args, task="idempotency")
+            tool_idem.reset()
+            second = a.call(role, name, args, task="idempotency")
+            same += bool(first.get("ok") and second.get("ok") and (second.get("value") or {}).get("replay") and
+                         (first.get("value") or {}).get("id") == (second.get("value") or {}).get("id"))
+        total = len(probes) + len(keyed)
+        return same == total, f"{same}/{total} duplicate creates returned same id ({len(keyed)} keyed, across a proxy reset)"
     a.task("idempotency", idempotency)
 
 
@@ -600,9 +623,9 @@ def scores(a: Audit) -> dict:
             pairs = list(zip(repeated[name][::2], repeated[name][1::2]))
             idempotent = "pass" if pairs and all(x["ok"] and y["ok"] and x["result_id"] == y["result_id"]
                                                     for x, y in pairs) else "fail"
-        elif name in {"ticket_create", "criterion_create", "doc_create", "artifact_create", "message_send",
-                      "record_decision", "record_claim", "record_lesson", "topic_propose", "propose_fix"}:
+        elif name in IDEMPOTENT_CREATES:
             idempotent = "not_measured"
+        reason = IDEM_NOT_MEASURED.get(name) if idempotent == "not_measured" else None
         described_status = "pass" if not related or all(root in described for root in related) else "fail"
         schema_status = "pass" if all(not field.is_required() or bool(field.description)
                                        for field in tool.args_model.model_fields.values()) else "fail"
@@ -614,13 +637,25 @@ def scores(a: Audit) -> dict:
                       "over_8kb": len(large), "arg_misses": len(misses), "error_names_fix": guidance,
                       "ok_calls": sum(c["ok"] for c in calls),
                       "standards": {"1_advertisement": "pass" if advertises_object and advertises_enums and advertises_skill else "fail",
-                                    "2_idempotent": idempotent, "3_clear_output": output_status,
+                                    "2_idempotent": idempotent,
+                                    **({"2_idempotent_reason": reason} if reason else {}),
+                                    "3_clear_output": output_status,
                                     "4_clear_schema": schema_status,
                                     "5_describe": described_status,
                                     "6_token_efficient": "pass" if not large else "fail"},  # S23: per call, not harness sweep count
                       "advertises": {"object": advertises_object, "enums": advertises_enums,
                                      "linked_skill": advertises_skill, "skill": skill}}
     return rows
+
+
+# T3 F2: a create the audit cannot repeat on its private board, with where it IS measured. Any other
+# not_measured create is unexplained and fails the ledger (scores' caller checks).
+IDEM_NOT_MEASURED = {
+    "topic_propose": "needs a Library page topic_research fetched (network); measured by tests/test_tool_contract.py::"
+                     "test_every_idempotent_create_replays_by_key_across_restarts[topic_propose]",
+    "propose_fix": "needs a help thread and its doctor seat (a /v1/help spawn); measured by tests/test_tool_contract.py::"
+                   "test_every_idempotent_create_replays_by_key_across_restarts[propose_fix]",
+}
 
 
 # S23: guide hits that are NOT an agent workaround, each with its reason (T2 triage of report-e517e9e87e).
@@ -722,12 +757,32 @@ def main() -> int:
     finally:
         audit.stop()
         workaround_hits = scan_workarounds()
+        tools = scores(audit)
+        matrix = matrix_summary(tools)
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_bytes(encoded({"source_db": ".data/edp8.db", "private_home": "<temporary-private-home>",
                                       "board_port": audit.board_port, "pool_port": audit.pool_port,
-                                      "tasks": audit.tasks, "calls": audit.calls, "tools": scores(audit),
-                                      "workaround_hits": workaround_hits}))
-    return 0 if all(t["pass"] for t in audit.tasks) else 1
+                                      "tasks": audit.tasks, "calls": audit.calls, "tools": tools,
+                                      "matrix": matrix, "workaround_hits": workaround_hits}))
+        print(json.dumps({"type": "matrix", **matrix}, ensure_ascii=True), flush=True)
+    return 0 if all(t["pass"] for t in audit.tasks) and not matrix["failing"] and not matrix["unexplained"] else 1
+
+
+def matrix_summary(tools: dict) -> dict:
+    """The six-standard matrix in counts. A `not_measured` cell without a written reason is `unexplained`
+    (T3 F2: 7 such cells hid behind "0 failing tools")."""
+    counts: dict[str, int] = defaultdict(int)
+    failing, unexplained = [], []
+    for name, row in tools.items():
+        for std, cell in row["standards"].items():
+            if std.endswith("_reason"):
+                continue
+            counts[cell] += 1
+            if cell == "fail":
+                failing.append(f"{name}.{std}")
+            if cell == "not_measured" and f"{std}_reason" not in row["standards"]:
+                unexplained.append(f"{name}.{std}")
+    return {"tools": len(tools), "cells": dict(counts), "failing": failing, "unexplained": unexplained}
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ data, not exceptions. Only a connection failure raises, with a clear message.
 from __future__ import annotations
 
 import contextlib
+import contextvars
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,20 @@ from . import settings
 
 class BoardUnreachable(Exception):
     pass
+
+
+# T3 F2: a create tool's idempotency_key, sent as the Idempotency-Key header on the tool's FIRST POST only (a tool
+# that POSTs twice must not replay its own first write); the board keeps the key's first reply 24 h.
+_IDEM_KEY: contextvars.ContextVar[str | None] = contextvars.ContextVar("edp8_idempotency_key", default=None)
+
+
+@contextlib.contextmanager
+def idempotency_key(key: str | None):
+    token = _IDEM_KEY.set(key)
+    try:
+        yield
+    finally:
+        _IDEM_KEY.reset(token)
 
 
 class BoardClient:
@@ -51,12 +66,17 @@ class BoardClient:
     def _request(self, method: str, path: str, *, params: dict[str, Any] | None = None,
                  json: dict[str, Any] | None = None, admin: bool = False) -> dict[str, Any]:
         params = {k: v for k, v in (params or {}).items() if v is not None}
+        headers = self._headers(admin)
+        key = _IDEM_KEY.get() if method == "POST" else None
+        if key:
+            headers["Idempotency-Key"] = key
+            _IDEM_KEY.set(None)
         try:
             if self._client is not None:
-                resp = self._client.request(method, path, params=params, json=json, headers=self._headers(admin))
+                resp = self._client.request(method, path, params=params, json=json, headers=headers)
             else:
                 resp = httpx.request(method, f"{self.base_url}{path}", params=params, json=json,
-                                     headers=self._headers(admin), timeout=30.0)
+                                     headers=headers, timeout=30.0)
         except httpx.HTTPError as e:
             raise BoardUnreachable(f"board unreachable at {self.base_url}: {e}") from e
         try:
@@ -98,8 +118,8 @@ class BoardClient:
                              json={"type": type, "role": role, "handle": handle, "location": location,
                                    "model": model, "id": id})
 
-    def participants(self, role: str | None = None) -> dict[str, Any]:
-        return self._request("GET", "/v1/participants", params={"role": role})
+    def participants(self, role: str | None = None, type: str | None = None) -> dict[str, Any]:
+        return self._request("GET", "/v1/participants", params={"role": role, "type": type})
 
     def participant_get(self, id_: str) -> dict[str, Any]:
         return self._request("GET", f"/v1/participants/{id_}")

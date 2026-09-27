@@ -36,6 +36,7 @@ from .doc_tools import DocEdit
 from . import tool_idem, tool_paging
 from .tool_contracts import LOCAL_OBJECTS, link_clause, tool_objects, tools_by_object
 from .schemas import (
+    ParticipantType,
     ENUMS,
     ArtifactForm,
     Check,
@@ -122,8 +123,10 @@ class Args(BaseModel):
 
 
 class CreateArgs(Args):
-    """S23 standard 2: a create a seat may retry safely (tool_idem)."""
-    idempotency_key: str | None = Field(default=None, description='retry-safe: same key+args = same result')
+    """S23 standard 2: a create a seat may retry safely (tool_idem): the same idempotency_key + args replays the
+    first result for 24 h, kept by the board. No field description (S20 surface budget): guides/agent-tools.md
+    says it once for every create tool, and a replay's hint says what happened."""
+    idempotency_key: str | None = None
 
 
 class PageArgs(Args):
@@ -236,7 +239,7 @@ class ToolDef:
 
 @functools.cache
 def compact_schema(args_model: type[BaseModel]) -> dict[str, Any]:
-    """args_model's JSON schema with every `title`, empty default (null, "", []) and
+    """args_model's JSON schema with every `title`, empty default (null, "", [], false) and
     `additionalProperties` dropped, `anyOf [X, null]` collapsed to X, and `$defs` refs inlined (the def's own docstring
     description dropped; the field's description stays). Every enum, type,
     required list, other default and field description survives."""
@@ -253,7 +256,8 @@ def compact_schema(args_model: type[BaseModel]) -> dict[str, Any]:
             return walk({**target, **{k: v for k, v in node.items() if k != "$ref"}}, depth + 1)
         out: dict[str, Any] = {}
         for k, v in node.items():
-            if k in ("title", "$defs", "additionalProperties") or (k == "default" and v in (None, "", [])):
+            if k in ("title", "$defs", "additionalProperties") or (k == "default" and (v in (None, "", [])
+                                                                                        or v is False)):
                 continue
             out[k] = {p: walk(s, depth) for p, s in v.items()} if k == "properties" else walk(v, depth)
         alts = out.get("anyOf")
@@ -559,7 +563,7 @@ def _heartbeat_prompt(participant: str) -> str:
         return choice + "Act only on new actionable information; otherwise end silently."
     return (choice + "Answer anything new, then RESUME THE NEXT UNBUILT ITEM of "
             "your plan doc — a quiet board is not a reason to stop. End the turn silently only when your "
-            "ticket is in_review/done or you are blocked (post kind=blocked or deviation first).")
+            "ticket is in_review/done or you are blocked (record_status(status=blocked) and a deviation first).")
 
 
 def _subscribe(_: SubscribeArgs) -> dict[str, Any]:
@@ -1008,7 +1012,7 @@ class TicketUpdateArgs(Args):
     title: str | None = Field(default=None, description='short title, <=80 chars (architect/owner)')
 
 
-class CriterionCreateArgs(Args):
+class CriterionCreateArgs(CreateArgs):
     ticket_id: str = Field(description='ticket id')
     text: str = Field(description='the checkable fact')
     check: Check = Field(description='how it is checked')
@@ -1083,8 +1087,9 @@ def _ticket_update(a: TicketUpdateArgs) -> dict[str, Any]:
 
 
 def _criterion_create(a: CriterionCreateArgs) -> dict[str, Any]:
-    return get_client().criterion_create(ticket_id=a.ticket_id, text=a.text, check=a.check,
-                                         checked_by=a.checked_by, override_reason=a.override_reason)
+    return _once("criterion_create", a, lambda: get_client().criterion_create(
+        ticket_id=a.ticket_id, text=a.text, check=a.check, checked_by=a.checked_by,
+        override_reason=a.override_reason))
 
 
 def _criterion_query(a: CriterionQueryArgs) -> dict[str, Any]:
@@ -1282,7 +1287,7 @@ DOC_TOOLS = [
 # ============================================================================= thread
 
 
-class MessageSendArgs(Args):
+class MessageSendArgs(CreateArgs):
     ticket_id: str = Field(description='thread ticket')
     kind: MessageKind = Field(description='message kind')
     text: str = Field(description='message body')
@@ -1324,9 +1329,9 @@ class GatesArgs(Args):
 
 
 def _message_send(a: MessageSendArgs) -> dict[str, Any]:
-    return get_client().message_send(ticket_id=a.ticket_id, kind=a.kind, text=a.text, to=a.to,
-                                     reply_to=a.reply_to, artifacts=a.artifacts, code_context=a.code_context,
-                                     quotes=a.quotes)
+    return _once("message_send", a, lambda: get_client().message_send(
+        ticket_id=a.ticket_id, kind=a.kind, text=a.text, to=a.to, reply_to=a.reply_to, artifacts=a.artifacts,
+        code_context=a.code_context, quotes=a.quotes))
 
 
 def _message_row(r: dict[str, Any]) -> dict[str, Any]:
@@ -1352,7 +1357,7 @@ def _message_query(a: MessageQueryArgs) -> dict[str, Any]:
                                  more_possible=since is not None and len(rows) >= limit)
     if since is None and len(rows) >= limit:  # a full newest page: older messages may exist
         value["page"]["older"] = "this is the newest page; since_seq=0 pages the thread from the start"
-    return {**resp, "value": value}
+    return {**resp, "value": value, "hint": tool_paging.seq_hint(value, "since_seq")}
 
 
 def _message_read(a: MessageReadArgs) -> dict[str, Any]:
@@ -1418,6 +1423,7 @@ class EventsQueryArgs(PageArgs):
 
 class ParticipantsArgs(PageArgs):
     role: SeatRole | None = None
+    type: ParticipantType | None = None  # type=human lists the people (T3 F4)
 
 
 def _board(a: BoardArgs) -> dict[str, Any]:
@@ -1442,13 +1448,13 @@ def _events_query(a: EventsQueryArgs) -> dict[str, Any]:
             out["data"] = tool_paging.clip(json.dumps(r["data"], default=str), 200)
         return out
 
-    return {**resp, "value": tool_paging.seq_page("events_query", rows, filters=filters, limit=limit,
-                                                  verbose=a.verbose, project=row, full="verbose=true",
-                                                  more_possible=len(rows) >= limit)}
+    value = tool_paging.seq_page("events_query", rows, filters=filters, limit=limit, verbose=a.verbose,
+                                 project=row, full="verbose=true", more_possible=len(rows) >= limit)
+    return {**resp, "value": value, "hint": tool_paging.seq_hint(value, "since")}
 
 
 def _participants(a: ParticipantsArgs) -> dict[str, Any]:
-    resp = _paged("participants", get_client().participants(role=a.role), a,
+    resp = _paged("participants", get_client().participants(role=a.role, type=a.type and a.type.value), a,
                   lambda r: tool_paging.pick(r, ("id", "type", "role", "handle", "admin", "retired")), "verbose=true")
     if not resp.get("ok"):
         return resp
@@ -1935,7 +1941,7 @@ SEARCH_TOOLS = [
 # ============================================================================= knowledge (design-d2c4f39fc6)
 
 
-class RecordDecisionArgs(Args):
+class RecordDecisionArgs(CreateArgs):
     scope: str = Field(description='epic or ticket id it is in force for')
     text: str = Field(description='one sentence, <=240 chars')
     detail: str = Field(default="", description='why, <=1000 chars')
@@ -1947,7 +1953,7 @@ class RecordDecisionArgs(Args):
     domains: list[str] = Field(default_factory=list, description='domain checklist names')
 
 
-class RecordClaimArgs(Args):
+class RecordClaimArgs(CreateArgs):
     scope: str = Field(description='epic or ticket id')
     text: str = Field(description='one sentence')
     basis: ClaimBasis = Field(default=ClaimBasis.assumption)
@@ -1956,7 +1962,7 @@ class RecordClaimArgs(Args):
     source: str | None = Field(default=None, description='message or doc id')
 
 
-class RecordLessonArgs(Args):
+class RecordLessonArgs(CreateArgs):
     # S-HARVEST: no field descriptions — record_lesson is back in every /learn seat's bundle and must
     # fit the tightest S20 surface budget; the tool description names the fields.
     domain: str = Field(description='domain name')
@@ -1973,16 +1979,19 @@ class LookupArgs(Args):
 
 
 def _record_decision(a: RecordDecisionArgs) -> dict[str, Any]:
-    return get_client().record_decision(a.scope, a.text, detail=a.detail, replaces=a.replaces,
-                                        binding=a.binding, source=a.source, domains=a.domains)
+    return _once("record_decision", a, lambda: get_client().record_decision(
+        a.scope, a.text, detail=a.detail, replaces=a.replaces, binding=a.binding, source=a.source,
+        domains=a.domains))
 
 
 def _record_lesson(a: RecordLessonArgs) -> dict[str, Any]:
-    return get_client().record_lesson(a.domain, a.topic, a.text, evidence=a.evidence)
+    return _once("record_lesson", a, lambda: get_client().record_lesson(a.domain, a.topic, a.text,
+                                                                      evidence=a.evidence))
 
 
 def _record_claim(a: RecordClaimArgs) -> dict[str, Any]:
-    return get_client().record_claim(a.scope, a.text, basis=a.basis.value, evidence=a.evidence, source=a.source)
+    return _once("record_claim", a, lambda: get_client().record_claim(a.scope, a.text, basis=a.basis.value,
+                                                                    evidence=a.evidence, source=a.source))
 
 
 class WithdrawDecisionArgs(Args):
@@ -2030,10 +2039,10 @@ def _withdraw_claim(a: WithdrawClaimArgs) -> dict[str, Any]:
 class TopicResearchArgs(Args):
     topic_id: str = Field(description='Library topic id')
     query: str | None = Field(default=None, description="search skills.sh")
-    url: str | None = Field(default=None, description="read one page: skills.sh, GitHub or the seed host")
+    url: str | None = Field(default=None, description="read one page (hosts above)")
 
 
-class TopicProposeArgs(Args):
+class TopicProposeArgs(CreateArgs):
     topic_id: str = Field(description='Library topic id')
     title: str = Field(description='doc title')
     body_md: str = Field(description="what you distilled; the board prepends Source + fetched-at")
@@ -2048,8 +2057,8 @@ def _topic_research(a: TopicResearchArgs) -> dict[str, Any]:
 
 
 def _topic_propose(a: TopicProposeArgs) -> dict[str, Any]:
-    return get_client().topic_propose(a.topic_id, a.title, a.body_md, a.source_url, doc_type=a.doc_type.value,
-                                      tags=a.tags, proposes=a.proposes)
+    return _once("topic_propose", a, lambda: get_client().topic_propose(
+        a.topic_id, a.title, a.body_md, a.source_url, doc_type=a.doc_type.value, tags=a.tags, proposes=a.proposes))
 
 
 # S-SME-SURFACE: the resident sme of a Library topic browses through the board (bounded hosts, receipts)
@@ -2088,7 +2097,7 @@ class DoctorLogsArgs(Args):
     lines: int = Field(default=100, ge=1, le=500)
 
 
-class ProposeFixArgs(Args):
+class ProposeFixArgs(CreateArgs):
     topic_id: str = Field(description="your help thread (the topic in your context)")
     action: dict[str, Any] = Field(description="{kind: service.restart|service.start|service.stop|pool.set_limits|"
                                                "gate.open|gate.answer|teammate.rotate_token|agent_token.revoke, "
@@ -2128,7 +2137,8 @@ DOCTOR_TOOLS = [
     ToolDef("propose_fix", "Propose ONE fix as an admin approval card showing the exact action; nothing runs "
             "until an admin approves, then the result is posted on your thread",
             "after the evidence names a root cause a listed action fixes", "the proposal and its card",
-            ProposeFixArgs, lambda a: get_client().propose_fix(a.topic_id, a.action, a.effect), "doctor"),
+            ProposeFixArgs, lambda a: _once("propose_fix", a, lambda: get_client().propose_fix(
+                a.topic_id, a.action, a.effect)), "doctor"),
 ]
 
 KNOWLEDGE_TOOLS = [

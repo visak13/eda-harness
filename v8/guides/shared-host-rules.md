@@ -14,7 +14,8 @@ They are framework behaviour, so they live here; CLAUDE.md and every role card p
 
 ## Shared services (design §22 of epic-1b289d63f9, now framework-wide)
 - A seat NEVER restarts the shared board (:9400), the MCP proxy (:9402), the pool (:9301) or the
-  broker (:9300). If one is down, post `kind=blocked` with the evidence and wait; the human
+  broker (:9300). If one is down, `record_status(status='blocked')` and
+  `message_send(kind='question', to='owner')` with the evidence, then wait; the human
   restarts it with `edp.ps1` (below). A board that is down often self-heals in
   ~2 minutes after an ephemeral-port flood; re-probe before escalating.
 - Never `taskkill /IM edp8-board.exe` (kills the fleet board too). The fleet board's pid is the one in

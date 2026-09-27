@@ -147,3 +147,21 @@ LOCAL_OBJECTS: dict[str, dict[str, Any]] = {
                     "one; a schema error names the allowed values.",
         "fields": {"name": "enum class name", "values": "allowed values"}, "enums": [], "guides": []},
 }
+
+# S23 standard 2 / T3 F2 (report-6971109e05): every tool that CREATES a record is idempotent — it takes
+# `idempotency_key` (bundles.CreateArgs → tool_idem → the board's Idempotency-Key, edp8.idempotency) — or is on
+# CREATE_EXEMPT with the reason a retry cannot duplicate. tests/test_tool_contract.py holds every create-shaped
+# tool to one of the two; scripts/tool_audit.py scores the idempotent ones by a repeated call.
+IDEMPOTENT_CREATES = ("ticket_create", "doc_create", "artifact_create", "criterion_create", "message_send",
+                      "record_decision", "record_claim", "record_lesson", "topic_propose", "propose_fix")
+CREATE_EXEMPT = {
+    "link_create": "natural key: the board returns the existing link for the same from/to/relation",
+    "artifact_upload": "stages bytes only; message_send(artifacts=[id]) finalizes them and that send is keyed",
+    "spawn": "keyed by participant id (role.ticket): a second spawn of that seat resumes or is refused",
+    "gate_open": "one open gate per ticket and gate: a repeat returns the gate already open",
+    "record_status": "sets the seat's current status; a repeat restates the same state",
+    "teammate": "action=create is keyed by handle: a second create of the same handle is refused",
+    "workflow": "action=duplicate is keyed by new_id: a second duplicate to the same id is a conflict",
+    "pain": "action=file is query-first (/pain) and a repeat is linked dup_of; the log is append-only by design",
+    "topic_research": "a fetch with a receipt, not a record: nothing is created",
+}

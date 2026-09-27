@@ -126,6 +126,9 @@ class Store:
                 "PRIMARY KEY(doc_id, version))"
             )
             self._conn.execute("CREATE TABLE IF NOT EXISTS seq (name TEXT PRIMARY KEY, n INTEGER)")
+            # T3 F2: an idempotency_key's first reply, kept board-side so a retry replays it across proxy restarts
+            self._conn.execute("CREATE TABLE IF NOT EXISTS idem (slot TEXT PRIMARY KEY, digest TEXT NOT NULL, "
+                               "status INTEGER NOT NULL, body BLOB NOT NULL, expires REAL NOT NULL)")
             # RSI §7: at most one incumbent policy, enforced by the DB (not only by edp8.rsi)
             self._conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS ux_policy_incumbent ON policy("status") '
                                "WHERE status='incumbent'")
@@ -466,6 +469,21 @@ class Store:
                     if text:
                         out.append((t, r["id"], text))
         return out
+
+    # ------------------------------------------------------------------ idempotency keys (T3 F2)
+    def idem_get(self, slot: str, now: float) -> tuple[str, int, bytes] | None:
+        """(digest, status, body) of a live key's first reply, else None."""
+        with self._lock:
+            row = self._conn.execute("SELECT digest, status, body, expires FROM idem WHERE slot=?", (slot,)).fetchone()
+        if row is None or row["expires"] < now:
+            return None
+        return row["digest"], row["status"], bytes(row["body"])
+
+    def idem_put(self, slot: str, digest: str, status: int, body: bytes, expires: float, now: float) -> None:
+        with self._lock, self._conn:
+            self._conn.execute("DELETE FROM idem WHERE expires < ?", (now,))
+            self._conn.execute("INSERT OR REPLACE INTO idem (slot, digest, status, body, expires) VALUES (?,?,?,?,?)",
+                               (slot, digest, status, body, expires))
 
     def close(self) -> None:
         self._conn.close()

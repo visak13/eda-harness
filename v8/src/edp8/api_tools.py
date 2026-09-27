@@ -90,8 +90,9 @@ def tools_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
         from . import run_state
         keep = ("service", "state", "pid", "port", "git_rev", "uptime", "version", "last_probe", "note")
         rows = [{k: row.get(k) for k in keep if row.get(k) not in (None, "")} for row in run_state.snapshot()]
-        return _ok(rows, "read-only; a down service is a human restart (.\\edp.ps1 restart <svc>) — post "
-                         "kind=blocked with this evidence, never restart it from a seat")
+        return _ok(rows, "read-only; a down service is a human restart (.\\edp.ps1 restart <svc>): "
+                         "record_status(status=blocked) and ask the owner (kind=question) with this evidence; "
+                         "never restart it from a seat")
 
     @r.get("/v1/harvest/cost")
     def harvest_cost(participant_id: str, since: str | None = None, until: str | None = None,

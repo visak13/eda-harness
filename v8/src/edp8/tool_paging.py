@@ -140,6 +140,16 @@ def seq_page(tool: str, rows: list[Any], *, filters: dict[str, Any], limit: int,
             "page": _receipt(tool, cap, next_cursor, lossy, full)}
 
 
+def seq_hint(value: dict[str, Any], since_arg: str) -> str:
+    """The resume hint of a seq page, computed from the page RETURNED, never the board's batch (T3 F1: the REST
+    hint named the batch's last seq after the page was fitted, so following it skipped messages)."""
+    last = value.get("last_seq")
+    if last is None:
+        return f"no rows; repeat with the same {since_arg} later for new ones"
+    more = "more remain: " if value.get("next_cursor") else ""
+    return f"{more}last_seq={last} is the last row shown; pass cursor=next_cursor or {since_arg}={last} to continue"
+
+
 def pick(row: dict[str, Any], keys: tuple[str, ...], clips: dict[str, int] | None = None) -> dict[str, Any]:
     clips = clips or {}
     return {k: clip(row.get(k), clips[k]) if k in clips else row.get(k)

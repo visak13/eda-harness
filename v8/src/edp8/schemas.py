@@ -801,7 +801,14 @@ SeatTicketKind = StrEnum("SeatTicketKind", {k.name: k.value for k in TicketKind 
 SeatRelation = StrEnum("SeatRelation", {r.name: r.value for r in Relation if r != Relation.has_expert})
 SeatRole = StrEnum("SeatRole", {r.name: r.value for r in Role if r != Role.expert})
 
+class ParticipantType(StrEnum):
+    """participants(type=…) filter (T3 F4); Participant.type holds the same two values."""
+    human = "human"
+    agent = "agent"
+
+
 ENUMS: dict[str, type[StrEnum]] = {
+    "ParticipantType": ParticipantType,
     "SeatTicketKind": SeatTicketKind,
     "SeatRelation": SeatRelation,
     "SeatRole": SeatRole,
