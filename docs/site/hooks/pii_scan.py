@@ -2,7 +2,7 @@
 scan covers it). The build fails on a hit (mkdocs hook `on_post_build`) and the site workflow runs it again
 before any deploy, next to `gitleaks dir site/` with the repo's gitleaks rules once they exist.
 
-Rules: a Windows or POSIX user-profile path, a `C:\\Projects` path, an email address that is not a placeholder
+Rules: a Windows or POSIX user-profile path, a path under a drive's Projects folder, an email address that is not a placeholder
 or a noreply address, a Tailscale machine name, and the name of the OS user running the build. Usage:
     python pii_scan.py <dir>        exit 0 clean, 1 findings (one line each), 2 usage
 """

@@ -125,3 +125,5 @@ v8/.env
 **/human-tokens.txt
 **/code.json
 v8/ui-settings.json
+.coverage
+.coverage.*

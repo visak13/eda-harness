@@ -1,0 +1,63 @@
+# Secret + PII gate (S9, design §4.5; strategyhl-d76b06a3dd §4).
+# CI runs `gitleaks dir .` (the tree) and `gitleaks git --log-opts=<base>..<head>` (new commits);
+# both block. The default ruleset finds credentials; the rules below find this repo's PII.
+# Each literal is written with a character class (a[k]sou) so this file never matches itself
+# and the plain-text grep in scripts/pii_scan.py stays at 0 hits.
+
+title = "heronry secret + PII gate"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "pii-owner-username"
+description = "The maintainer's Windows username (profile paths, handles)"
+regex = '''(?i)\ba[k]sou\b'''
+
+[[rules]]
+id = "pii-owner-email"
+description = "The maintainer's personal email"
+regex = '''(?i)a[k]soulkar@gmail\.com'''
+
+[[rules]]
+id = "pii-owner-name"
+description = "The maintainer's display name (git config user.name)"
+regex = '''(?i)\bv[i]shal\b|\bo[u]lkar\b'''
+  # The copyright holder is named on purpose in the Apache-2.0 NOTICE and LICENSE files.
+  [[rules.allowlists]]
+  paths = ['''^NOTICE$''', '''^LICENSE$''', '''(^|/)NOTICE$''', '''(^|/)LICENSE$''']
+
+[[rules]]
+id = "pii-projects-root"
+description = "The maintainer's checkout root (C:\\Projects\\…, /c/Projects/…)"
+regex = '''(?i)(?:\b[a-z]:(?:\\\\|\\|/)+|/[a-z]/|/[a-z]:/)projects(?:\\|/|$)'''
+
+# Test fixtures that look like tokens. Scoped: the path AND the fixture shape must both match,
+# and only the generic-api-key rule is relaxed. None of these is a live credential
+# (checked against tokens.json and human-tokens.txt on 2026-09-27: 0 of 88 appear in the tree).
+[[allowlists]]
+description = "token-shaped test fixtures"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = [
+  '''^v8/tests/test_[a-z0-9_]+\.py$''',
+  '''^v8/web/e2e/[a-z0-9-]+\.spec\.ts$''',
+  '''^v8/vscode-ext/edp-code/test/[a-zA-Z0-9]+\.test\.ts$''',
+]
+regexTarget = "secret"
+regexes = [
+  '''^tok-SECRET-[0-9a-z]+$''',
+  '''^[a-z]{1,2}[0-9]{1,3}-(owner|seat|stranger)-tok-[0-9a-f]{10}$''',
+  '''^PlantedTok3n-[A-Za-z0-9]+$''',
+  '''^Zq8Wv3Ln5Tr2Kp7Xs9Dy4Hb6Gm1Jc0Fa$''',
+  '''^dGhlIHNhbXBsZSBub25jZQ==$''',
+]
+
+# A doc line that reads like `KEY=value` but is an env assignment, not a secret.
+[[allowlists]]
+description = "env assignment in the Astra seat guide"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^v8/guides/astra-seat\.md$''']
+regexTarget = "secret"
+regexes = ['''^EDP_HARNESS=pi$''']
