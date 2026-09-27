@@ -375,6 +375,17 @@ class SubprocessSpawner(Spawner):
         if lp is not None:
             lp.terminate()
 
+    def has_transcript(self, claude_session: str) -> bool:
+        """v0.9.1 (s-dbe96f11cd): `claude --resume <id>` looks only in
+        <CLAUDE_CONFIG_DIR>/projects/<cwd-key>/<id>.jsonl, so a seat imported
+        from another config dir or agent home has no base there and the
+        shell exits within a second. The pool asks this before a fork-resume
+        and starts fresh instead. Same path scheme as build_env's pin and
+        PoolService._transcript_path."""
+        cfg = Path(settings.get("EDP_CLAUDE_CONFIG_DIR"))
+        key = "".join(c if c.isalnum() else "-" for c in str(self.cwd or Path.cwd()))
+        return (cfg / "projects" / key / f"{claude_session}.jsonl").is_file()
+
     def knows(self, session_id: str) -> bool:
         # True iff THIS spawner instance launched it (in-memory). After
         # a pool restart this is empty even for sessions whose lock is

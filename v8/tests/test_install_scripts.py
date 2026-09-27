@@ -164,3 +164,31 @@ def test_install_ps1_passes_each_wheel_path_as_one_argument(tmp_path, fake_exe, 
     _check_install(calls, embed)
     assert calls[-1] == ["prereqs", "install", "--yes"] + ([] if embed else ["--no-embed"]), calls
     assert not any(temp.iterdir()), "the work dir is removed"
+
+
+# -- v0.9.1 (s-dbe96f11cd): `irm <url>/install.ps1 | iex` on Windows PowerShell 5.1 ---------------------------
+# 0.9.0 shipped install.ps1 with a UTF-8 BOM. irm hands iex the body as text; the BOM arrives as stray
+# characters ahead of the first comment, so `param(...)` is no longer the script's first statement and 5.1
+# fails at `[string]$Version`. The script ships without a BOM and ASCII-only (no encoding to guess).
+
+
+def test_install_ps1_has_no_bom_and_is_ascii():
+    raw = (ROOT / "install.ps1").read_bytes()
+    assert not raw.startswith(b"\xef\xbb\xbf"), "install.ps1 must not start with a UTF-8 BOM"
+    bad = [i for i, b in enumerate(raw) if b > 0x7F]
+    assert not bad, f"non-ASCII byte at offset {bad[0]}"
+
+
+def test_install_ps1_parses_as_irm_hands_it_to_iex():
+    if sys.platform != "win32" or not shutil.which("powershell"):
+        pytest.skip("Windows PowerShell 5.1 only")
+    # irm decodes a body served without a charset as ISO-8859-1; iex then parses that string. Parsing it
+    # through [ScriptBlock]::Create runs the same parser without executing anything.
+    ps = ("$ErrorActionPreference='Stop'; "
+          f"$s = [Text.Encoding]::GetEncoding(28591).GetString([IO.File]::ReadAllBytes('{ROOT / 'install.ps1'}')); "
+          "$sb = [ScriptBlock]::Create($s); "
+          "if (-not $sb.Ast.ParamBlock) { throw 'param block lost' }; "
+          "'params: ' + (($sb.Ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath }) -join ',')")
+    r = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "params: Version,ReleaseUrl" in r.stdout, r.stdout

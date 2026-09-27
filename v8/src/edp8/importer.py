@@ -14,7 +14,13 @@ What moves:
 * ``tokens.json`` and ``.data/human-tokens.txt`` → the secrets dir (private files);
 * ``slack_map.json``, ``ui-settings.json``, ``ui-avatars.json``, ``models.json`` → their settings paths;
 * ``.env`` → config.toml for declared, config-able, non-path settings; a secret (the admin token) goes
-  to its private file, never config.toml; anything else is reported as skipped, with the reason.
+  to its private file, never config.toml; anything else is reported as skipped, with the reason;
+* the pool's claude transcripts (``<old claude config>/projects/<key of the v8 dir>``) → the new claude
+  config dir under the key of this install's agent home, so a resumed seat finds its conversation
+  (v0.9.1, s-dbe96f11cd: `claude --resume` looks only under the cwd's key).
+
+Two sources that land on one target keep the first: ``.data/models.json`` (the live catalog) beats the
+root ``models.json`` template.
 """
 
 from __future__ import annotations
@@ -108,6 +114,18 @@ def db_counts(db: Path) -> dict[str, int]:
         c.close()
 
 
+def cwd_key(p: Path) -> str:
+    """Claude Code's project folder name for a cwd: every non-alphanumeric character becomes '-'."""
+    return "".join(c if c.isalnum() else "-" for c in str(p))
+
+
+def _old_claude_config(src: Path) -> Path:
+    """The source fleet's pool claude config dir: its .env's EDP_CLAUDE_CONFIG_DIR, else the dev default
+    <repo>/edp-pool/.claude-pool beside the v8 folder."""
+    raw = read_dotenv(src / ".env").get("EDP_CLAUDE_CONFIG_DIR")
+    return Path(raw).expanduser() if raw else src.parent / "edp-pool" / ".claude-pool"
+
+
 def plan(src: Path) -> list[Item]:
     data = src / ".data"
     items: list[Item] = []
@@ -134,7 +152,19 @@ def plan(src: Path) -> list[Item]:
         p = src / name
         if p.is_file():
             items.append(Item(name, p, dst, "secret" if p.name in _SECRETS else "file"))
-    return [_classify(it) for it in items]
+    transcripts = _old_claude_config(src) / "projects" / cwd_key(src)
+    if transcripts.is_dir():
+        new_cfg = Path(settings.get("EDP_CLAUDE_CONFIG_DIR"))
+        items.append(Item("claude transcripts", transcripts,
+                          new_cfg / "projects" / cwd_key(settings.agent_home()), "tree"))
+    seen: set[str] = set()
+    kept: list[Item] = []
+    for it in items:  # first source wins a shared target (.data/models.json over the root template)
+        key = str(it.dst.resolve()).casefold()
+        if key not in seen:
+            seen.add(key)
+            kept.append(it)
+    return [_classify(it) for it in kept]
 
 
 def read_dotenv(p: Path) -> dict[str, str]:
@@ -192,7 +222,7 @@ def _fmt(n: int) -> str:
 
 def report(src: Path, items: list[Item], env: tuple[dict[str, Any], dict[str, str], list[tuple[str, str]]]) -> None:
     print(f"import from {src}")
-    print(f"into        {settings.home()}  (data {settings.data_dir()})\n")
+    print(f"into        {settings.home() or settings.config_dir()}  (data {settings.data_dir()})\n")
     for it in items:
         extra = f"  {it.note}" if it.note else ""
         print(f"  {it.action:<8} {it.what:<28} {_fmt(it.size):>9}  -> {it.dst}{extra}")
@@ -219,8 +249,17 @@ def _copy_db(src: Path, dst: Path) -> None:
     if dst.exists():
         backups = settings.data_dir() / "backups"
         backups.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(dst, backups / f"{dst.stem}-pre-import{dst.suffix}")
+        old, keep = _open_ro(dst), sqlite3.connect(backups / f"{dst.stem}-pre-import{dst.suffix}")
+        try:
+            old.backup(keep)  # the backup API also carries what the target's -wal still held
+        finally:
+            keep.close()
+            old.close()
         dst.unlink()
+    # v0.9.1: a stale -wal/-shm beside the replaced file is replayed over the imported DB (the import
+    # then reported 0 epics), so they go with it
+    for side in ("-wal", "-shm", "-journal"):
+        dst.with_name(dst.name + side).unlink(missing_ok=True)
     tmp = dst.with_name(dst.name + ".importing")
     tmp.unlink(missing_ok=True)
     source = _open_ro(src)

@@ -108,14 +108,31 @@ heronry status          # board, broker, pool and mcp up, rev v0.9.0 (bridge up 
 heronry doctor          # harnesses, ports, secrets, claude folder trust for the new agent home
 ```
 
-- **Board version:** `http://127.0.0.1:9400/v1/health` reports `"version": "0.9.0"` and the new `home`.
+- **Ports:** the install has its own ports. `heronry init` on a host where the old fleet held 9400 writes the
+  19xxx set to `config.toml` (board 19400, mcp 19402, broker 19300, pool 19301); `heronry status` prints them.
+  The old 9400 URLs do not reach the installed board.
+- **Board version:** `http://127.0.0.1:19400/v1/health` reports `"version": "0.9.1"` and the new `home`.
+  `http://127.0.0.1:19400/` opens the UI.
 - **Sign in:** the owner's old sign-in still works, because the tokens were imported.
   - The first start after an import prints a one-time `/ui/setup?code=…` link. The wizard's "done" marker is not
     part of the old checkout, so finish the wizard once.
   - The link signs in the init human (`--owner owner`, the same handle as the fleet owner).
 - **Board content:** epics, tickets and threads are all present.
-- **Remote access:** Tailscale serve still points at port 9400, so the tailnet URL works unchanged.
-- **Seats:** spawn one seat and check that it boots.
+- **Remote access:** Tailscale serve still points at the old board's port 9400, so the tailnet URL reaches the
+  old fleet (or nothing) until you re-point it to the installed board:
+
+  ```powershell
+  tailscale serve --bg 127.0.0.1:19400     # replaces the 9400 target; `tailscale serve status` shows it
+  ```
+
+  Rolling back (section 6) means pointing it at 9400 again: `tailscale serve --bg 127.0.0.1:9400`.
+- **Seats: verify with a live seat before you retire the old fleet.** Both paths must work on the installed board:
+  - **Fresh spawn:** spawn one new seat. It stays up, runs `whoami()` and posts on its ticket.
+  - **Resume:** resume one imported, closed seat. `heronry import` copied the claude transcripts into the new
+    claude folder, so the seat continues its conversation. A seat whose transcript is missing starts fresh and
+    calls `resume_self()`; either way it boots and stays up.
+  - If a seat opens and closes within a second, stay on the old fleet (section 6) and report it with the pool
+    log (`heronry status` names the log folder).
   - Installed seats read their role cards from the installed agent home, not from `v8/.claude`.
   - `heronry doctor` reports whether claude trusts that folder.
 - **VS Code:** the extension's version prompt offers `edp-code-0.9.0.vsix` from the release.
@@ -132,6 +149,8 @@ in the installed home. To keep that activity, stay on the installed release and 
 `heronry import` is one way only.
 
 ## 7. After a clean week
+
+Retire the old fleet only after section 5's live-seat checks passed (a fresh spawn and a resume).
 
 - Stop using `edp.ps1` and `start.ps1` for the fleet. `heronry start|stop|restart|status|update` replaces them.
 - Updates come through `heronry update`: backup, then stop, upgrade and start, with automatic rollback.

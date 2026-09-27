@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from . import __version__, pool_adapter, seat_choice, settings
@@ -1944,6 +1944,11 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         app.include_router(ui_router(board, verify=human_verify, public=public, prefix="/ui-legacy"))
         # t-b2f8859d30: an e2e board serves its private build (EDP8_WEB_DIST); unset = the packaged dist
         mount_spa(app, "/ui", settings.get("EDP8_WEB_DIST") or None)
+
+    # v0.9.1 (s-dbe96f11cd): the bare origin (a tailnet URL opened on a phone) was a 404; it opens the UI.
+    @app.get("/", include_in_schema=False)
+    def root_to_ui() -> RedirectResponse:
+        return RedirectResponse("/ui/", status_code=307)
 
     if settings.get("EDP8_PLANE_URL"):
         from .plane_adapter import start_mirror_thread, webhook_router

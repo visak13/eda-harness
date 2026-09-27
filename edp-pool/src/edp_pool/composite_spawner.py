@@ -74,6 +74,12 @@ class CompositeSpawner:
                 return b.launch(session_id, role, handle, **kw)
         raise LookupError(f"no {harness!r} backend in this pool (have {', '.join(self.harnesses)})")
 
+    def has_transcript(self, claude_session):
+        """Claude-base probe (v0.9.1): only the claude primary can answer; a backend without the
+        seam is taken at its word (True), so resume behaves as before."""
+        f = getattr(self._primary, "has_transcript", None)
+        return True if f is None else f(claude_session)
+
     def closed_session_base(self, session_id, handle):
         """(harness, token) of the first backend whose closed-session store holds `handle`."""
         for b in (self._second, self._primary):

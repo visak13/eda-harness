@@ -547,6 +547,9 @@ class ShadowSpawner(Spawner):
     def knows(self, session_id: str) -> bool:
         return session_id in self._shadows or self.legacy.knows(session_id)
 
+    def has_transcript(self, claude_session: str) -> bool:
+        return self.legacy.has_transcript(claude_session)
+
     def pid(self, session_id: str) -> int | None:
         sh = self._shadows.get(session_id)
         if sh is not None and sh.shell is not None:

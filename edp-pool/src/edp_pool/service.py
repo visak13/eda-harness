@@ -1495,6 +1495,25 @@ class PoolService(Microservice):
             return harness, (filed[1] if filed else None), None
         return None, None, None
 
+    def _base_or_fresh(self, harness: str | None, base: str | None, sid: str, handle: str) -> str | None:
+        """v0.9.1 (s-dbe96f11cd, owner m-0967afb055): a claude base whose transcript is not where
+        `claude --resume` looks (an imported seat: other config dir, other cwd key) made the shell
+        exit within a second. Such a resume starts fresh with the resume_self activation instead.
+        A backend without the `has_transcript` probe keeps the base."""
+        if not base or harness not in (None, "claude"):
+            return base
+        probe = getattr(self.spawner, "has_transcript", None)
+        try:
+            if probe is None or probe(base):
+                return base
+        except Exception as exc:  # noqa: BLE001 — a failed probe keeps the old behaviour
+            _log.warning("resume_transcript_probe_failed", handle, handle=handle, sid=sid,
+                         base=base, error=repr(exc))
+            return base
+        _log.warning("resume_base_missing", handle, handle=handle, sid=sid, base=base,
+                     action="start fresh with the resume_self activation")
+        return None
+
     def _launch_on(self, harness: str | None, sid: str, role: str, handle: str, mode, **kw) -> None:
         """Launch on the recorded harness's backend; the ordinary route only when none is known."""
         f = getattr(self.spawner, "launch_harness", None)
@@ -1905,6 +1924,7 @@ class PoolService(Microservice):
                            harness=harness, reason=refusal)
                 return {"resumed": False, "handle": handle, "harness": harness,
                         "reason": refusal}
+            base = self._base_or_fresh(harness, base, sid, handle)
             s["state"] = "resuming"
             self._resuming_inflight.add(sid)  # finding 15: mark the in-flight fork (cleared at every exit)
             settings = s.get("spawn_settings") or {}
@@ -2042,6 +2062,7 @@ class PoolService(Microservice):
                            harness=harness, reason=refusal)
                 return {"resumed": False, "handle": handle, "harness": harness,
                         "reason": refusal}
+            base = self._base_or_fresh(harness, base, sid, handle)
             settings = s.get("spawn_settings") or {}
             s["state"] = "resuming"
             self.locks[handle] = sid   # RE-TAKE the freed handle lock
