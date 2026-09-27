@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import type { DryRun, Templates, WorkflowRead, WorkflowRow } from "../../../api/workflows";
+import { deleteOutcomeOf, type DryRun, type Templates, type WorkflowRead, type WorkflowRow } from "../../../api/workflows";
 import dryrunStallJson from "./dryrun-stall.json";
 import dryrunStandardJson from "./dryrun-standard.json";
 import invalidJson from "./invalid.json";
@@ -23,11 +23,12 @@ export const DRYRUN_STALL = dryrunStallJson as unknown as DryRun;
 
 const ok = (value: unknown, hint = "") => HttpResponse.json({ ok: true, value, hint });
 
-export function rowOf(d: WorkflowRead, pinnedBy: string[] = []): WorkflowRow {
-  return {
+export function rowOf(d: WorkflowRead, pinnedBy: string[] = [], archived = false): WorkflowRow {
+  const row = {
     id: d.id, version: d.version, ref: `${d.id}@${d.version}`, name: d.name, description: d.description,
-    builtin: d.builtin, published: d.published, source: d.source ?? null, pinned_by: pinnedBy, roles: d.roles.length,
+    builtin: d.builtin, published: d.published, source: d.source ?? null, pinned_by: pinnedBy, roles: d.roles.length, archived,
   };
+  return { ...row, delete_outcome: deleteOutcomeOf(row) };
 }
 
 export const WORKFLOWS: Record<string, WorkflowRead> = {

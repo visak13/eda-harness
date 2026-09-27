@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Transition, WorkflowDef } from "../../api/workflows";
 import styles from "./Design.module.css";
-import { GATE_EDGE, MAIN_PATH, checksByRole, preconditionText, roleLabel, roleLayers, whoTakes } from "./model";
+import { GATE_EDGE, GATE_LABEL, MAIN_PATH, checksByRole, plain, preconditionText, roleLabel, roleLayers, whoTakes } from "./model";
 
 // S14 (§4.14(c)): the pipeline at a glance — who spawns whom and who checks what (roles graph), then the
 // status flow with the gates between stages. Every edge comes from the definition; the full transition
@@ -17,11 +17,13 @@ export function PipelineView({ wf }: { wf: WorkflowDef }): React.JSX.Element {
   const edge = picked ? wf.transitions.find((t) => `${t.from}→${t.to}` === picked) ?? null : null;
   return (
     <div className={styles.card} data-testid="design-pipeline">
-      <h2 className={styles.cardTitle}>Who spawns and checks whom</h2>
-      <RolesGraph wf={wf} />
-      <h2 className={styles.cardTitle}>Status flow and gates</h2>
+      <h2 className={styles.cardTitle}>How a ticket moves</h2>
+      <p className={styles.help}>Left to right, the path every ticket takes from idea to done. A chip above an arrow is a gate: a person answers before work goes on. Pick an arrow to see who may move a ticket along it.</p>
       <StatusFlow wf={wf} onPick={setPicked} picked={picked} />
-      {edge ? <EdgeDetail wf={wf} t={edge} /> : <p className={styles.help}>Pick an edge (or a row below) to see its preconditions.</p>}
+      {edge ? <EdgeDetail wf={wf} t={edge} /> : null}
+      <h2 className={styles.cardTitle}>Who starts and checks whom</h2>
+      <p className={styles.help}>People sit on the left. A solid arrow means that role starts seats of the next; a dashed arrow means it checks their work.</p>
+      <RolesGraph wf={wf} />
       <TransitionTable wf={wf} onPick={setPicked} picked={picked} />
     </div>
   );
@@ -82,10 +84,10 @@ function RolesGraph({ wf }: { wf: WorkflowDef }): React.JSX.Element {
         </svg>
       </div>
       <div className={styles.legend}>
-        <span><span className={styles.swatch} />spawns</span>
+        <span><span className={styles.swatch} />starts seats of</span>
         <span><span className={`${styles.swatch} ${styles.swatchCheck}`} />checks the builders' work</span>
-        {idle.length ? <span data-testid="pipeline-idle">not in the flow: {idle.join(", ")}</span> : null}
-        {unreached.length ? <span data-testid="pipeline-unreached">no role spawns: {unreached.join(", ")}</span> : null}
+        {idle.length ? <span data-testid="pipeline-idle">on call, not in the flow: {idle.join(", ")}</span> : null}
+        {unreached.length ? <span data-testid="pipeline-unreached">no role starts: {unreached.join(", ")}</span> : null}
       </div>
     </>
   );
@@ -106,7 +108,7 @@ function StatusFlow({ wf, onPick, picked }: { wf: WorkflowDef; onPick: (k: strin
   return (
     <div className={styles.svgWrap}>
       <svg className={styles.svg} width={width} height={height} role="img" data-testid="pipeline-flow"
-        aria-label={`Status flow: ${main.join(" → ")}${side.length ? `; side statuses ${side.join(", ")}` : ""}`}>
+        aria-label={`How a ticket moves: ${main.map(plain).join(" → ")}${side.length ? `; it can also be ${side.map(plain).join(", ")}` : ""}`}>
         {main.slice(0, -1).map((s, i) => {
           const to = main[i + 1];
           const t = wf.transitions.find((e) => e.from === s && e.to === to);
@@ -129,7 +131,7 @@ function StatusFlow({ wf, onPick, picked }: { wf: WorkflowDef; onPick: (k: strin
               {gates.map((g, gi) => (
                 <g key={g.id} className={styles.gateChip} transform={`translate(${(x1 + x2) / 2 - 50} ${14 - gi * 18})`} data-testid={`flow-gate-${g.id}`}>
                   <rect width={100} height={18} rx={9} />
-                  <text className={styles.gateText} x={50} y={12.5} textAnchor="middle">gate: {g.id}</text>
+                  <text className={styles.gateText} x={50} y={12.5} textAnchor="middle">{GATE_LABEL[g.id] ?? plain(g.id)}</text>
                 </g>
               ))}
             </g>
@@ -143,16 +145,16 @@ function StatusFlow({ wf, onPick, picked }: { wf: WorkflowDef; onPick: (k: strin
         {main.map((s, i) => (
           <g key={s} className={`${styles.status} ${terminal.has(s) ? styles.statusTerminal : ""}`} transform={`translate(${x(i)} 40)`} data-testid={`flow-status-${s}`}>
             <rect width={SW} height={32} rx={16} />
-            <text className={styles.nodeLabel} x={SW / 2} y={21} textAnchor="middle">{s}</text>
+            <text className={styles.nodeLabel} x={SW / 2} y={21} textAnchor="middle">{plain(s)}</text>
           </g>
         ))}
         {side.map((s, i) => (
           <g key={s} className={`${styles.status} ${terminal.has(s) ? styles.statusTerminal : ""}`} transform={`translate(${x(i + 1)} 140)`} data-testid={`flow-status-${s}`}>
             <rect width={SW} height={32} rx={16} />
-            <text className={styles.nodeLabel} x={SW / 2} y={21} textAnchor="middle">{s}</text>
+            <text className={styles.nodeLabel} x={SW / 2} y={21} textAnchor="middle">{plain(s)}</text>
           </g>
         ))}
-        {side.length ? <text className={styles.edgeLabel} x={20} y={160}>also:</text> : null}
+        {side.length ? <text className={styles.edgeLabel} x={20} y={160}>can also be:</text> : null}
       </svg>
     </div>
   );
@@ -161,11 +163,11 @@ function StatusFlow({ wf, onPick, picked }: { wf: WorkflowDef; onPick: (k: strin
 function EdgeDetail({ wf, t }: { wf: WorkflowDef; t: Transition }): React.JSX.Element {
   return (
     <div className={styles.upstream} data-testid="flow-edge-detail">
-      <strong>{t.from} → {t.to}</strong>
-      <span className={styles.muted}>Taken by: {whoTakes(wf, t)}{t.auto ? " — the board carries a ticket along it when the checks pass" : ""}</span>
+      <strong>{plain(t.from)} → {plain(t.to)}</strong>
+      <span className={styles.muted}>Who may move a ticket here: {whoTakes(wf, t)}{t.auto ? " — the board carries a ticket along it when the checks pass" : ""}</span>
       {t.requires.length ? (
         <ul className={styles.pre}>{t.requires.map((p, i) => <li key={i}>{preconditionText(p)}</li>)}</ul>
-      ) : <span className={styles.badge} data-testid="flow-edge-bare">no precondition: anyone may take it at any time</span>}
+      ) : <span className={styles.badge} data-testid="flow-edge-bare">no check: anyone may move a ticket here at any time</span>}
     </div>
   );
 }
@@ -173,15 +175,15 @@ function EdgeDetail({ wf, t }: { wf: WorkflowDef; t: Transition }): React.JSX.El
 function TransitionTable({ wf, onPick, picked }: { wf: WorkflowDef; onPick: (k: string) => void; picked: string | null }): React.JSX.Element {
   return (
     <details data-testid="pipeline-transitions">
-      <summary className={styles.fieldLabel}>All {wf.transitions.length} transitions</summary>
+      <summary className={styles.fieldLabel}>Every move and what the board checks ({wf.transitions.length})</summary>
       <table className={styles.diffTable}>
-        <thead><tr><th>Edge</th><th>Taken by</th><th>Preconditions</th></tr></thead>
+        <thead><tr><th>Move</th><th>Who may make it</th><th>What the board checks</th></tr></thead>
         <tbody>
           {wf.transitions.map((t) => {
             const key = `${t.from}→${t.to}`;
             return (
               <tr key={key} aria-selected={picked === key}>
-                <td><button type="button" className={`${styles.item} ${styles.small}`} onClick={() => onPick(key)}>{key}</button></td>
+                <td><button type="button" className={`${styles.item} ${styles.small}`} onClick={() => onPick(key)}>{plain(t.from)} → {plain(t.to)}</button></td>
                 <td>{whoTakes(wf, t)}</td>
                 <td>{t.requires.length ? t.requires.map((p) => p.check).join(", ") : <span className={`${styles.badge} ${styles.badgeDraft}`}>none</span>}</td>
               </tr>

@@ -10,6 +10,12 @@ import { PANELS, panelFor, short, type PanelKey } from "./model";
 // S14 (§4.14(e).2-4): Validate (the board's lint + the dry run, each issue linked to the panel where it is
 // fixed), Dry run (the timeline of a synthetic epic), Diff (against the version it came from) and the
 // "upstream changed" banner with its three-way merge into a new draft.
+// t-0c16c00424: the four are one "Validate and publish" section, numbered in the order a person works — check,
+// walk a test epic through, see what changes, publish — and Publish names the epics it leaves untouched.
+
+export function StepTitle({ n, children }: { n: number; children: React.ReactNode }): React.JSX.Element {
+  return <h2 className={styles.stepTitle}><span className={styles.stepNum} aria-hidden="true">{n}</span>{children}</h2>;
+}
 
 export function ValidatePanel({ problems, ran, onGo }: {
   problems: Problem[] | null; ran: boolean; onGo: (panel: PanelKey, role?: string, field?: string) => void;
@@ -18,8 +24,8 @@ export function ValidatePanel({ problems, ran, onGo }: {
   const warnings = (problems ?? []).filter((p) => p.severity !== "error");
   return (
     <div className={styles.card} data-testid="design-validate">
-      <h2 className={styles.cardTitle}>Validate</h2>
-      {!ran || !problems ? <p className={styles.muted}>Press Validate to check this draft: the board's lint, then a dry run.</p>
+      <StepTitle n={1}>Check for problems</StepTitle>
+      {!ran || !problems ? <p className={styles.muted}>Press Validate to check this draft: the board's rules first, then a test walk. Every problem links to the place you fix it.</p>
         : errors.length === 0 ? <p className={styles.muted} data-testid="validate-ok">No errors: this version can be published.{warnings.length ? ` ${warnings.length} warning${warnings.length === 1 ? "" : "s"} below.` : ""}</p>
           : <p className={ui.banner} role="alert" data-testid="validate-errors">{errors.length === 1 ? "1 error blocks" : `${errors.length} errors block`} Publish.</p>}
       <ul className={styles.problems}>
@@ -58,7 +64,7 @@ export function DryRunPanel({ run, pending, error, onRun }: {
   return (
     <div className={styles.card} data-testid="design-dryrun">
       <div className={styles.spread}>
-        <h2 className={styles.cardTitle}>Dry run</h2>
+        <StepTitle n={2}>Walk a test epic through it</StepTitle>
         <div className={styles.row}>
           <label className={styles.check}><input type="checkbox" checked={wakes} onChange={(e) => setWakes(e.target.checked)} data-testid="dryrun-wakes" />show wakes</label>
           <button type="button" className={ui.button} disabled={pending} onClick={onRun} data-testid="dryrun-run">{pending ? "Walking…" : "Run dry run"}</button>
@@ -96,16 +102,17 @@ export function DiffPanel({ wf, rows }: { wf: WorkflowDef; rows: WorkflowRow[] }
   return (
     <div className={styles.card} data-testid="design-diff">
       <div className={styles.spread}>
-        <h2 className={styles.cardTitle}>Diff</h2>
+        <StepTitle n={3}>What changes</StepTitle>
         <label className={styles.check}>
-          <span className={styles.fieldLabel}>against</span>
+          <span className={styles.fieldLabel}>compared with</span>
           <select className={ui.select} value={against} onChange={(e) => setAgainst(e.target.value)} data-testid="diff-against">
             <option value="">pick a version</option>
             {rows.map((r) => <option key={r.ref} value={r.ref}>{r.ref}{r.ref === wf.source ? " (source)" : ""}</option>)}
           </select>
         </label>
       </div>
-      {!against ? <p className={styles.muted}>This version has no source; pick one to compare with.</p> : null}
+      <p className={styles.help}>Each field this version sets differently from the one you pick (by default the version it was copied from).</p>
+      {!against ? <p className={styles.empty}>This version was not copied from another; pick one above to compare with.</p> : null}
       <AdminError error={q.error} testid="diff-error" />
       {q.data ? <ChangeTable changes={q.data.changes} testid="diff-table" empty={`No difference from ${against}.`} /> : null}
     </div>
@@ -180,6 +187,41 @@ export function UpstreamBanner({ refStr, canEdit, onMerged }: { refStr: string; 
         </>
       ) : null}
       <AdminError error={merge.error} testid="upstream-error" />
+    </div>
+  );
+}
+
+/** Step 4: what publishing does, and which epics it leaves alone (every running epic keeps its pinned version). */
+export function PublishSummary({ wf, rows, editable, errors, pending, onPublish }: {
+  wf: WorkflowDef; rows: WorkflowRow[]; editable: boolean; errors: number | null; pending: boolean; onPublish: () => void;
+}): React.JSX.Element {
+  const ref = `${wf.id}@${wf.version}`;
+  const others = rows.filter((r) => r.ref !== ref && r.pinned_by.length);
+  const running = others.reduce((n, r) => n + r.pinned_by.length, 0);
+  const mine = rows.find((r) => r.ref === ref)?.pinned_by ?? [];
+  return (
+    <div className={styles.card} data-testid="design-publish-summary">
+      <StepTitle n={4}>Publish</StepTitle>
+      {wf.builtin ? <p className={styles.muted}>A preset is already published and never changes. Duplicate it to publish your own version.</p>
+        : wf.published ? (
+          <p className={styles.muted} data-testid="publish-done">{ref} is published and fixed. {mine.length ? `${mine.length} epic${mine.length === 1 ? "" : "s"} run on it: ${mine.join(", ")}.` : "No epic runs on it yet."} To change it, duplicate it as the next version.</p>
+        ) : (
+          <>
+            <p className={styles.muted}>Publishing fixes {ref} for good and lets new epics pick it. Nothing changes for epics already running.</p>
+            <p className={styles.help} data-testid="publish-unaffected">
+              {running ? `Unaffected: ${running} running epic${running === 1 ? "" : "s"} keep the version they started on — ${others.map((r) => `${r.pinned_by.length} on ${r.ref}`).join(", ")}.`
+                : "Unaffected: no epic is running on any workflow yet."}
+            </p>
+            {editable ? (
+              <div className={styles.row}>
+                <button type="button" className={`${ui.button} ${ui.buttonPrimary}`} disabled={pending} onClick={onPublish} data-testid="publish-step-run">
+                  {pending ? "Publishing…" : `Publish ${ref}`}
+                </button>
+                <span className={styles.help}>{errors === null ? "Publish saves, checks and walks the draft first; any problem stops it here." : errors ? `${errors} problem${errors === 1 ? "" : "s"} above must be fixed first.` : "No problems found."}</span>
+              </div>
+            ) : null}
+          </>
+        )}
     </div>
   );
 }

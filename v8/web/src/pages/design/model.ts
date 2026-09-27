@@ -2,17 +2,34 @@ import type { Precondition, Problem, RoleDef, Transition, WorkflowDef } from "..
 
 // S14: pure helpers the Design tab's panels share — no fetching, so vitest drives them with fixtures.
 
+// t-0c16c00424 (owner m-b841864899: "easy to understand as the admin tab is"): the sections in the order a
+// person works through a workflow (pages/admin/README.md reading order): what it is, who works on it, who
+// checks and where a person says yes, the board's automatic behaviours and limits, then check and publish.
 export const PANELS = [
-  { key: "pipeline", label: "Pipeline" },
-  { key: "roles", label: "Roles" },
-  { key: "hooks", label: "Hooks" },
-  { key: "gates", label: "Gates" },
-  { key: "caps", label: "Caps" },
-  { key: "validate", label: "Validate" },
-  { key: "dryrun", label: "Dry run" },
-  { key: "diff", label: "Diff" },
+  { key: "overview", label: "Overview", hint: "What this workflow does: who works on an epic and the path a ticket takes." },
+  { key: "roles", label: "Roles", hint: "Each kind of seat: its instructions, model, tools and what it may do." },
+  { key: "checks", label: "Checks and gates", hint: "Who checks each kind of work, and where a person must answer before work goes on." },
+  { key: "policy", label: "Hooks and caps", hint: "What the board does on its own, and the limits it keeps on every epic." },
+  { key: "publish", label: "Validate and publish", hint: "Check the draft, walk a test epic through it, see what changes, then publish." },
 ] as const;
 export type PanelKey = (typeof PANELS)[number]["key"];
+
+/** Section keys before t-0c16c00424, so an old ?panel= link still opens the right section. */
+const LEGACY_PANEL: Record<string, PanelKey> = {
+  pipeline: "overview", gates: "checks", hooks: "policy", caps: "policy", validate: "publish", dryrun: "publish", diff: "publish",
+};
+export function panelOf(key: string | null): PanelKey {
+  if (!key) return "overview";
+  if (PANELS.some((p) => p.key === key)) return key as PanelKey;
+  return LEGACY_PANEL[key] ?? "overview";
+}
+
+/** One-line page header: what a workflow is and when you would change one. */
+export const DESIGN_SCOPE = "A workflow is the rulebook an epic runs on: which roles work on it, how a ticket moves from idea to done, "
+  + "and where a person must say yes. Change one when your team needs other roles, checks or limits; running epics keep the version they started on.";
+
+/** A status or key in plain words: in_progress → "in progress". */
+export const plain = (key: string): string => key.replaceAll("_", " ");
 
 /** The board's main status path, in order; every other status is a side status (blocked, partial, dropped). */
 export const MAIN_PATH = ["drafted", "designed", "signed_off", "ready", "in_progress", "in_review", "done"];
@@ -22,17 +39,56 @@ export const EFFORTS = ["low", "medium", "high"];
 
 /** One line per hook: what the board does when it is on (design §4.14(b); edp8/workflow.py HOOKS). */
 export const HOOK_HELP: Record<string, string> = {
-  epic_auto_advance: "The board moves an epic through in_progress, in_review and signed_off from the facts of its stories.",
+  epic_auto_advance: "The board moves an epic through in progress, in review and signed off from the facts of its stories.",
   release_cascade: "When a ticket is released, signed-off tickets waiting on it become ready; a review story waits for the rest.",
   criteria_auto_done: "A ticket in review becomes done once every criterion passed; an epic also needs its acceptance checker's criteria.",
   signoff_before_start: "A quick task starts only after the owner signs off its design note.",
-  evidence_before_review: "A ticket reaches in_review only when every criterion has evidence attached.",
+  evidence_before_review: "A ticket reaches in review only when every check (criterion) has evidence attached.",
   acceptance_pairs_checker: "When an epic reaches review, the board spawns one checker seat of this role for it.",
   resident_designer: "The epic's own designer seat (this role) walks its epic and is addressed by its role.",
   review_story_last: "The adversarial review story waits for its sibling stories and never blocks them.",
   knowledge_tickets: "Knowledge tickets (craft docs) are checked by this role.",
   one_checker_per_epic: "A checker seat named <role>.<epic> may verdict only its own epic.",
   quick_task: "The owner's parentless story tagged quick is a quick task the owner checks.",
+};
+
+/** Plain names for hooks (the key stays visible, small, for people reading the board's messages). */
+export const HOOK_LABEL: Record<string, string> = {
+  epic_auto_advance: "Move epics forward on their own",
+  release_cascade: "Start waiting work when a ticket is released",
+  criteria_auto_done: "Close a ticket once every check passed",
+  signoff_before_start: "Quick tasks wait for the owner's sign-off",
+  evidence_before_review: "Review needs evidence on every check",
+  acceptance_pairs_checker: "Start one acceptance checker per epic",
+  resident_designer: "Each epic keeps its own designer seat",
+  review_story_last: "The adversarial review goes last",
+  knowledge_tickets: "Who checks knowledge tickets",
+  one_checker_per_epic: "A checker only judges its own epic",
+  quick_task: "The owner's quick tasks",
+};
+
+/** Plain names for hook parameters. */
+export const PARAM_LABEL: Record<string, string> = {
+  role: "Role", epic_checker: "Epic checker", checked_by: "Checked by", review_work_type: "Review work type",
+  work_type: "Work type", tag: "Tag",
+};
+
+/** Plain names for gates. */
+export const GATE_LABEL: Record<string, string> = {
+  design_signoff: "Design sign-off",
+  poc: "Proof of concept",
+  demo: "First demo",
+  adversarial: "Adversarial review ruling",
+  budget: "Budget",
+  acceptance: "Acceptance",
+  scope: "Scope increase",
+};
+
+/** Plain names for caps. */
+export const CAP_LABEL: Record<string, string> = {
+  stories_per_epic: "Stories per epic",
+  tasks_per_story: "Tasks per story",
+  criteria_per_story: "Checks per story",
 };
 
 /** One line per gate id (the answer a human gives). */
@@ -83,7 +139,7 @@ export const PERMISSION_HELP: Record<string, string> = {
   edit_ticket: "edit a ticket's description and tags",
   assign: "assign a ticket",
   set_design_ref: "set a ticket's design doc",
-  claim: "take an unassigned ticket to in_progress",
+  claim: "take an unassigned ticket to in progress",
   evidence: "attach evidence to criteria",
   task_verdict: "verdict a task's criteria",
   binding: "record binding decisions",
@@ -132,8 +188,9 @@ export function whoTakes(wf: WorkflowDef, t: Transition): string {
 }
 
 export function preconditionText(p: Precondition): string {
-  const label = p.message ? p.message.replace(/\{[a-z_]+\}/g, "…") : p.check;
-  return `${p.check}${p.hook ? ` (hook ${p.hook})` : ""}: ${label}`;
+  // t-0c16c00424: the words first; the check's key follows in brackets for reading board refusals
+  const label = p.message ? p.message.replace(/\{[a-z_]+\}/g, "…") : plain(p.check);
+  return `${label} (${p.check}${p.hook ? `, hook ${p.hook}` : ""})`;
 }
 
 /** Roles laid out in spawn layers: humans first, then whom they spawn, and so on; a spawnable role no live
@@ -174,18 +231,18 @@ export function panelFor(p: Problem): { panel: PanelKey; role?: string; field?: 
   const role = /role '([^']+)'/.exec(p.message)?.[1];
   switch (p.code) {
     case "cap_below_1":
-      return role ? { panel: "roles", role, field: "max_concurrent" } : { panel: "caps", field: /caps\.([a-z_]+)/.exec(p.message)?.[1] };
+      return role ? { panel: "roles", role, field: "max_concurrent" } : { panel: "policy", field: /caps\.([a-z_]+)/.exec(p.message)?.[1] };
     case "schema":
-      return /caps\./.test(p.message) ? { panel: "caps" } : { panel: "pipeline" };
+      return /caps\./.test(p.message) ? { panel: "policy" } : { panel: "overview" };
     case "unknown_hook":
     case "hook_param":
-      return { panel: "hooks", field: /hook '([^']+)'/.exec(p.message)?.[1] };
+      return { panel: "policy", field: /hook '([^']+)'/.exec(p.message)?.[1] };
     case "gate_without_precondition":
     case "gate_unanswerable":
     case "self_approval":
-      return { panel: "gates", field: /gate '([^']+)'/.exec(p.message)?.[1] };
+      return { panel: "checks", field: /gate '([^']+)'/.exec(p.message)?.[1] };
     case "dry_run_stall":
-      return { panel: "dryrun" };
+      return { panel: "publish", field: "dryrun" };
     case "role_without_spawner":
     case "card_missing":
     case "unknown_capacity":
@@ -196,9 +253,9 @@ export function panelFor(p: Problem): { panel: PanelKey; role?: string; field?: 
     case "unusable_tool":
       return { panel: "roles", role, field: FIELD_OF[p.code] };
     case "unknown_role":
-      return role ? { panel: "roles", role } : { panel: "pipeline" };
+      return role ? { panel: "roles", role } : { panel: "overview" };
     default:
-      return { panel: "pipeline" };
+      return { panel: "overview" };
   }
 }
 

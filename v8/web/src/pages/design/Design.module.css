@@ -130,3 +130,26 @@
 .opAdded { color: var(--success); font-weight: 600; }
 .opRemoved { color: var(--danger); font-weight: 600; }
 .opChanged { color: var(--accentink); font-weight: 600; }
+
+/* t-0c16c00424: readable like Admin — list status/summary, delete confirm, section intros, publish steps */
+.itemName { font-weight: 650; }
+.itemSummary { font-size: 13px; line-height: 18px; color: var(--ink); }
+.badgeUse { border-color: var(--accent); background: var(--accentwash); color: var(--ink); }
+.empty { color: var(--muted); font-size: 13px; margin: 0; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 8px; }
+.dangerButton { color: var(--danger); border-color: var(--danger); }
+.archivedToggle { margin-top: 12px; }
+.confirm { border-left: 4px solid var(--danger); }
+.confirmArchive { border-left-color: var(--warning); }
+.confirmRefused { border-left-color: var(--strongline); }
+.sectionIntro { margin: 0; color: var(--muted); font-size: 14px; line-height: 20px; }
+.keyName { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; color: var(--muted); font-weight: 400; }
+.plainName { font-weight: 600; color: var(--ink); font-size: 14px; }
+.steps { display: flex; flex-direction: column; gap: 16px; margin: 0; padding: 0; list-style: none; counter-reset: step; }
+.step { display: flex; flex-direction: column; gap: 8px; }
+.stepTitle { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; font-weight: 650; color: var(--ink); }
+.stepNum { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 999px;
+  border: 1px solid var(--accent); color: var(--accentink); background: var(--accentwash); font-size: 12px; font-weight: 700; }
+.checkList { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.checkItem { display: grid; grid-template-columns: minmax(140px, 200px) minmax(0, 1fr); gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.checkItem:first-child { border-top: 0; }
+.diffTable td:first-child, .diffTable td:nth-child(2) { word-break: normal; white-space: nowrap; }

@@ -15,9 +15,10 @@ import { DesignPage } from "./Design";
 import { WorkflowList } from "./WorkflowList";
 import { PipelineView } from "./PipelineView";
 import { RolePanel } from "./RolePanel";
-import { CapsPanel, GatesPanel, HooksPanel } from "./PolicyPanels";
-import { DryRunPanel, UpstreamBanner, ValidatePanel } from "./CheckPanels";
-import { bodyOf, panelFor, roleLayers, rolesWithErrors } from "./model";
+import { CapsPanel, CheckersPanel, GatesPanel, HooksPanel } from "./PolicyPanels";
+import { DryRunPanel, PublishSummary, UpstreamBanner, ValidatePanel } from "./CheckPanels";
+import { CAP_HELP, CAP_LABEL, DESIGN_SCOPE, HOOK_HELP, HOOK_LABEL, PANELS, bodyOf, panelFor, panelOf, roleLayers, rolesWithErrors } from "./model";
+import { statusOf, summaryOf } from "./WorkflowList";
 
 // S14 (c-113c3070c7, c-e9d095f3a3, c-faeeb32860): every Design panel against the board-generated fixtures
 // (Standard, Lean, Solo and a planted-invalid draft), then the page's admin flow and its read-only view.
@@ -74,7 +75,7 @@ describe("pipeline view", () => {
     expect(screen.getByTestId("flow-gate-acceptance")).toBeInTheDocument();
     expect(screen.getByTestId("pipeline-idle")).toHaveTextContent("expert");
     fireEvent.click(screen.getByTestId("flow-edge-designed-signed_off"));
-    expect(screen.getByTestId("flow-edge-detail")).toHaveTextContent("designed → signed_off");
+    expect(screen.getByTestId("flow-edge-detail")).toHaveTextContent("designed → signed off");
   });
 
   it("Lean and Solo draw only their roles; the owner checks in Solo", () => {
@@ -169,7 +170,8 @@ describe("hooks, gates and caps", () => {
 
   it("gates: answerers are checkboxes; dropping every human flags the gate", async () => {
     wrap(<Editable start={DRAFT}>{(wf, set) => <GatesPanel wf={wf} editable onChange={set} />}</Editable>);
-    expect(screen.getByTestId("gate-design_signoff")).toHaveTextContent("between designed and signed_off");
+    expect(screen.getByTestId("gate-design_signoff")).toHaveTextContent("between designed and signed off");
+    expect(screen.getByTestId("gate-design_signoff")).toHaveTextContent("Design sign-off"); // plain name, key kept small
     fireEvent.click(screen.getByTestId("gate-answerer-design_signoff-owner"));
     expect(draftOf().gates.find((g) => g.id === "design_signoff")!.answerers).not.toContain("owner");
     expect(screen.getByTestId("gate-design_signoff")).toHaveTextContent("no human answers it");
@@ -193,7 +195,7 @@ describe("validate and dry run", () => {
     }
     fireEvent.click(screen.getByTestId("problem-go-card_missing"));
     expect(onGo).toHaveBeenLastCalledWith("roles", "designer", "card");
-    expect(panelFor(INVALID.problems.find((p) => p.code === "cap_below_1")!).panel).toBe("caps");
+    expect(panelFor(INVALID.problems.find((p) => p.code === "cap_below_1")!).panel).toBe("policy");
     expect([...rolesWithErrors(INVALID.problems)]).toContain("designer");
   });
 
@@ -297,5 +299,180 @@ describe("carry-over: roles from the pinned workflow", () => {
   it("pickableRoles keeps seat roles then humans, never expert or doctor", () => {
     expect(pickableRoles(STANDARD.roles)).toEqual(["architect", "sme", "engineer", "adversary", "qa", "owner"]);
     expect(pickableRoles(SOLO.roles)).toEqual(["engineer", "owner"]);
+  });
+});
+
+// ---- t-0c16c00424: delete/archive, and readable like Admin ------------------------------------------------
+
+const PUBLISHED_TEAM = { ...STANDARD, ...DRAFT, published: true, problems: [] };
+
+describe("t-0c16c00424 list: status in words, one-line summary, preset badge", () => {
+  it("says draft / published / in use by N epics, with a summary line and a preset badge", () => {
+    const team = { ...STANDARD, ...DRAFT, description: "" };
+    const rows = [rowOf(STANDARD, ["epic-1", "epic-2"]), rowOf(LEAN), rowOf(team), rowOf({ ...PUBLISHED_TEAM, id: "crew", name: "Crew" })];
+    wrap(<WorkflowList rows={rows} selected={null} canEdit onSelect={() => {}} onDuplicate={() => {}} onDelete={() => {}} pending={false} />);
+    expect(screen.getByTestId("wf-status-standard@1")).toHaveTextContent("in use by 2 epics");
+    expect(screen.getByTestId("wf-status-lean@1")).toHaveTextContent(/^published$/);
+    expect(screen.getByTestId("wf-status-team@1")).toHaveTextContent(/^draft$/);
+    expect(screen.getByTestId("wf-status-crew@1")).toHaveTextContent(/^published$/);
+    expect(screen.getByTestId("wf-preset-standard@1")).toHaveTextContent("preset");
+    expect(screen.queryByTestId("wf-preset-team@1")).toBeNull();
+    expect(screen.getByTestId("wf-summary-lean@1")).toHaveTextContent(LEAN.description);
+    expect(screen.getByTestId("wf-summary-team@1")).toHaveTextContent(`${STANDARD.roles.length} roles, copied from standard@1.`);
+    // Delete sits beside Duplicate on your own workflows only; a preset has no Delete
+    expect(screen.getByTestId("wf-delete-team@1")).toBeInTheDocument();
+    expect(screen.getByTestId("wf-duplicate-team@1")).toBeInTheDocument();
+    expect(screen.queryByTestId("wf-delete-standard@1")).toBeNull();
+    expect(statusOf({ ...rowOf(LEAN), archived: true }).text).toBe("archived");
+    expect(summaryOf({ ...rowOf(team), roles: 1, source: null })).toBe("1 role.");
+  });
+
+  it("empty states say what to do next, for an admin and for a reader", () => {
+    const { rerender } = wrap(<WorkflowList rows={[rowOf(STANDARD)]} selected={null} canEdit onSelect={() => {}} onDuplicate={() => {}} pending={false} />);
+    expect(screen.getByTestId("wf-custom-empty")).toHaveTextContent("Press Duplicate to edit on a preset");
+    rerender(<QueryClientProvider client={new QueryClient()}><WorkflowList rows={[rowOf(STANDARD)]} selected={null} canEdit={false} onSelect={() => {}} onDuplicate={() => {}} pending={false} /></QueryClientProvider>);
+    expect(screen.getByTestId("wf-custom-empty")).toHaveTextContent("An admin makes one by duplicating a preset");
+    rerender(<QueryClientProvider client={new QueryClient()}><WorkflowList rows={[]} selected={null} canEdit={false} onSelect={() => {}} onDuplicate={() => {}} pending={false} /></QueryClientProvider>);
+    expect(screen.getByTestId("wf-presets-empty")).toHaveTextContent("Reload the page");
+  });
+
+  it("gates, checkers and hooks each say what to do when empty", () => {
+    const bare = { ...DRAFT, gates: [], checkers: [], hooks: {} };
+    wrap(<>
+      <GatesPanel wf={bare} editable onChange={() => {}} />
+      <CheckersPanel wf={bare} />
+      <HooksPanel wf={bare} editable onChange={() => {}} templates={undefined} />
+    </>);
+    expect(screen.getByTestId("gates-empty")).toHaveTextContent("duplicate a preset that has the gate you want");
+    expect(screen.getByTestId("checkers-empty")).toHaveTextContent("Give a role");
+    expect(screen.getByTestId("hooks-empty")).toHaveTextContent("Reload the page");
+  });
+
+  it("every hook and cap field reads in plain words with a hint line; the key stays visible", () => {
+    wrap(<>
+      <HooksPanel wf={DRAFT} editable={false} onChange={() => {}} templates={TEMPLATES} />
+      <CapsPanel wf={DRAFT} editable={false} onChange={() => {}} />
+    </>);
+    const hook = screen.getByTestId("hook-epic_auto_advance");
+    expect(hook).toHaveTextContent("Move epics forward on their own");
+    expect(hook).toHaveTextContent("epic_auto_advance");
+    for (const name of Object.keys(TEMPLATES.hooks)) {
+      expect(screen.getByTestId(`hook-${name}`)).toHaveTextContent(HOOK_HELP[name]); // a hint line for every hook
+      expect(HOOK_LABEL[name]).toBeTruthy(); // and a plain name
+    }
+    for (const k of Object.keys(DRAFT.caps)) expect(CAP_HELP[k] && CAP_LABEL[k]).toBeTruthy();
+    expect(screen.getByTestId("design-caps")).toHaveTextContent("Stories per epic");
+    expect(screen.getByTestId("design-caps")).not.toHaveTextContent("stories per epic"); // not the raw key with spaces
+  });
+});
+
+describe("t-0c16c00424 sections in the order a person works", () => {
+  it("Overview → Roles → Checks and gates → Hooks and caps → Validate and publish; old links still land", () => {
+    expect(PANELS.map((p) => p.label)).toEqual(["Overview", "Roles", "Checks and gates", "Hooks and caps", "Validate and publish"]);
+    expect(PANELS.every((p) => p.hint.length > 20)).toBe(true);
+    expect(["pipeline", "gates", "hooks", "caps", "validate", "dryrun", "diff", null, "nope"].map(panelOf))
+      .toEqual(["overview", "checks", "policy", "policy", "publish", "publish", "publish", "overview", "overview"]);
+  });
+
+  it("the page opens with the one-line header and renders the tabs in that order", async () => {
+    server.use(whoami(false), ...workflowHandlers());
+    renderRoute("/design", "/design", <DesignPage />);
+    expect(await screen.findByText(DESIGN_SCOPE)).toBeInTheDocument();
+    expect(DESIGN_SCOPE).toMatch(/^A workflow is /);
+    const tabs = await screen.findAllByRole("tab");
+    expect(tabs.map((t) => t.textContent)).toEqual(["Overview", "Roles", "Checks and gates", "Hooks and caps", "Validate and publish"]);
+    expect(screen.getByTestId("design-section-hint")).toHaveTextContent(PANELS[0].hint);
+    fireEvent.click(tabs[2]);
+    expect(await screen.findByTestId("design-checkers")).toBeInTheDocument();
+    expect(screen.getByTestId("design-gates")).toBeInTheDocument();
+    fireEvent.click(tabs[3]);
+    expect(await screen.findByTestId("design-hooks")).toBeInTheDocument();
+    expect(screen.getByTestId("design-caps")).toBeInTheDocument();
+    fireEvent.click(tabs[4]);
+    expect(await screen.findByTestId("design-validate")).toBeInTheDocument();
+    expect(screen.getByTestId("design-dryrun")).toBeInTheDocument();
+    expect(screen.getByTestId("design-diff")).toBeInTheDocument();
+    expect(screen.getByTestId("design-publish-summary")).toBeInTheDocument();
+  });
+
+  it("Publish names the epics it leaves unaffected", () => {
+    const rows = [rowOf(STANDARD, ["epic-1", "epic-2"]), rowOf(LEAN, ["epic-3"]), rowOf({ ...STANDARD, ...DRAFT, problems: [] })];
+    const onPublish = vi.fn();
+    wrap(<PublishSummary wf={DRAFT} rows={rows} editable errors={null} pending={false} onPublish={onPublish} />);
+    expect(screen.getByTestId("publish-unaffected")).toHaveTextContent("Unaffected: 3 running epics keep the version they started on — 2 on standard@1, 1 on lean@1.");
+    fireEvent.click(screen.getByTestId("publish-step-run"));
+    expect(onPublish).toHaveBeenCalled();
+  });
+});
+
+describe("t-0c16c00424 Delete + confirm", () => {
+  const withRows = (rows: ReturnType<typeof rowOf>[], extra: Record<string, typeof STANDARD> = {}) => {
+    const deleted: string[] = [];
+    server.use(whoami(true),
+      http.get("/v1/workflows", () => ok(rows)),
+      http.delete("/v1/workflows/:ref", ({ params }) => {
+        deleted.push(params.ref as string);
+        const r = rows.find((x) => x.ref === params.ref)!;
+        return ok({ ref: r.ref, outcome: r.published ? "archived" : "deleted" });
+      }),
+      ...workflowHandlers(extra));
+    return deleted;
+  };
+
+  it("a draft: the confirm says it is removed for good, and Delete draft calls DELETE", async () => {
+    const team = { ...STANDARD, ...DRAFT, problems: [] };
+    const deleted = withRows([rowOf(STANDARD), rowOf(team)], { "team@1": team });
+    renderRoute("/design", "/design", <DesignPage />);
+    fireEvent.click(await screen.findByTestId("wf-delete-team@1"));
+    const c = screen.getByTestId("delete-confirm");
+    expect(c).toHaveAttribute("data-outcome", "deleted");
+    expect(c).toHaveTextContent("Delete draft team@1?");
+    expect(c).toHaveTextContent("removed for good");
+    fireEvent.click(screen.getByTestId("delete-confirm-run"));
+    await waitFor(() => expect(deleted).toEqual(["team@1"]));
+    expect(await screen.findByTestId("design-done")).toHaveTextContent("Draft team@1 is deleted.");
+  });
+
+  it("an unpinned published version: the confirm says Archive and how to restore", async () => {
+    const deleted = withRows([rowOf(STANDARD), rowOf(PUBLISHED_TEAM)], { "team@1": PUBLISHED_TEAM });
+    renderRoute("/design", "/design", <DesignPage />);
+    fireEvent.click(await screen.findByTestId("wf-delete-team@1"));
+    const c = screen.getByTestId("delete-confirm");
+    expect(c).toHaveAttribute("data-outcome", "archived");
+    expect(c).toHaveTextContent("Archive team@1?");
+    expect(c).toHaveTextContent("Show archived versions brings it back");
+    fireEvent.click(screen.getByTestId("delete-confirm-run"));
+    await waitFor(() => expect(deleted).toEqual(["team@1"]));
+    expect(await screen.findByTestId("design-done")).toHaveTextContent("team@1 is archived");
+  });
+
+  it("a pinned version: the confirm refuses, names the epics and offers only Close", async () => {
+    const deleted = withRows([rowOf(STANDARD), rowOf(PUBLISHED_TEAM, ["epic-9", "epic-10"])], { "team@1": PUBLISHED_TEAM });
+    renderRoute("/design", "/design", <DesignPage />);
+    fireEvent.click(await screen.findByTestId("wf-delete-team@1"));
+    const c = screen.getByTestId("delete-confirm");
+    expect(c).toHaveAttribute("data-outcome", "refused");
+    expect(c).toHaveTextContent("team@1 can’t be deleted");
+    expect(c).toHaveTextContent("pinned by 2 epics: epic-9, epic-10");
+    expect(screen.queryByTestId("delete-confirm-run")).toBeNull();
+    fireEvent.click(screen.getByTestId("delete-confirm-cancel"));
+    expect(screen.queryByTestId("delete-confirm")).toBeNull();
+    expect(deleted).toEqual([]);
+  });
+
+  it("a reader sees no Delete; Show archived lists archived versions with Restore for an admin", async () => {
+    const restored: string[] = [];
+    const arch = rowOf(PUBLISHED_TEAM, [], true);
+    server.use(whoami(true),
+      http.get("/v1/workflows", ({ request }) => ok(new URL(request.url).searchParams.get("archived") ? [rowOf(STANDARD), arch] : [rowOf(STANDARD)])),
+      http.post("/v1/workflows/:ref/restore", ({ params }) => { restored.push(params.ref as string); return ok({ ref: params.ref, outcome: "restored" }); }),
+      ...workflowHandlers({ "team@1": PUBLISHED_TEAM }));
+    renderRoute("/design", "/design", <DesignPage />);
+    expect(await screen.findByTestId("wf-row-standard@1")).toBeInTheDocument();
+    expect(screen.queryByTestId("wf-row-team@1")).toBeNull();
+    fireEvent.click(screen.getByTestId("wf-show-archived"));
+    expect(await screen.findByTestId("wf-status-team@1")).toHaveTextContent("archived");
+    fireEvent.click(screen.getByTestId("wf-restore-team@1"));
+    await waitFor(() => expect(restored).toEqual(["team@1"]));
   });
 });

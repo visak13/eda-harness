@@ -94,6 +94,22 @@ export interface WorkflowRow {
   source: string | null;
   pinned_by: string[];
   roles: number;
+  /** t-0c16c00424: hidden from the list until restored (only with ?archived=true). */
+  archived: boolean;
+  /** What Delete would do; the board says it, so the confirm never guesses. */
+  delete_outcome: DeleteOutcome;
+}
+
+export interface DeleteOutcome { action: "deleted" | "archived" | "refused"; reason: string }
+
+/** The board's rule (edp8/workflow.py `_delete_outcome`), used only when an older board left the field out. */
+export function deleteOutcomeOf(r: Pick<WorkflowRow, "builtin" | "published" | "pinned_by" | "archived">): DeleteOutcome {
+  const n = r.pinned_by.length;
+  if (r.builtin) return { action: "refused", reason: "a built-in preset always stays" };
+  if (n) return { action: "refused", reason: `pinned by ${n} epic${n === 1 ? "" : "s"}: ${r.pinned_by.join(", ")}` };
+  if (r.archived) return { action: "refused", reason: "already archived; restore it instead" };
+  return r.published ? { action: "archived", reason: "published: hidden from the list, restorable" }
+    : { action: "deleted", reason: "an unpublished draft" };
 }
 
 export interface RoleTemplate { label: string; help: string; role: Partial<RoleDef> }
@@ -128,11 +144,13 @@ const arr = <T,>(v: T[] | null | undefined): T[] => (Array.isArray(v) ? v : []);
 const obj = <T extends object>(v: T | null | undefined): T => (v && typeof v === "object" && !Array.isArray(v) ? v : ({} as T));
 
 export function normaliseRow(r: Partial<WorkflowRow> & { id: string; version: number }): WorkflowRow {
-  return {
+  const row = {
     ...r, ref: r.ref ?? refOf(r), name: r.name ?? "", description: r.description ?? "", builtin: Boolean(r.builtin),
     published: Boolean(r.published), source: r.source ?? null, pinned_by: arr(r.pinned_by),
     roles: typeof r.roles === "number" ? r.roles : Array.isArray(r.roles) ? (r.roles as unknown[]).length : 0,
+    archived: Boolean(r.archived),
   };
+  return { ...row, delete_outcome: r.delete_outcome?.action ? r.delete_outcome : deleteOutcomeOf(row) };
 }
 
 export function normaliseWorkflow(d: Partial<WorkflowRead> & { id: string; version: number }): WorkflowRead {
@@ -144,7 +162,11 @@ export function normaliseWorkflow(d: Partial<WorkflowRead> & { id: string; versi
   };
 }
 
-export const listWorkflows = async () => arr(await api<WorkflowRow[] | null>("/v1/workflows")).map(normaliseRow);
+const fetchWorkflows = async (archived: boolean) =>
+  arr(await api<WorkflowRow[] | null>(`/v1/workflows${archived ? "?archived=true" : ""}`)).map(normaliseRow);
+export const listWorkflows = () => fetchWorkflows(false);
+/** t-0c16c00424: the list with archived versions too (the Design tab's Show archived). */
+export const listWorkflowsWithArchived = () => fetchWorkflows(true);
 export const getWorkflow = async (ref: string) =>
   normaliseWorkflow(await api<WorkflowRead>(`/v1/workflows/${encodeURIComponent(ref)}`));
 export const getTemplates = () => api<Templates>("/v1/workflows/templates");
@@ -157,6 +179,10 @@ export const dryRunWorkflow = (d: WorkflowDef) => postJson<DryRun>("/v1/workflow
 export const publishWorkflow = (ref: string) => postJson<WorkflowDef>(`/v1/workflows/${encodeURIComponent(ref)}/publish`, {});
 export const diffWorkflow = (against: string, definition: WorkflowDef) =>
   postJson<{ against: string; changes: Change[] }>("/v1/workflows/diff", { against, definition });
+export const deleteWorkflow = (ref: string) =>
+  postJson<{ ref: string; outcome: "deleted" | "archived" }>(`/v1/workflows/${encodeURIComponent(ref)}`, undefined, "DELETE");
+export const restoreWorkflow = (ref: string) =>
+  postJson<{ ref: string; outcome: "restored" }>(`/v1/workflows/${encodeURIComponent(ref)}/restore`, {});
 export const getUpstream = (ref: string) => api<Upstream>(`/v1/workflows/${encodeURIComponent(ref)}/upstream`);
 export const mergeUpstream = (ref: string) => postJson<MergeResult>(`/v1/workflows/${encodeURIComponent(ref)}/merge-upstream`, {});
 
