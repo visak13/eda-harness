@@ -5,6 +5,7 @@ clean incl. flake8-print) and ST-4 (coverage) run as commands in S3c, not
 as pytest cases.
 """
 
+import os
 import subprocess
 import sys
 import textwrap
@@ -40,4 +41,8 @@ def test_st_2_cold_import_under_budget():
     samples = [float(subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                                     check=True).stdout.strip()) for _ in range(3)]
     ms = min(samples)
-    assert ms < 200.0, f"cold import {ms:.1f}ms exceeds 200ms budget (samples {samples})"
+    # The budget protects the local claude boot. GitHub's windows runner read 205-208 ms on py3.12 over 3 runs
+    # (process layer 36325369067), so CI on Windows alone gets 300 ms (architect ruling m-8676c1beec);
+    # Linux, macOS and every dev host keep 200 ms.
+    budget = 300.0 if os.environ.get("CI") and sys.platform == "win32" else 200.0
+    assert ms < budget, f"cold import {ms:.1f}ms exceeds {budget:.0f}ms budget (samples {samples})"
