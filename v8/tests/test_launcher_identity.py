@@ -363,3 +363,50 @@ def test_listener_pid_falls_back_to_own_process_sockets_when_the_host_scan_is_de
         s.listen()
         monkeypatch.setattr(psutil, "net_connections", denied)
         assert run_state.listener_pid(s.getsockname()[1]) == os.getpid()
+
+
+def test_a_supervisor_slower_than_the_start_wait_is_recorded_and_stopped(home, marker, monkeypatch):
+    # installers run 36333689230 (macOS bundle): the supervisor had not written its record when ensure_supervisor's
+    # wait ran out, so status said "no run record" and stop left it running. The launcher records the child itself.
+    spawned: list[ProcId] = []
+
+    def slow_detach(argv, **kw):
+        p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"], env={**os.environ, MARKER: marker},
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        spawned.append(ProcId.of(p.pid))
+        return spawned[-1], None
+    monkeypatch.setattr(launcher, "detach", slow_detach)
+    out = launcher.ensure_supervisor(wait_s=0.5)  # this "supervisor" never writes its own record
+    child = spawned[0]
+    assert out["state"] == "started" and out["pid"] == child.pid
+    rec = run_state.read(launcher.SUPERVISOR)
+    assert rec and rec["pid"] == child.pid and rec["root"]["pid"] == child.pid
+    assert launcher.supervisor_running()
+    assert launcher.ensure_supervisor(wait_s=0.5)["state"] == "already_running" and len(spawned) == 1
+    stopped = launcher.stop_supervisor()
+    assert not stopped["survivors"] and child.live() is None and run_state.read(launcher.SUPERVISOR) is None
+
+
+def test_stop_sweeps_this_homes_unrecorded_bundle_services_only(home, monkeypatch):
+    import psutil
+    monkeypatch.setattr(launcher, "bundled", lambda: True)
+    monkeypatch.setattr(launcher, "bundle_exe", lambda: "/Apps/Heronry Desktop")
+    mine = str(settings.run_dir())
+
+    class P:
+        def __init__(self, pid, cmdline, env):
+            self.info = {"pid": pid, "cmdline": cmdline, "create_time": 1000.0 + pid, "name": "Heronry Desktop"}
+            self._env = env
+
+        def environ(self):
+            if isinstance(self._env, Exception):
+                raise self._env
+            return self._env
+    svc = ["/Apps/Heronry Desktop", launcher.SERVICE_FLAG, "supervisor"]
+    procs = [P(11, svc, {"EDP8_RUN_DIR": mine}),                                  # ours, unrecorded: swept
+             P(12, svc, {"EDP8_RUN_DIR": mine + "-other-home"}),                  # another home's supervisor
+             P(13, svc, psutil.AccessDenied(13)),                                 # cannot attribute: never claimed
+             P(14, ["/Apps/Heronry Desktop", launcher.SERVICE_FLAG, "board"], {"EDP8_RUN_DIR": mine})]
+    assert launcher.unrecorded("supervisor", procs=procs) == [ProcId(11, 1011.0, "Heronry Desktop")]
+    monkeypatch.setattr(launcher, "bundled", lambda: False)
+    assert launcher.unrecorded("supervisor", procs=procs) == []

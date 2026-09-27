@@ -317,8 +317,10 @@ def main() -> None:
                     pass
         srv, cport = control.serve(make_dispatch(sup, emit))
         threading.Thread(target=srv.serve_forever, name="control", daemon=True).start()
+        # the launcher recorded this process at spawn (its root identity); keep that root across our own write
+        root = (run_state.read("supervisor") or {}).get("root")
         run_state.write("supervisor", pid=os.getpid(), port=None, git_rev=git_rev())
-        run_state.update("supervisor", control_port=cport)
+        run_state.update("supervisor", control_port=cport, **({"root": root} if root else {}))
         print(f"supervisor up (pid {os.getpid()}, control 127.0.0.1:{cport}); probing {services} every "
               f"{int(PROBE_INTERVAL)}s", file=sys.stderr)
         try:

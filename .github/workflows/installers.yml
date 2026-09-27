@@ -139,7 +139,11 @@ jobs:
         # IS noble, so the native deb targets the same system; its build packages come from apt here.
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential python3-dev python3-venv libgirepository1.0-dev libcairo2-dev pkg-config
+          # the deb's own build + runtime packages, read from desktop/pyproject.toml so the two cannot drift
+          # (run 36333689230: briefcase refused a native build without the runtime gir packages)
+          PKGS="$(/usr/bin/python3 -c 'import tomllib; a = tomllib.load(open("pyproject.toml", "rb"))["tool"]["briefcase"]["app"]["heronry"]["linux"]; print(" ".join(a["system_requires"] + a["system_runtime_requires"]))')"
+          echo "apt: $PKGS"
+          sudo apt-get install -y build-essential python3-dev python3-venv $PKGS
           /usr/bin/python3 -m venv .bvenv
           .bvenv/bin/python -m pip install "briefcase==0.4.5"
           .bvenv/bin/briefcase create linux system --no-input

@@ -454,6 +454,27 @@ def _targets(svc: str) -> list[ProcId]:
     return out
 
 
+def unrecorded(svc: str, *, procs: Any = None) -> list[ProcId]:
+    """A bundle's `<app> --heronry-service <svc>` processes of THIS home that may have no record (a record
+    lost or never written must not leave stop an orphan: installers run 36333689230). "This home" = the
+    process's EDP8_RUN_DIR is ours; one whose environment cannot be read is never claimed (fail-closed).
+    Outside a bundle a service is `python -m <module>`, which the records name."""
+    if not bundled():
+        return []
+    import psutil
+    want = [bundle_exe(), SERVICE_FLAG, svc]
+    mine = str(settings.run_dir())
+    out: list[ProcId] = []
+    for p in (procs if procs is not None else psutil.process_iter(["pid", "cmdline", "create_time", "name"])):
+        try:
+            if list(p.info.get("cmdline") or ()) != want or p.environ().get("EDP8_RUN_DIR") != mine:
+                continue
+            out.append(ProcId(p.info["pid"], float(p.info["create_time"]), p.info.get("name") or ""))
+        except (psutil.Error, OSError, TypeError, ValueError):
+            continue
+    return out
+
+
 def _ours(svc: str, ident: ProcId, *, port_: int | None = None) -> bool:
     """The port's listener `ident` is this home's `svc`: it reports this home's id, or it reports none and is
     a process this home recorded. Never True for an unknown or absent home: a listener that cannot prove
@@ -542,6 +563,7 @@ def stop(svc: str, *, keep_seats: bool = False, grace: float = 4.0) -> dict[str,
     Returns {service, state: stopped|not_running, killed, survivors}; survivors non-empty = failure."""
     rec = run_state.read(svc)
     targets = _targets(svc)
+    targets += [u for u in unrecorded(svc) if all(t.pid != u.pid for t in targets)]
     if not targets:
         if rec is not None:
             terminate_job(rec.get("job"))
@@ -598,6 +620,12 @@ def ensure_supervisor(*, wait_s: float = 20.0) -> dict[str, Any]:
         env["EDP_HOME"] = env["EDP8_HOME"] = str(home)
     env["EDP8_RUN_DIR"] = str(settings.run_dir())
     ident, _ = detach(argv, cwd=str(service_cwd("board")), env=env, log=str(log), via=_detach_via())
+    # record the child at once: the supervisor writes its own record only when its control port serves, and a
+    # cold bundle start on macOS outlasted wait_s (installers run 36333689230), so status found no record and
+    # stop left the supervisor running. A live supervisor's own record (a fast child) is kept.
+    if not run_state.record_alive(run_state.read(SUPERVISOR)):
+        run_state.write(SUPERVISOR, pid=ident.pid, port=None, git_rev=run_state.git_rev())
+        run_state.update(SUPERVISOR, root=ident.to_json())
     deadline = time.monotonic() + wait_s
     while time.monotonic() < deadline and ident.live():
         rec = run_state.read(SUPERVISOR)
