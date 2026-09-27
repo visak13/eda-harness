@@ -140,15 +140,18 @@ def test_cli_exits_1_on_a_planted_file_and_0_when_clean(tmp_path):
     assert run().returncode == 1, "the local gitignored file is read when the env is unset"
 
 
-def test_gitleaks_config_extends_the_tracked_rules_with_re2_owner_rules(tmp_path):
+def test_gitleaks_config_inlines_the_tracked_config_with_re2_owner_rules(tmp_path):
+    # inlined, not [extend] path=: gitleaks 8.30.1 drops an extended file's [[allowlists]] (CI run 36323612069)
+    (tmp_path / ".gitleaks.toml").write_bytes((ROOT / ".gitleaks.toml").read_bytes())
+    tracked = tomllib.loads((ROOT / ".gitleaks.toml").read_text(encoding="utf-8"))
     out = tmp_path / ".gitleaks.pii.toml"
     r = subprocess.run([sys.executable, str(GATE), "--root", str(tmp_path), "--gitleaks-config", str(out)],
                        capture_output=True, text=True, env=_env(PII_NEEDLES=NEEDLES_TOML))
     assert r.returncode == 0, r.stderr
     cfg = tomllib.loads(out.read_text(encoding="utf-8"))
-    assert cfg["extend"] == {"path": ".gitleaks.toml"}
+    assert cfg["extend"] == {"useDefault": True} and cfg["allowlists"] == tracked["allowlists"]
     rules = {x["id"]: x["regex"] for x in cfg["rules"]}
-    assert set(rules) == {"pii-owner-username", "pii-owner-email", "pii-owner-name"}
+    assert set(rules) == {"pii-projects-root", "pii-owner-username", "pii-owner-email", "pii-owner-name"}
     for rid, planted in (("pii-owner-username", f"C:/Users/{USER}/x"), ("pii-owner-email", EMAIL.upper()),
                          ("pii-owner-name", f"by {NAMES[1]}.")):
         assert "(?<" not in rules[rid] and "(?=" not in rules[rid] and "(?!" not in rules[rid], "RE2 has no lookaround"
@@ -158,7 +161,7 @@ def test_gitleaks_config_extends_the_tracked_rules_with_re2_owner_rules(tmp_path
     out.unlink()
     subprocess.run([sys.executable, str(GATE), "--root", str(tmp_path), "--gitleaks-config", str(out)], env=_env(),
                    check=True, capture_output=True)
-    assert "rules" not in tomllib.loads(out.read_text(encoding="utf-8"))
+    assert tomllib.loads(out.read_text(encoding="utf-8")) == tracked
 
 
 def test_tracked_gitleaks_config_holds_no_owner_rule():

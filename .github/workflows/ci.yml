@@ -48,7 +48,7 @@ jobs:
           if [ -z "$PII_NEEDLES" ]; then echo "::warning::PII_NEEDLES secret not set: the owner-name rules are off for this run"; fi
 
       - name: gitleaks over the tree
-        run: gitleaks dir . -c .gitleaks.pii.toml --redact --no-banner
+        run: gitleaks dir . -c .gitleaks.pii.toml --redact --no-banner --verbose  # --verbose: each hit prints RuleID and File (redacted)
 
       - name: gitleaks over the new commits
         env:
@@ -61,7 +61,7 @@ jobs:
             RANGE="$BASE..HEAD"
           fi
           echo "scanning $RANGE"
-          gitleaks git . -c .gitleaks.pii.toml --redact --no-banner --log-opts="$RANGE"
+          gitleaks git . -c .gitleaks.pii.toml --redact --no-banner --verbose --log-opts="$RANGE"
 
       - name: PII gate over every tracked file (bytes, archives included)
         env:
