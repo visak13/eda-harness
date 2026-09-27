@@ -21,6 +21,18 @@ def test_write_secret_is_private_and_reads_back_clean(tmp_path: Path) -> None:
         assert p.stat().st_mode & 0o777 == 0o600 and p.parent.stat().st_mode & 0o777 == 0o700
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows DACL")
+def test_restrict_drops_explicit_aces_too(tmp_path: Path) -> None:
+    # an elevated creator's file carries explicit OWNER RIGHTS + Administrators aces (CI run 36323612069)
+    p = tmp_path / "t.json"
+    p.write_text("{}", encoding="utf-8")
+    subprocess.run(["icacls", str(p), "/grant", "*S-1-3-4:F", "*S-1-5-32-544:R"], capture_output=True, check=True)
+    assert {"S-1-3-4", "S-1-5-32-544"} <= secrets.acl_sids(p)
+    secrets._restrict_windows(p)
+    assert secrets.acl_sids(p) == {secrets.current_user_sid(), secrets.SYSTEM_SID}
+    assert secrets.problems(p) == [] and p.read_text(encoding="utf-8") == "{}"
+
+
 def test_write_secret_refuses_to_overwrite(tmp_path: Path) -> None:
     p = secrets.write_secret(tmp_path / "t.json", "a")
     with pytest.raises(FileExistsError):

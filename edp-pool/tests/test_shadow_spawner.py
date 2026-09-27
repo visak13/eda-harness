@@ -2,6 +2,7 @@
 PtyLaunch/driver, real plan-JSON reads, real Spawner-ABC surface."""
 
 import json
+import sys
 
 import pytest
 
@@ -141,6 +142,8 @@ def test_disabled_flag_delegates_to_legacy_both_modes(sp, monkeypatch):
     assert len(calls) == 2
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="a visible console is Windows-only; on POSIX the spawner "
+                    "runs monitor as a headless PTY seat (S2), covered by the headless tests")
 def test_monitor_launch_builds_console_shadow(sp, tmp_path, monkeypatch):
     """Monitor spawns are SHADOWED (2026-08-06 ruling): first line rides
     argv as claude's initial prompt; wakes go via console injection."""

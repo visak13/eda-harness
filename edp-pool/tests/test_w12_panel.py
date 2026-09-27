@@ -397,6 +397,8 @@ def _signal_tree_now(pid, action):
             pass
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="the freeze instrument is Windows thread suspend counts; "
+                    "on POSIX it reads unknown by design (an instrument that cannot see never says running)")
 def test_pause_state_follows_the_world_not_the_pool(app):
     """The pool never wrote a flag. It reports `frozen` because the threads ARE
     frozen, and `running` the moment they are not — even though the suspend and

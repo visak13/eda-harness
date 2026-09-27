@@ -6,6 +6,8 @@ seat's argv prompt (`/doctor`) was parsed as one more tool name and the seat idl
 flag is now one `--disallowedTools=<names>` token, and every launch argv keeps the card prompt as its own
 last argument with no bare variadic flag before it."""
 
+import sys
+
 import pytest
 
 from edp_pool import pty_launcher
@@ -84,7 +86,7 @@ def test_launch_argv_with_a_deny_list_keeps_the_card_prompt_separate(tmp_path, m
     assert "--disallowedTools=Bash PowerShell Edit Write MultiEdit NotebookEdit" in argv
     assert argv[argv.index("--model") + 1] == "claude-haiku-4-5-20251001"
     prompt = f"/{card or 'doctor'}"
-    if mode == "monitor":
+    if mode == "monitor" and sys.platform == "win32":  # on POSIX the spawner runs monitor as headless (S2)
         assert argv[-1] == prompt, argv
     else:
         assert prompt not in argv and captured["typed"] == prompt  # typed into the PTY after readiness

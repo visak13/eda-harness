@@ -21,7 +21,24 @@ AccessDenied. A private MonkeyPatch touches only this env var and cannot
 reorder anyone else's teardown.
 """
 
+import shutil
+import sys
+
 import pytest
+
+_HOST_PLATFORM = sys.platform
+_real_which = shutil.which
+
+
+def _host_which(cmd, mode=None, path=None):
+    """shutil.which as the REAL host runs it. Many tests spoof `sys.platform = "win32"` to drive the Windows
+    launch path; on a POSIX host CPython's which() then takes its Windows branch and calls the missing
+    _winapi (AttributeError, CI run 36323612069). Tool lookup must answer for the host, not the spoof."""
+    spoof, sys.platform = sys.platform, _HOST_PLATFORM
+    try:
+        return _real_which(cmd, path=path) if mode is None else _real_which(cmd, mode, path)
+    finally:
+        sys.platform = spoof
 
 
 @pytest.fixture(autouse=True)
@@ -40,5 +57,7 @@ def _no_operator_spawn_defaults(tmp_path):
     # S12: models.json resolves to the data dir's editable catalog when one exists
     # (edp_contracts.seats.config_path); a test's registry must never be the host's.
     mp.setenv("EDP8_DATA", str(tmp_path / "absent-data-dir"))
+    if _HOST_PLATFORM != "win32":
+        mp.setattr(shutil, "which", _host_which)
     yield
     mp.undo()

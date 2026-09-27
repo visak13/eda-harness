@@ -79,8 +79,33 @@ def acl_sids(path: Path) -> set[str]:
 
 
 def _restrict_windows(path: Path) -> None:
-    sid = current_user_sid()
-    _run(["icacls", str(path), "/inheritance:r", "/grant:r", f"*{sid}:F", f"*{SYSTEM_SID}:F"])
+    """REPLACE the DACL with a protected one: the current user + SYSTEM, full control, nothing else.
+
+    Not `icacls /inheritance:r /grant:r`: that drops inherited aces and re-grants the two SIDs but KEEPS
+    every other explicit ace, and an elevated creator's new file carries explicit OWNER RIGHTS (S-1-3-4) and
+    Administrators (S-1-5-32-544) aces (GitHub's windows runner, CI run 36323612069)."""
+    import ctypes
+    from ctypes import wintypes
+
+    adv = ctypes.WinDLL("advapi32", use_last_error=True)
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    adv.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p]
+    adv.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype = wintypes.BOOL
+    adv.SetFileSecurityW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_void_p]
+    adv.SetFileSecurityW.restype = wintypes.BOOL
+    k32.LocalFree.argtypes = [ctypes.c_void_p]
+
+    sddl = f"D:P(A;;FA;;;{current_user_sid()})(A;;FA;;;{SYSTEM_SID})"
+    sd = ctypes.c_void_p()
+    if not adv.ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, 1, ctypes.byref(sd), None):
+        raise OSError(ctypes.get_last_error(), f"cannot build the private ACL for {path}")
+    try:
+        dacl_info, protected_dacl = 0x4, 0x80000000
+        if not adv.SetFileSecurityW(str(path), dacl_info | protected_dacl, sd):
+            raise OSError(ctypes.get_last_error(), f"SetFileSecurityW failed for {path}")
+    finally:
+        k32.LocalFree(sd)
 
 
 def write_secret(path: str | Path, data: str) -> Path:
