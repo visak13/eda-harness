@@ -1,0 +1,162 @@
+{
+  "research_tail": {
+    "source_chars": 15214,
+    "returned_chars": 12000,
+    "bytes": 12331,
+    "truncated": true,
+    "tail_visible": false,
+    "repeat_same_prefix": true,
+    "response_keys": [
+      "next",
+      "receipt",
+      "text",
+      "truncated"
+    ],
+    "offset_attempt": {
+      "ok": false,
+      "error": {
+        "code": "schema",
+        "field": "offset",
+        "message": "topic_research: unknown arg 'offset'",
+        "accepted": [
+          "topic_id",
+          "query",
+          "url"
+        ]
+      },
+      "hint": "pass a valid offset; required: topic_id; describe('enums') lists enum values"
+    },
+    "next": "distil what applies to this topic, then topic_propose(source_url=<this url>)"
+  },
+  "keyed_creates": {
+    "ticket_create": {
+      "same_id": true,
+      "replay": true,
+      "bytes_first": 311
+    },
+    "doc_create": {
+      "same_id": true,
+      "replay": true,
+      "bytes_first": 302
+    },
+    "artifact_create": {
+      "same_id": true,
+      "replay": true,
+      "bytes_first": 191
+    },
+    "criterion_create": {
+      "same_id": true,
+      "replay": true,
+      "bytes_first": 243
+    },
+    "message_send": {
+      "same_id": true,
+      "replay": true,
+      "bytes_first": 285
+    },
+    "record_decision": {
+      "same_id": true,
+      "replay": true,
+      "bytes_first": 284
+    },
+    "record_claim": {
+      "same_id": true,
+      "replay": true,
+      "bytes_first": 242
+    },
+    "record_lesson": {
+      "same_id": true,
+      "replay": true,
+      "bytes_first": 210
+    },
+    "topic_propose": {
+      "same_id": true,
+      "replay": true,
+      "bytes_first": 706
+    },
+    "propose_fix": {
+      "same_id": true,
+      "replay": true,
+      "bytes_first": 709
+    }
+  },
+  "echo": {
+    "input_body_bytes": 13750,
+    "doc_create_bytes": 14444,
+    "message_send_bytes": 14386,
+    "doc_body_identical": true,
+    "message_body_identical": true
+  },
+  "participants": {
+    "human_count": 1,
+    "filtered_bytes": 483,
+    "limit100_bytes": 10871,
+    "limit100_rows": 41,
+    "default_bytes": 6679,
+    "default_rows": 25,
+    "page": {
+      "cap_b": 8000,
+      "continue": "participants(<same filters>, cursor=next_cursor)",
+      "full_rows": "verbose=true"
+    }
+  },
+  "seq_parity": {
+    "message_query": {
+      "rows": 37,
+      "hint_pages": 3,
+      "cursor_pages": 3,
+      "exact": true
+    },
+    "events_query": {
+      "rows": 38,
+      "hint_pages": 2,
+      "cursor_pages": 2,
+      "exact": true
+    }
+  },
+  "approval_surface": {
+    "owner_tools": [
+      "board",
+      "close",
+      "context",
+      "context_delta",
+      "criterion_query",
+      "criterion_update",
+      "describe",
+      "describe_objects",
+      "doc_query",
+      "doc_read",
+      "events_query",
+      "find",
+      "gate_answer",
+      "gates",
+      "get_guide",
+      "harvest_cost",
+      "lookup",
+      "message_query",
+      "message_read",
+      "message_send",
+      "pain",
+      "participants",
+      "preflight",
+      "reap",
+      "record_claim",
+      "record_decision",
+      "resume",
+      "resume_self",
+      "service_status",
+      "session_query",
+      "spawn",
+      "subscribe",
+      "teammate",
+      "ticket_create",
+      "ticket_query",
+      "ticket_read",
+      "ticket_update",
+      "whoami",
+      "workflow"
+    ],
+    "candidate_tools": [],
+    "proposal_hint": "proposed: the owner approves or rejects it in the Library"
+  }
+}

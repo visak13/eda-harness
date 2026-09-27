@@ -1,0 +1,15 @@
+{
+  "audit_roots_found": false,
+  "codex_root_found": true,
+  "kind": "codex",
+  "log_name": "codex-seat.adversary.t-91393f0b57.jsonl",
+  "compute_succeeded": true,
+  "tokens": {
+    "calls": 19,
+    "inputTokens": 1433308,
+    "cachedInputTokens": 1307648,
+    "outputTokens": 8009,
+    "reasoningOutputTokens": 1658,
+    "totalTokens": 1441317
+  }
+}
