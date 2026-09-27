@@ -1,4 +1,4 @@
-"""S9 PII gate (.github/scripts/pii_gate.py): a planted hit fails, NOTICE keeps its copyright holder, and
+"""S9 PII gate (.github/scripts/pii_gate.py): a planted hit fails, no file is exempt from the name rule, and
 archives are scanned inside. Needles are assembled from parts, like the gate itself."""
 from __future__ import annotations
 
@@ -43,9 +43,10 @@ def test_neutral_paths_pass():
     assert g.scan_text("src/x.py", r"C:\Work\eda-base3 C:\Users\user\x /home/user/projects-list") == []
 
 
-def test_notice_keeps_the_copyright_holder_but_not_paths():
+def test_notice_is_not_exempt():
+    # NOTICE names "Heronry contributors" (owner m-c486b47c54), so no file may carry the owner's name
     g = _gate()
-    assert g.scan_text("NOTICE", "Copyright 2026 " + "Vis" + "hal") == []
+    assert g.scan_text("NOTICE", "Copyright 2026 " + "Vis" + "hal")
     assert g.scan_text("NOTICE", f"see {PROJ}")
 
 

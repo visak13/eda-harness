@@ -23,9 +23,7 @@ regex = '''(?i)a[k]soulkar@gmail\.com'''
 id = "pii-owner-name"
 description = "The maintainer's display name (git config user.name)"
 regex = '''(?i)\bv[i]shal\b|\bo[u]lkar\b'''
-  # The copyright holder is named on purpose in the Apache-2.0 NOTICE and LICENSE files.
-  [[rules.allowlists]]
-  paths = ['''^NOTICE$''', '''^LICENSE$''', '''(^|/)NOTICE$''', '''(^|/)LICENSE$''']
+# No path is exempt: NOTICE names "Heronry contributors" (owner m-c486b47c54).
 
 [[rules]]
 id = "pii-projects-root"

@@ -32,8 +32,6 @@ RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("owner name", re.compile(rf"\b(?:{_NAME[0]}|{_NAME[1]})\b", re.I)),
     ("projects root", re.compile(rf"(?:[a-z](?::|%3a){_SEP}|(?<![\w.])/[a-z]:?/){_PROJ}(?:{_SEP}|$)", re.I | re.M)),
 )
-#: the Apache-2.0 NOTICE and LICENSE name the copyright holder on purpose (owner name rule only)
-NAME_OK = re.compile(r"(^|/)(NOTICE|LICENSE)(\.txt|\.md)?$")
 ARCHIVES = (".whl", ".zip", ".vsix")
 TARS = (".tar.gz", ".tgz")
 
@@ -41,8 +39,6 @@ TARS = (".tar.gz", ".tgz")
 def scan_text(path: str, text: str) -> list[str]:
     hits = []
     for label, rx in RULES:
-        if label == "owner name" and NAME_OK.search(path):
-            continue
         for m in rx.finditer(text):
             line = text.count("\n", 0, m.start()) + 1
             hits.append(f"{path}:{line}: {label}: {text[max(0, m.start() - 20):m.end() + 20]!r}")
