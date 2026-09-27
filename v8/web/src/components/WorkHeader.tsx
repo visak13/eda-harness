@@ -115,6 +115,7 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
   const designDots = countWhere(here, "design");
   const filesDots = countWhere(here, "files") + (designRef ? 0 : designDots); // no Design opener: its docs are files
   const workDots = countWhere(here, "work");
+  const waitingFiles = here.filter((i) => i.pageTab === "files" || (!designRef && i.pageTab === "design"));
   const openerDots = (designRef ? designDots : 0) + filesDots + workDots;
 
   // Route request opens the source-bound review, never answers it (design-a2e5369133 §gate typed
@@ -273,7 +274,8 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
         {view !== "work" ? <Link className={styles.openTab} target="_blank" to={`/records/${encodeURIComponent(p.ticketId)}?${new URLSearchParams({ view: view ?? "files", ...(params.get("category") ? { category: params.get("category")! } : {}), as: identity() })}`}>Open in tab <Icon name="external" size={16} /></Link> : null}
       </span>} onClose={() => choose(null)}>
         {view === "history" ? <HistoryViewer ticketId={p.ticketId} /> : view === "work" ? p.work
-          : <FilesViewer ticketId={p.ticketId} waitingDocs={new Set(here.filter((i) => i.pageTab === "files" || (!designRef && i.pageTab === "design")).map((i) => i.item.doc ?? ""))} onRule={p.onRuleDoc} />}
+          : <FilesViewer ticketId={p.ticketId} waitingDocs={new Set(waitingFiles.map((i) => i.item.doc ?? ""))}
+            asks={new Map(waitingFiles.filter((i) => i.item.doc && i.ask).map((i) => [i.item.doc!, i.ask!]))} onRule={p.onRuleDoc} />}
       </Drawer>
     </header>
   );

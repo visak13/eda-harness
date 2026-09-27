@@ -239,14 +239,16 @@ export function TicketPage(): React.JSX.Element {
         onToggleOrder={() => setOrder((o) => (o === "newest" ? "oldest" : "newest"))}
         onReply={(m: MessageView) => setReply({ id: m.id, by: m.by })}
         composer={composer} />
-      <RulingDrawer signoff={rulingFor(page.data, criteria.find((c) => c.id === ruling), seat)}
+      <RulingDrawer signoff={rulingFor(page.data, criteria.find((c) => c.id === ruling), seat,
+        here.find((i) => i.kind === "signoff" && i.item.id === ruling)?.ask)}
         onClose={() => setRuling(null)} returnFocusTo={rulingOpener.current} />
     </div>
   );
 }
 
-/** The ruling drawer's row for one of this ticket's criteria: its evidence doc at the version the evidence named. */
-export function rulingFor(data: TicketPageData, c: CriterionView | undefined, assignee: string | null): SignoffRow | null {
+/** The ruling drawer's row for one of this ticket's criteria: its evidence doc at the version the evidence named, and
+ *  the served `ask` (the attention item's plain-words question, t-77c3a55b75) the drawer heads with. */
+export function rulingFor(data: TicketPageData, c: CriterionView | undefined, assignee: string | null, ask?: string): SignoffRow | null {
   if (!c?.evidence_ref) return null;
   const d = data.docs.find((x) => x.id === c.evidence_ref);
   return {
@@ -254,5 +256,6 @@ export function rulingFor(data: TicketPageData, c: CriterionView | undefined, as
     ticket: { id: data.ticket.id, title: data.ticket.title, epic_id: data.epic_id, epic_title: data.epic_title ?? data.epic_id, assignee },
     doc: { id: c.evidence_ref, title: d?.title ?? c.evidence_ref, doc_type: d?.doc_type ?? "report", version: c.evidence_version ?? d?.version ?? 1 },
     excerpt: "",
+    ask,
   };
 }

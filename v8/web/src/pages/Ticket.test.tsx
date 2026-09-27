@@ -567,6 +567,29 @@ describe("TicketPage attention trail (S20)", () => {
     expect(await screen.findByTestId("ruling-grid")).toBeInTheDocument();
   });
 
+  // t-77c3a55b75 (qa m-1f76018caa, owner m-0e6940fe2c "waiting on me, I don't know what on"): the served ask is the
+  // waiting row's words and the ruling drawer's heading; without one the drawer asks the generated question.
+  it("the served ask names the waiting row and heads the ruling drawer", async () => {
+    const ask = "Accept the hl-craft strategy?";
+    board();
+    server.use(attentionHandler({ ...ATTENTION, items: ATTENTION.items.map((i) => (i.id === "c-1" ? { ...i, ask } : i)) }));
+    mount(signoffPage());
+    await title();
+    fireEvent.click(screen.getByTestId("work-files"));
+    expect(await screen.findByTestId("signoff-ask")).toHaveTextContent(ask);
+    fireEvent.click(await screen.findByRole("button", { name: "The report · v2" }));
+    expect(await screen.findByTestId("ruling-ask")).toHaveTextContent(ask);
+    expect(screen.getAllByTestId("drawer-panel").some((d) => d.getAttribute("aria-label") === ask)).toBe(true);
+  });
+
+  it("without a served ask the drawer heads with the generated question, never blank", async () => {
+    board();
+    mount(signoffPage(), "/ticket/s-1?as=owner#c-1");
+    await title();
+    const heading = await screen.findByTestId("ruling-ask");
+    expect(heading.textContent).toMatch(/^Accept “.+” as meeting this criterion\?$/);
+  });
+
   it("clears once the sign-off is ruled: no mark, no review control", async () => {
     server.use(attentionHandler(without("c-1")));
     mount(signoffPage());

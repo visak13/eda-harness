@@ -6,6 +6,8 @@
 .rowLink { border: 0; background: transparent; padding: 0; font: inherit; font-size: 14px; color: var(--ink); text-decoration: underline; cursor: pointer; text-align: left; }
 .rowLink:hover { color: var(--accentink); }
 .rowMeta { margin-left: auto; font-size: 12px; color: var(--muted); }
+/* t-77c3a55b75: a waiting sign-off's plain-words question, on its own line under the doc row */
+.rowAsk { flex-basis: 100%; padding-left: 28px; font-size: 14px; font-weight: 600; color: var(--ink); }
 .card { display: flex; gap: 16px; align-items: center; padding: 10px 4px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .card:last-child { border-bottom: 0; }
 .cardThumb { width: 160px; height: 88px; flex: none; background: var(--bg); border: 1px solid var(--strongline); border-radius: 6px; display: grid; place-items: center; overflow: hidden; color: var(--muted); }

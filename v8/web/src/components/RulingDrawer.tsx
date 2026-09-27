@@ -27,6 +27,17 @@ export interface RulingDrawerProps {
   returnFocusTo?: HTMLElement | null;
 }
 
+/** t-77c3a55b75 (owner m-0e6940fe2c: "waiting on me, I don't know what on"): what the owner decides, in plain words —
+ *  the board's served `ask`, else the question the board generates for a sign-off (views.signoff_ask's default), so
+ *  the heading is never blank. */
+export function signoffAsk(s: Pick<SignoffRow, "ask" | "ticket">): string {
+  const ask = s.ask?.trim();
+  if (ask) return ask;
+  const title = s.ticket.title.trim();
+  const short = title.includes(":") ? title.slice(title.indexOf(":") + 1).trim() : title;
+  return `Accept “${short || s.ticket.id}” as meeting this criterion?`;
+}
+
 export function RulingDrawer({ signoff, kOfN, onClose, onRuled, returnFocusTo }: RulingDrawerProps): React.JSX.Element {
   const [staleAck, setStaleAck] = useState(false);
   const docId = signoff?.doc?.id ?? null;
@@ -58,16 +69,17 @@ export function RulingDrawer({ signoff, kOfN, onClose, onRuled, returnFocusTo }:
   const newer = latest > frozen;
   const canRule = !newer || staleAck;
 
+  const ask = signoff ? signoffAsk(signoff) : "Review owner sign-off";
   const title = (
     <span className={styles.titleRow}>
-      Review owner sign-off
+      <span data-testid="ruling-ask">{ask}</span>
       {signoff ? <span className={styles.crumb}>{signoff.ticket.title}</span> : null}
       {kOfN ? <span className={styles.kofn}>{kOfN.k} of {kOfN.n} sign-offs</span> : null}
     </span>
   );
 
   return (
-    <Drawer open={Boolean(signoff)} onClose={onClose} title={title} returnFocusTo={returnFocusTo}>
+    <Drawer open={Boolean(signoff)} onClose={onClose} title={title} label={ask} returnFocusTo={returnFocusTo}>
       {signoff ? (
         <div
           className={`${styles.grid} ${styles.dropTarget} ${drop.dragOver ? styles.dragging : ""}`}

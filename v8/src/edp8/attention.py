@@ -55,8 +55,10 @@ def _scope(board: Board, t: Any) -> tuple[Any, dict[str, Any]]:
 
 def _place(board: Board, t: Any, at: tuple[str, str], item: dict[str, Any], *, kind: str, since: str,
            label: str, noun: str, query: dict[str, str] | None = None, anchor: str | None = None,
-           src: Any = None) -> dict[str, Any]:
-    """One item: the hop on its scope page, where it sits on its own page, and the deep link that lands there."""
+           src: Any = None, ask: str | None = None) -> dict[str, Any]:
+    """One item: the hop on its scope page, where it sits on its own page, and the deep link that lands there.
+    `ask` (t-77c3a55b75, owner m-0e6940fe2c): a sign-off's or gate's plain-words question, so every surface says
+    what the viewer decides."""
     root, scope = _scope(board, t)
     child = t.id != root.id
     tab, section = ("work", "tickets") if child and scope["type"] in ("epic", "quick") else at
@@ -64,7 +66,8 @@ def _place(board: Board, t: Any, at: tuple[str, str], item: dict[str, Any], *, k
     return {"kind": kind, "id": item["id"], "since": since, "label": label, "noun": noun, "scope": scope,
             "tab": tab, "section": section,
             "ticket": {"id": t.id, "title": t.title} if child else None,
-            "at": {"tab": at[0], "section": at[1]}, "item": item, "url": url, "_src": src}
+            "at": {"tab": at[0], "section": at[1]}, "item": item, "url": url, "_src": src,
+            **({"ask": ask} if ask else {})}
 
 
 def _asks(board: Board, viewer: Participant) -> list[dict[str, Any]]:
@@ -89,7 +92,7 @@ def _gates(board: Board, viewer: Participant) -> list[dict[str, Any]]:
         out.append(_place(board, t, _GATE_AT.get(gate, ("actions", "decisions")),
                           {"type": "gate", "id": ev.id, "gate": gate}, kind="gate",
                           since=ev.created_at.isoformat(), label=noun, noun=noun, query={"request": ev.id},
-                          src=(tid, ev)))
+                          src=(tid, ev), ask=views._gate_note(board, tid, ev)))
     return out
 
 
@@ -104,7 +107,7 @@ def _signoffs(board: Board, viewer: Participant) -> list[dict[str, Any]]:
                           # evidence: the ticket page opens its ruling drawer on #<criterion>; a design doc opens
                           # in the Design drawer via ?doc
                           query={"doc": doc.id} if design else None, anchor=c.id,
-                          src=(c, t, doc)))
+                          src=(c, t, doc), ask=views.signoff_ask(t)))
     return out
 
 

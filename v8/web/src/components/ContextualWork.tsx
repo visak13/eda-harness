@@ -94,8 +94,9 @@ function FileCard({ record, relation }: { record: WorkContext["records"][number]
 
 /** Files & evidence: records grouped, with a designed empty state (owner defect: blank pane). S20: `waitingDocs` are
  *  evidence docs whose sign-off waits on the viewer — their row carries the attention dot, and one this ticket's
- *  records do not list gets its own row on top, so the trail never ends in an empty pane. */
-export function FilesViewer({ ticketId, waitingDocs, onRule }: { ticketId: string; waitingDocs?: Set<string>; onRule?: (docId: string) => void }): React.JSX.Element {
+ *  records do not list gets its own row on top, so the trail never ends in an empty pane. t-77c3a55b75: `asks` maps a
+ *  waiting doc to the sign-off's plain-words question, which its row shows so the owner reads what they decide. */
+export function FilesViewer({ ticketId, waitingDocs, asks, onRule }: { ticketId: string; waitingDocs?: Set<string>; asks?: Map<string, string>; onRule?: (docId: string) => void }): React.JSX.Element {
   const query = useWorkContext(ticketId);
   const { openDoc } = useDocDrawer();
   if (query.isPending) return <p className={ui.empty}>Loading files…</p>;
@@ -108,7 +109,8 @@ export function FilesViewer({ ticketId, waitingDocs, onRule }: { ticketId: strin
     <h3>Sign-off waiting on you</h3>
     <ul className={styles.rows}>{unlisted.map((id) => <li key={id} id={id} className={`${styles.row} ${attentionMark}`} data-attention="true">
       <Icon name="design" size={18} />
-      <button className={styles.rowLink} onClick={() => open(id)}>{id}</button>
+      <button className={styles.rowLink} onClick={() => open(id)} data-testid={asks?.has(id) ? "signoff-ask" : undefined}>{asks?.get(id) ?? id}</button>
+      {asks?.has(id) ? <span className={styles.rowMeta}>{id}</span> : null}
       <AttentionDot count={1} />
     </li>)}</ul>
   </section> : null;
@@ -131,6 +133,7 @@ export function FilesViewer({ ticketId, waitingDocs, onRule }: { ticketId: strin
         <Icon name="design" size={18} />
         <button className={styles.rowLink} onClick={() => open(r.record.id)}>{r.record.title ?? r.record.id}{r.record.version ? ` · v${r.record.version}` : ""}</button>
         <span className={styles.rowMeta}>{r.relation.replaceAll("_", " ")} · {r.record.scope === "global" || r.record.scope?.startsWith("domain:") ? "shared" : "this work"}</span>
+        {waiting.has(r.record.id) && asks?.has(r.record.id) ? <span className={styles.rowAsk} data-testid="signoff-ask">{asks.get(r.record.id)}</span> : null}
         <AttentionDot count={waiting.has(r.record.id) ? 1 : 0} />
       </li>)}</ul>
     </section>)}

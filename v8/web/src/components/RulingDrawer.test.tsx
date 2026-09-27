@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { http, HttpResponse } from "msw";
 import { server } from "../test/setup";
 import type { SignoffRow } from "../api/types";
-import { RulingDrawer } from "./RulingDrawer";
+import { RulingDrawer, signoffAsk } from "./RulingDrawer";
 import { uploadArtifact } from "../api/endpoints";
 
 // The upload's multipart body cannot be read back in an msw handler under jsdom (request.text() /
@@ -48,16 +48,40 @@ function docHtml(version: number, versions: number[]) {
   };
 }
 
-function mount() {
+function mount(row: SignoffRow = signoff) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>
-        <RulingDrawer signoff={signoff} kOfN={{ k: 1, n: 3 }} onClose={vi.fn()} onRuled={vi.fn()} />
+        <RulingDrawer signoff={row} kOfN={{ k: 1, n: 3 }} onClose={vi.fn()} onRuled={vi.fn()} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
+
+// t-77c3a55b75 (qa m-1f76018caa, owner m-0e6940fe2c "waiting on me, I don't know what on"): the heading says what the
+// owner decides — the served ask, else the generated sign-off question — and is never blank.
+describe("RulingDrawer heading (the sign-off ask)", () => {
+  it("a sign-off with an ask renders that text as the heading and names the drawer by it", () => {
+    server.use(http.get("/v1/docs/:id/html", () => HttpResponse.json(docHtml(1, [1]))));
+    mount({ ...signoff, ask: "Accept the hl-craft strategy?" });
+    expect(screen.getByTestId("ruling-ask")).toHaveTextContent("Accept the hl-craft strategy?");
+    expect(screen.getByTestId("drawer-panel")).toHaveAttribute("aria-label", "Accept the hl-craft strategy?");
+  });
+
+  it.each([undefined, "", "   "])("an ask of %j falls back to the generated question", (ask) => {
+    server.use(http.get("/v1/docs/:id/html", () => HttpResponse.json(docHtml(1, [1]))));
+    mount({ ...signoff, ask });
+    expect(screen.getByTestId("ruling-ask")).toHaveTextContent("Accept “G1a backend” as meeting this criterion?");
+  });
+
+  it("signoffAsk mirrors the board's short title and never returns blank", () => {
+    const t = signoff.ticket;
+    expect(signoffAsk({ ticket: { ...t, title: "hl-craft: web UI strategy" } })).toBe("Accept “web UI strategy” as meeting this criterion?");
+    expect(signoffAsk({ ticket: { ...t, title: "  " } })).toBe("Accept “s-1” as meeting this criterion?");
+    expect(signoffAsk({ ticket: t, ask: " Accept the research on “X”? " })).toBe("Accept the research on “X”?");
+  });
+});
 
 describe("RulingDrawer", () => {
   it("freezes the opened version: fetches ?version=1 and shows that body + the criterion", async () => {

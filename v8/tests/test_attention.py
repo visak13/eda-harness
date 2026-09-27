@@ -115,6 +115,19 @@ def test_signoffs_land_on_design_or_files(rig, doc_type, where):
     assert (row["at"]["tab"], row["at"]["section"]) == where  # on the ticket page: its Design / Files opener
     query = f"?doc={doc.id}" if doc_type == DocType.design else ""  # evidence opens the ticket's ruling drawer
     assert row["url"] == f"/ui/ticket/{story.id}{query}#{c.id}"
+    # t-77c3a55b75 (owner m-0e6940fe2c): the item says what the owner decides, the words the ruling drawer heads with
+    assert row["ask"] == "Accept “Sheet” as meeting this criterion?" == views.signoff_ask(story)
+
+
+def test_a_gate_item_asks_its_question_even_when_stored_blank(rig):
+    """t-77c3a55b75: a gate item carries its note as `ask`; a legacy gate stored blank asks 0df23fa's generated question."""
+    from edp8.schemas import EventKind
+    b, owner, _, _, epic, story = rig
+    ev = b.gate_open(story.id, Gate.scope, note="Split Ship sheet in two?")
+    assert only(attention.items(b, owner), id=ev.id)["ask"] == "Split Ship sheet in two?"
+    legacy = b._emit(story.id, EventKind.gate_opened, {"gate": Gate.demo, "by": "arch", "note": ""})
+    ask = only(attention.items(b, owner), id=legacy.id)["ask"]
+    assert ask == b.gate_question(story.id, Gate.demo) and "Ship sheet" in ask
 
 
 def _help_topic(b, owner):

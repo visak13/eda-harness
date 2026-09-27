@@ -24,6 +24,8 @@ export interface AttentionItem {
   at: { tab: AttentionTab; section: string };
   item: { type: string; id: string; gate?: string; doc?: string | null };
   url: string;
+  /** t-77c3a55b75 (owner m-0e6940fe2c): a sign-off's or gate's plain-words question ("Accept the hl-craft strategy?"). */
+  ask?: string;
 }
 
 export interface AttentionScope {
