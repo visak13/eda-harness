@@ -34,6 +34,13 @@ runs it. A seat runs only `.\edp.ps1 status` and `-WhatIf`. What it does and why
 - Never run the full web e2e suite (`npx playwright test`) from an engineer seat: it spawns its
   own board + chromium and has OOM-killed the host and reaped the fleet board. Run the specs you
   changed; the full run is qa's, one seat at a time.
+- Never build the SPA into the shared `src/edp8/webapp/dist`: the fleet board serves it live, so a
+  seat build ships its bundle (and every sibling's WIP) before the board has the matching routes
+  (art-678346d6e2: /ui/design crashed; les-747f39a6e3: /ui/code 404). The e2e harness already
+  builds into a private dir and its board serves that (`web/e2e/distDir.ts`, `EDP8_WEB_DIST`).
+  For your own look, build with `EDP8_WEB_OUT=<private dir>` and point a private board at it with
+  `EDP8_WEB_DIST`. Only the deploy (`edp.ps1 update`, CI) writes the shared dist. If the web app
+  was updated after the board started, the SPA says "This page needs a board restart (admin)".
 - Commit by explicit path: `git commit -m "..." -- <your paths>`. A plain `git commit` after `git add <file>`
   commits EVERY staged hunk, including a sibling's (6db3ff8 swept t-3e246b5e32's staged files under a
   models.json chore). Check `git status --short` for foreign staged entries first; never rewrite to repair.
