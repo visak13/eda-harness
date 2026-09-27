@@ -337,3 +337,66 @@ class BoardClient:
 
     def healthz(self) -> dict[str, Any]:
         return self._request("GET", "/healthz")
+
+    # ------------------------------------------------------------------ S23 framework tools
+    def artifact_content(self, id_: str, *, start: int = 0, length: int | None = None) -> tuple[int, str, bytes]:
+        """(status, content type, bytes) of an artifact's stored file; a byte range when start/length."""
+        headers = self._headers()
+        if start or length:
+            headers["Range"] = f"bytes={start}-" + (str(start + length - 1) if length else "")
+        path = f"/v1/artifacts/{id_}/content"
+        try:
+            if self._client is not None:
+                resp = self._client.request("GET", path, headers=headers)
+            else:
+                resp = httpx.request("GET", f"{self.base_url}{path}", headers=headers, timeout=30.0)
+        except httpx.HTTPError as e:
+            raise BoardUnreachable(f"board unreachable at {self.base_url}: {e}") from e
+        return resp.status_code, resp.headers.get("content-type", ""), resp.content
+
+    def pain_query(self, status: str | None = "open", area: str | None = None, q: str | None = None) -> dict[str, Any]:
+        return self._request("GET", "/v1/pains", params={"status": status, "area": area, "q": q})
+
+    def pain_read(self, id_: str) -> dict[str, Any]:
+        return self._request("GET", f"/v1/pains/{id_}")
+
+    def pain_file(self, record: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/v1/pains", json=record)
+
+    def pain_resolve(self, id_: str, status: str, by: str = "", note: str = "") -> dict[str, Any]:
+        return self._request("POST", f"/v1/pains/{id_}/resolve", json={"status": status, "by": by, "note": note})
+
+    def services_status(self) -> dict[str, Any]:
+        return self._request("GET", "/v1/services/status")
+
+    def harvest_cost(self, participant_id: str, since: str | None = None, until: str | None = None) -> dict[str, Any]:
+        return self._request("GET", "/v1/harvest/cost",
+                             params={"participant_id": participant_id, "since": since, "until": until})
+
+    def teammates(self) -> dict[str, Any]:
+        return self._request("GET", "/v1/admin/teammates")
+
+    def teammate_create(self, handle: str, role: str = "owner", admin: bool = False) -> dict[str, Any]:
+        return self._request("POST", "/v1/admin/teammates", json={"handle": handle, "role": role, "admin": admin})
+
+    def teammate_action(self, handle: str, action: str) -> dict[str, Any]:
+        """action: rotate (mint a token, returned once) | revoke | invite."""
+        return self._request("POST", f"/v1/admin/teammates/{handle}/{action}")
+
+    def workflows(self, archived: bool | None = None) -> dict[str, Any]:
+        return self._request("GET", "/v1/workflows", params={"archived": archived})
+
+    def workflow_read(self, ref: str) -> dict[str, Any]:
+        return self._request("GET", f"/v1/workflows/{ref}")
+
+    def workflow_duplicate(self, ref: str, new_id: str | None = None) -> dict[str, Any]:
+        return self._request("POST", "/v1/workflows/duplicate", json={"ref": ref, "new_id": new_id})
+
+    def workflow_save(self, definition: dict[str, Any]) -> dict[str, Any]:
+        return self._request("PUT", "/v1/workflows", json=definition)
+
+    def workflow_validate(self, definition: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/v1/workflows/validate", json=definition)
+
+    def workflow_publish(self, ref: str) -> dict[str, Any]:
+        return self._request("POST", f"/v1/workflows/{ref}/publish")

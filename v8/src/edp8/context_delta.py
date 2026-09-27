@@ -1,6 +1,8 @@
 """Signed caller-owned context cursors and bounded reference-only event pages.
 
-A process generation is deliberate: a board restart requires a fresh orientation.
+S23 (report-e517e9e87e): the signing key belongs to the board's DATABASE, not the process — it is
+kept beside the DB file, so a board restart keeps every cursor valid and a seat's context_delta
+simply continues (the event log persists too). An in-memory DB (tests) keeps a per-process key.
 No event payload is echoed; current objects/relevance are checked at each read.
 """
 from __future__ import annotations
@@ -31,10 +33,34 @@ def delta_budget() -> int:
         return MAX_BYTES
 
 
+def cursor_key(db_path: object) -> bytes:
+    """The DB's cursor-signing key: `<db>.cursor-key` (user-only, created once), else a process key."""
+    db_path = str(db_path) if db_path else ""
+    if not db_path or db_path == ":memory:" or db_path.startswith("file::memory"):
+        return secrets.token_bytes(32)
+    from pathlib import Path
+    from edp_contracts.settings.secrets import write_secret
+    p = Path(db_path + ".cursor-key")
+    for _ in range(2):
+        try:
+            raw = bytes.fromhex(p.read_text(encoding="utf-8").strip())
+            if len(raw) == 32:
+                return raw
+        except (OSError, ValueError):
+            pass
+        try:
+            write_secret(p, secrets.token_bytes(32).hex())
+        except FileExistsError:
+            continue  # a concurrent writer won the race: read its key
+        except OSError:
+            break
+    return secrets.token_bytes(32)
+
+
 class ContextReader:
     def __init__(self, board):
         self.board = board
-        self.key = secrets.token_bytes(32)
+        self.key = cursor_key(getattr(getattr(board, "store", None), "path", None))
 
     def _encode(self, state):
         raw = json.dumps(state, separators=(',', ':'), sort_keys=True).encode()

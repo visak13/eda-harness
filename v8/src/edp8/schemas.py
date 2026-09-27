@@ -758,6 +758,42 @@ class SpawnMode(StrEnum):
     monitor = 'monitor'
 
 
+# S23: the action-enum framework tools (architect ruling m-fbd6ae40d3: one tool per capability, not 15)
+class PainAction(StrEnum):
+    query = "query"
+    file = "file"
+    read = "read"
+    resolve = "resolve"
+
+
+class PainSeverity(StrEnum):
+    low = "low"
+    medium = "medium"
+    high = "high"
+
+
+class PainStatus(StrEnum):
+    fixed = "fixed"
+    invalid = "invalid"
+    superseded = "superseded"
+
+
+class WorkflowAction(StrEnum):
+    list = "list"
+    read = "read"
+    duplicate = "duplicate"
+    edit = "edit"
+    validate = "validate"
+    publish = "publish"
+
+
+class TeammateAction(StrEnum):
+    list = "list"
+    create = "create"
+    mint = "mint"
+    revoke = "revoke"
+
+
 # S-SME-SURFACE: the tool-facing vocabularies leave out what no seat writes through a generic tool — a topic
 # is opened by the owner (POST /v1/topics), an expert is linked by edp8.topics — so the seat tool surface
 # does not grow (S20 budget) and a seat is never offered a value the board would refuse.
@@ -792,6 +828,11 @@ ENUMS: dict[str, type[StrEnum]] = {
     "ArtifactForm": ArtifactForm,
     "SessionState": SessionState,
     "EventKind": EventKind,
+    "PainAction": PainAction,
+    "PainSeverity": PainSeverity,
+    "PainStatus": PainStatus,
+    "WorkflowAction": WorkflowAction,
+    "TeammateAction": TeammateAction,
 }
 
 

@@ -278,7 +278,10 @@ def sync_sessions(board_url: str | None = None, admin_token: str | None = None) 
                 continue
             sid = s.get("session_id")
             pool_state = s.get("state")
-            ticket_id = handle.split(".", 1)[1] if "." in handle else None
+            # the ticket the spawn recorded (bundles.SPAWN_TICKET_ENV) beats the handle convention: a custom
+            # participant_id names no ticket (pain p-a05affa0)
+            ticket_id = (((s.get("spawn_settings") or {}).get("env") or {}).get("EDP_SPAWN_TICKET")
+                         or (handle.split(".", 1)[1] if "." in handle else None))
             body: dict[str, Any] = {"participant_id": handle, "ticket_id": ticket_id, "pool_id": POOL_ID}
             if pool_state in _LIVE_POOL_STATES:
                 ans = _liveness_via(client, handle)

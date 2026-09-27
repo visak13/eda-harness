@@ -636,8 +636,22 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def _target_epic(participant_id: str | None, ticket_id: str | None) -> str | None:
         if ticket_id:
             return board._epic_id_of(ticket_id)
-        if participant_id and "." in participant_id:
-            return board._epic_id_of(participant_id.split(".", 1)[1])
+        if not participant_id:
+            return None
+        # pain p-a05affa0: a custom participant_id names no ticket — the seat's recorded spawn session (the
+        # pool mirror stores the spawn's EDP_SPAWN_TICKET) and its assignments come before the handle suffix
+        rows = board.store.query("session", {"participant_id": participant_id}, limit=1, newest_first=True)
+        candidates = [r.ticket_id for r in rows if getattr(r, "ticket_id", None)]
+        candidates += [t.id for t in board.store.query("ticket", {"assignee": participant_id}, limit=5)]
+        if "." in participant_id:
+            candidates.append(participant_id.split(".", 1)[1])
+        for tid in candidates:
+            try:
+                epic = board._epic_id_of(tid)
+            except BoardError:
+                continue
+            if epic:
+                return epic
         return None
 
     def _authorize_pool_op(a: Participant, participant_id: str | None, ticket_id: str | None) -> None:
@@ -717,6 +731,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     from .admin import make_admin_actor
     from .api_doctor import doctor_router
     app.include_router(doctor_router(board, actor, make_admin_actor(_admin_ctx), _last_seen))
+    # S23: pains, service status and harvest cost behind the framework tools that replaced shell workarounds
+    from .api_tools import tools_router
+    app.include_router(tools_router(board, actor))
     # epic-91fcd3b370 S3: where code-server is (port from EDP_CODE_PORT) and whether it is up; the FAQ
     from .api_code import code_router
     from .views import render_markdown
@@ -740,7 +757,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def describe(type_: str):
         if type_ not in OBJECT_TYPES:
             raise BoardError("not_found", f"unknown object type {type_!r}", f"types: {sorted(OBJECT_TYPES)}")
-        return ok({"type": type_, "contract": DESCRIBE[type_], "schema": OBJECT_TYPES[type_].model_json_schema()})
+        # S23: a type with no hand-written contract (access_request, fix) falls back to its docstring, not a 500
+        contract = DESCRIBE.get(type_) or " ".join((OBJECT_TYPES[type_].__doc__ or type_).split())
+        return ok({"type": type_, "contract": contract, "schema": OBJECT_TYPES[type_].model_json_schema()})
 
     @app.get("/v1/context")
     def context(ticket_id: str | None = None, a: Participant = Depends(actor)):
