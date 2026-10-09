@@ -861,7 +861,7 @@ FOLLOW_ENV = "HERONRY_FOLLOW"
 def _follow_path() -> Path | None:
     """The follow script's path when the command came through bin/heronry.cmd on Windows, else None (the tray, a
     direct heronry.exe, another OS): those get the progress window."""
-    raw = (os.environ.get(FOLLOW_ENV) or "").strip()
+    raw = (settings.env_raw(FOLLOW_ENV) or "").strip()
     return Path(raw) if raw and sys.platform == "win32" else None
 
 

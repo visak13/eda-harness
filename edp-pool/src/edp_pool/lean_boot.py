@@ -80,12 +80,11 @@ def apply_wake_mod(env: dict, agent_home: str | Path | None) -> dict:
     mod starts (the pool and the board's MCP proxy are the same install). setdefault, so an operator value wins;
     `EDP_WAKE_MOD=0` leaves the seat on the Monitor wake. Nothing is set when the agent home ships no mod or this
     interpreter cannot run the listener."""
-    import os
     import sys
 
     # the switch is read from the seat's effective env (the caller's extra_env is already merged into `env`),
     # then the pool's own; an operator's other CLAUDE_CODE_PLUGIN_DIRS entries are never touched
-    if env.get("EDP_WAKE_MOD", os.environ.get("EDP_WAKE_MOD", "1")) == "0" or agent_home is None:
+    if env.get("EDP_WAKE_MOD", settings.env_raw("EDP_WAKE_MOD") or "1") == "0" or agent_home is None:
         return env
     mods = Path(agent_home) / ".claude" / "mods"
     if (mods / "edp-wake" / ".claude-plugin" / "plugin.json").is_file() and can_run_listener():

@@ -18,6 +18,9 @@ REPO = Path(__file__).resolve().parents[2]
 SRC_TREES = [REPO / "v8" / "src", REPO / "edp-pool" / "src", REPO / "edp-broker" / "src",
              REPO / "edp-contracts" / "src"]
 ALLOWED = REPO / "edp-contracts" / "src" / "edp_contracts" / "settings"
+#: Stdlib-only scripts the updater copies beside update-helper.py and runs with no edp8 installed: they cannot
+#: import the registry, so they read their one handoff variable (HERONRY_UPDATE_TOKEN) directly.
+STANDALONE = {REPO / "v8" / "src" / "edp8" / "update_helper.py", REPO / "v8" / "src" / "edp8" / "update_lock.py"}
 RAW = {"environ", "getenv", "putenv", "unsetenv", "environb", "getenvb"}
 LOOKUPS = {"get", "env_raw", "is_set", "source", "setting"}
 
@@ -47,7 +50,7 @@ def scan(trees: list[Path] = SRC_TREES, allowed: Path = ALLOWED) -> list[str]:
     out: list[str] = []
     for tree in trees:
         for py in sorted(tree.rglob("*.py")):
-            if allowed in py.parents or "__pycache__" in py.parts:
+            if allowed in py.parents or "__pycache__" in py.parts or py in STANDALONE:
                 continue
             out.extend(raw_reads(py))
     return out

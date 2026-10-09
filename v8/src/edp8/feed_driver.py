@@ -752,7 +752,7 @@ def _retry_loop(plane: str, step: Any, health: Health, *, sleep: Any = time.slee
 
 
 def _state_path(participant: str) -> Path:
-    root = os.environ.get("EDP8_FEED_STATE_DIR") or str(Path(tempfile.gettempdir()) / "edp8-feed")
+    root = settings.env_raw("EDP8_FEED_STATE_DIR") or str(Path(tempfile.gettempdir()) / "edp8-feed")
     return Path(root) / f"{re.sub(r'[^A-Za-z0-9_.-]', '_', participant)}.json"
 
 

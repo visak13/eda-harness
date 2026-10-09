@@ -627,12 +627,12 @@ def wake_mod_configured() -> bool:
     environment decides: the mod folder is on CLAUDE_CODE_PLUGIN_DIRS and `EDP8_FEED_PY` names the listener
     interpreter. `EDP_WAKE_MOD=0` is the kill switch. This is configuration, not health: see `wake_mod_active`.
     A seat on another harness (Codex, Pi) or launched before the pool restart has neither and keeps the Monitor."""
-    if os.environ.get("EDP_WAKE_MOD", "1") == "0":
+    if settings.env_raw("EDP_WAKE_MOD") == "0":
         return False
     header = _req_wake_mod.get()
     if header:
         return _has_wake_mod(header)
-    return bool(os.environ.get("EDP8_FEED_PY")) and _has_wake_mod(os.environ.get("CLAUDE_CODE_PLUGIN_DIRS", ""))
+    return bool(settings.env_raw("EDP8_FEED_PY")) and _has_wake_mod(settings.env_raw("CLAUDE_CODE_PLUGIN_DIRS") or "")
 
 
 def wake_mod_active(participant: str, wait_s: float = 0.0) -> bool:
@@ -640,7 +640,7 @@ def wake_mod_active(participant: str, wait_s: float = 0.0) -> bool:
     alive (`feed_driver.listener_ready`; a Monitor-run driver's file does not count). A seat that is already up
     is caught by that file alone, whatever the service can see of its configuration; a seat the header says is
     configured gets `wait_s` for a booting mod to start its listener. `EDP_WAKE_MOD=0` wins over both."""
-    if os.environ.get("EDP_WAKE_MOD", "1") == "0":
+    if settings.env_raw("EDP_WAKE_MOD") == "0":
         return False
     from edp8 import feed_driver
     if feed_driver.listener_ready(participant, owner="mod"):
@@ -650,7 +650,7 @@ def wake_mod_active(participant: str, wait_s: float = 0.0) -> bool:
 
 def _wake_ready_wait_s() -> float:
     try:
-        return max(0.0, float(os.environ.get("EDP8_WAKE_READY_WAIT_S", "8")))
+        return max(0.0, float(settings.env_raw("EDP8_WAKE_READY_WAIT_S") or "8"))
     except ValueError:
         return 8.0
 

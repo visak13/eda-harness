@@ -319,3 +319,29 @@ declare("update.fault", "HERONRY_UPDATE_FAULT", "str", None, "Updates",
         "Drill-only fault injection for the MSI update runner (S2 spike): `unhealthy` makes the runner treat "
         "the new version as failing its health check, so it rolls back.", env_only=True,
         tier="internal")
+
+# ---- process plumbing set by the pool, the launcher or the updater for a child (env-only, never configured)
+declare("wake.mod_switch", "EDP_WAKE_MOD", "str", None, "Seats",
+        "Kill switch for the edp-wake Claude Code mod: `0` turns it off (seats keep the Monitor).", env_only=True,
+        tier="internal")
+declare("wake.feed_py", "EDP8_FEED_PY", "str", None, "Seats",
+        "The interpreter the edp-wake mod runs its feed listener with; set by the pool for a Claude seat.",
+        env_only=True, tier="internal")
+declare("wake.plugin_dirs", "CLAUDE_CODE_PLUGIN_DIRS", "str", None, "Seats",
+        "Claude Code's plugin folders; the pool adds the agent home's .claude/mods for a Claude seat.",
+        env_only=True, tier="internal")
+declare("wake.ready_wait_secs", "EDP8_WAKE_READY_WAIT_S", "str", None, "Seats",
+        "How long the board waits for a booting seat's edp-wake listener before falling back (default 8 s).",
+        env_only=True, tier="internal")
+declare("wake.feed_state_dir", "EDP8_FEED_STATE_DIR", "path", None, "Seats",
+        "Where the feed listener keeps its per-seat state (default: <temp>/edp8-feed).", env_only=True,
+        tier="internal")
+declare("docs.mirror_force", "EDP8_DOC_MIRROR", "str", None, "Paths",
+        "Force the docs mirror on (`1`) or off (`0`); unset, only the board that owns this home's data mirrors.",
+        env_only=True, tier="internal")
+declare("update.follow_script", "HERONRY_FOLLOW", "path", None, "Updates",
+        "Set by bin/heronry.cmd on Windows: the follow script that shows update progress in that console.",
+        env_only=True, tier="internal")
+declare("update.lock_file", "EDP_UPDATE_LOCK", "path", None, "Updates",
+        "Set by the launcher: the update lock file the pool checks before it restarts seats.", env_only=True,
+        tier="internal")

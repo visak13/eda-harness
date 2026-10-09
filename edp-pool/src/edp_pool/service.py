@@ -139,7 +139,7 @@ def _proc_fingerprint(pid: int | None) -> dict | None:
 def _update_lock_held() -> bool:
     """A live updater holds the update lock file named by EDP_UPDATE_LOCK (set by the launcher): any of its pids
     is alive. An unset, missing or unreadable lock is not held."""
-    path = os.environ.get("EDP_UPDATE_LOCK")
+    path = edp_settings.env_raw("EDP_UPDATE_LOCK")
     if not path:
         return False
     try:

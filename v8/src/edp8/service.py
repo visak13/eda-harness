@@ -436,7 +436,7 @@ def public_startup_error(admin_token: str | None, tokens_path: Path | None = Non
 def _doc_mirror_wanted(store: Any) -> bool:
     """The docs mirror belongs to the board that owns this home's data: its database sits in the data dir. A
     test or private board on a temp database never writes into the real agent home. EDP8_DOC_MIRROR=0/1 forces."""
-    forced = os.environ.get("EDP8_DOC_MIRROR")
+    forced = settings.env_raw("EDP8_DOC_MIRROR")
     if forced in ("0", "1"):
         return forced == "1" and getattr(store, "path", ":memory:") != ":memory:"
     path = getattr(store, "path", ":memory:")
