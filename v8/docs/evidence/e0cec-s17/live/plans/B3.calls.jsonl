@@ -1,0 +1,29 @@
+{"t": 1790991911.7465086, "tool": "ticket_read", "args": {"ticket_id": "s-35f4618ff8"}, "chars": 6495}
+{"t": 1790991921.3081577, "tool": "doc_read", "args": {"id": "design-49dfe7ce39"}, "chars": 11188}
+{"t": 1790991921.3307083, "tool": "doc_read", "args": {"id": "strategyll-5959d8f62d"}, "chars": 9550}
+{"t": 1790991921.3511112, "tool": "doc_read", "args": {"id": "strategyll-94135d3fbc"}, "chars": 9350}
+{"t": 1790991921.3685489, "tool": "doc_read", "args": {"id": "strategyll-c97766671d"}, "chars": 8982}
+{"t": 1790991921.383498, "tool": "doc_read", "args": {"id": "strategyll-72905f6f9e"}, "chars": 9013}
+{"t": 1790991921.40397, "tool": "doc_read", "args": {"id": "strategyll-b7b76321a0"}, "chars": 15825}
+{"t": 1790991921.4223685, "tool": "ticket_read", "args": {"ticket_id": "s-35f4618ff8", "include": "chain,criteria,docs,children,blockers,gates,thread,links"}, "chars": 7697}
+{"t": 1790991927.977802, "tool": "doc_read", "args": {"id": "strategyll-5959d8f62d"}, "chars": 9550}
+{"t": 1790991927.9960248, "tool": "doc_read", "args": {"id": "strategyll-94135d3fbc"}, "chars": 9350}
+{"t": 1790991928.0126107, "tool": "doc_read", "args": {"id": "strategyll-c97766671d"}, "chars": 8982}
+{"t": 1790991928.0285, "tool": "doc_read", "args": {"id": "strategyll-72905f6f9e"}, "chars": 9013}
+{"t": 1790991928.04908, "tool": "doc_read", "args": {"id": "strategyll-b7b76321a0"}, "chars": 15825}
+{"t": 1790991928.0654805, "tool": "doc_read", "args": {"id": "design-49dfe7ce39"}, "chars": 11188}
+{"t": 1790991933.0373597, "tool": "doc_read", "args": {"id": "strategyll-5959d8f62d", "version": 1, "offset": 5000, "limit": 16000}, "chars": 9251}
+{"t": 1790991933.052286, "tool": "doc_read", "args": {"id": "strategyll-94135d3fbc", "version": 1, "offset": 5000, "limit": 16000}, "chars": 10497}
+{"t": 1790991941.5647657, "tool": "doc_read", "args": {"id": "strategyll-c97766671d", "version": 1, "offset": 4300, "limit": 15000}, "chars": 9082}
+{"t": 1790991941.5820673, "tool": "doc_read", "args": {"id": "strategyll-72905f6f9e", "version": 1, "offset": 4300, "limit": 15000}, "chars": 9002}
+{"t": 1790991941.5997102, "tool": "doc_read", "args": {"id": "design-49dfe7ce39", "version": 1, "offset": 12000, "limit": 6000}, "chars": 5638}
+{"t": 1790991946.1326325, "tool": "doc_read", "args": {"id": "strategyll-b7b76321a0", "version": 1, "offset": 10800, "limit": 18000}, "chars": 18598}
+{"t": 1790991946.1609185, "tool": "find", "args": {"query": "B3 process amendments policy", "k": 20}, "chars": 3074}
+{"t": 1790991949.9146688, "tool": "doc_read", "args": {"id": "strategyll-b7b76321a0", "version": 1, "offset": 28800, "limit": 20000}, "chars": 20634}
+{"t": 1790991962.1146672, "tool": "doc_read", "args": {"id": "strategyll-b7b76321a0", "version": 1, "offset": 48800, "limit": 17000}, "chars": 17585}
+{"t": 1790991962.1312432, "tool": "doc_read", "args": {"id": "strategyll-45c0da3c69", "section": "## 1. Scope and precedence", "include_children": true}, "chars": 221}
+{"t": 1790991970.88517, "tool": "doc_read", "args": {"id": "strategyll-b7b76321a0", "version": 1, "offset": 65800, "limit": 17000}, "chars": 16313}
+{"t": 1790991970.918063, "tool": "doc_read", "args": {"id": "strategyll-45c0da3c69"}, "chars": 9497}
+{"t": 1790991982.3293471, "tool": "doc_read", "args": {"id": "strategyll-b7b76321a0", "version": 1, "offset": 0, "limit": 10800}, "chars": 11114}
+{"t": 1790991982.3520315, "tool": "doc_read", "args": {"id": "strategyll-45c0da3c69", "section": "## 1. Scope"}, "chars": 1192}
+{"t": 1790991982.3680565, "tool": "ticket_read", "args": {"ticket_id": "epic-7636b77454", "include": "chain,docs,thread,links"}, "chars": 989}

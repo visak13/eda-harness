@@ -4,7 +4,7 @@
 // `$env:X`, never in code; rows: this epic's tree first, then the board's open items; insert `$<id> (<label>) `;
 // render `$<id>` outside code as a chip). Pure: no vscode import.
 import { stripCode } from './mentions';
-export type RefKind = 'epic' | 'story' | 'task' | 'design' | 'strategy_hl' | 'strategy_ll' | 'report' | 'decision';
+export type RefKind = 'epic' | 'story' | 'task' | 'design' | 'strategy_hl' | 'strategy_ll' | 'report' | 'decision' | 'artifact';
 
 export interface RefRow {
   id: string;
@@ -12,15 +12,17 @@ export interface RefRow {
   title: string;
   /** 'scope' = this epic's tree, 'board' = the board's other open items */
   group: 'scope' | 'board';
+  /** artifacts: the title of the epic the artifact is linked to (null: linked to none) */
+  epic?: string | null;
 }
 
 const PREFIX: [string, RefKind][] = [
   ['epic-', 'epic'], ['s-', 'story'], ['t-', 'task'], ['design-', 'design'], ['strategyhl-', 'strategy_hl'],
-  ['strategyll-', 'strategy_ll'], ['report-', 'report'], ['dec-', 'decision'],
+  ['strategyll-', 'strategy_ll'], ['report-', 'report'], ['dec-', 'decision'], ['art-', 'artifact'],
 ];
 
 /** A referenceable board id: one of the eight prefixes plus the board's 10 hex digits. */
-export const REF_ID = /^(?:epic|s|t|design|strategyhl|strategyll|report|dec)-[0-9a-f]{10}$/;
+export const REF_ID = /^(?:epic|s|t|design|strategyhl|strategyll|report|dec|art)-[0-9a-f]{10}$/;
 
 /** The kind an id names, from its prefix (null: not a referenceable id). */
 export function refKind(id: string): RefKind | null {
@@ -30,7 +32,7 @@ export function refKind(id: string): RefKind | null {
 
 /** Short kind label for a picker row / chip. */
 export function kindLabel(k: RefKind): string {
-  return { epic: 'epic', story: 'story', task: 'task', design: 'design', strategy_hl: 'hl', strategy_ll: 'll', report: 'report', decision: 'decision' }[k];
+  return { epic: 'epic', story: 'story', task: 'task', design: 'design', strategy_hl: 'hl', strategy_ll: 'll', report: 'report', decision: 'decision', artifact: 'artifact' }[k];
 }
 
 /** Whether the caret after `left` sits in code a closed-span strip misses: a fence (``` or ~~~) opened and not
@@ -65,7 +67,7 @@ function score(q: string, r: RefRow): number {
   if (id.startsWith(q)) return 0;
   if (title.startsWith(q)) return 1;
   if (new RegExp(`(^|[^a-z0-9])${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(title)) return 2;
-  if (title.includes(q) || id.includes(q)) return 3;
+  if (title.includes(q) || id.includes(q) || (r.epic ?? '').toLowerCase().includes(q)) return 3;
   return -1;
 }
 
@@ -103,7 +105,7 @@ export function refToken(r: Pick<RefRow, 'id' | 'title'>): string {
 
 export type RefPart = string | { id: string; kind: RefKind; label: string | null };
 
-const REF_IN_TEXT = /(^|[^\w$])\$((?:epic|s|t|design|strategyhl|strategyll|report|dec)-[0-9a-f]{10})(?![\w-])(?: \(([^()\n]{1,80})\))?/g;
+const REF_IN_TEXT = /(^|[^\w$])\$((?:epic|s|t|design|strategyhl|strategyll|report|dec|art)-[0-9a-f]{10})(?![\w-])(?: \(([^()\n]{1,80})\))?/g;
 
 /** Split plain text (no code in it) into text and `$<id>` references (with their ` (label)`). */
 export function splitRefs(text: string): RefPart[] {
@@ -160,16 +162,31 @@ export function boardRows(
   return out;
 }
 
+/** Rows from `GET /v1/artifacts/search`: the server already put the asked epic's artifacts first (group scope),
+ *  names each one's epic, and scoped the list to what the caller may read. */
+export function artifactRows(raw: unknown): RefRow[] {
+  if (!Array.isArray(raw)) return [];
+  const out: RefRow[] = [];
+  for (const r of raw.slice(0, 200)) {
+    if (!r || typeof r !== 'object') continue;
+    const { id, title, group, epic_title } = r as Record<string, unknown>;
+    if (typeof id !== 'string' || refKind(id) !== 'artifact' || typeof title !== 'string') continue;
+    out.push({ id, kind: 'artifact', title: title.slice(0, 300), group: group === 'scope' ? 'scope' : 'board',
+      epic: typeof epic_title === 'string' ? epic_title.slice(0, 120) : null });
+  }
+  return out;
+}
+
 /** The host's answer rows are data from the board: keep only well-formed ones, cut long titles. */
 export function cleanRows(raw: unknown): RefRow[] {
   if (!Array.isArray(raw)) return [];
   const out: RefRow[] = [];
   for (const r of raw.slice(0, 50)) {
     if (!r || typeof r !== 'object') continue;
-    const { id, title, group } = r as Record<string, unknown>;
+    const { id, title, group, epic } = r as Record<string, unknown>;
     const kind = typeof id === 'string' ? refKind(id) : null;
     if (!kind || typeof title !== 'string' || (group !== 'scope' && group !== 'board')) continue;
-    out.push({ id: id as string, kind, title: title.slice(0, 300), group });
+    out.push({ id: id as string, kind, title: title.slice(0, 300), group, ...(typeof epic === 'string' ? { epic: epic.slice(0, 120) } : {}) });
   }
   return out;
 }

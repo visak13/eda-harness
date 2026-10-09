@@ -22,6 +22,7 @@ from . import settings
 from .schemas import SessionState
 
 POOL_ID = settings.get("EDP8_POOL_ID")
+SPAWN_TICKET_ENV = "EDP_SPAWN_TICKET"  # the ticket a spawn was for; rides the pool session's env (pain p-a05affa0)
 
 
 def pool_url() -> str:
@@ -136,20 +137,21 @@ def spawn(role: str, participant_id: str, *, parent_session: str | None = None, 
         body["env"] = env
     out = _post("/v1/spawn", body)
     if out["ok"]:
-        out["hint"] = f"shell for {participant_id} is starting; it boots with whoami → subscribe → context"
+        out["hint"] = "Starting the seat."
     return out
 
 
-def resume(participant_id: str) -> dict[str, Any]:
-    """Resume any saved seat; the pool selects live, crashed, or closed state."""
-    return _post(f"/v1/resume/{participant_id}")
+def resume(participant_id: str, env: dict[str, str] | None = None) -> dict[str, Any]:
+    """Resume any saved seat; the pool selects live, crashed, or closed state. `env` refreshes the seat's
+    EDP8_TOKEN in the relaunch (p-451a2390: the stored spawn env may hold a rotated-away secret)."""
+    return _post(f"/v1/resume/{participant_id}", {"env": env} if env else None)
 
 
-def resume_closed(participant_id: str) -> dict[str, Any]:
+def resume_closed(participant_id: str, env: dict[str, str] | None = None) -> dict[str, Any]:
     """Fork-resume a CLOSED (done) shell from its stored claude_session_id with the
     role/cwd/env/settings recorded at spawn (spawn_settings). The pool re-takes the handle
     lock and returns the new session. Design §18.3 (owner m-6ffe756cf7)."""
-    return _post(f"/v1/resume_closed/{participant_id}")
+    return _post(f"/v1/resume_closed/{participant_id}", {"env": env} if env else None)
 
 
 def close(participant_id: str, reason: str) -> dict[str, Any]:
@@ -177,9 +179,10 @@ def capabilities() -> dict[str, Any]:
     return _get("/v1/pool/capabilities")
 
 
-def park(participant_id: str) -> dict[str, Any]:
-    """Park a participant's shell (preserves its session for a later resume)."""
-    return _post(f"/v1/park/{participant_id}")
+def park(participant_id: str, *, for_update: bool = False) -> dict[str, Any]:
+    """Park a participant's shell (preserves its session for a later resume). `for_update` is the updater's
+    explicit flag (row.park_for_update): the one parked state the next pool start relaunches on its own."""
+    return _post(f"/v1/park/{participant_id}", {"for_update": True} if for_update else None)
 
 
 def reap(participant_id: str) -> dict[str, Any]:
@@ -283,9 +286,9 @@ def sync_sessions(board_url: str | None = None, admin_token: str | None = None) 
                 continue
             sid = s.get("session_id")
             pool_state = s.get("state")
-            # the ticket the spawn recorded (bundles.SPAWN_TICKET_ENV) beats the handle convention: a custom
+            # the ticket the spawn recorded (SPAWN_TICKET_ENV) beats the handle convention: a custom
             # participant_id names no ticket (pain p-a05affa0)
-            ticket_id = (((s.get("spawn_settings") or {}).get("env") or {}).get("EDP_SPAWN_TICKET")
+            ticket_id = (((s.get("spawn_settings") or {}).get("env") or {}).get(SPAWN_TICKET_ENV)
                          or (handle.split(".", 1)[1] if "." in handle else None))
             body: dict[str, Any] = {"participant_id": handle, "ticket_id": ticket_id, "pool_id": POOL_ID}
             if pool_state in _LIVE_POOL_STATES:

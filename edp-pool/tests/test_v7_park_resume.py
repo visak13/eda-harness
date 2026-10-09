@@ -29,6 +29,7 @@ needs the WATERMARK ARITHMETIC proven, not HTTP plumbing (one sync GET).
 """
 
 import asyncio
+import os
 import time
 import uuid
 
@@ -976,3 +977,53 @@ def test_mentions_never_spawn_only_agents_do(svc, monkeypatch):
                    for s in svc.sessions.values()), (
         "a mention of a non-live handle spawned a shell — spawning is an "
         "AGENT tool act, never watchdog logic")
+
+
+def test_a_restarted_pool_restores_a_live_parked_shell_without_forking(tmp_path, monkeypatch):
+    """t-fb8b63874e: the update parks every seat, restarts the pool and resumes them. Park leaves the shell alive,
+    but the restarted pool's spawner no longer knows the session, so resume forked a SECOND shell on the handle
+    (the architect and an engineer each ran two live shells after the owner's update). A parked row's persisted
+    fingerprint names the still-running shell; resume must restore it, not fork."""
+    from edp_pool.service import _proc_fingerprint
+    state = tmp_path / "pool-state.json"
+    svc1 = PoolService(FakeSpawner(), state_path=state)
+    monkeypatch.setattr(svc1, "_inbox_depth", lambda h: 3)
+    sid = svc1.spawn("planner", "rec-x:s1", None, claude_session="base-1")
+    svc1.sessions[sid]["proc"] = _proc_fingerprint(os.getpid())   # the shell: a live process with its create_time
+    svc1.park_session(sid, flush_timeout=0.05, flush_quiesce=0.01)
+
+    svc2 = PoolService(FakeSpawner(), state_path=state)   # the update's pool restart
+    out = svc2.resume("rec-x:s1")
+    assert out["resumed"] is False and out["shell_alive"] is True
+    assert svc2.spawner.launched == [], "a live parked shell must never get a second shell on its handle"
+    assert svc2.sessions[sid]["state"] == "active"
+
+
+def test_an_update_parked_seat_whose_shell_the_update_ended_gets_exactly_one_fresh_shell(tmp_path, monkeypatch):
+    """t-fb8b63874e (architect m-4e2fe95fac): the update ends each seat's shell after parking it (its feed monitor
+    holds the install folder). The restarted pool then fork-resumes each `park_for_update` row exactly once, so the
+    seat has one shell and a turn that re-arms its monitor. While the shell still lives the pool forks nothing,
+    which is why the update must end it: a live shell whose feed monitor was killed would never be woken."""
+    import subprocess
+    import sys
+
+    from edp_pool.service import _proc_fingerprint
+    shell = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        state = tmp_path / "pool-state.json"
+        svc1 = PoolService(FakeSpawner(), state_path=state)
+        monkeypatch.setattr(svc1, "_inbox_depth", lambda h: 3)
+        sid = svc1.spawn("planner", "rec-x:s1", None, claude_session="base-1")
+        svc1.sessions[sid]["proc"] = _proc_fingerprint(shell.pid)
+        svc1.park_session(sid, flush_timeout=0.05, flush_quiesce=0.01, for_update=True)
+
+        svc2 = PoolService(FakeSpawner(), state_path=state)   # restarted while the shell still lives
+        assert svc2.resume_updater_parked(delay=0) == [] and svc2.spawner.launched == []
+        assert svc2.sessions[sid]["state"] == "parked"
+    finally:
+        shell.kill()   # what the update now does to a parked seat's shell
+        shell.wait()
+    svc3 = PoolService(FakeSpawner(), state_path=state)
+    assert svc3.resume_updater_parked(delay=0) == ["rec-x:s1"]
+    assert len(svc3.spawner.launched) == 1, "exactly one fresh shell on the handle"
+    assert svc3.resume_updater_parked(delay=0) == [] and len(svc3.spawner.launched) == 1

@@ -1,6 +1,21 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { clampEffort, effortCap, SeatPickRow } from "./SeatPicks";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+const seatCss = readFileSync(resolve(__dirname, "SeatPicks.module.css"), "utf-8");
+
+// qa m13: at phone width the row reads in the wide order, role, then model, then effort
+describe("SeatPicks narrow layout", () => {
+  it("places the model on a line before the effort, and the role first", () => {
+    const narrow = /@media \(max-width: 560px\) \{([\s\S]*?)\r?\n\}/.exec(seatCss)?.[1] ?? "";
+    const rowOf = (cls: string) => Number(new RegExp(`\\.row \\.${cls} \\{ grid-row: (\\d+)`).exec(narrow)?.[1]);
+    expect(rowOf("role")).toBe(1);
+    expect(rowOf("model")).toBeGreaterThan(rowOf("role"));
+    expect(rowOf("effort")).toBeGreaterThan(rowOf("model"));
+  });
+});
 
 // S12 (t-186b964fb1): caps and glyphs come from the catalog entry's metadata, never the model id.
 const META = {

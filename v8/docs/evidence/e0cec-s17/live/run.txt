@@ -1,0 +1,7 @@
+{"s": "A1", "rc": 0, "secs": 359, "calls": 32, "chars_read": 276126, "free_mb_min": 2537, "free_mb_peak": 3320, "by_tool": {"ticket_read": 15895, "doc_read": 256247, "find": 3984}}
+{"s": "A2", "rc": 0, "secs": 319, "calls": 32, "chars_read": 288617, "free_mb_min": 2449, "free_mb_peak": 3419, "by_tool": {"ticket_read": 13247, "doc_read": 269797, "find": 5573}}
+{"s": "A3", "rc": 0, "secs": 247, "calls": 25, "chars_read": 255367, "free_mb_min": 2106, "free_mb_peak": 2789, "by_tool": {"ticket_read": 13389, "doc_read": 233237, "find": 8741}}
+{"s": "B1", "rc": 0, "secs": 346, "calls": 32, "chars_read": 317472, "free_mb_min": 1929, "free_mb_peak": 2714, "by_tool": {"ticket_read": 15017, "doc_read": 295388, "find": 7067}}
+{"s": "B2", "rc": 0, "secs": 271, "calls": 27, "chars_read": 252187, "free_mb_min": 2595, "free_mb_peak": 2881, "by_tool": {"ticket_read": 13644, "doc_read": 233065, "find": 5478}}
+{"s": "B3", "rc": 0, "secs": 335, "calls": 29, "chars_read": 284695, "free_mb_min": 2077, "free_mb_peak": 2953, "by_tool": {"ticket_read": 15181, "doc_read": 266440, "find": 3074}}
+exit 0

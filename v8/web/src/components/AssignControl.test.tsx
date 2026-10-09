@@ -23,7 +23,7 @@ describe("AssignControl", () => {
       }),
     );
     renderRoute("/x", "/x", <AssignControl ticketId="s-1" currentAssignee={null} />);
-    expect(screen.getByTestId("assign-current")).toHaveTextContent("no one yet");
+    expect(screen.getByTestId("assign-current")).toHaveTextContent("Unassigned");
     fireEvent.change(screen.getByLabelText("Assign an existing seat or person"), {
       target: { value: "ravi" },
     });
@@ -38,6 +38,16 @@ describe("AssignControl", () => {
     await screen.findByText("no pool is attached in this environment");
     expect(screen.getByTestId("spawn-unavailable")).toBeInTheDocument();
     expect(screen.queryByTestId("spawn-seat")).not.toBeInTheDocument();
+  });
+
+  it("S12-ui2: with no spawn and no pool reason it says nothing about spawning (the dialog is \"Assign a seat\")", async () => {
+    let asked = false;
+    server.use(http.get("/v1/pool/capabilities", () => { asked = true; return okJson({ resume_parked: false, resume_closed: false, park: false, spawn: false }); }));
+    renderRoute("/x", "/x", <AssignControl ticketId="s-1" currentAssignee={null} />);
+    await waitFor(() => expect(asked).toBe(true));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByTestId("spawn-unavailable")).toBeNull();
+    expect(screen.queryByText(/spawn/i)).toBeNull();
   });
 
   it("spawns a fresh engineer seat for the ticket when the pool can", async () => {

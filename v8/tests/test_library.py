@@ -1,6 +1,6 @@
 """S-LIBRARY (s-decb4f7511, design-34bf11cc07 §4.3–4.4): knowledge docs with tags and status,
 proposed → approve/reject with a diff, owner authoring, doc_query filters, the knowledge view,
-link/unlink reflected in assemble_ruleset, and Import from skills.sh with a stubbed fetch."""
+link/unlink reflected in the ticket's reading list (ticket_read docs, S17), and Import from skills.sh with a stubbed fetch."""
 
 from __future__ import annotations
 
@@ -96,7 +96,7 @@ def test_proposal_for_active_doc_diff_and_approve_makes_next_version(client, rig
     assert not client.post(f"/v1/docs/{p['id']}/approve", headers=ENG).json()["ok"]
     r = client.post(f"/v1/docs/{p['id']}/approve", headers=OWNER).json()
     assert r["ok"], r
-    tgt = client.get(f"/v1/docs/{base['id']}", headers=OWNER).json()["value"]
+    tgt = client.get(f"/v1/docs/{base['id']}", headers=OWNER, params={"all": "true"}).json()["value"]
     assert tgt["version"] == 2 and tgt["body_md"] == "- rule one\n- rule two" and tgt["status"] == "active"
     assert tgt["tags"] == ["python", "testing"] and tgt["versions"] == [1, 2]
     prop = client.get(f"/v1/docs/{p['id']}", headers=OWNER).json()["value"]
@@ -164,22 +164,29 @@ def test_knowledge_view_lists_docs_lessons_and_linked_epics(client, rig):
     assert rig["epic"] in [e["id"] for e in v["epics"]]
 
 
-def test_link_unlink_epic_is_reflected_in_next_ruleset_and_epic_page(client, rig):
+def _brief(ticket_id):
+    """The docs a seat on the ticket is told to read (S17: ticket_read's docs replace the ruleset tool)."""
+    tool = ALL_TOOLS["ticket_read"]
+    out = tool.handler(tool.args_model(ticket_id=ticket_id, include="docs"))
+    assert out["ok"], out
+    return out["value"]["docs"]
+
+
+def test_link_unlink_epic_is_reflected_in_the_next_brief_and_epic_page(client, rig):
     set_client(BoardClient(participant="owner", client=client))
     d = _doc(client, OWNER, title="py craft", tags=["python"])["value"]
-    tool = ALL_TOOLS["assemble_ruleset"]
     story = rig["story"]
     assert story, "story creation failed"
-    assert not tool.handler(tool.args_model(ticket_id=story))["ok"]  # nothing linked yet
+    assert _brief(story) == []  # nothing linked yet
     lk = client.post("/v1/links", json={"from_id": rig["epic"], "to_id": d["id"], "relation": "uses_strategy"},
                      headers=OWNER).json()["value"]
     page = client.get(f"/v1/epics/{rig['epic']}/page", headers=OWNER).json()["value"]
     assert [(k["id"], k["link_id"], k["relation"]) for k in page["knowledge"]] == [(d["id"], lk["id"], "uses_strategy")]
-    out = tool.handler(tool.args_model(ticket_id=story))
-    assert out["ok"] and [x["id"] for x in out["value"]["index"]] == [d["id"]]
-    assert "constructive" not in out["value"] and out["value"]["enforced"][0]["text"] == "- [ ] bar [required]"
+    brief = _brief(story)
+    assert [(x["id"], x["relation"]) for x in brief] == [(d["id"], "epic uses_strategy")]
+    assert "- [ ] bar [required]" in brief[0]["summary"]
     assert client.delete(f"/v1/links/{lk['id']}", headers=OWNER).json()["value"]["deleted"]
-    assert not tool.handler(tool.args_model(ticket_id=story))["ok"]
+    assert _brief(story) == []
     assert client.get(f"/v1/epics/{rig['epic']}/page", headers=OWNER).json()["value"]["knowledge"] == []
 
 
@@ -191,9 +198,8 @@ def test_retired_doc_is_skipped_from_the_brief(client, rig):
     for x in (keep, gone):
         client.post("/v1/links", json={"from_id": rig["epic"], "to_id": x["id"], "relation": "uses_strategy"},
                     headers=OWNER)
-    tool = ALL_TOOLS["assemble_ruleset"]
-    out = tool.handler(tool.args_model(ticket_id=rig["epic"]))
-    assert [x["id"] for x in out["value"]["index"]] == [keep["id"]] and out["value"]["skipped_layers"] == [gone["id"]]
+    assert [x["id"] for x in _brief(rig["epic"])] == [keep["id"]]
+    assert [x["id"] for x in _brief(rig["story"])] == [keep["id"]]  # inherited by the story, still without it
 
 
 # ----------------------------------------------------------------------------- c-e30967d7ab import
@@ -297,10 +303,8 @@ def test_proposed_doc_linked_to_an_epic_stays_out_of_the_brief(client, rig):
     for x in (keep, p):
         client.post("/v1/links", json={"from_id": rig["epic"], "to_id": x["id"], "relation": "uses_strategy"},
                     headers={"X-Participant": "arch"})
-    tool = ALL_TOOLS["assemble_ruleset"]
-    out = tool.handler(tool.args_model(ticket_id=rig["epic"]))["value"]
-    assert [x["id"] for x in out["index"]] == [keep["id"]] and out["skipped_layers"] == [p["id"]]
-    assert not any("bar" in str(line) for line in out["enforced"])
+    brief = _brief(rig["epic"])
+    assert [x["id"] for x in brief] == [keep["id"]] and not any("bar" in x["summary"] for x in brief)
 
 
 def test_approved_free_standing_proposal_is_owner_authored_not_the_proposers_role(client, rig):
@@ -365,3 +369,15 @@ def test_diff_of_bodies_without_a_trailing_newline_keeps_lines_apart(client, rig
     d = client.get(f"/v1/docs/{p['id']}/diff", headers=OWNER).json()["value"]
     assert d["diff"].splitlines()[-2:] == ["-old", "+new"]
     assert d["title_changed"] and d["base_title"] == "craft" and d["title"] == "craft 2"
+
+
+# ----------------------------------------------------------------------------- sweep #4 (note-8f0629190d): lessons view
+def test_knowledge_view_keeps_a_retired_lesson_with_its_scope_and_reason(client, rig):
+    le = client.post("/v1/lessons", json={"domain": "ops", "topic": "t", "text": "stale lesson", "scope_kind": "project",
+                                          "project": "atlas"}, headers=OWNER).json()["value"]
+    r = client.post(f"/v1/lessons/{le['id']}/retire", json={"reason": "superseded"}, headers=OWNER)
+    assert r.status_code == 200, r.text
+    v = client.get("/v1/knowledge", headers=OWNER).json()["value"]
+    row = next(x for x in v["lessons"] if x["id"] == le["id"])
+    assert (row["status"], row["scope_kind"], row["project"]) == ("retired", "project", "atlas")
+    assert row["retired_reason"].startswith("superseded")

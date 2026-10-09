@@ -4,8 +4,14 @@ import { server } from "../test/setup";
 import { http, HttpResponse, okJson, renderRoute } from "./testUtils";
 import { LibraryPage } from "./Library";
 import { TopicPage } from "./TopicPage";
+import { TicketPage } from "./Ticket";
 import { attentionHandler } from "../test/attentionFixture";
+import { SIGNOFF, asTicketThread, topicTicketHandlers, topicTicketPage } from "../test/topicTicketFixture";
 import type { TopicPage as TopicPageData, TopicRow } from "../api/types";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+const topicsCss = readFileSync(resolve(__dirname, "Topics.module.css"), "utf-8");
 
 // S-SME-SURFACE (s-698224fca8) c-df07f026e7 / c-bc73017057: Library topics — the list beside Knowledge, the
 // Open topic dialog, the topic page (docs, thread, experts, seat, tags with who set them), and the
@@ -29,12 +35,13 @@ const PAGE: TopicPageData = {
   ],
   experts: [{ id: "priya", handle: "priya", created_at: "2026-09-24T10:02:00Z" }],
   seat: { participant: "sme.topic-1", state: "live" },
+  allowlist: ["skills.sh", "www.skills.sh", "github.com", "raw.githubusercontent.com", "docs.pytest.org"],
   fetches: [{ url: "https://www.skills.sh/wshobson/agents/python-testing-patterns", status: 200, fetched_at: "2026-09-24T10:03:00Z", by: "sme.topic-1" }],
   viewer: { id: "owner", role: "owner" },
 };
 
 function mountPage(page: TopicPageData = PAGE) {
-  server.use(http.get("/v1/topics/:id", () => okJson(page)));
+  server.use(http.get("/v1/topics/:id", () => okJson(page)), ...topicTicketHandlers("topic-1", page.topic.title, { thread: asTicketThread(page.thread) }));
   return renderRoute("/library/topics/topic-1", "/library/topics/:id", <TopicPage />);
 }
 
@@ -81,17 +88,31 @@ describe("Library topics", () => {
     expect(asked[0]).toContain("topic_id=topic-1");
   });
 
+  it("m10: the seat line names the catalog model, and the panels grow with their content", async () => {
+    mountPage({ ...PAGE, seat: { ...PAGE.seat, model: "claude-opus-5-5", effort: "high" } });
+    await screen.findByTestId("topic-page");
+    expect(screen.getByTestId("topic-seat")).toHaveTextContent("sme.topic-1 · live · Claude Opus 5.5 at high");
+    expect(screen.getByTestId("topic-seat")).not.toHaveTextContent("claude-opus-5-5");
+    // a fixed-height scroll box cut the Docs card off (art-5e80d762a2): the page scrolls, not the panel
+    const rule = /\.panelsAbove\s*\{([^}]*)\}/.exec(topicsCss)?.[1] ?? "";
+    expect(rule).not.toMatch(/max-height|overflow/);
+  });
+
   it("shows docs, thread, experts, seat and who set the tags; the owner edits the tags", async () => {
     let tags: unknown = null;
     server.use(http.patch("/v1/topics/:id/tags", async ({ request }) => { tags = await request.json(); return okJson({}); }));
     mountPage();
     await screen.findByTestId("topic-page");
     expect(screen.getByTestId("topic-seat")).toHaveTextContent("sme.topic-1 · live");
+    // S12-ui2 (qa m-da89ef8294 m5): the header's status is the one status; no second "open" chip
+    expect(screen.queryByTestId("topic-status")).toBeNull();
     expect(screen.getByTestId("topic-tags-by")).toHaveTextContent("set by sme.topic-1 · 2026-09-24 10:05");
     expect(screen.getByTestId("topic-doc")).toHaveTextContent("pytest patterns");
     expect(screen.getByTestId("topic-doc")).toHaveTextContent("python-testing-patterns");
-    expect(screen.getAllByTestId("topic-message").map((m) => m.textContent)).toEqual([
-      expect.stringContaining("fixtures or factories?"), expect.stringContaining("fixtures, scoped")]);
+    await screen.findAllByTestId("thread-message");
+    const said = screen.getAllByTestId("thread-message").map((m) => m.textContent).join("|");
+    expect(said).toContain("fixtures or factories?");
+    expect(said).toContain("fixtures, scoped");
     expect(screen.getByTestId("topic-expert")).toHaveTextContent("priya");
     fireEvent.click(screen.getByTestId("topic-tags-edit"));
     fireEvent.change(screen.getByTestId("topic-tags-input"), { target: { value: "python, testing, owner-picked" } });
@@ -118,18 +139,30 @@ describe("Library topics", () => {
     await waitFor(() => expect(removed).toBe("priya"));
   });
 
-  it("posts on the thread and shows the board's refusal verbatim", async () => {
+  it("posts through the ticket page's own composer and shows the board's refusal verbatim", async () => {
     let posted: unknown = null;
-    server.use(http.post("/v1/topics/:id/messages", async ({ request }) => {
+    server.use(http.post("/v1/messages", async ({ request }) => {
       posted = await request.json();
       return HttpResponse.json({ ok: false, error: { code: "invalid", message: "topic-1 is closed" }, hint: "" }, { status: 409 });
     }));
     mountPage();
     await screen.findByTestId("topic-page");
-    fireEvent.change(screen.getByTestId("topic-composer"), { target: { value: "what about hypothesis?" } });
-    fireEvent.click(screen.getByTestId("topic-send"));
-    await waitFor(() => expect(posted).toEqual({ text: "what about hypothesis?", kind: "question" }));
-    expect(await screen.findByText("topic-1 is closed")).toBeInTheDocument();
+    fireEvent.change(await screen.findByTestId("composer-text"), { target: { value: "what about hypothesis?" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    await waitFor(() => expect(posted).toMatchObject({ ticket_id: "topic-1", text: "what about hypothesis?" }));
+    expect(await screen.findByText(/topic-1 is closed/)).toBeInTheDocument();
+  });
+
+  // sweep #1 (note-8f0629190d): the owner's topic page is the ticket page's conversation, not a second implementation
+  it("gives the owner the ticket page's thread and composer features, and the expert the slim topic thread", async () => {
+    mountPage();
+    await screen.findByTestId("topic-page");
+    expect(await screen.findByTestId("conversation")).toBeInTheDocument();
+    expect(screen.getByTestId("order-toggle")).toBeInTheDocument();
+    expect(screen.getByTestId("composer-attach")).toBeInTheDocument();
+    expect(screen.getByTestId("kind-picker")).toBeInTheDocument();
+    expect(screen.queryByTestId("topic-thread")).toBeNull();
+    expect(screen.queryByTestId("topic-composer")).toBeNull();
   });
 
   it("gives an expert the topic only: no experts panel, no tag edit, no close, no link to the list", async () => {
@@ -166,7 +199,7 @@ describe("Library topics attention (S20)", () => {
     const [waiting, quiet] = screen.getAllByTestId("topic-row");
     expect(waiting).toHaveAttribute("data-attention", "true");
     expect(within(waiting).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
-    expect(within(waiting).getByTestId("attention-reason")).toHaveTextContent("Waiting on you: 1 question");
+    expect(within(waiting).getByTestId("attention-reason")).toHaveTextContent("1 question");
     expect(quiet).not.toHaveAttribute("data-attention");
   });
 
@@ -174,13 +207,66 @@ describe("Library topics attention (S20)", () => {
     server.use(attentionHandler());
     const ask = { id: "m-topicq", created_at: "2026-09-24T10:08:00Z", created_by: "sme.topic-1", to: "owner", kind: "question", text: "which runner?",
       reply_to: null, from: { id: "sme.topic-1", role: "sme", type: "agent" } };
-    server.use(http.get("/v1/topics/:id", () => okJson({ ...PAGE, thread: [...PAGE.thread, ask] })));
+    server.use(http.get("/v1/topics/:id", () => okJson({ ...PAGE, thread: [...PAGE.thread, ask] })), ...topicTicketHandlers("topic-1", PAGE.topic.title, { thread: asTicketThread([...PAGE.thread, ask]) }));
     renderRoute("/library/topics/topic-1#m-topicq", "/library/topics/:id", <TopicPage />);
     await screen.findByText("which runner?");
     const li = document.getElementById("m-topicq")!;
     await waitFor(() => expect(li).toHaveAttribute("data-attention", "true"));
-    expect(within(li).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
     await waitFor(() => expect(li).toHaveAttribute("data-highlight", "true"));
     expect(document.getElementById("m-1")).not.toHaveAttribute("data-attention");
+  });
+
+  // S16 c-320d037cb8: the owner's topic page is the ticket page's surface (header, Work drawer, Actions) plus the topic panels.
+  it("renders the topic like a ticket page: criteria and sign-off, gates, files, work drawer, lifecycle, and the topic panel", async () => {
+    server.use(attentionHandler(), ...topicTicketHandlers("topic-1", "Python testing", {
+      criteria: [SIGNOFF],
+      docs: [{ id: "note-t1", doc_type: "report", title: "Fixture notes", version: 1, scope: "topic-1", summary: "", full: "", relation: "evidence" }],
+      open_gates: [{ ticket_id: "topic-1", gate: "demo", by: "owner", note: "is the sme on track?", opened_at: "2026-09-24T10:00:00Z", epic: "topic-1" }],
+    }));
+    server.use(http.get("/v1/topics/:id", () => okJson(PAGE)));
+    renderRoute("/library/topics/topic-1", "/library/topics/:id", <TopicPage />);
+    const header = await screen.findByTestId("work-header");
+    expect(within(header).getByRole("link", { name: "Library" })).toHaveAttribute("href", "/library/topics");
+    expect(within(header).queryByRole("link", { name: "Epics" })).toBeNull();
+    expect(screen.getByTestId("work-status")).toHaveTextContent(/in progress/i);
+    fireEvent.click(screen.getByTestId("work-work"));
+    const work = await screen.findByTestId("ticket-work");
+    expect(within(work).getByText(/Acceptance criteria \(1\)/)).toBeInTheDocument();
+    expect(within(work).getByText("The sme's notes cover test fixtures")).toBeInTheDocument();
+    expect(within(work).getByText("Process")).toBeInTheDocument();
+    expect(within(work).getByText(/Linked documents \(1\)/)).toBeInTheDocument();
+    expect(screen.getByTestId("work-files")).toBeInTheDocument();
+    expect(screen.getByTestId("work-history")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("actions-open"));
+    expect(await screen.findByTestId("action-answer-decision")).toBeInTheDocument();
+    expect(screen.getByTestId("action-add-criterion")).toBeInTheDocument();
+    expect(screen.getByTestId("action-change-status")).toBeInTheDocument();
+    expect(screen.queryByTestId("action-models")).toBeNull();
+    expect(screen.queryByTestId("action-assign-spawn")).toBeNull();
+    const source = screen.getByTestId("topic-source");
+    expect(within(source).getByTestId("topic-seed")).toHaveAttribute("href", "https://docs.pytest.org/en/stable/");
+    expect(within(screen.getByTestId("topic-allowlist")).getAllByText(/\./).map((e) => e.textContent)).toContain("docs.pytest.org");
+    expect(screen.getByTestId("topic-experts")).toHaveTextContent("priya");
+    expect(screen.getByTestId("conversation")).toBeInTheDocument();
+  });
+
+  it("gives an expert the topic panel (seed URL, allowlist) without a single ticket-route call", async () => {
+    const seen: string[] = [];
+    server.events.on("request:start", ({ request }) => { seen.push(new URL(request.url).pathname); });
+    server.use(http.get("/v1/topics/:id", () => okJson({ ...PAGE, viewer: { id: "priya", role: "expert" } })));
+    renderRoute("/library/topics/topic-1", "/library/topics/:id", <TopicPage />);
+    await screen.findByTestId("topic-source");
+    expect(screen.getByTestId("topic-seed")).toHaveAttribute("href", "https://docs.pytest.org/en/stable/");
+    expect(screen.getByTestId("topic-allowlist")).toHaveTextContent("github.com");
+    expect(screen.queryByTestId("work-header")).toBeNull();
+    expect(seen.filter((u) => u.startsWith("/v1/tickets/"))).toEqual([]);
+    server.events.removeAllListeners();
+  });
+
+  it("sends a /ticket/<topic id> link to the topic's Library page", async () => {
+    server.use(http.get("/v1/tickets/topic-1/page", () => okJson(topicTicketPage("topic-1", "Python testing"))));
+    server.use(http.get("/v1/topics/:id", () => okJson(PAGE)), ...topicTicketHandlers("topic-1", "Python testing"));
+    renderRoute("/ticket/topic-1", "/ticket/:id", <TicketPage />);
+    await screen.findByTestId("elsewhere"); // no /ticket page rendered: the link was replaced by the Library route
   });
 });

@@ -6,7 +6,8 @@
       "headers": {
         "X-Participant": "${EDP_HANDLE:-}",
         "X-Session": "${EDP_SPAWN_SESSION_ID:-}",
-        "X-Token": "${EDP8_TOKEN:-}"
+        "X-Token": "${EDP8_TOKEN:-}",
+        "X-Wake-Mod": "${CLAUDE_CODE_PLUGIN_DIRS:-}"
       }
     }
   }

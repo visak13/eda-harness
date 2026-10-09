@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from . import advice
 from .schemas import LINE_MAX, CodeContext, Participant, QuoteContext, QuoteLocator, QuoteStored, Role, _escaped_len
 
 MAX_QUOTES = 20
@@ -32,7 +33,14 @@ class _LocatorIn(BaseModel):
     line_end: int | None = Field(default=None, ge=1, le=LINE_MAX)
     char_start: int | None = Field(default=None, ge=0, le=VERSION_MAX)
     char_end: int | None = Field(default=None, ge=0, le=VERSION_MAX)
-    heading: str | None = None  # accepted and ignored: the board derives it
+    heading: str | None = None  # accepted and ignored: the board derives it (a validator says so in the reply)
+
+    @field_validator("heading")
+    @classmethod
+    def _heading_ignored(cls, v: str | None) -> str | None:
+        if v is not None:
+            advice.advise("quote locator `heading` ignored: the board derives the heading from the quoted span")
+        return v
 
 
 class _ContextIn(BaseModel):
@@ -84,11 +92,19 @@ def _err(code: str, i: int, msg: str, hint: str = "") -> Exception:
                       hint or "fix the named quote; see describe('message') for quote rules")
 
 
-def readable(actor: Participant, source: str, obj: Any) -> bool:
+def readable(actor: Participant, source: str, obj: Any, board: Any = None) -> bool:
     """May `actor` read this quoted source? Mirrors the read routes (GET /v1/messages/{id},
     GET /v1/docs/{id}): every participant but an expert (its token reaches only its Library topic).
     One place, so a later per-reader scope tightens quoting with it (architect m-55480f6f8e)."""
-    return actor.role != Role.expert
+    if actor.role == Role.expert:
+        return False
+    # e0cec S5 (review m-33154269a9 #3): a guest quotes only what it can read; anything else is the same
+    # quote_source_missing as an absent source (no text confirmation, line count or heading leak).
+    from . import guest_scope
+    scope = guest_scope.scope_for(board, actor) if board is not None else None
+    if scope is None:
+        return board is not None or not guest_scope.is_guest(actor)
+    return guest_scope.visible(scope, source, obj)
 
 
 _HEADING = re.compile(r"^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
@@ -164,7 +180,7 @@ def _one(board: Any, actor: Participant, q: QuoteIn, i: int) -> QuoteStored:
             if lo.line_end < lo.line_start:
                 raise _err("schema", i, "locator.line_end must be >= line_start")
             doc = board.store.doc_version(q.id, q.version) if board.store.get("doc", q.id) else None
-            if doc is None or not readable(actor, "doc", doc):
+            if doc is None or not readable(actor, "doc", doc, board):
                 raise missing
             lines = (doc.body_md or "").replace("\r\n", "\n").split("\n")
             if lo.line_end > len(lines):
@@ -181,7 +197,7 @@ def _one(board: Any, actor: Participant, q: QuoteIn, i: int) -> QuoteStored:
         else:
             _bad_fields(q, i, "version")
             src = board.store.get("message", q.id)
-            if src is None or not readable(actor, "message", src):
+            if src is None or not readable(actor, "message", src, board):
                 raise missing
             lo = q.locator
             if lo is not None and (lo.line_start is not None or lo.line_end is not None):

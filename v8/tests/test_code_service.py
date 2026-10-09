@@ -9,6 +9,7 @@ dirs; the fleet's `code` service (:9410), board and other services are never tou
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -45,9 +46,34 @@ def _ps(script: Path, *args: str, env: dict[str, str] | None = None, timeout: in
 
 
 def _env(tmp_path: Path, port: int) -> dict[str, str]:
+    """A throwaway home: the run dir sits inside it (the home guard refuses one outside EDP_HOME), EDP_DEV makes
+    it a source checkout, and EDP_CODE_NO_DOWNLOAD keeps a host without code-server from fetching 200 MB."""
+    home = tmp_path / "home"
+    home.mkdir(exist_ok=True)
     env = {k: v for k, v in os.environ.items() if not re.match(r"EDP8?_", k)}
-    env.update(EDP_CODE_PORT=str(port), EDP8_RUN_DIR=str(tmp_path / "run"), EDP_CODE_DATA=str(tmp_path / "data"))
+    env.update(EDP_HOME=str(home), EDP_DEV="1", EDP_CODE_NO_DOWNLOAD="1", EDP_CODE_PORT=str(port),
+               EDP8_RUN_DIR=str(home / "run"), EDP8_DATA=str(home / "data"), EDP_CODE_DATA=str(tmp_path / "data"))
     return env
+
+
+def _cli_start(env: dict[str, str]):
+    """`heronry start code` as the wrapper runs it, without the wrapper's install step (which downloads the pinned
+    build on a host that lacks it)."""
+    return subprocess.run([sys.executable, "-m", "edp8.cli", "start", "code", "--skip-extensions"], env=env,
+                          capture_output=True, text=True, timeout=120)
+
+
+@contextlib.contextmanager
+def _pinned_home(env: dict[str, str]):
+    """Give the throwaway home the checkout's lock and a junction to the installed pin; removed as a link only."""
+    home = Path(env["EDP_HOME"])
+    shutil.copytree(V8 / "vscode-ext", home / "vscode-ext", dirs_exist_ok=True)
+    link = home / ".tools"
+    subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(V8 / ".tools")], check=True, capture_output=True)
+    try:
+        yield
+    finally:
+        os.rmdir(link)  # a junction: unlinks it and never touches the shared install behind it
 
 
 def _listener(port: int) -> int | None:
@@ -155,7 +181,7 @@ def test_install_is_idempotent(tmp_path):
 
 def test_start_refuses_a_non_loopback_bind(tmp_path):
     env = _env(tmp_path, _free_port()) | {"EDP_CODE_HOST": "0.0.0.0"}
-    r = _ps(SCRIPTS["start-code.ps1"], env=env)
+    r = _cli_start(env)
     assert r.returncode == 2 and "binds 127.0.0.1 only" in r.stderr, r.stdout + r.stderr
 
 
@@ -168,7 +194,7 @@ def test_start_fails_loudly_on_a_foreign_listener_and_leaves_it(tmp_path):
             if _listener(port):
                 break
             time.sleep(0.1)
-        r = _ps(SCRIPTS["start-code.ps1"], env=_env(tmp_path, port))
+        r = _cli_start(_env(tmp_path, port))
         assert r.returncode == 3 and "leaving it alone" in r.stderr, r.stdout + r.stderr
         assert fake.poll() is None
     finally:
@@ -176,9 +202,12 @@ def test_start_fails_loudly_on_a_foreign_listener_and_leaves_it(tmp_path):
 
 
 @pytest.mark.skipif(not INSTALLED.exists(), reason="pinned code-server not installed")
-def test_a_spare_port_instance_starts_healthy_and_stops_only_itself(tmp_path):
+def test_a_spare_port_instance_starts_healthy_and_stops_only_itself(tmp_path, request):
     port = _free_port()
     env = _env(tmp_path, port)
+    pinned = _pinned_home(env)
+    pinned.__enter__()
+    request.addfinalizer(lambda: pinned.__exit__(None, None, None))
     fleet_code = _listener(int(os.environ.get("EDP_CODE_PORT_FLEET", "9410")))
     # t-93da8bf09d: a layout key the user already set survives the chrome seed
     user_settings = tmp_path / "data" / "user" / "User" / "settings.json"
@@ -189,7 +218,7 @@ def test_a_spare_port_instance_starts_healthy_and_stops_only_itself(tmp_path):
         assert r.returncode == 0, r.stdout + r.stderr
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=5) as h:
             assert h.status == 200
-        state = json.loads((tmp_path / "run" / "code.json").read_text(encoding="utf-8"))
+        state = json.loads((tmp_path / "home" / "run" / "code.json").read_text(encoding="utf-8"))
         assert state["service"] == "code" and state["port"] == port and state["version"] == LOCK["version"]
         assert state["sha256"] == LOCK["sha256"] and state["pid"] and state["started_at"]
         # s-03c7e9168b: the guard holds the port and refuses a rebinding Host; code-server's own inner
@@ -210,14 +239,14 @@ def test_a_spare_port_instance_starts_healthy_and_stops_only_itself(tmp_path):
         token, _ = mint_token(state["mint_key"])
         no_redirect = urllib.request.build_opener(type("NoRedirect", (urllib.request.HTTPRedirectHandler,), {"redirect_request": lambda *a, **k: None}))
         with pytest.raises(urllib.error.HTTPError) as login:
-            no_redirect.open(f"http://127.0.0.1:{port}/__edp/login?t={token}&next=%2F", timeout=10)
+            no_redirect.open(f"http://127.0.0.1:{port}/__edp/login", data=f"t={token}&next=%2F".encode(), timeout=10)
         assert login.value.code == 302 and login.value.headers["Location"] == "/"
         cookie = login.value.headers["Set-Cookie"].split(";")[0]
         assert cookie.startswith("edp-code-guard=") and "HttpOnly" in login.value.headers["Set-Cookie"]
         with urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{port}/", headers={"Cookie": cookie}), timeout=10) as r:
             assert r.status == 200 and "/login" not in r.url and b"workbench.js" in r.read()
         with pytest.raises(urllib.error.HTTPError) as replay:
-            no_redirect.open(f"http://127.0.0.1:{port}/__edp/login?t={token}&next=%2F", timeout=10)
+            no_redirect.open(f"http://127.0.0.1:{port}/__edp/login", data=f"t={token}&next=%2F".encode(), timeout=10)
         assert replay.value.code == 401
         with urllib.request.urlopen(f"http://127.0.0.1:{inner}/", timeout=10) as r:
             assert r.url.split("?")[0].endswith("/login") and b'type="password"' in r.read()
@@ -241,7 +270,7 @@ def test_a_spare_port_instance_starts_healthy_and_stops_only_itself(tmp_path):
     finally:
         s = _ps(SCRIPTS["stop-code.ps1"], env=env)
     assert s.returncode == 0, s.stdout + s.stderr
-    assert _listener(port) is None and not (tmp_path / "run" / "code.json").exists()
+    assert _listener(port) is None and not (tmp_path / "home" / "run" / "code.json").exists()
     if fleet_code:  # the fleet's code service on :9410 kept running, same pid
         assert _listener(int(os.environ.get("EDP_CODE_PORT_FLEET", "9410"))) == fleet_code
 

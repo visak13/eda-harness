@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import type { QuoteIn } from "../api/types";
 import { getDocSource, getQuotesSupported } from "../api/endpoints";
+import { MarkButton, spanOf } from "./QuoteCard";
 import { contextOf, linesOf, locateInSource, utf8Bytes } from "./quoteMatch";
 import { activeQuoteTarget, MAX_TRAY, quoteTray } from "./quoteTray";
+import { flashInSlot } from "./statusSlot";
 import { MentionInput } from "./MentionInput";
 import styles from "./QuoteLayer.module.css";
 
@@ -125,6 +127,9 @@ export function isTyping(t: EventTarget | null): boolean {
   return t instanceof HTMLElement && (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || t.isContentEditable === true);
 }
 
+/** The popover's width: the CSS clamp is min(POPOVER_W, 100vw - 16px). */
+const POPOVER_W = 340;
+
 export function QuoteLayer(): React.JSX.Element | null {
   const supported = useQuery({ queryKey: ["board", "quotes-supported"], queryFn: getQuotesSupported, retry: false, staleTime: 5 * 60_000 });
   const [pick, setPick] = useState<Picked | null>(null);
@@ -132,6 +137,7 @@ export function QuoteLayer(): React.JSX.Element | null {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [boxH, setBoxH] = useState(96);
   const boxRef = useRef<HTMLDivElement>(null);
   const noteRef = useRef<HTMLInputElement>(null);
   const on = supported.data === true;
@@ -197,6 +203,9 @@ export function QuoteLayer(): React.JSX.Element | null {
     };
   }, [on, open, close]);
 
+  /** The composer's status slot says it when one is on screen (nothing moves, nothing is covered); else a fixed toast. */
+  function announce(text: string) { if (!flashInSlot(text)) setDone(text); }
+
   async function add() {
     if (!pick || pending.current) return;
     const target = pick.region.kind === "message" ? pick.region.ticketId : activeQuoteTarget() ?? pick.region.ticketId;
@@ -212,7 +221,7 @@ export function QuoteLayer(): React.JSX.Element | null {
       const n = quoteTray.get(target).length;
       window.getSelection()?.removeAllRanges();
       close();
-      setDone(`Quoted into the ${target} message box (${n} ${n === 1 ? "quote" : "quotes"}).`);
+      announce(`Quoted into the message box (${n} ${n === 1 ? "quote" : "quotes"}).`);
     } catch (e) {
       if (mine === gen.current) setError(`Could not read the source: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -220,11 +229,35 @@ export function QuoteLayer(): React.JSX.Element | null {
     }
   }
 
+  // the box's own height (the error line changes it): measured after each render, so placement never guesses
+  useLayoutEffect(() => {
+    const h = boxRef.current?.offsetHeight;
+    if (h && h !== boxH) setBoxH(h);
+  });
+
+  // while the popover is open the page says so, so the sticky composer's collapse toggle (which sits on the edge the
+  // popover often lands on) can hide itself: a half-covered control reads as an overlap (architect m-6043dc0d2c)
+  const popoverOpen = on && pick !== null;
+  // the confirmation toast goes by itself: a pinned note must not sit over the page for long
+  useEffect(() => {
+    if (!done) return;
+    const t = setTimeout(() => setDone(null), 6000);
+    return () => clearTimeout(t);
+  }, [done]);
+  useEffect(() => {
+    if (!popoverOpen) return;
+    document.documentElement.setAttribute("data-quote-popover", "open");
+    return () => document.documentElement.removeAttribute("data-quote-popover");
+  }, [popoverOpen]);
+
   if (!on) return null;
   if (!pick) return done ? <p className={styles.toast} role="status" data-testid="quote-added">{done}</p> : null;
-  let left = Math.max(8, Math.min(pick.rect.left, window.innerWidth - 340));
+  let left = Math.max(8, Math.min(pick.rect.left, window.innerWidth - POPOVER_W - 8));
+  // placed from the measured box (it grows with an error line): below the selection when it fits, else above it,
+  // so it does not cover the selected text; a selection filling the viewport falls back to the bottom edge.
   const below = pick.rect.bottom + 8;
-  let top = below + 120 > window.innerHeight ? Math.max(8, pick.rect.top - 128) : below;
+  const above = pick.rect.top - boxH - 8;
+  let top = below + boxH <= window.innerHeight - 8 ? below : above >= 8 ? above : Math.max(8, window.innerHeight - boxH - 8);
   // position:fixed resolves against a transformed/filtered ancestor, not the viewport: offset by it.
   if (pick.host !== document.body) {
     const cs = getComputedStyle(pick.host);
@@ -240,12 +273,23 @@ export function QuoteLayer(): React.JSX.Element | null {
         if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); void add(); } // an IME's Enter confirms text
       }}>
       <MentionInput inputRef={noteRef} wrapClassName={styles.noteWrap} className={styles.note} value={note} onValue={setNote} maxLength={2000}
-        placeholder="Note on this passage (optional). @ to notify someone" aria-label="Note on this passage" data-testid="quote-note" />
-      <button type="button" className={styles.quote} onClick={() => void add()} disabled={busy} data-testid="quote-add"
-        title="Quote (Enter). Ctrl+Alt+Q opens this on a selection">
-        {busy ? "Quoting…" : "Quote"}
-      </button>
-      {error ? <p className={styles.error} role="alert" data-testid="quote-error">{error}</p> : null}
+        placeholder="Add a note (optional) — @ to notify" aria-label="Note on this passage" data-testid="quote-note" />
+      <div className={styles.actions} data-testid="quote-actions">
+        {pick.region.kind === "message" ? (
+          <MarkButton key={`${pick.region.id}:${pick.before.length}:${pick.selected}`} testid="quote-popover-mark" className={styles.secondary}
+            onError={setError}
+            onDone={() => { window.getSelection()?.removeAllRanges(); close(); announce("Requirement marked."); }}
+            resolve={async () => {
+              const r = await resolvePick(pick, note);
+              return "error" in r ? r : spanOf(r.quote);
+            }} />
+        ) : null}
+        <button type="button" className={styles.primary} onClick={() => void add()} disabled={busy} data-testid="quote-add"
+          title="Quote (Enter). Ctrl+Alt+Q opens this on a selection">
+          {busy ? "Quoting…" : "Quote"}
+        </button>
+      </div>
+      {error ?<p className={styles.error} role="alert" data-testid="quote-error">{error}</p> : null}
     </div>,
     pick.host,
   );

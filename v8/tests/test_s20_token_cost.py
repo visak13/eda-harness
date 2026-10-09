@@ -93,12 +93,36 @@ def _surface_bytes(role):
                + len(json.dumps(t.input_schema, ensure_ascii=False).encode()) for t in tools_for_role(role))
 
 
-# S23 re-baseline (architect ruling m-fbd6ae40d3): after compaction these roles still carry the measured
-# shortfall, in bytes, of the S23 fixes. architect/sme: the metadata-composed "Objects/Skills" clause and
-# per-field descriptions on required args; owner: also the five framework tools (pain, workflow, teammate,
-# service_status, harvest_cost) that replace its shell workarounds; every role: the pre-S23 facts the
-# owner's no-loss steer (m-891b9f42bd) keeps in the descriptions (tests/test_tool_info_parity.py).
-_S23_REBASELINE = {'architect': 613, 'engineer': 133, 'sme': 632, 'owner': 2_390}
+# S23 re-baseline (architect ruling m-fbd6ae40d3), tightened by e0cec S9 (s-8ca20e8543): the roles that still carry a
+# measured shortfall, in bytes, after the S3-S6 terms were removed for real (the Objects/Skills clause left every
+# description with the architect's approval, m-1fc3764b91; paging/enum prose and tautological arg descriptions went).
+# architect/sme/owner keep the facts the owner's no-loss steer (m-891b9f42bd) holds in descriptions; the owner also
+# the five framework tools (pain, workflow, teammate, service_status, harvest_cost) that replace shell workarounds.
+# S17 (architect ruling m-04ea10d572 on m-d6452d2753): architect +140 = the measured 135-byte remainder of the
+# "(/doc-write)" clause on doc_create/doc_edit/doc_update, doc_update's `layout` arg, doc_read's `include_children`
+# arg (m-8c4f0d64cb) and the pre-S23 facts doc_edit/doc_read keep (test_tool_info_parity), rounded up to 10; the
+# other roles absorb it. Ruling m-c6cdb0602c (doc_read: no `all`; its description says page 1 holds every obligation
+# and sections are read by heading): architect +20 and owner +20 = the measured 19- and 15-byte remainders, rounded up.
+# S13 F9 (architect ruling on t-dac2a14caf: the doc_read description is advisory, page 1 is the writer's unchecked
+# summary): architect +20 and owner +20 = the measured 20- and 16-byte remainders, rounded up (m-04ea10d572 rule).
+# S13 F8 (compact ticket_read default; the tool names its compact read and `more`): architect +20 and owner +10 = the
+# measured 14- and 10-byte remainders, rounded up (m-04ea10d572 rule).
+# note-e6ddb85977 §3 (s-4bf4ffea8a): doc_read's "head first, then whole or sections (/doc-read)" clause and its `fresh` arg:
+# architect +80 and owner +80 = the measured 72- and 78-byte remainders, rounded up (m-04ea10d572 rule).
+# astra F5 (report-08d356b0f8, architect m-bbd09fc118): describe's returns say related_skills is an index and the card's
+# SKILLS line binds; the narrower spawn and topic_propose enums (F2) absorb part of it: architect +30
+# and owner +50 = the measured 24- and 42-byte remainders (surface 27004 and 20540), rounded up (m-04ea10d572 rule).
+# Owner m-b9f93cddf0 (the sme is for research): ticket_update's `work_type` retypes a story so its pending criteria
+# follow the checker: architect +150 and owner +150 = the measured 142- and 140-byte remainders (surface 27152 and
+# 20688), rounded up (m-04ea10d572 rule).
+# e0cec K (s-0b8d2e5393, design-63db8a7d42): the per-role table gives the sme back doc_edit and artifact_upload, which
+# S20 pruned by past use, and close_self now says it never refuses: sme +980 = the measured 922- and 972-byte remainders (surface 21012), rounded up (m-04ea10d572 rule).
+# s-0b8d2e5393 J: ticket_create's `cap_lift_message` arg: architect +50 and owner +50 = the measured 48- and 46-byte
+# remainders (surface 27208 and 20744), rounded up (m-04ea10d572 rule).
+# Rebased on main 3a462867: main's own doc_edit description growth left the architect 351 bytes over before this story; the figures
+# above add this story's 96 (architect) and the sme's rebased measure (surface 21533), rounded up. The doc_edit fact loss in
+# test_tool_info_parity[doc_edit] is main's too and is not touched here.
+_S23_REBASELINE = {'architect': 1_530, 'sme': 2_000, 'owner': 2_090}
 
 
 @pytest.mark.parametrize('role', sorted(_AUDIT_BEFORE))
@@ -120,7 +144,8 @@ def test_advertised_schema_keeps_every_enum_and_required_field(name):
 
 
 def test_invoked_tools_stay_in_their_role():
-    """Every tool a role invoked in the 30-day transcript scan (report table) is still in its bundle."""
+    """Every tool a role invoked in the 30-day transcript scan (report table) is still in its bundle. S17 removed
+    the ruleset tool on design-f39cf0db7d decision 5; it left the scan's sets with it."""
     invoked = {
         'architect': {'message_send', 'criterion_create', 'context', 'ticket_update', 'message_query', 'link_create',
                       'message_read', 'ticket_create', 'doc_read', 'criterion_update', 'events_query', 'inbox', 'spawn',
@@ -132,25 +157,25 @@ def test_invoked_tools_stay_in_their_role():
         'engineer': {'message_send', 'criterion_update', 'context', 'ticket_update', 'message_read', 'doc_read',
                      'doc_create', 'message_query', 'ticket_create', 'link_create', 'inbox', 'context_delta',
                      'whoami', 'subscribe', 'doc_edit', 'record_status',
-                     'assemble_ruleset', 'describe', 'doc_update', 'get_guide', 'artifact_create', 'criterion_query',
+                     'describe', 'doc_update', 'get_guide', 'artifact_create', 'criterion_query',
                      'close_self', 'ticket_read', 'participants', 'find', 'criterion_create', 'artifact_upload',
                      'lookup', 'doc_query', 'ticket_query', 'artifact_read', 'withdraw_decision', 'link_query',
                      'record_claim', 'describe_objects', 'record_decision', 'resume_self'},
         'qa': {'message_send', 'criterion_update', 'message_read', 'doc_read', 'inbox', 'context',
                'message_query', 'whoami', 'subscribe', 'get_guide', 'record_status', 'criterion_query', 'doc_edit',
-               'context_delta', 'doc_create', 'link_create', 'assemble_ruleset', 'close_self',
+               'context_delta', 'doc_create', 'link_create', 'close_self',
                'ticket_read', 'lookup', 'ticket_update', 'doc_update', 'gates', 'describe', 'find', 'participants',
                'artifact_read', 'board', 'preflight'},
         'sme': {'message_send', 'context', 'criterion_update', 'link_create', 'doc_read', 'doc_update',
                 'message_query', 'whoami', 'subscribe', 'describe', 'doc_create', 'criterion_query', 'inbox',
-                'assemble_ruleset', 'record_status', 'message_read', 'doc_query', 'get_guide', 'participants',
+                'record_status', 'message_read', 'doc_query', 'get_guide', 'participants',
                 'ticket_update', 'ticket_read', 'close_self', 'link_query', 'ticket_query'},
         'owner': {'spawn', 'message_send', 'message_query', 'message_read', 'ticket_read', 'preflight',
                   'session_query', 'doc_read', 'context', 'criterion_update', 'whoami', 'board', 'ticket_query',
                   'subscribe', 'criterion_query', 'gate_answer', 'ticket_create', 'find', 'ticket_update',
                   'participants', 'gates', 'reap', 'events_query', 'get_guide', 'resume', 'doc_query', 'close'},
         'adversary': {'message_query', 'message_send', 'ticket_update', 'context', 'doc_read', 'participants',
-                      'criterion_update', 'whoami', 'subscribe', 'assemble_ruleset', 'ticket_read',
+                      'criterion_update', 'whoami', 'subscribe', 'ticket_read',
                       'doc_create', 'link_create', 'gate_open', 'gates', 'doc_update'},
     }
     for role, names in invoked.items():

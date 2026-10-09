@@ -1,0 +1,7 @@
+.intro { margin: 0 0 12px; color: var(--muted); }
+.list { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 8px; }
+.row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid var(--line);
+  border-radius: 8px; }
+.name { font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.add select { flex: 1; min-width: 12rem; }

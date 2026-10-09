@@ -99,6 +99,18 @@ describe("Seats presence rules (RTL)", () => {
     expect(within(r).getByTestId("latest-status")).toHaveTextContent("Owner checks are ready for review.");
   });
 
+  it("S12-ui2: the latest status renders the board's markdown, never literal **bold** or '- ' bullets", async () => {
+    const md: SeatRow = { ...alive, latest_status: { ...alive.latest_status!, text: "**Done:** the fix\n\n- one\n- two",
+      html: "<p><strong>Done:</strong> the fix</p>\n<ul>\n<li>one</li>\n<li>two</li>\n</ul>" } };
+    server.use(http.get("/v1/seats", () => HttpResponse.json({ ok: true, value: { ...VIEW, seats: [md] } })));
+    mount();
+    await screen.findByText("engineer.s-eng");
+    const cell = within(rowFor("engineer.s-eng")).getByTestId("latest-status");
+    expect(cell.querySelector("strong")).toHaveTextContent("Done:");
+    expect(cell.querySelectorAll("li")).toHaveLength(2);
+    expect(cell.textContent).not.toMatch(/\*\*|- one/);
+  });
+
   it("an alive seat silent for over a minute reads 'Presence not refreshed'", async () => {
     mount();
     await screen.findByText("engineer.s-eng");
@@ -129,6 +141,49 @@ describe("Seats presence rules (RTL)", () => {
   });
 });
 
+describe("Seats Close (design-63db8a7d42 G)", () => {
+  it("a live seat (working, silent or parked) offers Close; a closed or remote seat does not", async () => {
+    mockBoard(CAPS_NO);
+    mount();
+    await screen.findByText("engineer.s-eng");
+    await waitFor(() => expect(within(rowFor("engineer.s-eng")).getByTestId("seat-close")).toBeInTheDocument());
+    expect(within(rowFor("sme.s-sme")).getByTestId("seat-close")).toBeInTheDocument();
+    expect(within(rowFor("adversary.s-rev")).getByTestId("seat-close")).toBeInTheDocument();
+    expect(within(rowFor("qa.s-qa")).queryByTestId("seat-close")).not.toBeInTheDocument();
+    expect(within(rowFor("architect.epic-x")).queryByTestId("seat-close")).not.toBeInTheDocument();
+  });
+
+  it("Close calls sessions/close for that seat and its ticket", async () => {
+    const closedSeats: Record<string, unknown>[] = [];
+    mockBoard(CAPS_NO);
+    server.use(http.post("/v1/sessions/close", async ({ request }) => {
+      closedSeats.push((await request.json()) as Record<string, unknown>);
+      return HttpResponse.json({ ok: true, value: { closed: true } });
+    }));
+    mount();
+    await screen.findByText("engineer.s-eng");
+    fireEvent.click(await within(rowFor("engineer.s-eng")).findByTestId("seat-close"));
+    await waitFor(() => expect(closedSeats).toEqual([{ participant_id: "engineer.s-eng", ticket_id: "s-eng" }]));
+  });
+
+  it("a refused Close shows the board's reason on the row", async () => {
+    mockBoard(CAPS_NO);
+    server.use(http.post("/v1/sessions/close", () =>
+      HttpResponse.json({ ok: false, error: { code: "scope", message: "guests may not close seats" } }, { status: 403 })));
+    mount();
+    await screen.findByText("engineer.s-eng");
+    fireEvent.click(await within(rowFor("engineer.s-eng")).findByTestId("seat-close"));
+    expect(await within(rowFor("engineer.s-eng")).findByTestId("close-error")).toBeInTheDocument();
+  });
+
+  it("no Close while the pool capabilities are unavailable (a guest never gets them)", async () => {
+    mockBoardCapsDown();
+    mount();
+    await screen.findByText("engineer.s-eng");
+    expect(within(rowFor("engineer.s-eng")).queryByTestId("seat-close")).not.toBeInTheDocument();
+  });
+});
+
 describe("Seats Resume gating (both pool answers)", () => {
   it("parked and closed Resume both call the shared sessions/resume API", async () => {
     const resumed: string[] = [];
@@ -153,7 +208,7 @@ describe("Seats Resume gating (both pool answers)", () => {
     await screen.findByText("engineer.s-eng");
     const r = rowFor("qa.s-qa");
     expect(within(r).queryByTestId("seat-resume")).not.toBeInTheDocument();
-    expect(within(r).getByTestId("no-resume-note")).toHaveTextContent("spawn a fresh seat");
+    expect(within(r).getByTestId("no-resume-note")).toHaveTextContent("start a fresh seat");
   });
 
   it("resume_closed=true: the closed seat offers Resume", async () => {
@@ -187,11 +242,11 @@ describe("Seats Resume gating (both pool answers)", () => {
 });
 
 describe("Seats: a remote seat (no mirrored session) is unknown, never closed", () => {
-  it("reads 'Availability unknown', not Closed, and carries no closed/spawn note", async () => {
+  it("reads 'Not visible here', not Closed, and carries no closed/spawn note", async () => {
     mount();
     await screen.findByText("engineer.s-eng");
     const r = rowFor("architect.epic-x");
-    expect(within(r).getByTestId("seat-state")).toHaveTextContent("Availability unknown");
+    expect(within(r).getByTestId("seat-state")).toHaveTextContent("Not visible here");
     expect(within(r).queryByTestId("no-resume-note")).not.toBeInTheDocument();
     expect(r).not.toHaveTextContent("Closed");
   });
@@ -201,7 +256,7 @@ describe("Seats: a remote seat (no mirrored session) is unknown, never closed", 
     await screen.findByText("engineer.s-eng");
     fireEvent.click(within(rowFor("architect.epic-x")).getByTestId("seat-message"));
     const note = await screen.findByTestId("seat-delivery-note");
-    expect(note).toHaveTextContent("availability is unknown");
+    expect(note).toHaveTextContent("cannot see whether it is running");
     expect(note).not.toHaveTextContent("closed");
     expect(note).not.toHaveTextContent(/wake .* now/i);
   });

@@ -9,7 +9,7 @@ import { stripCode } from "./mentions";
 // - insert: `$<id> (<label>) ` — agents act on the id, the label is what a reader sees;
 // - render: `$<id>` (with its optional ` (label)`) outside code becomes a link chip.
 
-export type RefKind = "epic" | "story" | "task" | "design" | "strategy_hl" | "strategy_ll" | "report" | "decision";
+export type RefKind = "epic" | "story" | "task" | "design" | "strategy_hl" | "strategy_ll" | "report" | "decision" | "artifact";
 
 export interface RefRow {
   id: string;
@@ -17,15 +17,17 @@ export interface RefRow {
   title: string;
   /** "scope" = this epic's tree, "board" = the board's other open items */
   group: "scope" | "board";
+  /** artifacts: the title of the epic the artifact is linked to (null: linked to none) */
+  epic?: string | null;
 }
 
 const PREFIX: [string, RefKind][] = [
   ["epic-", "epic"], ["s-", "story"], ["t-", "task"], ["design-", "design"], ["strategyhl-", "strategy_hl"],
-  ["strategyll-", "strategy_ll"], ["report-", "report"], ["dec-", "decision"],
+  ["strategyll-", "strategy_ll"], ["report-", "report"], ["dec-", "decision"], ["art-", "artifact"],
 ];
 
 /** A referenceable board id: one of the eight prefixes plus the board's 10 hex digits. */
-export const REF_ID = /^(?:epic|s|t|design|strategyhl|strategyll|report|dec)-[0-9a-f]{10}$/;
+export const REF_ID = /^(?:epic|s|t|design|strategyhl|strategyll|report|dec|art)-[0-9a-f]{10}$/;
 
 /** The kind an id names, from its prefix (null: not a referenceable id). */
 export function refKind(id: string): RefKind | null {
@@ -35,7 +37,7 @@ export function refKind(id: string): RefKind | null {
 
 /** Short kind label for a picker row / chip. */
 export function kindLabel(k: RefKind): string {
-  return { epic: "epic", story: "story", task: "task", design: "design", strategy_hl: "hl", strategy_ll: "ll", report: "report", decision: "decision" }[k];
+  return { epic: "epic", story: "story", task: "task", design: "design", strategy_hl: "hl", strategy_ll: "ll", report: "report", decision: "decision", artifact: "artifact" }[k];
 }
 
 /** Whether the caret after `left` sits in code a closed-span strip misses: a fence (``` or ~~~) opened and not
@@ -70,7 +72,7 @@ function score(q: string, r: RefRow): number {
   if (id.startsWith(q)) return 0;
   if (title.startsWith(q)) return 1;
   if (new RegExp(`(^|[^a-z0-9])${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(title)) return 2;
-  if (title.includes(q) || id.includes(q)) return 3;
+  if (title.includes(q) || id.includes(q) || (r.epic ?? "").toLowerCase().includes(q)) return 3;
   return -1;
 }
 
@@ -108,7 +110,7 @@ export function refToken(r: Pick<RefRow, "id" | "title">): string {
 
 export type RefPart = string | { id: string; kind: RefKind; label: string | null };
 
-const REF_IN_TEXT = /(^|[^\w$])\$((?:epic|s|t|design|strategyhl|strategyll|report|dec)-[0-9a-f]{10})(?![\w-])(?: \(([^()\n]{1,80})\))?/g;
+const REF_IN_TEXT = /(^|[^\w$])\$((?:epic|s|t|design|strategyhl|strategyll|report|dec|art)-[0-9a-f]{10})(?![\w-])(?: \(([^()\n]{1,80})\))?/g;
 
 /** Split plain text (no code in it) into text and `$<id>` references (with their ` (label)`). */
 export function splitRefs(text: string): RefPart[] {
@@ -137,6 +139,7 @@ export function refIds(text: string): string[] {
  *  no decision page). `here` is the current in-app path (without the base). */
 export function refHref(id: string, kind: RefKind, here: string): string {
   if (kind === "epic") return `/epic/${encodeURIComponent(id)}`;
+  if (kind === "artifact") return `/artifact/${encodeURIComponent(id)}`;
   if (kind === "story" || kind === "task") return `/ticket/${encodeURIComponent(id)}`;
   if (kind === "decision") return `${here}?${new URLSearchParams({ view: "history", category: "decisions" })}`;
   return `${here}?${new URLSearchParams({ doc: id })}`;
@@ -155,6 +158,21 @@ export function scopeRows(
   for (const t of tickets) { const k = refKind(t.id); if (k) out.push({ id: t.id, kind: k, title: t.title, group: "scope" }); }
   for (const d of docs) { const k = refKind(d.id); if (k && DOC_KINDS.has(k)) out.push({ id: d.id, kind: k, title: d.title, group: "scope" }); }
   for (const d of decisions) if ((d.status ?? "live") === "live" && refKind(d.id)) out.push({ id: d.id, kind: "decision", title: d.text, group: "scope" });
+  return out;
+}
+
+/** Rows from `GET /v1/artifacts/search`: the server already put the asked epic's artifacts first (group scope),
+ *  names each one's epic, and scoped the list to what the caller may read. */
+export function artifactRows(raw: unknown): RefRow[] {
+  if (!Array.isArray(raw)) return [];
+  const out: RefRow[] = [];
+  for (const r of raw.slice(0, 200)) {
+    if (!r || typeof r !== "object") continue;
+    const { id, title, group, epic_title } = r as Record<string, unknown>;
+    if (typeof id !== "string" || refKind(id) !== "artifact" || typeof title !== "string") continue;
+    out.push({ id, kind: "artifact", title: title.slice(0, 300), group: group === "scope" ? "scope" : "board",
+      epic: typeof epic_title === "string" ? epic_title.slice(0, 120) : null });
+  }
   return out;
 }
 

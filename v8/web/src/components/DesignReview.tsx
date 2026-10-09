@@ -1,3 +1,4 @@
+import { useIsGuest } from "../auth/guest";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -54,7 +55,7 @@ function useNarrow(): boolean {
   return narrow;
 }
 
-export function DesignReview({ docId, version, source, request, children, onLatest, title, versions, onPickVersion, outline, tabHref, onBack }: {
+export function DesignReview({ docId, version, source, request, children, onLatest, title, versions, onPickVersion, outline, tabHref, onBack, readerOverride }: {
   docId: string; version: number; source: string; request?: string | null; children?: React.ReactNode; onLatest?: (version: number) => void; title?: string;
   /** Every version of the doc: the state line's "Version N" menu (revision3-clean-review.png). */
   versions?: number[]; onPickVersion?: (version: number) => void;
@@ -64,6 +65,9 @@ export function DesignReview({ docId, version, source, request, children, onLate
   tabHref?: string;
   /** A nested doc in the viewer: back to the doc that linked it. */
   onBack?: () => void;
+  /** On /doc the page's own "Show panel" by the title is the one switch (qa m-b25e693093): it sets this strip's reader mode too,
+   *  and the strip shows no toggle of its own. */
+  readerOverride?: boolean;
 }): React.JSX.Element {
   const close = useDrawerClose();
   const menuRef = useRef<HTMLDetailsElement>(null);
@@ -87,7 +91,8 @@ export function DesignReview({ docId, version, source, request, children, onLate
   // t-feb26a46d9 (owner m-8d2c74d289 / m-1eaab6a461): reader mode — the document alone, the comment panel and
   // the section index hidden — is the default in the pop-up and in the tab. A kept draft reopens with the
   // panel shown (hiding it would hide the draft); starting a comment or a change request shows it too.
-  const [reader, setReader] = useState(!draft.current.text);
+  const [readerOwn, setReader] = useState(!draft.current.text);
+  const reader = readerOverride ?? readerOwn;
   const openMode = (m: "comment" | "request_changes") => { setMode(m); setReader(false); };
   const action = useRef<{ signature: string; key: string } | null>(draft.current.pendingAction ?? null);
   const qc = useQueryClient();
@@ -123,17 +128,19 @@ export function DesignReview({ docId, version, source, request, children, onLate
     onClick={() => setReader((r) => !r)}>
     <Icon name={reader ? "collapse" : "expand"} size={18} /> {reader ? "Show panel" : "Reader mode"}</button>;
   const tools = <div className={styles.tools}>
-    {readerToggle}
+    {readerOverride === undefined ? readerToggle : null}
     {tabHref ? <Link className={styles.tool} to={tabHref} target="_blank">Open in tab <Icon name="external" size={18} /></Link> : null}
     {close ? <button type="button" className={styles.tool} onClick={close}><Icon name="close" size={18} /> Close</button> : null}
   </div>;
+  // e0cec S5: a guest reads and comments on a design but never approves or requests changes (a gate answer).
+  const guest = useIsGuest();
   const back = onBack ? <button type="button" className={styles.back} aria-label="Back" onClick={onBack}>‹</button> : null;
   const framed = close ? `${styles.review} ${styles.framed}` : styles.review;
   if (context.isPending) return <section className={framed}><div className={styles.head}><div className={styles.bar}>{back}<span className={styles.title}>Checking document context…</span>{tools}</div></div></section>;
   if (context.isError) return <section className={framed}><div className={styles.head}><div className={styles.bar}>{back}<span className={styles.title}>{title ?? docId}</span>{tools}</div></div><div className={styles.plainScroll}><p role="alert" className={styles.notice}>Cannot use this source for review: {context.error.message}. The document remains readable. <Link to={`/doc/${encodeURIComponent(docId)}?version=${version}`}>Select a linked conversation source</Link></p>{children}</div></section>;
   const ctx = context.data;
   const sourcePath = `/${ctx.source_kind === "epic" ? "epic" : "ticket"}/${encodeURIComponent(source)}`;
-  const reviewOpen = Boolean(ctx.can_review && ctx.gate_event_id);
+  const reviewOpen = Boolean(ctx.can_review && ctx.gate_event_id) && !guest;
   const latestNote = version !== ctx.current_version ? `latest is v${ctx.current_version}` : null;
   const reviewNote = reviewOpen ? "Review requested" : null;
   const multi = (versions?.length ?? 0) > 1 && onPickVersion;

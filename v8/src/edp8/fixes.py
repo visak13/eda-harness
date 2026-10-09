@@ -3,7 +3,7 @@
 The Help seat never changes anything itself. It proposes one structured action from a closed set, and the
 board turns the action into the exact route call that would carry it out. That call is always an existing
 S5 admin route (services, capacity, teammates, agent tokens) or the board's own gate route. It is stored
-as a `FixProposal` and shown to admins as an approval card on the help thread and in Needs you.
+as a `FixProposal` and shown to admins as an approval card on the help thread.
 
 Nothing runs before Approve. On Approve, the admin's own credentials run that one call, in-process against
 the same app, so every S5 guard (admin gate, supervisor refusals, pool clamps, token mode) applies exactly
@@ -17,71 +17,20 @@ proposes a fixed workflow version for new epics, or the gate or checker action t
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Any
 
-from pydantic import BaseModel, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, ValidationError
 
 from .board import _TERMINAL, Board, BoardError, is_help
-from .schemas import FixProposal, Gate, Participant, Role, now
+from .fix_actions import (_ACTION, KINDS, Action, GateAnswerAction, GateOpenAction,  # noqa: F401 - re-exported
+                          PoolLimitsAction, RevokeAgentTokenAction, RotateTokenAction, ServiceAction,
+                          _fields_by_kind)
+from .schemas import FixProposal, Participant, Role, now
 from .store import new_id
 
 SERVICES = ("board", "broker", "pool", "mcp", "bridge")
 #: response keys never copied into the thread or the stored result (a rotated token is shown once, to the approver)
 SECRET_KEYS = frozenset({"token", "secret", "key", "auth_key", "password"})
-
-
-#: an id or handle that goes into a route path: no slash, dot-dot, query or escape can steer the call elsewhere
-_ID = r"^@?[A-Za-z0-9][A-Za-z0-9_\-]*(\.[A-Za-z0-9_\-]+)*$"
-
-
-class _A(BaseModel):
-    model_config = {"extra": "forbid"}
-
-
-class ServiceAction(_A):
-    kind: Literal["service.restart", "service.start", "service.stop"]
-    service: Literal["board", "broker", "pool", "mcp", "bridge"]
-    force: bool = False        # pool stop/restart with live seats: take them offline
-    keep_seats: bool = False   # pool: restart the process only, seats are re-adopted
-
-
-class PoolLimitsAction(_A):
-    kind: Literal["pool.set_limits"]
-    max_total_shells: int | None = Field(default=None, ge=1)
-    max_live_shells: int | None = Field(default=None, ge=1)
-    classes: dict[Literal["builder", "planner"], Annotated[int, Field(ge=1)]] | None = None
-    role_caps: dict[str, Annotated[int, Field(ge=1)]] | None = None
-
-
-class GateOpenAction(_A):
-    kind: Literal["gate.open"]
-    ticket_id: str = Field(pattern=_ID, max_length=80)
-    gate: Gate
-    note: str = Field(min_length=1, max_length=2000)
-
-
-class GateAnswerAction(_A):
-    kind: Literal["gate.answer"]
-    ticket_id: str = Field(pattern=_ID, max_length=80)
-    gate: Gate
-    answer: str = Field(min_length=1, max_length=2000)
-
-
-class RotateTokenAction(_A):
-    kind: Literal["teammate.rotate_token"]
-    handle: str = Field(pattern=_ID, max_length=80)
-
-
-class RevokeAgentTokenAction(_A):
-    kind: Literal["agent_token.revoke"]
-    handle: str = Field(pattern=_ID, max_length=80)
-
-
-Action = Annotated[ServiceAction | PoolLimitsAction | GateOpenAction | GateAnswerAction | RotateTokenAction
-                   | RevokeAgentTokenAction, Field(discriminator="kind")]
-_ACTION = TypeAdapter(Action)
-KINDS = ("service.restart", "service.start", "service.stop", "pool.set_limits", "gate.open", "gate.answer",
-         "teammate.rotate_token", "agent_token.revoke")
 
 
 def parse(action: dict[str, Any]) -> BaseModel:
@@ -91,7 +40,7 @@ def parse(action: dict[str, Any]) -> BaseModel:
         first = e.errors()[0]
         where = ".".join(str(x) for x in first.get("loc", ())) or "action"
         raise BoardError("invalid", f"not a fix action: {where}: {first.get('msg')}",
-                         f"action.kind is one of {', '.join(KINDS)}; see the doctor card for each one's fields") \
+                         f"action.kind and fields (? optional): {_fields_by_kind()}") \
             from None
 
 
@@ -123,7 +72,7 @@ def card_text(f: FixProposal) -> str:
     body = f.request.get("body")
     return (f"[fix proposed] {f.id}: {f.action.get('kind')} → {f.request['method']} {f.request['path']}"
             + (f" {body}" if body else "") + f"\nEffect: {f.effect}\n"
-            "Nothing runs until an admin presses Approve (Needs you, or this thread's fix card).")
+            "Nothing runs until an admin presses Approve (this thread's fix card).")
 
 
 # ----------------------------------------------------------------------------- lifecycle

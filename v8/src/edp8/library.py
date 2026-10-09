@@ -52,6 +52,8 @@ def knowledge_view(board: Board) -> dict[str, Any]:
                      "created_at": d.created_at.isoformat(), "source": d.source, "source_url": d.source_url,
                      "resolution": d.resolution, "linked": by_doc.get(d.id, [])})
     lessons = [{"id": le.id, "domain": le.domain, "topic": le.topic, "text": le.text, "status": le.status.value,
+                "scope_kind": le.scope_kind.value, "project": le.project, "domains": le.domains,
+                "retired_reason": le.retired_reason,
                 "created_by": le.created_by, "created_at": le.created_at.isoformat()}
                for le in board.store.query("lesson", {}, limit=2000, newest_first=True)]
     epics = [{"id": t.id, "title": t.title, "status": t.status.value}

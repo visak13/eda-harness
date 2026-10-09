@@ -44,10 +44,13 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
 
 export class TabBar {
   readonly bar = el('div', 'tabbar');
+  /** the bar with its ‹ › cues: what the view puts on the page (qa 0.10.8 round 3: nothing showed the strip scrolls) */
+  readonly strip = el('div', 'tabstrip');
   readonly panels = el('div', 'panels');
   private buttons = new Map<string, HTMLButtonElement>();
   private panel = new Map<string, HTMLElement>();
   private active: string;
+  private cue: () => void = () => {};
 
   constructor(private tabs: readonly Tab[], initial: string, private onSelect: (id: string) => void) {
     this.bar.setAttribute('role', 'tablist');
@@ -71,6 +74,24 @@ export class TabBar {
       this.panels.append(p);
     }
     this.bar.addEventListener('keydown', e => this.onKey(e));
+    // ‹ › appear on the edge that has more tabs behind it, and scroll that way; the arrow keys still reach every tab
+    const more = (dir: -1 | 1) => {
+      const b = el('button', `tab-more tab-more-${dir < 0 ? 'left' : 'right'}`, dir < 0 ? '‹' : '›');
+      b.type = 'button';
+      b.tabIndex = -1;
+      b.setAttribute('aria-hidden', 'true');
+      b.addEventListener('click', () => this.bar.scrollBy?.({ left: dir * Math.max(80, this.bar.clientWidth * 0.7), behavior: 'smooth' }));
+      return b;
+    };
+    this.strip.append(this.bar, more(-1), more(1));
+    const cue = () => {
+      const max = this.bar.scrollWidth - this.bar.clientWidth;
+      this.strip.classList.toggle('more-left', this.bar.scrollLeft > 2);
+      this.strip.classList.toggle('more-right', this.bar.scrollLeft < max - 2);
+    };
+    this.bar.addEventListener('scroll', cue, { passive: true });
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(cue).observe(this.bar);
+    this.cue = cue;
     this.paint();
   }
 
@@ -86,6 +107,7 @@ export class TabBar {
     const b = this.buttons.get(id)!;
     if (focus) b.focus();
     b.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }); // C16: a bar wider than the panel scrolls to the shown tab
+    this.cue();
   }
 
   /** Labels and count badges, from the current state. */
@@ -102,6 +124,7 @@ export class TabBar {
       b.setAttribute('aria-label', badge ? `${t.label}, ${badge.aria}` : t.label);
       b.title = badge ? `${t.label}: ${badge.aria}` : t.label;
     }
+    this.cue(); // a badge widens its tab
   }
 
   private paint(): void {

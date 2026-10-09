@@ -1,7 +1,8 @@
+import { hideFromGuests, usePoolCapabilities } from "../auth/guest";
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { patchTicket } from "../api/endpoints";
-import { getPoolCapabilities, modelLabel, spawnSeat } from "../api/seats";
+import { modelLabel, spawnSeat } from "../api/seats";
 import { BoardApiError } from "../api/client";
 import type { PoolCapabilities, SeatChoice } from "../api/types";
 import styles from "./AssignControl.module.css";
@@ -25,12 +26,21 @@ export function SeatChoiceLabel({ choice }: { choice: SeatChoice | null | undefi
   );
 }
 
+/** S12-ui2 (qa m-da89ef8294): whether the pool can spawn a seat here (shares the capabilities query). The
+ *  Actions label follows it, so the dialog never offers a spawn its body then says is unavailable. */
+export function usePoolCanSpawn(): boolean {
+  const capsQ = usePoolCapabilities();
+  return !!(capsQ.data as PoolCapabilities | undefined)?.spawn;
+}
+
+export const assignLabel = (canSpawn: boolean): string => (canSpawn ? "Assign or spawn a seat" : "Assign a seat");
+
 // Assign / spawn control (design §16): put a seat on the ticket without leaving the page. Two ways —
 // name an existing participant as the assignee (a plain PATCH), or spawn a fresh engineer seat for
 // this ticket through the pool. Spawn shows ONLY when the pool reports it can (capabilities), so the
 // page never offers an action the environment can't perform; when it can't, it says why in plain
 // words. Authorisation and idempotency are the board's — the control reports its hint verbatim.
-export function AssignControl({
+function AssignControlView({
   ticketId,
   currentAssignee,
   seatChoice,
@@ -42,7 +52,7 @@ export function AssignControl({
 }): React.JSX.Element {
   const qc = useQueryClient();
   const [who, setWho] = useState("");
-  const capsQ = useQuery({ queryKey: ["pool", "capabilities"], queryFn: getPoolCapabilities, retry: false });
+  const capsQ = usePoolCapabilities();
   const caps = capsQ.data as PoolCapabilities | undefined;
 
   // The control mounts on both the Ticket page (["ticket", id]) and the Epic page (["epic", id]);
@@ -70,7 +80,7 @@ export function AssignControl({
     <div className={styles.control} data-testid="assign-control">
       <p className={styles.current}>
         <span className={styles.currentLabel}>Assigned to</span>{" "}
-        <span data-testid="assign-current">{currentAssignee ?? "no one yet"}</span>
+        <span data-testid="assign-current">{currentAssignee ?? "Unassigned"}</span>
       </p>
 
       <form
@@ -108,11 +118,12 @@ export function AssignControl({
         >
           {spawn.isPending ? "Spawning…" : "Spawn a fresh engineer seat for this ticket"}
         </button>
-      ) : (
+      ) : caps?.reason ? (
+        // the pool's own reason, when it gives one; no fallback sentence (the dialog is then titled "Assign a seat")
         <p className={styles.note} data-testid="spawn-unavailable">
-          {caps?.reason ?? "Spawning a seat isn't available here — assign an existing one instead."}
+          {caps.reason}
         </p>
-      )}
+      ) : null}
 
       {err ? (
         <p className={styles.error} role="alert" data-testid="assign-error">
@@ -122,3 +133,6 @@ export function AssignControl({
     </div>
   );
 }
+
+/** e0cec S5: a guest never sees this control (the board refuses it). */
+export const AssignControl = hideFromGuests(AssignControlView);

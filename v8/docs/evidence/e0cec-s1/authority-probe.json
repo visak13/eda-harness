@@ -1,0 +1,92 @@
+{
+ "gate_answer (member epic)": {
+  "status": 400,
+  "landed": false,
+  "why": "gate demo is answered by a human owner, not guest"
+ },
+ "criterion verdict (member epic)": {
+  "status": 400,
+  "landed": false,
+  "why": "verdicts are recorded by qa/owner only"
+ },
+ "spawn": {
+  "status": 403,
+  "landed": false,
+  "why": "role 'guest' may not operate the pool control plane"
+ },
+ "reap": {
+  "status": 403,
+  "landed": false,
+  "why": "role 'guest' may not operate the pool control plane"
+ },
+ "admin settings": {
+  "status": 403,
+  "landed": false,
+  "why": "admin routes need an admin human's X-Participant and X-Token"
+ },
+ "ticket status \u2192 dropped (member epic)": {
+  "status": 200,
+  "landed": true,
+  "why": ""
+ },
+ "ticket create in member epic": {
+  "status": 400,
+  "landed": false,
+  "why": "guest may not create a story"
+ },
+ "doc create": {
+  "status": 200,
+  "landed": true,
+  "why": ""
+ },
+ "link create into OTHER epic": {
+  "status": 200,
+  "landed": true,
+  "why": ""
+ },
+ "message on OTHER epic": {
+  "status": 200,
+  "landed": true,
+  "why": ""
+ },
+ "message on member epic": {
+  "status": 200,
+  "landed": true,
+  "why": ""
+ },
+ "models list": {
+  "status": 200,
+  "landed": true,
+  "why": ""
+ },
+ "workflows list": {
+  "status": 200,
+  "landed": true,
+  "why": ""
+ },
+ "harvest cost": {
+  "status": 422,
+  "landed": false,
+  "why": "[{'type': 'missing', 'loc': ['query', 'participant_id'], 'msg': 'Field required', 'input': None}]"
+ },
+ "ticket list (unscoped today)": {
+  "status": 200,
+  "landed": true,
+  "why": ""
+ },
+ "docs list (unscoped today)": {
+  "status": 200,
+  "landed": true,
+  "why": ""
+ },
+ "epic page OTHER epic (unscoped today)": {
+  "status": 200,
+  "landed": true,
+  "why": ""
+ },
+ "messages list OTHER epic (unscoped today)": {
+  "status": 200,
+  "landed": true,
+  "why": ""
+ }
+}

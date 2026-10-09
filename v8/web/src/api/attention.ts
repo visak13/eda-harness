@@ -6,10 +6,10 @@ import { api, postJson } from "./client";
 // or the page's own thread / fixes) → section → ticket row → item. Every dot in the app reads this list through the
 // helpers below; no surface computes its own rule. A board without the route (older build) yields no dots.
 
-export type AttentionTab = "actions" | "design" | "files" | "work" | "thread" | "fixes" | "teammates";
+export type AttentionTab = "work" | "thread";
 
 export interface AttentionItem {
-  kind: "ask" | "gate" | "signoff" | "fix" | "access_request";
+  kind: "ask"; // s-aa76c83998: gates, fixes and access requests reach the owner as chat messages, which are asks
   id: string;
   since: string;
   label: string;
@@ -22,10 +22,10 @@ export interface AttentionItem {
   ticket: { id: string; title: string } | null;
   /** Where the item sits on the page that holds it (the ticket page for a child ticket's item). */
   at: { tab: AttentionTab; section: string };
-  item: { type: string; id: string; gate?: string; doc?: string | null };
+  item: { type: string; id: string };
   url: string;
-  /** t-77c3a55b75 (owner m-0e6940fe2c): a sign-off's or gate's plain-words question ("Accept the hl-craft strategy?"). */
-  ask?: string;
+  /** e0cec S3: why only this person can act on the item (owner-only). */
+  why?: string;
 }
 
 export interface AttentionScope {

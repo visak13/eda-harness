@@ -54,7 +54,8 @@ def rig(client):
     kt = post("/v1/tickets", {"kind": "story", "work_type": "knowledge", "title": "hl-craft",
                               "parent_id": epic, "assignee": "craft"}, {"X-Participant": "arch"})["id"]
     kcrit = post("/v1/criteria", {"ticket_id": kt, "text": "strategy doc signed by the owner",
-                                  "check": "look", "checked_by": "owner"}, {"X-Participant": "arch"})["id"]
+                                  "check": "look", "checked_by": "owner",
+                                  "override_reason": "the owner signs the strategy doc"}, OWN)["id"]
     doc = post("/v1/docs", {"doc_type": "strategy_hl", "title": "shape",
                             "body_md": "# Walking skeleton\n- build the **thin** thread first",
                             "scope": epic}, {"X-Participant": "craft"})["id"]
@@ -71,36 +72,6 @@ def _get(rig, path, **params):
 
 
 # --------------------------------------------------------------------------- me
-
-
-def test_decisions_owner_sees_signoff(rig):
-    v = _get(rig, "/v1/me/decisions")
-    assert v["counts"]["signoffs"] == 1
-    so = v["signoffs"][0]
-    assert so["criterion"]["id"] == rig["kcrit"]
-    assert so["ticket"]["id"] == rig["kt"] and so["ticket"]["epic_id"] == rig["epic"]
-    assert so["doc"]["id"] == rig["doc"] and so["doc"]["doc_type"] == "strategy_hl"
-    assert "thin" in so["excerpt"]
-    assert isinstance(v["gates"], list)
-
-
-def test_decisions_question_rows_say_why(rig):
-    """Promise #21 (design §16.2): every question row carries a `why` clause derived from the
-    inbox routing — addressed to the viewer's id, or to their role on an epic they work in."""
-    v = _get(rig, "/v1/me/decisions")
-    assert [q["why"] for q in v["questions"]] == ["addressed to you (@owner)"]
-    # a bare-role address reaches the architect who created the story (same epic)
-    r = rig["client"].post("/v1/messages", json={"ticket_id": rig["story"], "kind": "question",
-                                                   "to": "architect", "text": "two?"}, headers=RAVI).json()
-    assert r["ok"], r
-    v = rig["client"].get("/v1/me/decisions", headers={"X-Participant": "arch"}).json()["value"]
-    assert [q["why"] for q in v["questions"]] == ["addressed to your role (architect)"]
-
-
-def test_decisions_non_owner_empty_signoffs_and_gates(rig):
-    r = rig["client"].get("/v1/me/decisions", headers=RAVI).json()
-    assert r["ok"], r
-    assert r["value"]["signoffs"] == [] and r["value"]["gates"] == []
 
 
 def test_people_and_conversations_and_summary(rig):
@@ -188,8 +159,8 @@ def test_docs_html_sanitised_with_signoff(client):
     epic = post("/v1/tickets", {"kind": "epic", "work_type": "feature", "title": "E"}, OWN)["id"]
     kt = post("/v1/tickets", {"kind": "story", "work_type": "knowledge", "title": "k",
                               "parent_id": epic, "assignee": "craft"}, {"X-Participant": "arch"})["id"]
-    kcrit = post("/v1/criteria", {"ticket_id": kt, "text": "signed", "check": "look", "checked_by": "owner"},
-                 {"X-Participant": "arch"})["id"]
+    kcrit = post("/v1/criteria", {"ticket_id": kt, "text": "signed", "check": "look", "checked_by": "owner",
+                                  "override_reason": "the owner signs it"}, OWN)["id"]
     body = "# Title\n\n<script>alert(1)</script>\n<img src=x onerror=alert(2)>\n\n[safe](https://ok.test)"
     doc = post("/v1/docs", {"doc_type": "strategy_hl", "title": "d", "body_md": body, "scope": epic},
                {"X-Participant": "craft"})["id"]
@@ -371,6 +342,7 @@ def test_seats_lists_agent_seats_closed_and_humans(rig):
     assert eng["state"] == "alive"
     assert eng["ticket_title"] == "fix the ship sheet"
     assert eng["latest_status"]["text"] == "Owner checks are ready for review."
+    assert eng["latest_status"]["html"] == "<p>Owner checks are ready for review.</p>"  # S12-ui2: rendered markdown
     assert eng["latest_status"]["status"] == "reviewed"
     assert eng["latest_status"]["role"] == "engineer"
 
@@ -397,20 +369,6 @@ def test_seats_readable_by_any_participant(rig):
     assert "seats" in r["value"] and "people" in r["value"]
 
 
-def test_resolved_lists_the_owners_own_verdict_without_a_feed_subscription(rig):
-    """§4.1 Resolved: a ruling the viewer just made is visible after it leaves the inbox — sourced
-    from the event log by kind, not from the viewer's feed relevance (acceptance finding: on a fresh
-    board the owner's approve never showed under Resolved because replay() delivered nothing)."""
-    c = rig["client"]
-    assert _get(rig, "/v1/me/decisions/resolved") == []
-    r = c.post("/v1/me/verdict", json={"criterion_id": rig["kcrit"], "verdict": "pass", "evidence_version": 1,
-                                       "note": "", "ticket_id": rig["kt"]}, headers=OWN).json()
-    assert r["ok"], r
-    rows = _get(rig, "/v1/me/decisions/resolved")
-    assert [x["criterion"] for x in rows if x["kind"] == "verdict"] == [rig["kcrit"]]
-    assert rows[0]["verdict"] == "pass"
-
-
 def test_replies_to_me_lists_answers_with_the_words_they_answer(client):
     """Human report m-3d3a36455f (2026-09-10): a person who wrote from the UI must find the reply on
     their Decisions page — /v1/me/replies lists answers addressed to them / replying to them, with the
@@ -432,13 +390,11 @@ def test_replies_to_me_lists_answers_with_the_words_they_answer(client):
     assert rows[0]["in_reply_to"]["text"] == "did you see my bug list?" and rows[0]["ticket_title"] == "E"
 
 
-def test_s_ui_decisions_rows_carry_their_epic_for_the_epic_filter(rig):
-    """S-UI (c-ef986a3491): the Decisions page defaults to one epic, so every row names its root epic —
-    signoffs (already), questions, gates, resolved and replies."""
-    v = _get(rig, "/v1/me/decisions")
-    assert [q["epic_id"] for q in v["questions"]] == [rig["epic"]]
-    assert {s["ticket"]["epic_id"] for s in v["signoffs"]} == {rig["epic"]}
-    r = rig["client"].post("/v1/me/verdict", json={"criterion_id": rig["kcrit"], "verdict": "pass", "evidence_version": 1,
-                                                    "note": "", "ticket_id": rig["kt"]}, headers=OWN).json()
+def test_the_decisions_reads_are_gone_and_the_verdict_still_records(rig):
+    """s-aa76c83998: the Needs-you reads (/v1/me/decisions, /resolved) are deleted; the owner's verdict route stays."""
+    c = rig["client"]
+    for path in ("/v1/me/decisions", "/v1/me/decisions/resolved"):
+        assert c.get(path, headers=OWN).status_code == 404, path
+    r = c.post("/v1/me/verdict", json={"criterion_id": rig["kcrit"], "verdict": "pass", "evidence_version": 1,
+                                       "note": "", "ticket_id": rig["kt"]}, headers=OWN).json()
     assert r["ok"], r
-    assert {x["epic_id"] for x in _get(rig, "/v1/me/decisions/resolved")} == {rig["epic"]}

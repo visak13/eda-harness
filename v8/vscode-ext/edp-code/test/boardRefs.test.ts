@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { activeRef, boardRows, cleanRows, rankRefs, refIds, refKind, refLabel, refToken, scopeRows, splitRefs, type RefRow } from '../src/core/boardRefs';
+import { activeRef, artifactRows, boardRows, cleanRows, rankRefs, refIds, refKind, refLabel, refToken, scopeRows, splitRefs, type RefRow } from '../src/core/boardRefs';
 
 // C24 (s-5d1b171d57): the $-reference contract, read from the one fixture the SPA's tests read too.
 const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../tests/fixtures/ref_cases.json'), 'utf8')) as {
@@ -100,5 +100,35 @@ describe('cleanRows (the view side of the host answer)', () => {
       { id: 'dec-bf6aab8b73', title: 7, group: 'board' }, { id: 'dec-bf6aab8b73', title: 'ok', group: 'elsewhere' }, null, 'x']);
     expect(out).toEqual([{ id: 's-5d1b171d57', kind: 'story', title: 'x'.repeat(300), group: 'scope' }]);
     expect(cleanRows({})).toEqual([]);
+  });
+});
+
+describe('artifact rows (S16, GET /v1/artifacts/search)', () => {
+  const raw = [
+    { id: 'art-0123456789', title: 'alpha-shot.png', group: 'scope', epic_title: 'Alpha' },
+    { id: 'art-abcdef0123', title: 'Bravo report', group: 'board', epic_title: null },
+    { id: 's-5d1b171d57', title: 'a ticket is not an artifact row', group: 'board' },
+    { id: 'art-xyz', title: 'malformed id', group: 'board' },
+    { title: 'no id', group: 'board' },
+  ];
+  it("keeps well-formed artifact rows with the server's group and the epic it names", () => {
+    expect(artifactRows(raw)).toEqual([
+      { id: 'art-0123456789', kind: 'artifact', title: 'alpha-shot.png', group: 'scope', epic: 'Alpha' },
+      { id: 'art-abcdef0123', kind: 'artifact', title: 'Bravo report', group: 'board', epic: null },
+    ]);
+    expect(artifactRows('nope')).toEqual([]);
+  });
+  it('an artifact id is a referenceable id: kind, label and insert token', () => {
+    expect(refKind('art-0123456789')).toBe('artifact');
+    expect(refKind('art-0123')).toBeNull();
+    expect(refToken({ id: 'art-0123456789', title: 'alpha-shot.png' })).toBe('$art-0123456789 (alpha-shot.png) ');
+    expect(refIds('see $art-0123456789 (alpha-shot.png) and `$art-abcdef0123`')).toEqual(['art-0123456789']);
+  });
+  it('ranks on the epic title too, scope rows first; cleanRows keeps the epic', () => {
+    const rows = artifactRows(raw);
+    expect(rankRefs('alpha', [rows[0]], [rows[1]]).map((r) => r.id)).toEqual(['art-0123456789']);
+    expect(rankRefs('art', [rows[0]], [rows[1]]).map((r) => [r.id, r.group])).toEqual([['art-0123456789', 'scope'], ['art-abcdef0123', 'board']]);
+    expect(rankRefs('zzz', [rows[0]], [rows[1]])).toEqual([]);
+    expect(cleanRows([{ id: 'art-0123456789', title: 't', group: 'scope', epic: 'Alpha' }])).toEqual([{ id: 'art-0123456789', kind: 'artifact', title: 't', group: 'scope', epic: 'Alpha' }]);
   });
 });

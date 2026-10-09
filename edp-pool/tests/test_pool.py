@@ -421,10 +421,25 @@ def test_wp2_provenance_resolves_from_spawner_pin(tmp_path, monkeypatch):
     assert svc.sessions[sid]["model"] == "claude-fable-5"
 
 
-def test_spawn_effort_rides_the_shell_env_and_spawn_settings(client):
+def _effort_catalog(tmp_path, monkeypatch):
+    import json
+    cat = {"models": {
+        "astra": {"harness": "codex", "provider": "codex", "effort_cap": "high"},
+        "sonnet-hi": {"harness": "claude", "provider": "claude", "context_window": 1_000_000,
+                      "auto_compact": 350_000, "effort_cap": "high"},
+        "opus-med": {"harness": "claude", "provider": "claude", "context_window": 1_000_000,
+                     "auto_compact": 350_000, "effort_cap": "medium"}},
+        "role_models": {"planner": ["opus-med"]}}
+    (tmp_path / "models.json").write_text(json.dumps(cat), encoding="utf-8")
+    monkeypatch.setenv("EDP_MODELS_CONFIG", str(tmp_path / "models.json"))
+    monkeypatch.setenv("EDP_AGENT_HOME", str(tmp_path))
+
+
+def test_spawn_effort_rides_the_shell_env_and_spawn_settings(client, tmp_path, monkeypatch):
     """epic-6a8a6020fd seat-choice: POST /v1/spawn accepts `effort`; it reaches the backend as
     EDP_SEAT_EFFORT in extra_env (next to the seat token) and is recorded in spawn_settings.env so a
     resume-from-closed re-applies it. No `effort` → no key."""
+    _effort_catalog(tmp_path, monkeypatch)
     r = client.post("/v1/spawn", json={"role": "planner", "handle": "r:eff", "effort": "high",
                                        "env": {"EDP8_TOKEN": "tok-1"}, "model": "astra"})
     assert r.status_code == 200, r.text
@@ -436,6 +451,32 @@ def test_spawn_effort_rides_the_shell_env_and_spawn_settings(client):
     r = client.post("/v1/spawn", json={"role": "planner", "handle": "r:noeff"})
     assert r.status_code == 200
     assert not (svc.spawner.launched[-1]["extra_env"] or {})
+
+
+def test_spawn_above_the_catalog_cap_is_clamped_by_the_pool(client, tmp_path, monkeypatch):
+    """S7 (owner §6 words, "max effort high"): /v1/spawn lowers an effort above the model's catalog cap (a Claude row may be capped
+    at high; xhigh/max are never accepted), on the launched env AND the recorded spawn_settings."""
+    _effort_catalog(tmp_path, monkeypatch)
+    monkeypatch.setenv("EDP_MAX_PLANNERS", "50")
+    monkeypatch.setenv("EDP_MAX_TOTAL_SHELLS", "50")
+    svc = client.app.state.svc
+
+    def spawn(handle, **body):
+        r = client.post("/v1/spawn", json={"role": "planner", "handle": handle, "env": {"EDP8_TOKEN": "t"}, **body})
+        assert r.status_code == 200, r.text
+        return svc.spawner.launched[-1]["extra_env"], svc.sessions[r.json()["session_id"]]["spawn_settings"]["env"]
+
+    for env in spawn("r:hi", model="sonnet-hi", effort="high"):
+        assert env["EDP_SEAT_EFFORT"] == "high"                 # a cap of high allows high
+    for env in spawn("r:med", model="opus-med", effort="high"):
+        assert env["EDP_SEAT_EFFORT"] == "medium"               # capped at the row's medium
+    for env in spawn("r:max", model="sonnet-hi", effort="max"):
+        assert "EDP_SEAT_EFFORT" not in env                     # never above high: dropped, not passed
+    for env in spawn("r:role", effort="high"):                  # no model: the registry's for the role (opus-med)
+        assert env["EDP_SEAT_EFFORT"] == "medium"
+    for env in spawn("r:none", model="no-such-row", effort="high"):
+        assert env["EDP_SEAT_EFFORT"] == "medium"               # no catalog row: capped at medium
+    assert spawn("r:gpt", model="astra", effort="high")[0]["EDP_SEAT_EFFORT"] == "high"
 
 
 def test_spawn_settings_record_whether_the_session_continues_an_old_one(client):

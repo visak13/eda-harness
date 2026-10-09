@@ -1,0 +1,56 @@
+
+
+
+
+
+
+
+
+[tester]	WARNING	nosec encountered (B108), but no failed test on file edp-pool/src\edp_pool\pty\_posix.py:34
+
+
+
+Run started:2026-10-02 01:58:11.114151+00:00
+
+
+
+Test results:
+
+	No issues identified.
+
+
+
+Code scanned:
+
+	Total lines of code: 43178
+
+	Total lines skipped (#nosec): 0
+
+	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 5
+
+
+
+Run metrics:
+
+	Total issues (by severity):
+
+		Undefined: 0
+
+		Low: 156
+
+		Medium: 0
+
+		High: 0
+
+	Total issues (by confidence):
+
+		Undefined: 0
+
+		Low: 0
+
+		Medium: 11
+
+		High: 145
+
+Files skipped (0):
+

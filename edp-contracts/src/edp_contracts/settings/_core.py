@@ -338,6 +338,41 @@ def logs_dir() -> Path:
     return data_dir() / "logs" if h is not None or env_raw("EDP8_DATA") else Path(_platform().user_log_dir)
 
 
+class ForeignHome(SettingsError):
+    """A state dir points outside EDP_HOME: acting on it would touch another home's services."""
+
+
+def foreign_dirs() -> list[str]:
+    """The state dirs that point outside EDP_HOME although EDP_HOME is set (S2 incident, p-7d52c9cf): a shell
+    that inherits another home's EDP8_RUN_DIR reads and kills THAT home's service records. With EDP_HOME unset
+    (the installed layout) the home is the platform default: a state dir set in the environment must be inside
+    it too, so an inherited EDP8_RUN_DIR cannot steer an install onto another home's records."""
+    h = home()
+    out = []
+    for name, d in (("EDP8_RUN_DIR", run_dir()), ("EDP8_DATA", data_dir())):
+        if h is None:
+            if env_raw(name) is None:
+                continue
+            base = Path(_platform().user_state_dir if name == "EDP8_RUN_DIR" else _platform().user_data_dir)
+        else:
+            base = h
+        try:
+            Path(d).resolve().relative_to(base.resolve())
+        except ValueError:
+            out.append(f"{name}={d}")
+    return out
+
+
+def home_guard() -> None:
+    """Refuse (ForeignHome) when any state dir disagrees with EDP_HOME. Every command that touches services,
+    records or the DB calls this first (S10: the CLI entry, not only start/stop/update)."""
+    bad = foreign_dirs()
+    if bad:
+        where = home() or "unset (the default per-user home)"
+        raise ForeignHome(f"EDP_HOME is {where} but {', '.join(bad)} points outside it; this would act on another "
+                          "home's services. Unset those variables; nothing changed")
+
+
 def agent_home() -> Path:
     """The seats' home (cards, skills, guides, .mcp.json, models.json). Dev mode: EDP_HOME itself
     (the repo's v8/); installed: <data>/agent-home, materialised from package data."""
@@ -355,6 +390,13 @@ def agent_home() -> Path:
 #: `heronry init` writes the generated admin token here (secrets dir, owner-only), so no secret sits in
 #: config.toml or the environment of every child; env and config.toml still win (S3 s-870e401942).
 ADMIN_TOKEN_FILE = "admin.token"
+#: the participant token file's name in the secrets dir (the EDP8_TOKENS default)
+TOKENS_FILE = "tokens.json"
+#: The one list of secret file names the secrets dir holds. In the EDP_HOME layout the secrets dir is the
+#: home itself, so a guard that refuses secrets (the upload guard) refuses these names there instead of the
+#: whole home; installed, the whole <config>/secrets dir stays refused.
+SECRET_FILES = (TOKENS_FILE, ADMIN_TOKEN_FILE, SECRET_SETTINGS_FILE, "human-tokens.txt", "access-claims.json",
+                "invites.json")
 
 
 def admin_token_file() -> Path:

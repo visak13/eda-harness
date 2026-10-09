@@ -23,7 +23,37 @@ export type ReaderDoc = {
   body: string;
   proposes: string | null;
   resolution: string | null;
+  /** S17: a legacy doc's warning, shown as a banner above the body */
+  warning?: string | null;
+  /** S17: every ATX heading (fences skipped) with its section size in chars, for the outline */
+  map?: SectionSize[];
 };
+export type SectionSize = { h: string; level: number; chars: number };
+
+/** S17: the board's heading map, computed from the body: each ATX heading (fenced code skipped) and its section's
+ *  size up to the next heading of the same or a higher level. */
+export function sectionSizes(body: string): SectionSize[] {
+  const lines = body.split(/(?<=\n)/);
+  const heads: { i: number; level: number; text: string }[] = [];
+  let fence: string | null = null;
+  lines.forEach((raw, i) => {
+    const line = raw.replace(/\r?\n$/, '');
+    const f = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fence !== null) {
+      if (f && f[1][0] === fence[0] && f[1].length >= fence.length && !f[2].trim()) fence = null;
+      return;
+    }
+    if (f) { if (f[1][0] !== '`' || !f[2].includes('`')) fence = f[1]; return; }
+    const h = /^ {0,3}(#{1,6})(?:[ \t]+|$)(.*)$/.exec(line);
+    if (h) heads.push({ i, level: h[1].length, text: h[2].replace(/[ \t]+#+[ \t]*$/, '').trim() });
+  });
+  const at = [0];
+  for (const l of lines) at.push(at[at.length - 1] + l.length);
+  return heads.map((h, n) => {
+    const end = heads.slice(n + 1).find(x => x.level <= h.level)?.i ?? lines.length;
+    return { h: h.text, level: h.level, chars: at[end] - at[h.i] };
+  });
+}
 /** The design gate on this doc, from `GET /v1/docs/{id}/context` (null: not a design, or no source ticket) */
 export type ReaderGate = { ticketId: string; ticketTitle: string; gateEventId: string | null; canApprove: boolean; canReview: boolean; currentVersion: number;
   /** C22: the design the ticket's sign-off is for (its design_ref); undefined when it could not be read */

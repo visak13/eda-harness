@@ -1,0 +1,25 @@
+{"t": 1790991047.295378, "tool": "ticket_read", "args": {"ticket_id": "s-4106e27082"}, "chars": 5677}
+{"t": 1790991055.1734364, "tool": "doc_read", "args": {"id": "design-6229a6b94b"}, "chars": 10579}
+{"t": 1790991055.18845, "tool": "doc_read", "args": {"id": "strategyll-de46e9b3a7"}, "chars": 9415}
+{"t": 1790991055.199747, "tool": "doc_read", "args": {"id": "strategyll-50ec2a9bc8"}, "chars": 8670}
+{"t": 1790991055.213554, "tool": "doc_read", "args": {"id": "strategyll-a39ce76b6e"}, "chars": 8708}
+{"t": 1790991055.2287767, "tool": "doc_read", "args": {"id": "strategyll-dd953fbec6"}, "chars": 16104}
+{"t": 1790991055.2445674, "tool": "ticket_read", "args": {"ticket_id": "s-4106e27082", "include": "chain,criteria,docs,children,blockers,gates,thread,links"}, "chars": 6689}
+{"t": 1790991061.5236783, "tool": "doc_read", "args": {"id": "strategyll-de46e9b3a7"}, "chars": 9415}
+{"t": 1790991061.5480115, "tool": "doc_read", "args": {"id": "strategyll-50ec2a9bc8"}, "chars": 8670}
+{"t": 1790991061.561159, "tool": "doc_read", "args": {"id": "strategyll-a39ce76b6e"}, "chars": 8708}
+{"t": 1790991061.5835946, "tool": "doc_read", "args": {"id": "strategyll-dd953fbec6"}, "chars": 16104}
+{"t": 1790991061.6027665, "tool": "doc_read", "args": {"id": "design-6229a6b94b"}, "chars": 10579}
+{"t": 1790991066.5165648, "tool": "doc_read", "args": {"id": "strategyll-de46e9b3a7", "version": 1, "offset": 0, "limit": 16000}, "chars": 13066}
+{"t": 1790991066.533142, "tool": "doc_read", "args": {"id": "strategyll-50ec2a9bc8", "version": 1, "offset": 0, "limit": 16000}, "chars": 12245}
+{"t": 1790991066.5495937, "tool": "doc_read", "args": {"id": "strategyll-a39ce76b6e", "version": 1, "offset": 0, "limit": 16000}, "chars": 11228}
+{"t": 1790991072.248562, "tool": "doc_read", "args": {"id": "strategyll-dd953fbec6", "version": 1, "offset": 0, "limit": 16000}, "chars": 16369}
+{"t": 1790991072.268404, "tool": "doc_read", "args": {"id": "design-6229a6b94b", "version": 1, "offset": 12500, "limit": 6000}, "chars": 4891}
+{"t": 1790991077.2040339, "tool": "doc_read", "args": {"id": "strategyll-dd953fbec6", "version": 1, "offset": 16000, "limit": 18000}, "chars": 18483}
+{"t": 1790991083.3937204, "tool": "doc_read", "args": {"id": "strategyll-dd953fbec6", "version": 1, "offset": 34000, "limit": 20000}, "chars": 20524}
+{"t": 1790991092.552302, "tool": "doc_read", "args": {"id": "strategyll-dd953fbec6", "version": 1, "offset": 54000, "limit": 15000}, "chars": 15514}
+{"t": 1790991092.5916345, "tool": "doc_read", "args": {"id": "strategyll-dd953fbec6", "version": 1, "offset": 69000, "limit": 15000}, "chars": 13965}
+{"t": 1790991092.62581, "tool": "find", "args": {"query": "A3 retention archival amendments exceptions process", "k": 20}, "chars": 2727}
+{"t": 1790991101.2161138, "tool": "find", "args": {"query": "retention dry_run enabled false verification read write-only credential clarification", "k": 15}, "chars": 3024}
+{"t": 1790991101.2313693, "tool": "find", "args": {"query": "A3 amendment ruling exception", "k": 15}, "chars": 2990}
+{"t": 1790991101.2547498, "tool": "ticket_read", "args": {"ticket_id": "epic-00ff441a1b", "include": "chain,docs,thread,links,blockers,gates"}, "chars": 1023}

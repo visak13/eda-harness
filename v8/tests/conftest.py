@@ -33,6 +33,14 @@ DEAD_PORT = _dead_port()
 
 
 @pytest.fixture(autouse=True)
+def no_wake_mod_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A test run inside a seat launched with the edp-wake mod inherits its env; subscribe() would then
+    answer `wake: "mod"` instead of the Monitor command the tests assert. Tests opt in with monkeypatch."""
+    monkeypatch.delenv("EDP8_FEED_PY", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_PLUGIN_DIRS", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def ui_prefix(monkeypatch: pytest.MonkeyPatch) -> str:
     """The mount prefix the legacy renderer answers on, and the EDP8_UI mode that puts it there.
 
@@ -61,6 +69,13 @@ def isolated_tokens(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytes
     set EDP8_TOKENS themselves (test_human_plane, test_public_mode, test_s20_pool_control …)."""
     if "EDP8_TOKENS" not in os.environ:
         monkeypatch.setenv("EDP8_TOKENS", str(tmp_path_factory.mktemp("tokens") / "absent-tokens.json"))
+
+
+@pytest.fixture(autouse=True)
+def no_browser_tool(monkeypatch: pytest.MonkeyPatch) -> None:
+    """t-732cf1dd92: no test MCP server registers the proxied browser tools or starts the shared service; a test of
+    them turns EDP_BROWSER_MCP on and fakes the service."""
+    monkeypatch.setenv("EDP_BROWSER_MCP", "0")
 
 
 @pytest.fixture(autouse=True)

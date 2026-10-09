@@ -222,33 +222,34 @@ def test_status_says_the_mode_the_running_board_started_in(env, ts):
 
 
 def test_guide_renders_the_same_steps(env, tmp_path, monkeypatch):
-    # t-20f0718990: Remote access links guides/remote-access.md, rendered through the sanitised markdown path
+    # t-20f0718990: Remote access links docs/operator/remote-access.md, rendered through the sanitised markdown path
     home = tmp_path / "home"
-    (home / "guides").mkdir(parents=True)
-    (home / "guides" / "remote-access.md").write_text("# Remote access\n\n## 2. Install Tailscale\n![d](../assets/guides/x.svg)\n<script>x</script>\n",
+    (home / "docs" / "operator").mkdir(parents=True)
+    (home / "docs" / "operator" / "remote-access.md").write_text("# Remote access\n\n## 2. Install Tailscale\n![d](../assets/guides/x.svg)\n<script>x</script>\n",
                                                      encoding="utf-8")
     monkeypatch.setattr(settings, "agent_home", lambda: home)
     r = env.client.get("/v1/admin/tailnet/guide", headers=ADMIN_H)
     assert r.status_code == 200, r.text
     v = r.json()["value"]
-    assert v["path"] == "guides/remote-access.md" and "<h2>2. Install Tailscale</h2>" in v["html"]
+    assert v["path"] == "docs/operator/remote-access.md" and "<h2>2. Install Tailscale</h2>" in v["html"]
     assert "<script>" not in v["html"]
     assert "<img" not in v["html"]  # repo-relative diagrams would render broken; each step shows its own
-    (home / "guides" / "remote-access.md").unlink()
+    (home / "docs" / "operator" / "remote-access.md").unlink()
     # t-bdd34121ee: a home never materialised serves the copy this build ships; 404 only when it ships none
+    from pathlib import Path
+
+    from edp8 import operator_docs
+    monkeypatch.setattr(operator_docs, "_shipped_dirs", lambda: [Path(__file__).resolve().parents[1] / "docs" / "operator"])
     r = env.client.get("/v1/admin/tailnet/guide", headers=ADMIN_H)
     assert r.status_code == 200 and "Install Tailscale" in r.json()["value"]["html"], r.text
 
-    def no_source():
-        raise FileNotFoundError("no source")
-    from edp8 import materialise
-    monkeypatch.setattr(materialise, "source_root", no_source)
+    monkeypatch.setattr(operator_docs, "_shipped_dirs", lambda: [])
     assert env.client.get("/v1/admin/tailnet/guide", headers=ADMIN_H).status_code == 404
 
 
 def test_the_shipped_guide_names_every_step():
     from pathlib import Path
-    body = (Path(__file__).resolve().parents[1] / "guides" / "remote-access.md").read_text(encoding="utf-8")
+    body = (Path(__file__).resolve().parents[1] / "docs" / "operator" / "remote-access.md").read_text(encoding="utf-8")
     for step in ("## 1. What it is for", "## 2. Install Tailscale", "## 3. Sign in", "## 4. Readiness",
                  "## 5. Serve the board", "## 6. Restart the board and MCP"):
         assert step in body, step

@@ -1,6 +1,7 @@
 .subnav {
   display: flex;
-  gap: 4px;
+  flex-wrap: wrap; /* eight sections: two rows on a phone, none hidden off-screen (qa fail 4) */
+  gap: 0 4px;
   border-bottom: 1px solid var(--line);
   margin-bottom: 20px;
 }
@@ -117,6 +118,16 @@
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
+}
+
+/* A phone: a ticket is a small card, its title first and in full width (a 7-column table left the title one word wide) */
+@media (max-width: 640px) {
+  .ticketsTable thead { display: none; }
+  .ticketsTable, .ticketsTable tbody { display: block; }
+  .ticketsTable tr { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .ticketsTable td { display: block; min-width: 0; padding: 0; border-bottom: 0; overflow-wrap: anywhere; }
+  .ticketsTable td[data-label]::before { content: attr(data-label); display: block; color: var(--muted); font-size: 11px; }
+  .ticketsTable td.ticketTitle { order: -1; grid-column: 1 / -1; font-size: 15px; line-height: 1.4; overflow-wrap: break-word; }
 }
 
 .history section {

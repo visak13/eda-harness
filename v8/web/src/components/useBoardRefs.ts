@@ -1,22 +1,29 @@
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router";
-import { findBoard, getEpicsSummary, getEpicTickets, getScopeDecisions, getScopeDocs, getTicket } from "../api/endpoints";
-import { activeRef, boardRows, rankRefs, refToken, scopeRows, type RefRow } from "./boardRefs";
+import { findBoard, getEpicsSummary, getEpicTickets, getScopeDecisions, getScopeDocs, getTicket, searchArtifacts } from "../api/endpoints";
+import { activeRef, artifactRows, boardRows, rankRefs, refToken, scopeRows, type RefRow } from "./boardRefs";
 
 // C24 (s-5d1b171d57): the $ picker, the @ picker's twin (useMentions: same menu shape, same keys — ↑/↓ move,
 // Enter/Tab pick, Esc closes and keeps the text). Rows are this epic's tree first (tickets, docs, live
 // decisions), then the board's open items (open epics + /v1/find hits). Existing routes only.
 
 const TICKET_ID = /^(?:epic|s|t)-[0-9a-f]{10}$/;
+/** the picker scrolls (max-height), so every matching artifact can be reached, not just the first twelve rows */
+const PICKER_CAP = 40;
 
-/** The rows of the current scope: the epic of `ticketId` (or of the page's :id), its tickets, docs, decisions. */
-export function useRefScope(ticketId?: string | null, enabled = true): RefRow[] {
+/** The epic of `ticketId` (or of the page's :id): the scope the picker lists first. */
+export function useRefEpic(ticketId?: string | null, enabled = true): string | null {
   const params = useParams();
   const id = ticketId ?? (params.id && TICKET_ID.test(params.id) ? params.id : null);
   const ticket = useQuery({ queryKey: ["ticket", id], queryFn: () => getTicket(id!), enabled: enabled && Boolean(id), retry: false, staleTime: 60_000 });
   const t = ticket.data;
-  const epic = t ? (t.kind === "epic" ? t.id : (t.epic_id as string | null | undefined) ?? null) : null;
+  return t ? (t.kind === "epic" ? t.id : (t.epic_id as string | null | undefined) ?? null) : null;
+}
+
+/** The rows of the current scope: the epic of `ticketId` (or of the page's :id), its tickets, docs, decisions. */
+export function useRefScope(ticketId?: string | null, enabled = true): RefRow[] {
+  const epic = useRefEpic(ticketId, enabled);
   const on = enabled && Boolean(epic);
   const opts = { enabled: on, retry: false, staleTime: 60_000 } as const;
   const epicTicket = useQuery({ queryKey: ["ticket", epic], queryFn: () => getTicket(epic!), ...opts });
@@ -27,6 +34,18 @@ export function useRefScope(ticketId?: string | null, enabled = true): RefRow[] 
     const own = [...(epicTicket.data ? [epicTicket.data] : []), ...(tickets.data ?? []).filter((x) => x.id !== epic)];
     return scopeRows(own, docs.data ?? [], decisions.data?.decisions ?? []);
   }, [epic, epicTicket.data, tickets.data, docs.data, decisions.data]);
+}
+
+/** Every artifact the viewer may read that matches the query (one server route, shared with VS Code): the
+ *  epic's own first, other epics' after. Debounced like the board rows; a failed read is an empty list. */
+function useRefArtifacts(query: string | null, epic: string | null, enabled: boolean): RefRow[] {
+  const [q, setQ] = useState<string | null>(null);
+  useEffect(() => {
+    const t = setTimeout(() => setQ(query), 150);
+    return () => clearTimeout(t);
+  }, [query]);
+  const rows = useQuery({ queryKey: ["refs", "artifacts", epic, q], queryFn: () => searchArtifacts(q!, epic), enabled: enabled && q !== null, retry: false, staleTime: 15_000 });
+  return useMemo(() => artifactRows(rows.data), [rows.data]);
 }
 
 /** The board's open items for a query (debounced; nothing is fetched for a one-letter query). */
@@ -64,7 +83,12 @@ export function useBoardRefs(
   const [wanted, setWanted] = useState(false);
   const scope = useRefScope(ticketId, wanted);
   const board = useRefBoard(query, wanted);
-  const items = useMemo(() => (query === null ? [] : rankRefs(query, scope, board)), [query, scope, board]);
+  const artifacts = useRefArtifacts(query, useRefEpic(ticketId, wanted), wanted);
+  const items = useMemo(() => {
+    if (query === null) return [];
+    const mine = artifacts.filter((r) => r.group === "scope"), others = artifacts.filter((r) => r.group !== "scope");
+    return rankRefs(query, [...scope, ...mine], [...board, ...others], PICKER_CAP);
+  }, [query, scope, board, artifacts]);
   const open = query !== null && items.length > 0;
   const idx = Math.min(index, Math.max(items.length - 1, 0));
 

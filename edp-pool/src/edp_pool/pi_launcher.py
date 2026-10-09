@@ -72,7 +72,7 @@ def pi_bin_argv() -> list[str]:
     return tool_argv(found) if found else ["pi"]
 
 
-#: Pi thinking levels a spawn's `effort` may select (seat_choice: Claude is capped at medium upstream).
+#: Pi thinking levels a spawn's `effort` may select (seat_choice clamps to the catalog cap upstream).
 PI_THINKING_LEVELS = ("low", "medium", "high")
 
 
@@ -249,6 +249,10 @@ class PiSpawner:
         effort = str((extra_env or {}).get("EDP_SEAT_EFFORT") or "").strip().lower()
         if effort in PI_THINKING_LEVELS:
             env["EDP_PI_THINKING"] = effort
+        # S13 F4: whoever set the thinking level (spawn, seat default, EDP_PI_THINKING passed through), it never
+        # exceeds the catalog cap of the model this launch or resume runs
+        from edp_contracts.seats import cap_env_effort, effort_cap_of
+        cap_env_effort(env, effort_cap_of(entry if entry and entry.get("harness") == "pi" else {"harness": "pi"}))
         log_path = None
         if self._log_dir:
             Path(self._log_dir).mkdir(parents=True, exist_ok=True)

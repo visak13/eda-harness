@@ -1,0 +1,53 @@
+﻿   fleet before: board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+PASS  pre-check: every record in C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\.run names a private (or dead) pid
+   ports board=58703 pool=58707 mcp=58706 broker=58708; home C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home
+== 05:22:59 rollback-corrupt from {FD382D81-51CD-4D23-A249-5FB643FE861A}=0.9.1
+   health 0.9.1; seat engineer.s2-drill row active pid 31884 liveness alive
+   05:22:59 heronry update --release-url C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\release-corrupt --previous-url C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\release-0.9.1
+   | current 0.9.1, release 0.9.2.dev0
+   | verified Heronry S2 Spike-0.9.2.dev0.msi against SHA256SUMS (0.1s)
+   | the installed 0.9.1's MSI is cached for a rollback (C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\.data\updates\0.9.1\Heronry S2 Spike-0.9.1.msi)
+   | WARNING: the compatibility check is not run for an MSI update yet (S10)
+   | backed up the DB to C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\.data\backups\edp8-0.9.1-20261001T235259Z.db
+   | installing 0.9.2.dev0 from C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\update (outside the install folder); progress in C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\.data\logs\update.log, outcome in C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\update\update-result.json
+   cli exit 0 after 1.5s
+   05:25:17 outcome after 138s
+   log 2026-10-01T23:53:00+00:00 helper up (pid 30408): 0.9.1 -> 0.9.2.dev0
+   log 2026-10-01T23:53:01+00:00 park engineer.s2-drill: {"parked": true, "session_id": "engineer:a99e7a4c-9852-44c3-9bae-d7a3881a0c2f", "handle": "engineer.s2-drill", "inbox_watermark": 0, "claude_session_id": "6d9c04d4-5b79-4d3a-8cfc-39f03e426e3b"}
+   log 2026-10-01T23:53:01+00:00 stop: C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\install\heronry.exe stop --force
+   log 2026-10-01T23:53:05+00:00   | pool stop takes these 1 seat(s) offline:
+   log 2026-10-01T23:53:05+00:00   |   - engineer.s2-drill (pid 31884, parked)
+   log 2026-10-01T23:53:06+00:00   | supervisor stopped
+   log 2026-10-01T23:53:06+00:00   | bridge     not running
+   log 2026-10-01T23:53:06+00:00   | mcp        stopped
+   log 2026-10-01T23:53:06+00:00   | pool       stopped
+   log 2026-10-01T23:53:06+00:00   | broker     stopped
+   log 2026-10-01T23:53:06+00:00   | board      stopped
+   log 2026-10-01T23:53:06+00:00 stop exit 0
+   log 2026-10-01T23:53:21+00:00 holders in C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\install: []
+   log 2026-10-01T23:53:21+00:00 install: msiexec /i C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\.data\updates\0.9.2.dev0\Heronry S2 Spike-0.9.2.dev0.msi MSIINSTALLPERUSER=1 ALLUSERS=2 INSTALLFOLDER=C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\install REBOOT=ReallySuppress /qn /norestart /l*v C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\.data\logs\msiexec-install.log
+   log 2026-10-01T23:54:56+00:00 install exit 0 (log C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\.data\logs\msiexec-install.log)
+   log 2026-10-01T23:54:56+00:00 start: C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\install\heronry.exe start --no-browser
+   log 2026-10-01T23:55:13+00:00   | board      started          pid 20348  http://127.0.0.1:58703
+   log 2026-10-01T23:55:13+00:00   | broker     started          pid 28964  http://127.0.0.1:58708
+   log 2026-10-01T23:55:13+00:00   | pool       started          pid 35384  http://127.0.0.1:58707
+   log 2026-10-01T23:55:13+00:00   | mcp        started          pid 14196  http://127.0.0.1:58706
+   log 2026-10-01T23:55:13+00:00   | bridge     skipped          (no slack map configured)
+   log 2026-10-01T23:55:13+00:00   | supervisor started          pid 29380
+   log 2026-10-01T23:55:13+00:00   | setup      first run: finish setup at http://127.0.0.1:58703/ui/setup?code=<redacted>  (the link signs you in once, within 24 h)
+   log 2026-10-01T23:55:13+00:00 start exit 0
+   log 2026-10-01T23:55:13+00:00 health after start: '0.9.2.dev0' (want 0.9.2.dev0)
+   log 2026-10-01T23:55:16+00:00 resume engineer.s2-drill: {"resumed": true, "handle": "engineer.s2-drill", "session_id": "engineer:a99e7a4c-9852-44c3-9bae-d7a3881a0c2f", "via": "started-fresh", "claude_session_id": "235f76c2-9642-4c23-9289-ff552af98988", "message": "started fresh: no stored session", "released_after_resume": false}
+   log 2026-10-01T23:55:16+00:00 result ok
+   result: {"from":"0.9.1","to":"0.9.2.dev0","state":"ok","reason":"","timings":{"parked":0.5,"stopped":5.2,"holders_checked":20.5,"installed":115.5,"relaunched":132.3,"resumed":135.7},"parked":["engineer.s2-drill"],"resumed":["engineer.s2-drill"],"installed":"0.9.2","health_version":"0.9.2.dev0","finished_at":"2026-10-01T23:55:16+00:00"}
+   installed after: {4F0F71D0-C22E-4C48-8957-62278EF706C3}=0.9.2; health 0.9.2.dev0; seat engineer.s2-drill row active liveness alive
+FAIL  outcome rolled_back
+FAIL  a plain reason: 
+FAIL  the previous version is installed ({4F0F71D0-C22E-4C48-8957-62278EF706C3}=0.9.2)
+FAIL  board healthy at 0.9.1 (0.9.2.dev0)
+PASS  the seat is live again
+PASS  the runner ran from C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\update, outside C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\install
+   fleet after:  board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+PASS  fleet pids unchanged
+elapsed 140s
+RESULT: 4 check(s) FAILED

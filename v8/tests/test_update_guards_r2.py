@@ -240,12 +240,13 @@ def test_harness_update_catalog_fallback_and_finished_rows_still_idle(env, fake,
     assert r.status_code == 200 and fake.runs == [["C:/bin/claude.exe", "update"]]
 
 
-def test_updater_refusal_names_a_parked_seat_and_the_way_out(pool, app_update):
+def test_a_parked_seat_does_not_stop_the_updater_it_is_already_parked(pool, app_update):
+    # S10 #7: the harness update still refuses on a parked seat (below); the app update parks live seats itself and a
+    # seat that is already parked has nothing to park, so it goes on to the stop
     pool.answer = (200, b'[{"handle": "arch.e-1", "state": "parked", "proc": {"pid": 42}}]', "application/json")
-    with pytest.raises(updater.UpdateError) as e:
+    with pytest.raises(Exception) as e:
         updater.apply({})
-    assert "arch.e-1 (pid 42, parked)" in str(e.value) and "reap or close parked seats" in str(e.value)
-    assert "--force" in str(e.value) and app_update == []
+    assert type(e.value).__name__ == "ReachedStop" and app_update[-1] == "stop"
 
 
 def test_harness_update_parked_seat_blocks_with_its_state(env, fake, monkeypatch):  # noqa: F811

@@ -88,6 +88,9 @@
   border: 1.5px solid var(--strongline); border-radius: 8px; background: var(--panel); color: var(--ink); cursor: pointer;
 }
 .composer[data-collapsed] { padding: 4px 0 8px; margin-top: 0; }
+/* the toggle tab rides 6px above the expanded box: leave it its own room, so it never sits on the line above it */
+.composer:not([data-collapsed]) { margin-top: 16px; }
+:global(:root[data-quote-popover="open"]) .composer:not([data-collapsed]) .composerBar { visibility: hidden; } /* nothing reflows; QuoteLayer sets the attribute */
 .composerToggle:hover { background: var(--secondary); }
 .composerToggle:focus-visible, .composerCollapsedBar:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
 .composerCollapsedBar {

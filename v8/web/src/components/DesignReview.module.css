@@ -8,7 +8,7 @@
 .head { flex: none; background: var(--panel); padding: 8px 14px 8px 18px; border-bottom: 1px solid var(--strongline); }
 /* t-899d295194: one compact row (crumb / title · version · state | actions | Open in tab · Close). */
 .bar { display: flex; align-items: center; gap: 10px; min-height: 44px; min-width: 0; }
-.crumb { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); min-width: 0; flex: 0 1 auto; max-width: 28%; }
+.crumb { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); min-width: 0; flex: 0 1 auto; } /* cut only when the row has no room: no percentage cap */
 .crumb a { color: var(--muted); text-decoration: none; }
 .crumb a:hover { text-decoration: underline; color: var(--ink); }
 .source { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
@@ -89,7 +89,6 @@ details[open] > .outlineSummary > svg { transform: none; }
   .tool { padding: 0 6px; }
   /* Narrow: the row wraps once — crumb / title … Open in tab · Close, then version · state and the actions. */
   .bar { flex-wrap: wrap; row-gap: 4px; }
-  .crumb { max-width: 40%; }
   .title { flex: 1 1 0; }
   .tools { order: 1; }
   .state { order: 2; }
@@ -99,5 +98,5 @@ details[open] > .outlineSummary > svg { transform: none; }
    panel and the section index are not rendered. Wide content wraps to the document column (Markdown.module.css,
    t-cb431765fc) — no sideways scroller here, with the left rail expanded or not. */
 .splitReader { grid-template-columns: minmax(0, 1fr); }
-.splitReader .reading { width: 100%; max-width: 960px; margin: 0 auto; box-sizing: border-box; }
+.splitReader .reading { width: 100%; max-width: 760px; margin: 0 auto; box-sizing: border-box; }
 .tool[aria-pressed="false"] { background: var(--secondary); }

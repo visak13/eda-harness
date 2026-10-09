@@ -204,3 +204,60 @@ def test_seat_naming_another_roles_path_gets_only_its_own_tools(expert_stack):
     assert set(names) == set(ROLE_BUNDLES["owner"]) & set(ROLE_BUNDLES["engineer"])
     own, _ = _run(_call(f"{expert_stack['mcp']}/mcp/engineer", hdr))
     assert set(own) == set(ROLE_BUNDLES["engineer"])
+
+
+# --------------------------------------------------------------- s-e60c3d42ad: wake=mod is decided per seat, over HTTP
+def _subscribe_over_http(stack, headers: dict) -> dict:
+    import json
+    _, res = _run(_call(f"{stack['mcp']}/mcp/engineer", {"X-Participant": "eng.s1", **headers}, "subscribe"))
+    return json.loads(res.content[0].text)["value"]
+
+
+def test_subscribe_over_http_decides_wake_mod_from_the_seats_header_and_readiness(stack, monkeypatch, tmp_path):
+    """qa m-dfb5b7f516: the shared service has no CLAUDE_CODE_PLUGIN_DIRS of its own, so the seat's X-Wake-Mod header
+    (or a live mod readiness file) is the only signal. The F1 in-process tests hid this."""
+    from pathlib import Path
+
+    from edp8 import feed_driver
+
+    mods = str(Path(__file__).resolve().parents[1] / ".claude" / "mods")
+    monkeypatch.setenv("EDP8_FEED_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("EDP8_WAKE_READY_WAIT_S", "0")
+    monkeypatch.delenv("EDP_WAKE_MOD", raising=False)
+    assert "CLAUDE_CODE_PLUGIN_DIRS" not in os.environ and "EDP8_FEED_PY" not in os.environ  # the service's own env
+
+    # no mod anywhere: the Monitor, as before
+    out = _subscribe_over_http(stack, {})
+    assert out["monitor_cmd"] and "wake" not in out
+    # the header names a mod dir but its listener is not up yet: still the Monitor
+    out = _subscribe_over_http(stack, {"X-Wake-Mod": mods})
+    assert out["monitor_cmd"] and "wake" not in out
+    # a Monitor-run driver's readiness file is not the mod's, header or not
+    feed_driver.Readiness("eng.s1", owner="monitor").write()
+    assert _subscribe_over_http(stack, {"X-Wake-Mod": mods})["monitor_cmd"]
+    # the mod's listener is live: header present -> wake=mod and no monitor_cmd
+    feed_driver.Readiness("eng.s1", owner="mod").write()
+    out = _subscribe_over_http(stack, {"X-Wake-Mod": mods})
+    assert out["monitor_cmd"] is None and out["wake"] == "mod"
+    # a seat already up is caught by the readiness file alone (header empty or absent)
+    assert _subscribe_over_http(stack, {})["wake"] == "mod"
+    assert _subscribe_over_http(stack, {"X-Wake-Mod": ""})["wake"] == "mod"
+    # the kill switch still wins
+    monkeypatch.setenv("EDP_WAKE_MOD", "0")
+    assert _subscribe_over_http(stack, {"X-Wake-Mod": mods})["monitor_cmd"]
+
+
+def test_resume_self_over_http_also_reports_wake_mod(stack, monkeypatch, tmp_path):
+    import json
+    from pathlib import Path
+
+    from edp8 import feed_driver
+
+    monkeypatch.setenv("EDP8_FEED_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("EDP8_WAKE_READY_WAIT_S", "0")
+    monkeypatch.delenv("EDP_WAKE_MOD", raising=False)
+    feed_driver.Readiness("eng.s1", owner="mod").write()
+    mods = str(Path(__file__).resolve().parents[1] / ".claude" / "mods")
+    _, res = _run(_call(f"{stack['mcp']}/mcp/engineer", {"X-Participant": "eng.s1", "X-Wake-Mod": mods}, "resume_self"))
+    val = json.loads(res.content[0].text)["value"]
+    assert val["monitor_cmd"] is None

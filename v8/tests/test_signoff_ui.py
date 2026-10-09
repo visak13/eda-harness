@@ -33,8 +33,9 @@ def rig(client):
                                           "parent_id": epic, "assignee": "craft"},
                      headers={"X-Participant": "arch"}).json()["value"]["id"]
     c = client.post("/v1/criteria", json={"ticket_id": kt, "text": "strategy doc signed by the owner",
-                                          "check": "look", "checked_by": "owner"},
-                    headers={"X-Participant": "arch"}).json()["value"]["id"]
+                                          "check": "look", "checked_by": "owner",
+                                          "override_reason": "the owner signs it"},
+                    headers={"X-Participant": "owner"}).json()["value"]["id"]
     d = client.post("/v1/docs", json={"doc_type": "strategy_hl", "title": "shape",
                                       "body_md": "# Walking skeleton\n- build the **thin** thread first",
                                       "scope": epic}, headers={"X-Participant": "craft"}).json()["value"]["id"]
@@ -44,9 +45,9 @@ def rig(client):
 
 
 def test_signoff_renders_markdown_and_takes_verdict(client, rig, ui_prefix):
-    page = client.get(f"{ui_prefix}/me", params={"as": "owner"}).text
-    assert "Docs awaiting your sign-off" in page
+    page = client.get(f"{ui_prefix}/doc/{rig['doc']}", params={"as": "owner"}).text
     assert "<strong>thin</strong>" in page  # markdown RENDERED, not raw
+    assert "Docs awaiting your sign-off" not in client.get(f"{ui_prefix}/me", params={"as": "owner"}).text  # s-aa76c83998
     r = client.post(f"{ui_prefix}/me/verdict", data={"as_": "owner", "criterion_id": rig["crit"],
                                             "ticket_id": rig["kt"], "verdict": "pass", "evidence_version": 1,
                                             "note": "good shape, proceed"}, follow_redirects=False)
@@ -54,8 +55,6 @@ def test_signoff_renders_markdown_and_takes_verdict(client, rig, ui_prefix):
     crit = client.get("/v1/criteria", params={"ticket_id": rig["kt"]},
                       headers={"X-Participant": "owner"}).json()["value"][0]
     assert crit["verdict"] == "pass"
-    page2 = client.get(f"{ui_prefix}/me", params={"as": "owner"}).text
-    assert "Docs awaiting your sign-off" not in page2  # nothing pending anymore
 
 
 def test_doc_page_renders_markdown(client, rig, ui_prefix):

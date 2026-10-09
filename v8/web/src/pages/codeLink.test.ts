@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { embedUrl, guardBase, isLoopbackHost, lineLabel, loginUrl, normalizeFile, normalizeFolder, parseCodeLink, parseLine } from "./codeLink";
+import { describe, it, expect, vi } from "vitest";
+import { embedUrl, guardBase, isLoopbackHost, lineLabel, loginForm, normalizeFile, normalizeFolder, parseCodeLink, parseLine, postLogin } from "./codeLink";
 
 // epic-91fcd3b370 S3: deep-link parsing and the code-server URL. The folder form is the binding S1
 // ruling (dec-ea925a2d30): `/c:/…` — leading slash, lowercase drive, forward slashes.
@@ -107,18 +107,31 @@ describe("isLoopbackHost", () => {
 });
 
 // s-17c13096e5: the guard login URL and the page-host guard base
-describe("loginUrl", () => {
+describe("loginForm (RC2 F5: POSTed, never a token in a URL)", () => {
   it("keeps a bare / as the redirect target (code-server reopens its last folder)", () => {
-    const u = new URL(loginUrl("http://127.0.0.1:9410/", "1.ab.cd"));
-    expect(u.pathname).toBe("/__edp/login");
-    expect(u.searchParams.get("t")).toBe("1.ab.cd");
-    expect(u.searchParams.get("next")).toBe("/");
+    const f = loginForm("http://127.0.0.1:9410/", "1.ab.cd");
+    expect(f).toEqual({ action: "http://127.0.0.1:9410/__edp/login", fields: { t: "1.ab.cd", next: "/" } });
+  });
+  it("postLogin submits one hidden-field POST form in the target window's document", () => {
+    const frame = document.createElement("iframe");
+    document.body.appendChild(frame);
+    const inner = frame.contentWindow as unknown as { HTMLFormElement: typeof HTMLFormElement };
+    const submit = vi.spyOn(inner.HTMLFormElement.prototype, "submit").mockImplementation(() => {});
+    postLogin(frame.contentWindow!, loginForm("http://127.0.0.1:9410/", "1.ab.cd"));
+    const form = frame.contentDocument!.querySelector("form")!;
+    expect(form.method).toBe("post");
+    expect(form.action).toBe("http://127.0.0.1:9410/__edp/login");
+    expect([...form.querySelectorAll("input")].map((i) => [i.type, i.name, i.value])).toEqual([["hidden", "t", "1.ab.cd"], ["hidden", "next", "/"]]);
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(document.documentElement.outerHTML).not.toContain("1.ab.cd");
+    submit.mockRestore(); frame.remove();
   });
   it("carries a deep link's path and query, encoded once, as next", () => {
     const src = embedUrl("http://127.0.0.1:9410/", parseCodeLink("?folder=C:/My Projects/v8&file=a b.py&line=3"), null);
-    const u = new URL(loginUrl(src, "t"));
+    const f = loginForm(src, "t");
+    const u = new URL(f.action);
     expect(u.origin).toBe("http://127.0.0.1:9410");
-    const next = u.searchParams.get("next")!;
+    const next = f.fields.next;
     expect(next.startsWith("/?folder=")).toBe(true);
     expect(next).not.toContain(" ");
     expect(new URL(next, "http://127.0.0.1:9410").toString()).toBe(src);

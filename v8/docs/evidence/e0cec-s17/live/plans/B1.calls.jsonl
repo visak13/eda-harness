@@ -1,0 +1,32 @@
+{"t": 1790991295.8480659, "tool": "ticket_read", "args": {"ticket_id": "s-461b1b16b7"}, "chars": 6412}
+{"t": 1790991302.9822085, "tool": "doc_read", "args": {"id": "design-05f874c4f8"}, "chars": 11188}
+{"t": 1790991302.996796, "tool": "doc_read", "args": {"id": "strategyll-f49f47c558"}, "chars": 9497}
+{"t": 1790991303.0119076, "tool": "doc_read", "args": {"id": "strategyll-262160d8c2"}, "chars": 9350}
+{"t": 1790991303.028462, "tool": "doc_read", "args": {"id": "strategyll-ba9c1938f3"}, "chars": 8982}
+{"t": 1790991303.045612, "tool": "doc_read", "args": {"id": "strategyll-2bcc945031"}, "chars": 9013}
+{"t": 1790991303.0649288, "tool": "doc_read", "args": {"id": "strategyll-0c803cca71"}, "chars": 15825}
+{"t": 1790991303.084206, "tool": "ticket_read", "args": {"ticket_id": "s-461b1b16b7", "include": "chain,criteria,docs,children,blockers,gates,thread,links"}, "chars": 7616}
+{"t": 1790991309.661656, "tool": "doc_read", "args": {"id": "strategyll-262160d8c2"}, "chars": 9350}
+{"t": 1790991309.681306, "tool": "doc_read", "args": {"id": "strategyll-ba9c1938f3"}, "chars": 8982}
+{"t": 1790991309.6982293, "tool": "doc_read", "args": {"id": "strategyll-2bcc945031"}, "chars": 9013}
+{"t": 1790991309.720128, "tool": "doc_read", "args": {"id": "strategyll-0c803cca71"}, "chars": 15825}
+{"t": 1790991309.7385113, "tool": "doc_read", "args": {"id": "strategyll-f49f47c558"}, "chars": 9497}
+{"t": 1790991309.7571118, "tool": "doc_read", "args": {"id": "design-05f874c4f8"}, "chars": 11188}
+{"t": 1790991316.1792948, "tool": "doc_read", "args": {"id": "strategyll-262160d8c2", "version": 1, "offset": 0, "limit": 20000}, "chars": 15519}
+{"t": 1790991316.196374, "tool": "doc_read", "args": {"id": "strategyll-ba9c1938f3", "version": 1, "offset": 0, "limit": 20000}, "chars": 13391}
+{"t": 1790991316.2147722, "tool": "doc_read", "args": {"id": "strategyll-2bcc945031", "version": 1, "offset": 0, "limit": 20000}, "chars": 13316}
+{"t": 1790991323.173572, "tool": "doc_read", "args": {"id": "strategyll-0c803cca71", "version": 1, "offset": 0, "limit": 16000}, "chars": 16411}
+{"t": 1790991323.1947289, "tool": "doc_read", "args": {"id": "strategyll-ba9c1938f3", "version": 1, "offset": 4380, "limit": 4200}, "chars": 4538}
+{"t": 1790991328.8284726, "tool": "doc_read", "args": {"id": "strategyll-0c803cca71", "version": 1, "offset": 16000, "limit": 16000}, "chars": 16560}
+{"t": 1790991328.8466024, "tool": "doc_read", "args": {"id": "strategyll-f49f47c558", "version": 1, "offset": 5450, "limit": 12000}, "chars": 11244}
+{"t": 1790991337.0411737, "tool": "doc_read", "args": {"id": "strategyll-0c803cca71", "version": 1, "offset": 32000, "limit": 17000}, "chars": 17582}
+{"t": 1790991337.0618083, "tool": "doc_read", "args": {"id": "design-05f874c4f8", "version": 1, "offset": 8174, "limit": 10000}, "chars": 9549}
+{"t": 1790991337.0847256, "tool": "find", "args": {"query": "Security and Secrets Policy", "k": 10, "types": "doc"}, "chars": 2286}
+{"t": 1790991342.9487271, "tool": "doc_read", "args": {"id": "strategyll-0c803cca71", "version": 1, "offset": 49000, "limit": 17000}, "chars": 17580}
+{"t": 1790991342.9701931, "tool": "doc_read", "args": {"id": "strategyll-48d8fc820d", "section": "## 1. Scope"}, "chars": 221}
+{"t": 1790991352.437948, "tool": "doc_read", "args": {"id": "strategyll-0c803cca71", "version": 1, "offset": 66000, "limit": 17000}, "chars": 16111}
+{"t": 1790991352.4588196, "tool": "doc_read", "args": {"id": "strategyll-48d8fc820d"}, "chars": 9550}
+{"t": 1790991358.5117388, "tool": "doc_read", "args": {"id": "strategyll-48d8fc820d", "version": 1, "offset": 8089, "limit": 7000}, "chars": 6106}
+{"t": 1790991358.531876, "tool": "find", "args": {"query": "B1 amendments exceptions process", "k": 20}, "chars": 2531}
+{"t": 1790991366.590837, "tool": "find", "args": {"query": "B1 sha256 checksum security scope", "k": 8}, "chars": 2250}
+{"t": 1790991366.6085517, "tool": "ticket_read", "args": {"ticket_id": "epic-912f08badb", "include": "chain,docs,thread,links"}, "chars": 989}

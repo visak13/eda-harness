@@ -4,7 +4,7 @@
 // (the addressed seat and every @mention are mirrored into broker inboxes), board.Board._reason_for
 // ("@mention" wakes the agent; a live seat's handle is role.<ticket>, board.py spawn — a bare
 // @engineer is an empty-chair stub and wakes nobody, views._roster) and feed_driver (the seat's stream). Teammates reach the board over the
-// tailnet (guides/tailnet-public-mode.md). Invented names only.
+// tailnet (docs/operator/tailnet-public-mode.md). Invented names only.
 import React from "react";
 import { interpolate, useCurrentFrame } from "remotion";
 import { C, FONT, contrast } from "../theme";

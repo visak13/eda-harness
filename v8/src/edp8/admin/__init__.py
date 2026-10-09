@@ -17,12 +17,13 @@ PUBLIC_ROUTES = ("/v1/join", "/v1/signout", "/v1/access-requests", "/v1/access-r
 
 
 def admin_router(ctx: AdminContext) -> APIRouter:
-    from . import access, capacity, harnesses, integrations, models, remote, services, settings_api, setup_api, teammates, updates
+    from . import (access, capacity, harnesses, integrations, models, release, remote, services, settings_api, setup_api,
+                   teammates, updates)
 
     gate = make_admin_actor(ctx)
     r = APIRouter()
     for mod in (settings_api, services, capacity, teammates, access, remote, integrations, harnesses, models, updates,
-                setup_api):
+                release, setup_api):
         r.include_router(mod.router(ctx, gate))
     r.include_router(access.public_router(ctx))
     return r

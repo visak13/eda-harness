@@ -44,6 +44,23 @@ describe("Conversation (S17)", () => {
     expect(screen.getByRole("textbox", { name: "Message" })).toBeVisible();
   });
 
+  it("a phone starts on the one-line bar until the box is opened; a stored choice wins (qa m-aa62e7bd8e)", () => {
+    const mm = vi.spyOn(window, "matchMedia").mockImplementation(((q: string) => ({ matches: q.includes("767px"), media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false })) as never);
+    localStorage.clear();
+    mount();
+    expect(screen.getByTestId("composer-collapsed-bar")).toBeInTheDocument(); // narrow, nothing stored: one line
+    fireEvent.click(screen.getByTestId("composer-collapsed-bar"));
+    expect(screen.getByRole("textbox", { name: "Message" })).toBeVisible();
+    cleanup();
+    mount();
+    expect(screen.queryByTestId("composer-collapsed-bar")).toBeNull(); // the person opened it: remembered
+    mm.mockRestore();
+    cleanup();
+    localStorage.clear();
+    mount();
+    expect(screen.queryByTestId("composer-collapsed-bar")).toBeNull(); // a desktop width starts open
+  });
+
   it("t-8e94ffd3ad: a has_content=false attachment is labelled with its uri, never fetched or offered as Open", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const writeText = vi.fn().mockResolvedValue(undefined);

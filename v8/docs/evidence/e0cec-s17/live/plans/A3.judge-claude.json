@@ -1,0 +1,114 @@
+{
+ "must": {
+  "A3-m1": {
+   "v": "present",
+   "why": "Step 3: 'feat/A3-ledger-archival'; step 14: 'feat(retention): add ledger archival job [A3]'; must_not forbids 'old ticket-prefix commit messages'"
+  },
+  "A3-m2": {
+   "v": "present",
+   "why": "Step 13: unit and integration tests under tests/integration/ in the same PR, 'in-memory object-store fake and fake secrets backend', 'at least 85% coverage of changed executable lines'; must_not: 'Do not test against the real archive bucket'"
+  },
+  "A3-m3": {
+   "v": "present",
+   "why": "Step 15: 'one approval from a Ledger Guild member other than the author'"
+  },
+  "A3-m4": {
+   "v": "present",
+   "why": "Step 4: @scheduled_job in tallyline/jobs/registry.py. Steps 6, 8 and 10: resume via persisted archive_batches states (written/verified/removed), 'transactions of at most 5,000 rows and committing between batches', restart safety"
+  },
+  "A3-m5": {
+   "v": "present",
+   "why": "Step 5: '37-full-calendar-month horizon in config/retention.yaml'. Step 6: 'oldest first and one period at a time'"
+  },
+  "A3-m6": {
+   "v": "present",
+   "why": "Step 7: 'LegalHoldClient.customers_on_hold(), fresh each run, and exclude held customers' journals from archival and removal'. Must_not: 'cache holds between runs'"
+  },
+  "A3-m7": {
+   "v": "present",
+   "why": "Steps 8-10: Parquet under period=<YYYY-MM>/batch=<archive_batch_id>/, state written; read back and match row count and SHA-256 canonical_rows_digest() before verified; delete only verified batches, then mark removed; on failure leave written, delete nothing, emit archive.batch_verification_failed, stop without retrying"
+  },
+  "A3-m8": {
+   "v": "present",
+   "why": "Step 5: 'retention.archival.enabled=false ... Read the switch at every run start; disabled normal runs emit retention_ledger_archival.skipped and exit'"
+  },
+  "A3-m9": {
+   "v": "present",
+   "why": "Step 5: dry_run mode with legal-hold check, batch calculation and count events, no writes or deletes. Step 17: production dry run, finance comparison, finance and privacy-officer sign-off on the release ticket before the switch is released"
+  },
+  "A3-m10": {
+   "v": "present",
+   "why": "Step 2: write-only credential and SEC-REQ for Vault under secret/tallyline/retention/<name>. Step 8: 'only through tallyline.common.secrets.get'. Must_not lists code, config, env files, fixtures and CI variables. Step 14: SEC-REQ linked from the PR"
+  },
+  "A3-m11": {
+   "v": "present",
+   "why": "Step 2: request PR-7. Step 14: link signed PR-7 from the PR. Step 15: 'Before merge, obtain the privacy officer's signed PR-7'"
+  },
+  "A3-m12": {
+   "v": "present",
+   "why": "Step 12: 'Identify archival work only by batch ID and period'. Step 11: emit_event with lifecycle and archive.batch_* events plus schemas. Step 4: log_retention_days=400. Must_not forbids customer identifiers"
+  },
+  "A3-m13": {
+   "v": "present",
+   "why": "Step 12: 'Tallyline \u2013 jobs panel in ops/dashboards/ and guild-routed alerts in ops/alerts/ for verification failures and last success older than the nightly interval plus two hours'"
+  },
+  "A3-m14": {
+   "v": "present",
+   "why": "Step 14: 'one-line CHANGELOG.md entry under Unreleased in the same PR'"
+  }
+ },
+ "must_not": {
+  "A3-n1": {
+   "v": "ok",
+   "why": "Must_not: 'Do not create a Flagpole flag ... A3 is explicitly exempt'"
+  },
+  "A3-n2": {
+   "v": "ok",
+   "why": "Must_not: 'Do not include customer identifiers ... in retention logs/events'"
+  },
+  "A3-n3": {
+   "v": "ok",
+   "why": "Must_not: 'Do not use the withdrawn 25-month horizon'"
+  },
+  "A3-n4": {
+   "v": "ok",
+   "why": "Must_not: 'Do not ... post archival journals'"
+  },
+  "A3-n5": {
+   "v": "ok",
+   "why": "Must_not: 'Do not request a second ledger-owner engineering approval'"
+  },
+  "A3-n6": {
+   "v": "ok",
+   "why": "Must_not forbids 'the default 30-day job-log retention'. Step 4 sets 400"
+  },
+  "A3-n7": {
+   "v": "ok",
+   "why": "Must_not: 'Do not archive through scripts, migrations, a one-off backfill or the deleted 2025 prototype'"
+  },
+  "A3-n8": {
+   "v": "ok",
+   "why": "Must_not: 'Do not update ledger rows' and 'do not implement ... soft-delete'"
+  }
+ },
+ "order": {
+  "A3-o1": {
+   "v": "kept",
+   "why": "Step 9 verifies the batch before step 10 deletes only verified batches"
+  },
+  "A3-o2": {
+   "v": "kept",
+   "why": "Step 17: 'Confirm the dashboard and both alerts are merged and live, then release the retention kill switch'"
+  },
+  "A3-o3": {
+   "v": "kept",
+   "why": "Step 17: dry run and finance/privacy sign-off come before the kill-switch release"
+  }
+ },
+ "extras": [
+  "Step 1: Raise the unresolved access and dry-run questions ... Obtain documented resolution before implementing those paths (treats write-only credential vs read-back verification, and the kill switch vs the dry run, as blocking conflicts the key does not recognise)",
+  "Must_not: The read-back credential and pre-enable dry-run mechanism remain unresolved in the supplied documents (invented ambiguity, which leads to 'complete': false)",
+  "Step 4: Keep archival outside finance's 06:00\u201312:00 UTC trial-balance window on working day 1",
+  "Must_not: Do not ... add job-owned single-instance locks"
+ ]
+}

@@ -1,0 +1,5441 @@
+[
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/me/notifications",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "attention"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_views.py:73 me_notifications",
+  "guest": "scoped",
+  "guest_why": "own notifications, rows outside the scope dropped"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/me/attention",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "link",
+   "participant",
+   "attention"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_views.py:79 me_attention",
+  "guest": "scoped",
+  "guest_why": "own attention, rows outside the scope dropped"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/me/attention/dismiss",
+  "rw": "write",
+  "objects": [
+   "message",
+   "participant",
+   "attention"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/api_views.py:86 me_attention_dismiss",
+  "guest": "allowed",
+  "guest_why": "own attention row only"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/me/decisions",
+  "rw": "read",
+  "objects": [
+   "gate",
+   "participant",
+   "decision"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_views.py:93 me_decisions",
+  "guest": "refused",
+  "guest_why": "owner decision queue (a guest answers no gate)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/me/decisions/resolved",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "decision"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_views.py:98 me_resolved",
+  "guest": "refused",
+  "guest_why": "owner decision queue (a guest answers no gate)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/me/people",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_views.py:102 me_people",
+  "guest": "scoped",
+  "guest_why": "people on member epics + the owner"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/seats",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_views.py:106 seats",
+  "guest": "scoped",
+  "guest_why": "seats on member-epic tickets only"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/me/conversations",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_views.py:113 me_conversations",
+  "guest": "scoped",
+  "guest_why": "own conversations, threads outside the scope dropped"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/me/replies",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_views.py:117 me_replies",
+  "guest": "scoped",
+  "guest_why": "own replies, rows outside the scope dropped"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/me/summary",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_views.py:123 me_summary",
+  "guest": "scoped",
+  "guest_why": "counts over the scoped attention"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/me/verdict",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "criterion",
+   "doc",
+   "message",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_views.py:127 me_verdict",
+  "guest": "refused",
+  "guest_why": "criterion verdict"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/me/avatar",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "avatar"
+  ],
+  "current_check": [
+   "human-only"
+  ],
+  "where": "src/edp8/api_views.py:139 me_avatar_get",
+  "guest": "allowed",
+  "guest_why": "own row"
+ },
+ {
+  "kind": "rest",
+  "method": "PUT",
+  "path": "/v1/me/avatar",
+  "rw": "write",
+  "objects": [
+   "message",
+   "participant",
+   "avatar"
+  ],
+  "current_check": [
+   "human-only"
+  ],
+  "where": "src/edp8/api_views.py:145 me_avatar_put",
+  "guest": "allowed",
+  "guest_why": "own row"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/avatars/catalog",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "avatar"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_views.py:156 avatars_catalog",
+  "guest": "allowed",
+  "guest_why": "static catalog"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/avatars/{pid}.svg",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "avatar",
+   "model"
+  ],
+  "current_check": [
+   "human-only"
+  ],
+  "where": "src/edp8/api_views.py:160 avatar_svg",
+  "guest": "allowed",
+  "guest_why": "avatar image (no epic data)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/epics/summary",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_views.py:189 epics_summary",
+  "guest": "scoped",
+  "guest_why": "member epics only"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/epics/{epic_id}/page",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_views.py:194 epic_page",
+  "guest": "scoped",
+  "guest_why": "require(epic) + sections filtered"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/tickets/table",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "participant"
+  ],
+  "current_check": [
+   "guest_scope (explicit call)"
+  ],
+  "where": "src/edp8/api_views.py:198 tickets_table",
+  "guest": "scoped",
+  "guest_why": "member-epic tickets only"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/tickets/{ticket_id}/page",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "message",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_views.py:207 ticket_page",
+  "guest": "scoped",
+  "guest_why": "require(ticket) + sections filtered"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/tickets/{ticket_id}/thread",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_views.py:212 ticket_thread",
+  "guest": "scoped",
+  "guest_why": "require(ticket)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/tickets/{ticket_id}/transitions",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/api_views.py:217 ticket_transitions",
+  "guest": "scoped",
+  "guest_why": "require(ticket)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/docs/{doc_id}/html",
+  "rw": "read",
+  "objects": [
+   "doc",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_views.py:224 doc_html",
+  "guest": "scoped",
+  "guest_why": "require(doc)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/activity",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_views.py:228 activity",
+  "guest": "refused",
+  "guest_why": "operator aggregates the guest UI never calls"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/library",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_views.py:232 library",
+  "guest": "refused",
+  "guest_why": "operator aggregates the guest UI never calls"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/me/settings",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "settings"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_settings.py:22 get_settings",
+  "guest": "allowed",
+  "guest_why": "own row"
+ },
+ {
+  "kind": "rest",
+  "method": "PUT",
+  "path": "/v1/me/settings",
+  "rw": "write",
+  "objects": [
+   "message",
+   "participant",
+   "settings"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_settings.py:28 put_settings",
+  "guest": "allowed",
+  "guest_why": "own row"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/me/settings/slack/test",
+  "rw": "write",
+  "objects": [
+   "message",
+   "participant",
+   "settings"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_settings.py:46 slack_test_ping",
+  "guest": "refused",
+  "guest_why": "outward Slack ping"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/topics",
+  "rw": "write",
+  "objects": [
+   "message",
+   "participant",
+   "topic",
+   "model"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_topics.py:93 topic_create",
+  "guest": "refused",
+  "guest_why": "Library topics are not epics"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/topics",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "topic"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_topics.py:100 topic_list",
+  "guest": "refused",
+  "guest_why": "Library topics are not epics"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/topics/{topic_id}",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "topic"
+  ],
+  "current_check": [
+   "expert/topic scope"
+  ],
+  "where": "src/edp8/api_topics.py:104 topic_page",
+  "guest": "refused",
+  "guest_why": "Library topics are not epics"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/topics/{topic_id}/docs/{doc_id}",
+  "rw": "read",
+  "objects": [
+   "doc",
+   "message",
+   "participant",
+   "topic",
+   "model"
+  ],
+  "current_check": [
+   "expert/topic scope"
+  ],
+  "where": "src/edp8/api_topics.py:109 topic_doc",
+  "guest": "refused",
+  "guest_why": "Library topics are not epics"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/topics/{topic_id}/messages",
+  "rw": "write",
+  "objects": [
+   "message",
+   "participant",
+   "topic",
+   "model"
+  ],
+  "current_check": [
+   "expert/topic scope"
+  ],
+  "where": "src/edp8/api_topics.py:118 topic_post",
+  "guest": "refused",
+  "guest_why": "Library topics are not epics"
+ },
+ {
+  "kind": "rest",
+  "method": "PATCH",
+  "path": "/v1/topics/{topic_id}/tags",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "topic",
+   "model"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_topics.py:124 topic_tags",
+  "guest": "refused",
+  "guest_why": "Library topics are not epics"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/topics/{topic_id}/experts",
+  "rw": "write",
+  "objects": [
+   "link",
+   "participant",
+   "topic",
+   "token",
+   "model"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_topics.py:129 expert_add",
+  "guest": "refused",
+  "guest_why": "Library topics are not epics"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/expert-session",
+  "rw": "write",
+  "objects": [
+   "link",
+   "session",
+   "token"
+  ],
+  "current_check": [
+   "own credential flow"
+  ],
+  "where": "src/edp8/api_topics.py:142 expert_session",
+  "guest": "refused",
+  "guest_why": "Library topics are not epics"
+ },
+ {
+  "kind": "rest",
+  "method": "DELETE",
+  "path": "/v1/topics/{topic_id}/experts/{expert_id}",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "topic"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_topics.py:152 expert_remove",
+  "guest": "refused",
+  "guest_why": "Library topics are not epics"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/topics/{topic_id}/close",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "topic",
+   "model"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_topics.py:158 topic_close",
+  "guest": "refused",
+  "guest_why": "Library topics are not epics"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/topics/{topic_id}/research",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "topic"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_topics.py:163 topic_research",
+  "guest": "refused",
+  "guest_why": "Library topics are not epics"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/topics/{topic_id}/proposals",
+  "rw": "write",
+  "objects": [
+   "doc",
+   "participant",
+   "topic",
+   "model"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_topics.py:168 topic_propose",
+  "guest": "refused",
+  "guest_why": "Library topics are not epics"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/me/usage",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "usage"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_usage.py:15 usage",
+  "guest": "refused",
+  "guest_why": "fleet usage/cost"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/admin/settings",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "settings"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/settings_api.py:164 settings_get",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "PUT",
+  "path": "/v1/admin/settings",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "settings"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/settings_api.py:168 settings_put",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/admin/services",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "service"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/services.py:120 services_get",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/services/{svc}/{verb}",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "service"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/services.py:124 service_action",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/admin/capacity",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/capacity.py:96 capacity_get",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "PUT",
+  "path": "/v1/admin/capacity",
+  "rw": "write",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/capacity.py:100 capacity_put",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/admin/teammates",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "token"
+  ],
+  "current_check": [
+   "admin router gate",
+   "human-only"
+  ],
+  "where": "src/edp8/admin/teammates.py:259 teammates_list",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/teammates",
+  "rw": "write",
+  "objects": [
+   "link",
+   "message",
+   "participant",
+   "topic",
+   "token",
+   "model"
+  ],
+  "current_check": [
+   "admin router gate",
+   "expert/topic scope"
+  ],
+  "where": "src/edp8/admin/teammates.py:265 teammate_create",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/teammates/{handle}/invite",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "token",
+   "model"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/teammates.py:287 teammate_reinvite",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "PUT",
+  "path": "/v1/admin/teammates/{handle}",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "token",
+   "model"
+  ],
+  "current_check": [
+   "admin router gate",
+   "expert/topic scope"
+  ],
+  "where": "src/edp8/admin/teammates.py:298 teammate_patch",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/teammates/{handle}/revoke",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "token"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/teammates.py:308 teammate_revoke",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/teammates/{handle}/remove",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "token",
+   "model"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/teammates.py:320 teammate_remove",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/teammates/{handle}/rotate",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "token"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/teammates.py:337 teammate_rotate",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/admin/tokens/agents",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "token",
+   "model"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/teammates.py:349 agent_tokens",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "DELETE",
+  "path": "/v1/admin/tokens/agents/{handle}",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "token"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/teammates.py:364 agent_token_revoke",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/join",
+  "rw": "write",
+  "objects": [
+   "token"
+  ],
+  "current_check": [
+   "own credential flow"
+  ],
+  "where": "src/edp8/admin/teammates.py:377 join",
+  "guest": "allowed",
+  "guest_why": "public invite redeem"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/admin/access-requests",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "claim"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/access.py:321 requests_list",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/access-requests/{req_id}/approve",
+  "rw": "write",
+  "objects": [
+   "message",
+   "participant",
+   "claim",
+   "token",
+   "model"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/access.py:331 approve",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/access-requests/{req_id}/deny",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "model"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/access.py:359 deny",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/admin/tailnet",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/remote.py:91 tailnet_status",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/admin/tailnet/guide",
+  "rw": "read",
+  "objects": [
+   "link",
+   "participant",
+   "settings"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/remote.py:101 tailnet_guide",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/tailnet/apply",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "service"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/remote.py:123 tailnet_apply",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/tailnet/remove",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "service"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/remote.py:131 tailnet_remove",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/teammates/{handle}/tailscale-key",
+  "rw": "write",
+  "objects": [
+   "message",
+   "participant",
+   "settings"
+  ],
+  "current_check": [
+   "admin router gate",
+   "human-only"
+  ],
+  "where": "src/edp8/admin/remote.py:139 tailscale_key",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/admin/integrations",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/integrations.py:206 integrations",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/admin/integrations/slack",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/integrations.py:212 slack_get",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "PUT",
+  "path": "/v1/admin/integrations/slack",
+  "rw": "write",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/integrations.py:216 slack_put",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/integrations/slack/test",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "settings",
+   "token"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/integrations.py:222 slack_test",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/admin/integrations/plane",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/integrations.py:243 plane_get",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "PUT",
+  "path": "/v1/admin/integrations/plane",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "settings"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/integrations.py:247 plane_put",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/integrations/plane/test",
+  "rw": "write",
+  "objects": [
+   "message",
+   "participant"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/integrations.py:257 plane_check",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/admin/integrations/code-server",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/integrations.py:264 code_get",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/integrations/code-server/test",
+  "rw": "write",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/integrations.py:269 code_test",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/admin/integrations/vscode",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/integrations.py:278 vscode_get",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/integrations/vscode/test",
+  "rw": "write",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/integrations.py:282 vscode_test",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/admin/harnesses",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "harness"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/harnesses.py:205 harnesses_get",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/harnesses/{h}/update",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "harness"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/harnesses.py:215 harness_update",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "PUT",
+  "path": "/v1/admin/harnesses/selection",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "settings",
+   "harness"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/harnesses.py:240 harness_selection",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/admin/models",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "model"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/models.py:110 get_models",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "PUT",
+  "path": "/v1/admin/models",
+  "rw": "write",
+  "objects": [
+   "message",
+   "participant",
+   "model",
+   "harness"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/models.py:114 put_models",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/models/test-spawn",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "settings",
+   "token",
+   "model",
+   "harness"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/models.py:133 test_spawn",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/admin/updates",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/updates.py:74 updates_get",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/updates/apply",
+  "rw": "write",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/updates.py:84 updates_apply",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/admin/setup/prereqs",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/prereqs_api.py:102 prereqs_get",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/setup/prereqs/{name}/install",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "fix"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/prereqs_api.py:106 prereqs_install",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/admin/setup",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/setup_api.py:64 setup_get",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/setup/done",
+  "rw": "write",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/admin/setup_api.py:68 setup_done",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/signout",
+  "rw": "write",
+  "objects": [
+   "token"
+  ],
+  "current_check": [
+   "none"
+  ],
+  "where": "src/edp8/admin/access.py:238 signout",
+  "guest": "allowed",
+  "guest_why": "sign out"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/access-requests/available",
+  "rw": "read",
+  "objects": [],
+  "current_check": [
+   "none"
+  ],
+  "where": "src/edp8/admin/access.py:244 available",
+  "guest": "allowed",
+  "guest_why": "public access-request flow (own guards)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/access-requests",
+  "rw": "write",
+  "objects": [
+   "claim"
+  ],
+  "current_check": [
+   "none"
+  ],
+  "where": "src/edp8/admin/access.py:250 ask",
+  "guest": "allowed",
+  "guest_why": "public access-request flow (own guards)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/access-requests/claim",
+  "rw": "write",
+  "objects": [
+   "claim",
+   "token",
+   "model"
+  ],
+  "current_check": [
+   "own credential flow"
+  ],
+  "where": "src/edp8/admin/access.py:272 claim",
+  "guest": "allowed",
+  "guest_why": "public access-request flow (own guards)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/help",
+  "rw": "write",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_doctor.py:86 ask",
+  "guest": "refused",
+  "guest_why": "Help seat diagnostics and fixes"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/help",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_doctor.py:94 help_list",
+  "guest": "refused",
+  "guest_why": "Help seat diagnostics and fixes"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/doctor/health",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "doctor/reader"
+  ],
+  "where": "src/edp8/api_doctor.py:99 d_health",
+  "guest": "refused",
+  "guest_why": "Help seat diagnostics and fixes"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/doctor/pool",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "doctor/reader"
+  ],
+  "where": "src/edp8/api_doctor.py:103 d_pool",
+  "guest": "refused",
+  "guest_why": "Help seat diagnostics and fixes"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/doctor/feed-lag",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "doctor/reader"
+  ],
+  "where": "src/edp8/api_doctor.py:107 d_lag",
+  "guest": "refused",
+  "guest_why": "Help seat diagnostics and fixes"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/doctor/dead-mail",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "doctor/reader"
+  ],
+  "where": "src/edp8/api_doctor.py:111 d_dead",
+  "guest": "refused",
+  "guest_why": "Help seat diagnostics and fixes"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/doctor/why-stuck/{ticket_id}",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "participant"
+  ],
+  "current_check": [
+   "doctor/reader"
+  ],
+  "where": "src/edp8/api_doctor.py:115 d_stuck",
+  "guest": "refused",
+  "guest_why": "Help seat diagnostics and fixes"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/doctor/workflow/{ref}",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "workflow"
+  ],
+  "current_check": [
+   "doctor/reader"
+  ],
+  "where": "src/edp8/api_doctor.py:119 d_workflow",
+  "guest": "refused",
+  "guest_why": "Help seat diagnostics and fixes"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/doctor/pains",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "pain"
+  ],
+  "current_check": [
+   "doctor/reader"
+  ],
+  "where": "src/edp8/api_doctor.py:123 d_pains",
+  "guest": "refused",
+  "guest_why": "Help seat diagnostics and fixes"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/doctor/logs/{service}",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "service"
+  ],
+  "current_check": [
+   "doctor/reader"
+  ],
+  "where": "src/edp8/api_doctor.py:127 d_logs",
+  "guest": "refused",
+  "guest_why": "Help seat diagnostics and fixes"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/fixes",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "topic",
+   "fix"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_doctor.py:132 fix_propose",
+  "guest": "refused",
+  "guest_why": "Help seat diagnostics and fixes"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/fixes",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "topic",
+   "fix"
+  ],
+  "current_check": [
+   "is_admin()",
+   "doctor/reader",
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/api_doctor.py:140 fix_list",
+  "guest": "refused",
+  "guest_why": "Help seat diagnostics and fixes"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/fixes/{fix_id}/approve",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "fix",
+   "token"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/api_doctor.py:149 fix_approve",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/admin/fixes/{fix_id}/reject",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "fix"
+  ],
+  "current_check": [
+   "admin router gate"
+  ],
+  "where": "src/edp8/api_doctor.py:161 fix_reject",
+  "guest": "refused",
+  "guest_why": "admin surface"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/pains",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "pain"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_tools.py:64 pain_query",
+  "guest": "refused",
+  "guest_why": "framework pain log (host evidence)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/pains",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "pain",
+   "model"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_tools.py:74 pain_file",
+  "guest": "refused",
+  "guest_why": "framework pain log (host evidence)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/pains/{pain_id}",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "pain"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_tools.py:70 pain_read",
+  "guest": "refused",
+  "guest_why": "framework pain log (host evidence)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/pains/{pain_id}/resolve",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "participant",
+   "pain",
+   "fix"
+  ],
+  "current_check": [
+   "is_admin()",
+   "owner role",
+   "doctor/reader"
+  ],
+  "where": "src/edp8/api_tools.py:79 pain_resolve",
+  "guest": "refused",
+  "guest_why": "framework pain log (host evidence)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/services/status",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "service"
+  ],
+  "current_check": [
+   "is_admin()",
+   "owner role",
+   "architect role",
+   "doctor/reader"
+  ],
+  "where": "src/edp8/api_tools.py:86 services_status",
+  "guest": "refused",
+  "guest_why": "host services"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/harvest/cost",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "is_admin()",
+   "owner role",
+   "qa role"
+  ],
+  "where": "src/edp8/api_tools.py:98 harvest_cost",
+  "guest": "refused",
+  "guest_why": "fleet cost"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/code/external/{port}/{target_path}",
+  "rw": "read",
+  "objects": [
+   "link"
+  ],
+  "current_check": [
+   "board-host-only (loopback peer)"
+  ],
+  "where": "src/edp8/api_code.py:165 external",
+  "guest": "refused",
+  "guest_why": "Code tab and chat (owner ruling R6)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/code",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_code.py:183 code",
+  "guest": "refused",
+  "guest_why": "Code tab and chat (owner ruling R6)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/code/session",
+  "rw": "write",
+  "objects": [
+   "message",
+   "participant",
+   "session",
+   "token",
+   "service"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_code.py:205 session",
+  "guest": "refused",
+  "guest_why": "Code tab and chat (owner ruling R6)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/code/reset-layout",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "session"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_code.py:220 reset_layout",
+  "guest": "refused",
+  "guest_why": "Code tab and chat (owner ruling R6)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/code/faq",
+  "rw": "read",
+  "objects": [
+   "message",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/api_code.py:234 faq",
+  "guest": "refused",
+  "guest_why": "Code tab and chat (owner ruling R6)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/whoami",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "participant",
+   "workflow"
+  ],
+  "current_check": [
+   "is_admin()",
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:826 whoami",
+  "guest": "allowed",
+  "guest_why": "own identity"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/describe/{type_}",
+  "rw": "read",
+  "objects": [
+   "doc",
+   "fix",
+   "model"
+  ],
+  "current_check": [
+   "none"
+  ],
+  "where": "src/edp8/service.py:836 describe",
+  "guest": "allowed",
+  "guest_why": "object schemas (static)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/context",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:844 context",
+  "guest": "scoped",
+  "guest_why": "member epics' tickets; recall dropped"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/context_delta",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:848 context_delta",
+  "guest": "scoped",
+  "guest_why": "visible events only"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/inbox",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:853 inbox",
+  "guest": "scoped",
+  "guest_why": "asks on visible tickets only"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/close_check",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:858 close_check",
+  "guest": "refused",
+  "guest_why": "seat close check"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/participants",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "message",
+   "gate",
+   "participant",
+   "token",
+   "model"
+  ],
+  "current_check": [
+   "owner role",
+   "architect role"
+  ],
+  "where": "src/edp8/service.py:863 participant_create",
+  "guest": "refused",
+  "guest_why": "registry write"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/participants",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:884 participants",
+  "guest": "scoped",
+  "guest_why": "people on member epics + the owner"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/participants/{id_}",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:890 participant_get",
+  "guest": "scoped",
+  "guest_why": "require(person in scope)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/tickets",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "doc",
+   "participant",
+   "workflow"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:895 ticket_create",
+  "guest": "refused",
+  "guest_why": "ticket create / status transition / edit"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/tickets",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:945 ticket_query",
+  "guest": "scoped",
+  "guest_why": "filter_visible"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/epics/{epic_id}/members",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:919 epic_members",
+  "guest": "scoped",
+  "guest_why": "require(epic): who the epic is shared with"
+ },
+ {
+  "kind": "rest",
+  "method": "PUT",
+  "path": "/v1/epics/{epic_id}/members",
+  "rw": "write",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:927 epic_members_put",
+  "guest": "refused",
+  "guest_why": "epic edits incl. membership (owner)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/tickets/{id_}",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "doc",
+   "message",
+   "participant"
+  ],
+  "current_check": [
+   "guest_scope (explicit call)"
+  ],
+  "where": "src/edp8/service.py:933 ticket_get",
+  "guest": "scoped",
+  "guest_why": "require(ticket) + sections filtered"
+ },
+ {
+  "kind": "rest",
+  "method": "PATCH",
+  "path": "/v1/tickets/{id_}",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:961 ticket_update",
+  "guest": "refused",
+  "guest_why": "ticket create / status transition / edit"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/criteria",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "criterion",
+   "participant",
+   "decision"
+  ],
+  "current_check": [
+   "owner role",
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:972 criterion_create",
+  "guest": "refused",
+  "guest_why": "criteria create / verdict"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/criteria",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "criterion",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:990 criterion_query",
+  "guest": "scoped",
+  "guest_why": "filter_visible"
+ },
+ {
+  "kind": "rest",
+  "method": "PATCH",
+  "path": "/v1/criteria/{id_}",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "criterion",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:994 criterion_update",
+  "guest": "refused",
+  "guest_why": "criteria create / verdict"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/epics/{epic_id}/asks",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "participant"
+  ],
+  "current_check": [
+   "guest_scope (explicit call)"
+  ],
+  "where": "src/edp8/service.py:1006 asks_list",
+  "guest": "scoped",
+  "guest_why": "require(epic); the guest's own asks only, no story digests"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/asks/{ask_id}/triage",
+  "rw": "write",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1017 ask_triage",
+  "guest": "refused",
+  "guest_why": "ask_triage / ask_verdict: architect and qa authority (S4)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/asks/{ask_id}/verdict",
+  "rw": "write",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1023 ask_verdict",
+  "guest": "refused",
+  "guest_why": "ask_triage / ask_verdict: architect and qa authority (S4)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/docs",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "doc",
+   "link",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1029 doc_create",
+  "guest": "refused",
+  "guest_why": "doc create/edit/approve/import"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/docs",
+  "rw": "read",
+  "objects": [
+   "doc",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1055 doc_query",
+  "guest": "scoped",
+  "guest_why": "filter_visible"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/docs/{id_}",
+  "rw": "read",
+  "objects": [
+   "doc",
+   "participant"
+  ],
+  "current_check": [
+   "guest_scope (explicit call)"
+  ],
+  "where": "src/edp8/service.py:1043 doc_get",
+  "guest": "scoped",
+  "guest_why": "require(doc)"
+ },
+ {
+  "kind": "rest",
+  "method": "PATCH",
+  "path": "/v1/docs/{id_}",
+  "rw": "write",
+  "objects": [
+   "doc",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1091 doc_update",
+  "guest": "refused",
+  "guest_why": "doc create/edit/approve/import"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/docs/{id_}/approve",
+  "rw": "write",
+  "objects": [
+   "doc",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1061 doc_approve",
+  "guest": "refused",
+  "guest_why": "doc create/edit/approve/import"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/docs/{id_}/reject",
+  "rw": "write",
+  "objects": [
+   "doc",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1068 doc_reject",
+  "guest": "refused",
+  "guest_why": "doc create/edit/approve/import"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/docs/{id_}/diff",
+  "rw": "read",
+  "objects": [
+   "doc",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1073 doc_diff",
+  "guest": "scoped",
+  "guest_why": "require(doc)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/knowledge",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1077 knowledge_list",
+  "guest": "refused",
+  "guest_why": "operator aggregates the guest UI never calls"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/library/import",
+  "rw": "write",
+  "objects": [
+   "doc",
+   "link",
+   "participant",
+   "index"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1082 library_import",
+  "guest": "refused",
+  "guest_why": "doc import"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/docs/{id_}/edit",
+  "rw": "write",
+  "objects": [
+   "doc",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1098 doc_edit",
+  "guest": "refused",
+  "guest_why": "doc create/edit/approve/import"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/links",
+  "rw": "write",
+  "objects": [
+   "link",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1102 link_create",
+  "guest": "refused",
+  "guest_why": "link writes would widen the closure"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/links",
+  "rw": "read",
+  "objects": [
+   "link",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1106 link_query",
+  "guest": "scoped",
+  "guest_why": "both ends visible"
+ },
+ {
+  "kind": "rest",
+  "method": "DELETE",
+  "path": "/v1/links/{id_}",
+  "rw": "write",
+  "objects": [
+   "link",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1111 link_delete",
+  "guest": "refused",
+  "guest_why": "link writes would widen the closure"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/artifacts",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "artifact",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1115 artifact_create",
+  "guest": "refused",
+  "guest_why": "url artifacts are seat work; a guest uploads files"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/artifacts/upload-authorize",
+  "rw": "write",
+  "objects": [
+   "artifact",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1119 artifact_upload_authorize",
+  "guest": "scoped",
+  "guest_why": "upload: staged, invisible until finalised in scope"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/artifacts/upload",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "link",
+   "artifact",
+   "message",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1129 artifact_upload",
+  "guest": "scoped",
+  "guest_why": "upload: staged, invisible until finalised in scope"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/artifacts/finalize",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "link",
+   "artifact",
+   "message",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1177 artifact_finalize",
+  "guest": "scoped",
+  "guest_why": "finalise onto a ticket in scope; secret screen"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/artifacts/{id_}/content",
+  "rw": "read",
+  "objects": [
+   "artifact",
+   "participant"
+  ],
+  "current_check": [
+   "guest_scope (explicit call)",
+   "staged→uploader only"
+  ],
+  "where": "src/edp8/service.py:1186 artifact_content",
+  "guest": "scoped",
+  "guest_why": "require(artifact)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/artifacts/{id_}",
+  "rw": "read",
+  "objects": [
+   "artifact",
+   "participant"
+  ],
+  "current_check": [
+   "guest_scope (explicit call)",
+   "staged→uploader only"
+  ],
+  "where": "src/edp8/service.py:1217 artifact_get",
+  "guest": "scoped",
+  "guest_why": "require(artifact)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/messages",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "artifact",
+   "message",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1232 message_send",
+  "guest": "scoped",
+  "guest_why": "ticket in scope; kind in {question, note}; secret screen"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/messages",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "message",
+   "participant"
+  ],
+  "current_check": [
+   "guest_scope (explicit call)"
+  ],
+  "where": "src/edp8/service.py:1381 message_query",
+  "guest": "scoped",
+  "guest_why": "ticket in scope (require) or filter_visible"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/status",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "message",
+   "participant",
+   "pain"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1269 record_status",
+  "guest": "refused",
+  "guest_why": "seat status record"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/decisions",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "decision"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1284 record_decision",
+  "guest": "refused",
+  "guest_why": "records / decisions"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/decisions",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "participant",
+   "decision"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1307 scope_decisions",
+  "guest": "refused",
+  "guest_why": "operator aggregates the guest UI never calls"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/claims",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "claim"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1291 record_claim",
+  "guest": "refused",
+  "guest_why": "records / decisions"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/lessons",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "lesson",
+   "topic"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1297 record_lesson",
+  "guest": "refused",
+  "guest_why": "records / decisions"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/decisions/{id_}/withdraw",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "decision"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1302 withdraw_decision",
+  "guest": "refused",
+  "guest_why": "records / decisions"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/claims/{id_}/withdraw",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "claim"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1315 withdraw_claim",
+  "guest": "refused",
+  "guest_why": "records / decisions"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/decisions/{id_}/binding",
+  "rw": "write",
+  "objects": [
+   "event",
+   "participant",
+   "decision"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1320 set_binding",
+  "guest": "refused",
+  "guest_why": "records / decisions"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/index/dense_search",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "index"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1327 index_dense_search",
+  "guest": "refused",
+  "guest_why": "index search and maintenance (board-wide)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/recall",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "participant",
+   "decision",
+   "claim",
+   "lesson",
+   "model"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1334 recall",
+  "guest": "refused",
+  "guest_why": "operator aggregates the guest UI never calls"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/lookup",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1342 lookup",
+  "guest": "scoped",
+  "guest_why": "scope must be a visible ticket/epic"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/index/reembed",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "index",
+   "model"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1348 index_reembed",
+  "guest": "refused",
+  "guest_why": "index search and maintenance (board-wide)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/index/binding_audit",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "decision",
+   "index"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1354 index_binding_audit",
+  "guest": "refused",
+  "guest_why": "index search and maintenance (board-wide)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/index/embed_counts",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "index"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1360 index_embed_counts",
+  "guest": "refused",
+  "guest_why": "index search and maintenance (board-wide)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/index/backfill_decided_at",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "index"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1365 index_backfill_decided_at",
+  "guest": "refused",
+  "guest_why": "index search and maintenance (board-wide)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/service_event",
+  "rw": "write",
+  "objects": [
+   "event",
+   "token",
+   "service"
+  ],
+  "current_check": [
+   "admin header/token"
+  ],
+  "where": "src/edp8/service.py:1371 service_event",
+  "guest": "refused",
+  "guest_why": "service plane"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/messages/resolve",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "message",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1403 message_resolve",
+  "guest": "refused",
+  "guest_why": "message side-actions (resolve …) are seat/owner work"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/messages/{id_}",
+  "rw": "read",
+  "objects": [
+   "message",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1409 message_get",
+  "guest": "scoped",
+  "guest_why": "require(message)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/tickets/{id_}/contextual",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1413 ticket_contextual",
+  "guest": "scoped",
+  "guest_why": "require(ticket)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/docs/{id_}/sources",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "criterion",
+   "doc",
+   "link",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1417 document_sources",
+  "guest": "scoped",
+  "guest_why": "require(doc)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/docs/{id_}/comments",
+  "rw": "read",
+  "objects": [
+   "doc",
+   "message",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1426 doc_comments",
+  "guest": "scoped",
+  "guest_why": "require(doc)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/docs/{id_}/context",
+  "rw": "read",
+  "objects": [
+   "doc",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1432 document_context",
+  "guest": "scoped",
+  "guest_why": "require(doc)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/gates/decide",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "message",
+   "gate",
+   "participant",
+   "decision"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1438 review_decide",
+  "guest": "refused",
+  "guest_why": "gate open/answer"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/docs/comments",
+  "rw": "write",
+  "objects": [
+   "doc",
+   "message",
+   "participant"
+  ],
+  "current_check": [
+   "guest_scope (explicit call)"
+  ],
+  "where": "src/edp8/service.py:1449 document_comment",
+  "guest": "scoped",
+  "guest_why": "doc in scope (a comment is a message on its thread)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/gates/{ticket_id}/{gate}/open",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "gate",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1457 gate_open",
+  "guest": "refused",
+  "guest_why": "gate open/answer"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/gates/{ticket_id}/{gate}/answer",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "gate",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1465 gate_answer",
+  "guest": "refused",
+  "guest_why": "gate open/answer"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/gates/{ticket_id}",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "gate",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1471 gates",
+  "guest": "scoped",
+  "guest_why": "require(ticket)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/board/{epic_id}",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1476 board_view",
+  "guest": "scoped",
+  "guest_why": "require(epic)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/events",
+  "rw": "read",
+  "objects": [
+   "event",
+   "participant"
+  ],
+  "current_check": [
+   "guest_scope (explicit call)",
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1480 events",
+  "guest": "scoped",
+  "guest_why": "visible events only (iter_replay keep)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/find",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "doc",
+   "participant"
+  ],
+  "current_check": [
+   "guest_scope (explicit call)"
+  ],
+  "where": "src/edp8/service.py:1491 find",
+  "guest": "scoped",
+  "guest_why": "visible hits only, pushed into retrieval"
+ },
+ {
+  "kind": "rest",
+  "method": "PUT",
+  "path": "/v1/sessions/{id_}",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "event",
+   "participant",
+   "session"
+  ],
+  "current_check": [
+   "admin header/token"
+  ],
+  "where": "src/edp8/service.py:1501 session_upsert",
+  "guest": "refused",
+  "guest_why": "spawn/reap/resume/close: seat authority"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/sessions",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "participant",
+   "session"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1525 sessions",
+  "guest": "refused",
+  "guest_why": "spawn/reap/resume/close: seat authority"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/sessions/seat-token",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "participant",
+   "session",
+   "workflow",
+   "token",
+   "model",
+   "harness"
+  ],
+  "current_check": [
+   "_authorize_pool_op (owner any; architect own epic)",
+   "_refuse_non_agent"
+  ],
+  "where": "src/edp8/service.py:1553 session_seat_token",
+  "guest": "refused",
+  "guest_why": "spawn/reap/resume/close: seat authority"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/sessions/spawn",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "participant",
+   "session",
+   "workflow"
+  ],
+  "current_check": [
+   "_authorize_pool_op (owner any; architect own epic)",
+   "_refuse_non_agent",
+   "qa role"
+  ],
+  "where": "src/edp8/service.py:1576 session_spawn",
+  "guest": "refused",
+  "guest_why": "spawn/reap/resume/close: seat authority"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/quick-tasks",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "link",
+   "message",
+   "participant",
+   "model"
+  ],
+  "current_check": [
+   "owner role",
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:1648 quick_task_create",
+  "guest": "refused",
+  "guest_why": "creates owner work"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/sessions/resume",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "message",
+   "participant",
+   "session"
+  ],
+  "current_check": [
+   "_authorize_pool_op (owner any; architect own epic)",
+   "_refuse_non_agent"
+  ],
+  "where": "src/edp8/service.py:1688 session_resume",
+  "guest": "refused",
+  "guest_why": "spawn/reap/resume/close: seat authority"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/sessions/reap",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "participant",
+   "session"
+  ],
+  "current_check": [
+   "_authorize_pool_op (owner any; architect own epic)"
+  ],
+  "where": "src/edp8/service.py:1711 session_reap",
+  "guest": "refused",
+  "guest_why": "spawn/reap/resume/close: seat authority"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/sessions/close",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "participant",
+   "session"
+  ],
+  "current_check": [
+   "_authorize_pool_op (owner any; architect own epic)"
+  ],
+  "where": "src/edp8/service.py:1724 session_close",
+  "guest": "refused",
+  "guest_why": "spawn/reap/resume/close: seat authority"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/workflows",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "workflow"
+  ],
+  "current_check": [
+   "is_admin()",
+   "architect role"
+  ],
+  "where": "src/edp8/service.py:1758 workflows_list",
+  "guest": "refused",
+  "guest_why": "workflow definitions are owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "PUT",
+  "path": "/v1/workflows",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "workflow"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1905 workflow_save",
+  "guest": "refused",
+  "guest_why": "workflow definitions are owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/workflows/templates",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "workflow"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1768 workflow_templates",
+  "guest": "refused",
+  "guest_why": "workflow definitions are owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/workflows/card-preview",
+  "rw": "read",
+  "objects": [
+   "doc",
+   "participant",
+   "workflow"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1780 workflow_card_preview",
+  "guest": "refused",
+  "guest_why": "workflow definitions are owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/workflows/{ref_}/card/{role}",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "workflow"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1787 workflow_card",
+  "guest": "refused",
+  "guest_why": "workflow definitions are owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/workflows/diff",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "workflow"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1808 workflow_diff_body",
+  "guest": "refused",
+  "guest_why": "workflow definitions are owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/workflows/dryrun",
+  "rw": "read",
+  "objects": [
+   "gate",
+   "participant",
+   "workflow",
+   "fix"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1821 workflow_dryrun",
+  "guest": "refused",
+  "guest_why": "workflow definitions are owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/workflows/{ref_}",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "workflow"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1829 workflow_get",
+  "guest": "refused",
+  "guest_why": "workflow definitions are owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "DELETE",
+  "path": "/v1/workflows/{ref_}",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "workflow"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1924 workflow_delete",
+  "guest": "refused",
+  "guest_why": "workflow definitions are owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/workflows/{ref_}/lifecycle",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "participant",
+   "workflow"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1840 workflow_lifecycle",
+  "guest": "refused",
+  "guest_why": "workflow definitions are owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/workflows/{ref_}/diff",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "workflow"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1851 workflow_diff",
+  "guest": "refused",
+  "guest_why": "workflow definitions are owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/workflows/{ref_}/upstream",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "workflow"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1868 workflow_upstream",
+  "guest": "refused",
+  "guest_why": "workflow definitions are owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/workflows/{ref_}/merge-upstream",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "workflow"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1878 workflow_merge_upstream",
+  "guest": "refused",
+  "guest_why": "workflow definitions are owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/workflows/validate",
+  "rw": "read",
+  "objects": [
+   "message",
+   "participant",
+   "workflow",
+   "fix"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1891 workflow_validate",
+  "guest": "refused",
+  "guest_why": "workflow definitions are owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/workflows/duplicate",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "workflow"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1915 workflow_duplicate",
+  "guest": "refused",
+  "guest_why": "workflow definitions are owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/workflows/{ref_}/restore",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "workflow"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1938 workflow_restore",
+  "guest": "refused",
+  "guest_why": "workflow definitions are owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/workflows/{ref_}/publish",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "workflow"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1949 workflow_publish",
+  "guest": "refused",
+  "guest_why": "workflow definitions are owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/models",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "model",
+   "harness"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1961 models_catalog",
+  "guest": "refused",
+  "guest_why": "models / harness / pool: owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/harness",
+  "rw": "read",
+  "objects": [
+   "participant",
+   "model",
+   "harness"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1972 harness_state",
+  "guest": "refused",
+  "guest_why": "models / harness / pool: owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/v1/harness/fable-ack",
+  "rw": "write",
+  "objects": [
+   "participant",
+   "token",
+   "harness"
+  ],
+  "current_check": [
+   "human-only"
+  ],
+  "where": "src/edp8/service.py:1984 harness_fable_ack",
+  "guest": "refused",
+  "guest_why": "models / harness / pool: owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/pool/capabilities",
+  "rw": "read",
+  "objects": [
+   "message",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:1996 pool_capabilities",
+  "guest": "refused",
+  "guest_why": "models / harness / pool: owner configuration"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/listening",
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "where": "src/edp8/service.py:2011 listening",
+  "guest": "allowed",
+  "guest_why": "static contract"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/feed",
+  "rw": "read",
+  "objects": [
+   "event",
+   "participant"
+  ],
+  "current_check": [
+   "guest_scope (explicit call)",
+   "board-side (actor passed in)"
+  ],
+  "where": "src/edp8/service.py:2016 feed",
+  "guest": "scoped",
+  "guest_why": "visible events only; scope recomputed on change, resync on revoke"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/ui/poll",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "event",
+   "token"
+  ],
+  "current_check": [
+   "ui _guard (verified identity)",
+   "ui _me (form as_/token verified)",
+   "guest_scope (explicit call)"
+  ],
+  "where": "src/edp8/ui.py:233 poll",
+  "guest": "scoped",
+  "guest_why": "visible events only"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/ui-legacy/me",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "criterion",
+   "doc",
+   "message",
+   "gate",
+   "participant",
+   "session",
+   "avatar",
+   "attention",
+   "token"
+  ],
+  "current_check": [
+   "owner role",
+   "human-only",
+   "ui _me (form as_/token verified)"
+  ],
+  "where": "src/edp8/ui.py:255 me",
+  "guest": "refused",
+  "guest_why": "legacy renderer (not ported to the scope)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/ui-legacy/me/message",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "message",
+   "participant",
+   "token"
+  ],
+  "current_check": [
+   "ui _me (form as_/token verified)"
+  ],
+  "where": "src/edp8/ui.py:409 me_message",
+  "guest": "refused",
+  "guest_why": "legacy renderer (not ported to the scope)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/ui-legacy/me/gate",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "gate",
+   "token"
+  ],
+  "current_check": [
+   "ui _me (form as_/token verified)"
+  ],
+  "where": "src/edp8/ui.py:420 me_gate",
+  "guest": "refused",
+  "guest_why": "legacy renderer (not ported to the scope)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/ui-legacy/activity",
+  "rw": "read",
+  "objects": [
+   "event",
+   "token"
+  ],
+  "current_check": [
+   "ui _me (form as_/token verified)"
+  ],
+  "where": "src/edp8/ui.py:427 activity_page",
+  "guest": "refused",
+  "guest_why": "legacy renderer (not ported to the scope)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/ui-legacy/me/verdict",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "criterion",
+   "doc",
+   "token"
+  ],
+  "current_check": [
+   "ui _me (form as_/token verified)"
+  ],
+  "where": "src/edp8/ui.py:439 me_verdict",
+  "guest": "refused",
+  "guest_why": "legacy renderer (not ported to the scope)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/ui-legacy/me/avatar",
+  "rw": "write",
+  "objects": [
+   "avatar",
+   "token"
+  ],
+  "current_check": [
+   "human-only",
+   "ui _me (form as_/token verified)"
+  ],
+  "where": "src/edp8/ui.py:455 me_avatar",
+  "guest": "refused",
+  "guest_why": "legacy renderer (not ported to the scope)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/ui-legacy",
+  "rw": "read",
+  "objects": [],
+  "current_check": [
+   "none"
+  ],
+  "where": "?",
+  "guest": "refused",
+  "guest_why": "legacy renderer (not ported to the scope)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/ui-legacy/tickets",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "link",
+   "token"
+  ],
+  "current_check": [
+   "ui _guard (verified identity)",
+   "ui _me (form as_/token verified)"
+  ],
+  "where": "src/edp8/ui.py:489 tickets",
+  "guest": "refused",
+  "guest_why": "legacy renderer (not ported to the scope)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/ui-legacy/epic/{epic_id}",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "doc",
+   "message",
+   "gate",
+   "decision",
+   "avatar",
+   "token"
+  ],
+  "current_check": [
+   "human-only",
+   "ui _guard (verified identity)",
+   "ui _me (form as_/token verified)"
+  ],
+  "where": "src/edp8/ui.py:539 epic",
+  "guest": "refused",
+  "guest_why": "legacy renderer (not ported to the scope)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/ui-legacy/ticket/{ticket_id}",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "criterion",
+   "doc",
+   "link",
+   "message",
+   "participant",
+   "avatar",
+   "token"
+  ],
+  "current_check": [
+   "human-only",
+   "ui _guard (verified identity)",
+   "ui _me (form as_/token verified)"
+  ],
+  "where": "src/edp8/ui.py:611 ticket",
+  "guest": "refused",
+  "guest_why": "legacy renderer (not ported to the scope)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/ui-legacy/ticket/{ticket_id}/say",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "message",
+   "token"
+  ],
+  "current_check": [
+   "ui _me (form as_/token verified)"
+  ],
+  "where": "src/edp8/ui.py:647 ticket_say",
+  "guest": "refused",
+  "guest_why": "legacy renderer (not ported to the scope)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/ui-legacy/doc/{doc_id}",
+  "rw": "read",
+  "objects": [
+   "ticket",
+   "criterion",
+   "doc",
+   "avatar",
+   "token"
+  ],
+  "current_check": [
+   "human-only",
+   "ui _guard (verified identity)",
+   "ui _me (form as_/token verified)"
+  ],
+  "where": "src/edp8/ui.py:660 doc",
+  "guest": "refused",
+  "guest_why": "legacy renderer (not ported to the scope)"
+ },
+ {
+  "kind": "rest",
+  "method": "POST",
+  "path": "/ui-legacy/doc/{doc_id}/comment",
+  "rw": "write",
+  "objects": [
+   "ticket",
+   "doc",
+   "message",
+   "token"
+  ],
+  "current_check": [
+   "ui _me (form as_/token verified)"
+  ],
+  "where": "src/edp8/ui.py:701 doc_comment",
+  "guest": "refused",
+  "guest_why": "legacy renderer (not ported to the scope)"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/healthz",
+  "rw": "read",
+  "objects": [],
+  "current_check": [
+   "none"
+  ],
+  "where": "src/edp8/service.py:2197 healthz",
+  "guest": "allowed",
+  "guest_why": "liveness"
+ },
+ {
+  "kind": "rest",
+  "method": "GET",
+  "path": "/v1/health",
+  "rw": "read",
+  "objects": [
+   "service"
+  ],
+  "current_check": [
+   "none"
+  ],
+  "where": "src/edp8/service.py:2201 v1_health",
+  "guest": "allowed",
+  "guest_why": "liveness"
+ },
+ {
+  "kind": "hidden",
+  "method": "GET",
+  "path": "/openapi.json",
+  "rw": "read",
+  "objects": [],
+  "current_check": [
+   "none (static)"
+  ],
+  "where": "Route",
+  "guest": "allowed",
+  "guest_why": "route shapes only"
+ },
+ {
+  "kind": "hidden",
+  "method": "GET",
+  "path": "/docs",
+  "rw": "read",
+  "objects": [],
+  "current_check": [
+   "none (static)"
+  ],
+  "where": "Route",
+  "guest": "allowed",
+  "guest_why": "route shapes only"
+ },
+ {
+  "kind": "hidden",
+  "method": "GET",
+  "path": "/docs/oauth2-redirect",
+  "rw": "read",
+  "objects": [],
+  "current_check": [
+   "none (static)"
+  ],
+  "where": "Route",
+  "guest": "allowed",
+  "guest_why": "route shapes only"
+ },
+ {
+  "kind": "hidden",
+  "method": "GET",
+  "path": "/redoc",
+  "rw": "read",
+  "objects": [],
+  "current_check": [
+   "none (static)"
+  ],
+  "where": "Route",
+  "guest": "allowed",
+  "guest_why": "route shapes only"
+ },
+ {
+  "kind": "hidden",
+  "method": "GET",
+  "path": "/ui",
+  "rw": "read",
+  "objects": [],
+  "current_check": [
+   "none (static)"
+  ],
+  "where": "APIRoute",
+  "guest": "allowed",
+  "guest_why": "SPA shell (data comes from /v1)"
+ },
+ {
+  "kind": "hidden",
+  "method": "GET",
+  "path": "/ui/{path:path}",
+  "rw": "read",
+  "objects": [],
+  "current_check": [
+   "none (static)"
+  ],
+  "where": "APIRoute",
+  "guest": "allowed",
+  "guest_why": "SPA shell (data comes from /v1)"
+ },
+ {
+  "kind": "hidden",
+  "method": "GET",
+  "path": "/",
+  "rw": "read",
+  "objects": [],
+  "current_check": [
+   "none (static)"
+  ],
+  "where": "APIRoute",
+  "guest": "allowed",
+  "guest_why": "SPA shell redirect"
+ },
+ {
+  "kind": "mcp",
+  "tool": "artifact_create",
+  "bundle": "artifact",
+  "rest": [
+   "POST /v1/artifacts"
+  ],
+  "rw": "write",
+  "objects": [
+   "artifact",
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "artifact_read",
+  "bundle": "artifact",
+  "rest": [
+   "GET /v1/artifacts/{}"
+  ],
+  "rw": "read",
+  "objects": [
+   "artifact",
+   "participant"
+  ],
+  "current_check": [
+   "guest_scope (explicit call)",
+   "staged→uploader only"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "artifact_upload",
+  "bundle": "artifact",
+  "rest": [
+   "POST /v1/artifacts/upload"
+  ],
+  "rw": "write",
+  "objects": [
+   "artifact",
+   "link",
+   "message",
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "ask_triage",
+  "bundle": "ticket",
+  "rest": [
+   "POST /v1/asks/{}/triage"
+  ],
+  "rw": "write",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "ask_verdict",
+  "bundle": "ticket",
+  "rest": [
+   "POST /v1/asks/{}/verdict"
+  ],
+  "rw": "write",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "asks",
+  "bundle": "ticket",
+  "rest": [
+   "GET /v1/epics/{}/asks"
+  ],
+  "rw": "read",
+  "objects": [
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "guest_scope (explicit call)"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "assemble_ruleset",
+  "bundle": "ruleset",
+  "rest": [
+   "GET /v1/docs/{}",
+   "GET /v1/links",
+   "GET /v1/recall",
+   "GET /v1/tickets/{}"
+  ],
+  "rw": "read",
+  "objects": [
+   "claim",
+   "decision",
+   "doc",
+   "lesson",
+   "link",
+   "message",
+   "model",
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "authenticated actor only",
+   "guest_scope (explicit call)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "board",
+  "bundle": "board",
+  "rest": [
+   "GET /v1/board/{}"
+  ],
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "close",
+  "bundle": "close",
+  "rest": [
+   "GET /v1/board/{}",
+   "GET /v1/sessions"
+  ],
+  "rw": "read",
+  "objects": [
+   "participant",
+   "session",
+   "ticket"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "close_self",
+  "bundle": "pool",
+  "rest": [
+   "GET /v1/close_check"
+  ],
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "context",
+  "bundle": "identity",
+  "rest": [
+   "GET /v1/context"
+  ],
+  "rw": "read",
+  "objects": [
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "context_delta",
+  "bundle": "identity",
+  "rest": [
+   "GET /v1/context_delta"
+  ],
+  "rw": "read",
+  "objects": [
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "criterion_create",
+  "bundle": "ticket",
+  "rest": [
+   "POST /v1/criteria"
+  ],
+  "rw": "write",
+  "objects": [
+   "criterion",
+   "decision",
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "board-side (actor passed in)",
+   "owner role"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "criterion_query",
+  "bundle": "ticket",
+  "rest": [
+   "GET /v1/criteria"
+  ],
+  "rw": "read",
+  "objects": [
+   "criterion",
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "criterion_update",
+  "bundle": "ticket",
+  "rest": [
+   "PATCH /v1/criteria/{}"
+  ],
+  "rw": "write",
+  "objects": [
+   "criterion",
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "dense_search",
+  "bundle": "knowledge",
+  "rest": [
+   "GET /v1/index/dense_search"
+  ],
+  "rw": "read",
+  "objects": [
+   "index",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "describe",
+  "bundle": "identity",
+  "rest": [
+   "GET /v1/describe/{}"
+  ],
+  "rw": "read",
+  "objects": [
+   "doc",
+   "fix",
+   "model"
+  ],
+  "current_check": [
+   "none"
+  ],
+  "guest": "allowed",
+  "derived": "allowed",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "describe_objects",
+  "bundle": "identity",
+  "rest": [
+   "GET /v1/describe/{}"
+  ],
+  "rw": "read",
+  "objects": [
+   "doc",
+   "fix",
+   "model"
+  ],
+  "current_check": [
+   "none"
+  ],
+  "guest": "allowed",
+  "derived": "allowed",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "doc_create",
+  "bundle": "doc",
+  "rest": [
+   "POST /v1/docs"
+  ],
+  "rw": "write",
+  "objects": [
+   "doc",
+   "link",
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "doc_edit",
+  "bundle": "doc",
+  "rest": [
+   "POST /v1/docs/{}/edit"
+  ],
+  "rw": "write",
+  "objects": [
+   "doc",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "doc_query",
+  "bundle": "doc",
+  "rest": [
+   "GET /v1/docs"
+  ],
+  "rw": "read",
+  "objects": [
+   "doc",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "doc_read",
+  "bundle": "doc",
+  "rest": [
+   "GET /v1/docs/{}"
+  ],
+  "rw": "read",
+  "objects": [
+   "doc",
+   "participant"
+  ],
+  "current_check": [
+   "guest_scope (explicit call)"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "doc_update",
+  "bundle": "doc",
+  "rest": [
+   "PATCH /v1/docs/{}"
+  ],
+  "rw": "write",
+  "objects": [
+   "doc",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "doctor_dead_mail",
+  "bundle": "doctor",
+  "rest": [
+   "GET /v1/doctor/{}"
+  ],
+  "rw": "read",
+  "objects": [],
+  "current_check": [],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "no board REST route (local/pool): refused unless listed"
+ },
+ {
+  "kind": "mcp",
+  "tool": "doctor_feed_lag",
+  "bundle": "doctor",
+  "rest": [
+   "GET /v1/doctor/{}"
+  ],
+  "rw": "read",
+  "objects": [],
+  "current_check": [],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "no board REST route (local/pool): refused unless listed"
+ },
+ {
+  "kind": "mcp",
+  "tool": "doctor_health",
+  "bundle": "doctor",
+  "rest": [
+   "GET /v1/doctor/{}"
+  ],
+  "rw": "read",
+  "objects": [],
+  "current_check": [],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "no board REST route (local/pool): refused unless listed"
+ },
+ {
+  "kind": "mcp",
+  "tool": "doctor_logs",
+  "bundle": "doctor",
+  "rest": [
+   "GET /v1/doctor/{}"
+  ],
+  "rw": "read",
+  "objects": [],
+  "current_check": [],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "no board REST route (local/pool): refused unless listed"
+ },
+ {
+  "kind": "mcp",
+  "tool": "doctor_pains",
+  "bundle": "doctor",
+  "rest": [
+   "GET /v1/doctor/{}"
+  ],
+  "rw": "read",
+  "objects": [],
+  "current_check": [],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "no board REST route (local/pool): refused unless listed"
+ },
+ {
+  "kind": "mcp",
+  "tool": "doctor_pool",
+  "bundle": "doctor",
+  "rest": [
+   "GET /v1/doctor/{}"
+  ],
+  "rw": "read",
+  "objects": [],
+  "current_check": [],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "no board REST route (local/pool): refused unless listed"
+ },
+ {
+  "kind": "mcp",
+  "tool": "events_query",
+  "bundle": "board",
+  "rest": [
+   "GET /v1/events"
+  ],
+  "rw": "read",
+  "objects": [
+   "event",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)",
+   "guest_scope (explicit call)"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "find",
+  "bundle": "search",
+  "rest": [
+   "GET /v1/find"
+  ],
+  "rw": "read",
+  "objects": [
+   "doc",
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "guest_scope (explicit call)"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "gate_answer",
+  "bundle": "thread",
+  "rest": [
+   "POST /v1/gates/{}/{}/answer"
+  ],
+  "rw": "write",
+  "objects": [
+   "gate",
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "gate_open",
+  "bundle": "thread",
+  "rest": [
+   "POST /v1/gates/{}/{}/open"
+  ],
+  "rw": "write",
+  "objects": [
+   "gate",
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "gates",
+  "bundle": "thread",
+  "rest": [
+   "GET /v1/gates/{}"
+  ],
+  "rw": "read",
+  "objects": [
+   "gate",
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "get_guide",
+  "bundle": "identity",
+  "rest": [],
+  "rw": "read",
+  "objects": [],
+  "current_check": [],
+  "guest": "allowed",
+  "derived": "refused",
+  "guest_why": "no board REST route (local/pool): refused unless listed"
+ },
+ {
+  "kind": "mcp",
+  "tool": "harvest_cost",
+  "bundle": "framework",
+  "rest": [
+   "GET /v1/harvest/cost"
+  ],
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "is_admin()",
+   "owner role",
+   "qa role"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "inbox",
+  "bundle": "pool",
+  "rest": [
+   "GET /v1/inbox"
+  ],
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "link_create",
+  "bundle": "doc",
+  "rest": [
+   "POST /v1/links"
+  ],
+  "rw": "write",
+  "objects": [
+   "link",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "link_delete",
+  "bundle": "doc",
+  "rest": [
+   "DELETE /v1/links/{}"
+  ],
+  "rw": "write",
+  "objects": [
+   "link",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "link_query",
+  "bundle": "doc",
+  "rest": [
+   "GET /v1/links"
+  ],
+  "rw": "read",
+  "objects": [
+   "link",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "lookup",
+  "bundle": "knowledge",
+  "rest": [
+   "GET /v1/lookup"
+  ],
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "message_query",
+  "bundle": "thread",
+  "rest": [
+   "GET /v1/messages"
+  ],
+  "rw": "read",
+  "objects": [
+   "message",
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "guest_scope (explicit call)"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "message_read",
+  "bundle": "thread",
+  "rest": [
+   "GET /v1/messages/{}"
+  ],
+  "rw": "read",
+  "objects": [
+   "message",
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "message_send",
+  "bundle": "thread",
+  "rest": [
+   "POST /v1/messages"
+  ],
+  "rw": "write",
+  "objects": [
+   "artifact",
+   "message",
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "pain",
+  "bundle": "framework",
+  "rest": [
+   "GET /v1/pains",
+   "GET /v1/pains/{}",
+   "POST /v1/pains",
+   "POST /v1/pains/{}/resolve"
+  ],
+  "rw": "write",
+  "objects": [
+   "fix",
+   "model",
+   "pain",
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "authenticated actor only",
+   "doctor/reader",
+   "is_admin()",
+   "owner role"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "participants",
+  "bundle": "board",
+  "rest": [
+   "GET /v1/participants",
+   "GET /v1/sessions"
+  ],
+  "rw": "read",
+  "objects": [
+   "participant",
+   "session",
+   "ticket"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "preflight",
+  "bundle": "identity",
+  "rest": [],
+  "rw": "read",
+  "objects": [],
+  "current_check": [],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "no board REST route (local/pool): refused unless listed"
+ },
+ {
+  "kind": "mcp",
+  "tool": "propose_fix",
+  "bundle": "doctor",
+  "rest": [
+   "POST /v1/fixes"
+  ],
+  "rw": "write",
+  "objects": [
+   "fix",
+   "participant",
+   "topic"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "reap",
+  "bundle": "pool",
+  "rest": [
+   "GET /v1/tickets/{}",
+   "GET /v1/whoami"
+  ],
+  "rw": "read",
+  "objects": [
+   "doc",
+   "message",
+   "participant",
+   "ticket",
+   "workflow"
+  ],
+  "current_check": [
+   "board-side (actor passed in)",
+   "guest_scope (explicit call)",
+   "is_admin()",
+   "_pool_caller_check (owner; architect own epic)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "record_claim",
+  "bundle": "knowledge",
+  "rest": [
+   "POST /v1/claims"
+  ],
+  "rw": "write",
+  "objects": [
+   "claim",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "record_decision",
+  "bundle": "knowledge",
+  "rest": [
+   "POST /v1/decisions"
+  ],
+  "rw": "write",
+  "objects": [
+   "decision",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "record_lesson",
+  "bundle": "knowledge",
+  "rest": [
+   "POST /v1/lessons"
+  ],
+  "rw": "write",
+  "objects": [
+   "lesson",
+   "participant",
+   "topic"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "record_status",
+  "bundle": "pool",
+  "rest": [
+   "POST /v1/status"
+  ],
+  "rw": "write",
+  "objects": [
+   "message",
+   "pain",
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "resume",
+  "bundle": "pool",
+  "rest": [],
+  "rw": "read",
+  "objects": [],
+  "current_check": [],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "no board REST route (local/pool): refused unless listed"
+ },
+ {
+  "kind": "mcp",
+  "tool": "resume_self",
+  "bundle": "identity",
+  "rest": [
+   "GET /v1/inbox",
+   "GET /v1/listening",
+   "GET /v1/whoami",
+   "POST /v1/status"
+  ],
+  "rw": "write",
+  "objects": [
+   "message",
+   "pain",
+   "participant",
+   "ticket",
+   "workflow"
+  ],
+  "current_check": [
+   "authenticated actor only",
+   "board-side (actor passed in)",
+   "is_admin()"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "service_status",
+  "bundle": "framework",
+  "rest": [
+   "GET /v1/services/status"
+  ],
+  "rw": "read",
+  "objects": [
+   "participant",
+   "service"
+  ],
+  "current_check": [
+   "architect role",
+   "doctor/reader",
+   "is_admin()",
+   "owner role"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "session_query",
+  "bundle": "pool",
+  "rest": [
+   "GET /v1/sessions"
+  ],
+  "rw": "read",
+  "objects": [
+   "participant",
+   "session",
+   "ticket"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "set_binding",
+  "bundle": "knowledge",
+  "rest": [
+   "POST /v1/decisions/{}/binding"
+  ],
+  "rw": "write",
+  "objects": [
+   "decision",
+   "event",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "spawn",
+  "bundle": "pool",
+  "rest": [
+   "GET /v1/board/{}",
+   "GET /v1/criteria",
+   "GET /v1/participants/{}",
+   "GET /v1/sessions",
+   "GET /v1/tickets/{}",
+   "GET /v1/whoami",
+   "PATCH /v1/tickets/{}",
+   "POST /v1/participants",
+   "POST /v1/sessions/seat-token"
+  ],
+  "rw": "write",
+  "objects": [
+   "criterion",
+   "doc",
+   "gate",
+   "harness",
+   "message",
+   "model",
+   "participant",
+   "session",
+   "ticket",
+   "token",
+   "workflow"
+  ],
+  "current_check": [
+   "_authorize_pool_op (owner any; architect own epic)",
+   "_refuse_non_agent",
+   "architect role",
+   "authenticated actor only",
+   "board-side (actor passed in)",
+   "guest_scope (explicit call)",
+   "is_admin()",
+   "owner role",
+   "_pool_caller_check (owner; architect own epic)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "subscribe",
+  "bundle": "identity",
+  "rest": [
+   "GET /v1/listening"
+  ],
+  "rw": "read",
+  "objects": [
+   "participant"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "guest": "allowed",
+  "derived": "allowed",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "teammate",
+  "bundle": "framework",
+  "rest": [
+   "GET /v1/admin/teammates",
+   "POST /v1/admin/teammates",
+   "POST /v1/admin/teammates/{}/{}"
+  ],
+  "rw": "write",
+  "objects": [
+   "link",
+   "message",
+   "model",
+   "participant",
+   "token",
+   "topic"
+  ],
+  "current_check": [
+   "admin router gate",
+   "expert/topic scope",
+   "human-only"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "ticket_create",
+  "bundle": "ticket",
+  "rest": [
+   "POST /v1/tickets"
+  ],
+  "rw": "write",
+  "objects": [
+   "doc",
+   "participant",
+   "ticket",
+   "workflow"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "ticket_query",
+  "bundle": "ticket",
+  "rest": [
+   "GET /v1/tickets"
+  ],
+  "rw": "read",
+  "objects": [
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "ticket_read",
+  "bundle": "ticket",
+  "rest": [
+   "GET /v1/tickets/{}"
+  ],
+  "rw": "read",
+  "objects": [
+   "doc",
+   "message",
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "guest_scope (explicit call)"
+  ],
+  "guest": "scoped",
+  "derived": "scoped",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "ticket_update",
+  "bundle": "ticket",
+  "rest": [
+   "PATCH /v1/tickets/{}"
+  ],
+  "rw": "write",
+  "objects": [
+   "participant",
+   "ticket"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "topic_propose",
+  "bundle": "knowledge",
+  "rest": [
+   "POST /v1/topics/{}/proposals"
+  ],
+  "rw": "write",
+  "objects": [
+   "doc",
+   "model",
+   "participant",
+   "topic"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "topic_research",
+  "bundle": "knowledge",
+  "rest": [
+   "POST /v1/topics/{}/research"
+  ],
+  "rw": "write",
+  "objects": [
+   "participant",
+   "topic"
+  ],
+  "current_check": [
+   "authenticated actor only"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "whoami",
+  "bundle": "identity",
+  "rest": [
+   "GET /v1/whoami"
+  ],
+  "rw": "read",
+  "objects": [
+   "participant",
+   "ticket",
+   "workflow"
+  ],
+  "current_check": [
+   "board-side (actor passed in)",
+   "is_admin()"
+  ],
+  "guest": "allowed",
+  "derived": "allowed",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "why_stuck",
+  "bundle": "doctor",
+  "rest": [
+   "GET /v1/doctor/{}"
+  ],
+  "rw": "read",
+  "objects": [],
+  "current_check": [],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "no board REST route (local/pool): refused unless listed"
+ },
+ {
+  "kind": "mcp",
+  "tool": "withdraw_claim",
+  "bundle": "knowledge",
+  "rest": [
+   "POST /v1/claims/{}/withdraw"
+  ],
+  "rw": "write",
+  "objects": [
+   "claim",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "withdraw_decision",
+  "bundle": "knowledge",
+  "rest": [
+   "POST /v1/decisions/{}/withdraw"
+  ],
+  "rw": "write",
+  "objects": [
+   "decision",
+   "participant"
+  ],
+  "current_check": [
+   "board-side (actor passed in)"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "workflow",
+  "bundle": "framework",
+  "rest": [
+   "GET /v1/workflows",
+   "GET /v1/workflows/{}",
+   "POST /v1/workflows/duplicate",
+   "POST /v1/workflows/validate",
+   "POST /v1/workflows/{}/publish",
+   "PUT /v1/workflows"
+  ],
+  "rw": "write",
+  "objects": [
+   "fix",
+   "message",
+   "participant",
+   "workflow"
+  ],
+  "current_check": [
+   "architect role",
+   "authenticated actor only",
+   "is_admin()"
+  ],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "a tool is a BoardClient REST call made as the caller: the REST gate enforces it"
+ },
+ {
+  "kind": "mcp",
+  "tool": "workflow_check",
+  "bundle": "doctor",
+  "rest": [
+   "GET /v1/doctor/{}"
+  ],
+  "rw": "read",
+  "objects": [],
+  "current_check": [],
+  "guest": "refused",
+  "derived": "refused",
+  "guest_why": "no board REST route (local/pool): refused unless listed"
+ }
+]

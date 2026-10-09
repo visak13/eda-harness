@@ -3,6 +3,8 @@
    (brief, process, criteria, stories tree + kanban). */
 .page { display: flex; flex-direction: column; min-width: 0; }
 .work { display: flex; flex-direction: column; gap: 24px; }
+/* S12-ui2 (qa m-da89ef8294 item 7): each overview heading clears the block above it */
+.overviewLabel { margin-top: 20px; }
 .gloss { margin: 8px 0 0; font-size: 12px; line-height: 18px; color: var(--muted); }
 .words { margin: 0; padding: 16px; border-left: 3px solid var(--accent); background: var(--rail); min-width: 0; }
 .wordsLabel { font: 600 11px/16px "Segoe UI", system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); margin-bottom: 8px; }
@@ -31,12 +33,19 @@
 }
 /* Human #24: seat id links to its Seats row; Message / Resume sit inline on the right. */
 .seatRow {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px 210px; /* id | state | actions: the same columns on every row, so rows line up */
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  flex-wrap: wrap;
 }
+@media (max-width: 600px) {
+  .seatRow { grid-template-columns: minmax(0, 1fr) 210px; }
+  .seatLink { grid-column: 1 / -1; overflow-wrap: anywhere; }
+}
+.seatState { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink); white-space: nowrap; }
+.seatDot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--strongline); }
+.seatDot.success { background: var(--success); }
+.seatDot.accentink { background: var(--accentink); }
 .seatLink {
   color: var(--accentink);
   text-decoration: underline;
@@ -46,9 +55,10 @@
   outline-offset: 2px;
 }
 .seatActions {
-  display: flex;
+  display: flex; /* Message in a fixed first column on every row, then the state's own actions right after it: no empty slot */
   gap: 6px;
 }
+.seatActions > * { flex: 0 0 66px; text-align: center; }
 .seatAction {
   font: inherit;
   font-size: 12px;
@@ -57,7 +67,8 @@
   background: none;
   border: 1px solid var(--accentink);
   border-radius: 4px;
-  padding: 2px 8px;
+  padding: 2px 0;
+  text-align: center;
   cursor: pointer;
   text-decoration: none;
 }

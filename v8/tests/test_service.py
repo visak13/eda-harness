@@ -131,7 +131,7 @@ def test_docs_version_endpoint(client, rig):
     d = client.post("/v1/docs", json={"doc_type": "design", "title": "v1", "body_md": "body v1",
                                        "scope": epic["id"]}, headers=rig["arch"]).json()["value"]
     client.patch(f"/v1/docs/{d['id']}", json={"body_md": "body v2", "title": "v2"}, headers=rig["arch"])
-    latest = client.get(f"/v1/docs/{d['id']}", headers=rig["arch"]).json()["value"]
+    latest = client.get(f"/v1/docs/{d['id']}", headers=rig["arch"], params={"all": "true"}).json()["value"]
     assert latest["version"] == 2
     assert latest["versions"] == [1, 2]
     old = client.get(f"/v1/docs/{d['id']}?version=1", headers=rig["arch"]).json()["value"]

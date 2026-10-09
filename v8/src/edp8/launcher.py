@@ -19,6 +19,7 @@ supervisor (its restarts and its loopback control port) and the legacy wrappers 
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from dataclasses import dataclass
@@ -199,6 +200,11 @@ def child_env(svc: str) -> dict[str, str]:
         env.setdefault("CLAUDE_CODE_FORCE_SESSION_PERSISTENCE", "1")
         # seats never self-update mid-run (design §4.10); the pool also sets it per claude seat
         env.setdefault("DISABLE_AUTOUPDATER", "1")
+        # the pool resumes updater-parked seats on its own start, except while an update holds this lock: the
+        # updater resumes them once, after the final version is healthy (s-4d93970c9f item 5)
+        from . import update_lock
+        from .updater import update_dir
+        env["EDP_UPDATE_LOCK"] = str(update_lock.path_for(update_dir()))
     return env
 
 
@@ -265,11 +271,42 @@ def owner(svc: str, *, port_: int | None = None) -> tuple[str, dict[str, Any]]:
     ans = probe(svc, port_=p)
     lp = run_state.listener_pid(p)
     facts: dict[str, Any] = {"port": p, "pid": lp, "answers": ans is not None,
-                             "home_id": (ans or {}).get("home_id"), "home": (ans or {}).get("home")}
+                             "home_id": (ans or {}).get("home_id"), "home": (ans or {}).get("home"),
+                             "version": (ans or {}).get("version")}
     if facts["home_id"]:
         return ("ours" if facts["home_id"] == my_home_id() else "foreign"), facts
     lid = ProcId.try_of(lp) if lp else None
     return ("ours" if lid is not None and _recorded(svc, lid) else "foreign"), facts
+
+
+def update_block() -> str | None:
+    """"an update to X is in progress (step, elapsed)" while a live updater holds this home's update lock (the
+    updater's own processes carry its token and pass), else None."""
+    from . import update_lock
+    from .updater import update_dir
+    return update_lock.guard(update_dir())
+
+
+def installed_version() -> str:
+    from . import __version__
+    return __version__
+
+
+def stray_version(facts: dict[str, Any]) -> str | None:
+    """The version a service of this home reports when it is not the installed one (a board started from
+    the old files mid-update), else None. A service that reports no version is not judged."""
+    v = facts.get("version")
+    return str(v) if v and str(v) != installed_version() else None
+
+
+def _evict_stray(svc: str, facts: dict[str, Any]) -> None:
+    """Stop a service of this home that runs another version than the installed one; `start` then launches the
+    installed version. Never adopted: the owner's 0.10.2 update adopted a 0.10.1 board and rolled itself back."""
+    print(f"{svc:<10} running {facts.get('version')}, installed is {installed_version()}: stopping it", flush=True)
+    rep = stop(svc, grace=4.0)
+    if rep["survivors"]:
+        raise LaunchError(f"{svc}: version {facts.get('version')} (pid {facts.get('pid')}) could not be stopped; "
+                          f"end it in Task Manager, then run `heronry start`")
 
 
 def foreign_text(svc: str, facts: dict[str, Any]) -> str:
@@ -330,20 +367,54 @@ def enabled(svc: str) -> bool:
     return True
 
 
+#: t-fb8b63874e item 6: how long a start whose own process exited waits for another start of this home to answer
+RACE_ADOPT_S = 15.0
+
+
+def _adopt_race_winner(svc: str, p: int, ident: ProcId) -> dict[str, Any] | None:
+    """Another start of this home (a supervisor's relaunch, the app's boot) can take the port while this one is
+    starting: its `relaunch` stops whatever holds the port, this spawn among them, and its own board answers a few
+    seconds later. The owner's rolled-back update printed `board FAILED … exited during start` while the board was
+    healthy (pid 37616 gone, 15404 up 3 s later with restarts 1). A service of this home that answers within
+    RACE_ADOPT_S is adopted as already running, never reported failed; a foreign one is never adopted."""
+    why = _why_not_live(ident)
+    deadline = time.monotonic() + RACE_ADOPT_S
+    while not healthy(svc):
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(0.5)
+    rec = run_state.adopt(svc, port=p)
+    return {"service": svc, "state": "already_running", "pid": (rec or {}).get("pid"), "url": url(svc),
+            "reason": f"another start of this home won the port; this one's process {why}"}
+
+
 def start(svc: str, *, wait_s: float = 90.0) -> dict[str, Any]:
     """Start `svc` unless it already runs. Returns {service, state: started|already_running|skipped, pid,
     url}. Idempotent: a service that answers its health route is adopted, never started twice."""
     if svc not in SPECS:
         raise LaunchError(f"unknown service {svc!r} (board|broker|pool|mcp|bridge)")
+    home_guard()
+    blocked = update_block()
+    if blocked:
+        raise LaunchError(blocked)
     if not enabled(svc):
         return {"service": svc, "state": "skipped", "reason": "no slack map configured", "pid": None, "url": None}
     p = port(svc)
     if not p and running(svc):
         return {"service": svc, "state": "already_running", "pid": (run_state.read(svc) or {}).get("pid"), "url": None}
     if p and run_state._port_listening(p):
+        who0, facts0 = owner(svc)
+        if who0 == "ours" and facts0.get("answers") and stray_version(facts0):
+            _evict_stray(svc, facts0)
+    left = leftovers(svc) if p and not running(svc) else []
+    if left:  # RC2 item 3: adopt or clear an interrupted start's process, never start a second one beside it
+        adopted = _recover(svc, p, left, wait_s)
+        if adopted is not None:
+            return adopted
+    if p and run_state._port_listening(p):
         # adopt only a service of THIS home; another home's service on our port is refused, never adopted
         who, facts = owner(svc)
-        if who == "ours" and facts.get("answers"):
+        if who == "ours" and facts.get("answers") and not stray_version(facts):
             rec = run_state.adopt(svc, port=p)
             return {"service": svc, "state": "already_running", "pid": (rec or {}).get("pid"), "url": url(svc)}
         raise LaunchError(foreign_text(svc, facts))
@@ -363,7 +434,11 @@ def start(svc: str, *, wait_s: float = 90.0) -> dict[str, Any]:
             time.sleep(0.25)
     else:
         time.sleep(2.0)  # port-less (the bridge): still alive after 2 s is started
-    if not ident.live() and not (p and healthy(svc)):
+    if p and not ident.live():
+        adopted = _adopt_race_winner(svc, p, ident)
+        if adopted is not None:
+            return adopted
+    if not ident.live():
         raise LaunchError(f"{svc} exited during start ({_why_not_live(ident)}); see {log}")
     if p and not _answers_as_spawned(svc, ident):
         rep = kill_tree(ident, job=job)
@@ -447,11 +522,66 @@ def _targets(svc: str) -> list[ProcId]:
     foreign = lid.pid if lid is not None and not _ours(svc, lid, port_=int(p)) else None
     out: list[ProcId] = []
     for ident in (_root(rec), run_state._ident(rec)):
-        if ident is not None and ident.live() and ident.pid != foreign and all(t.pid != ident.pid for t in out):
+        if (ident is not None and ident.live() and ident.pid != foreign and all(t.pid != ident.pid for t in out)
+                and _same_home(ident)):
             out.append(ident)
     if lid is not None and foreign is None and all(t.pid != lid.pid for t in out):
         out.append(lid)
     return out
+
+
+def _samepath(a: Any, b: Any) -> bool:
+    return os.path.normcase(str(Path(a).resolve())) == os.path.normcase(str(Path(b).resolve()))
+
+
+def _same_install(proc: Any) -> bool:
+    """In a bundle every service is `<this install's heronry.exe> --heronry-service <svc>`, so a process whose
+    image is another install's exe is another install's (c-1ccf55aec4: stop touches only its own install). A
+    non-bundled install runs services from per-package interpreters that several installs can share, so the home
+    check alone identifies them. An image path that cannot be read fails closed."""
+    if not bundled():
+        return True
+    try:
+        return _samepath(proc.exe(), bundle_exe())
+    except Exception:  # noqa: BLE001 — access denied, gone, or a platform without exe()
+        return False
+
+
+def _same_home_proc(proc: Any) -> bool:
+    try:
+        env = proc.environ()
+    except Exception:  # noqa: BLE001 — access denied, gone, or a platform without environ
+        return False
+    try:
+        if env.get("EDP8_RUN_DIR"):
+            ok = _samepath(env["EDP8_RUN_DIR"], settings.run_dir())
+        else:
+            theirs, mine = env.get("EDP8_HOME") or env.get("EDP_HOME"), settings.home()
+            ok = bool(theirs) and mine is not None and _samepath(theirs, mine)
+    except (OSError, ValueError):
+        return False
+    return ok and _same_install(proc)
+
+
+def _same_home(ident: ProcId) -> bool:
+    """A recorded process belongs to this install and home: its environment names this run dir, or (no run dir)
+    this EDP_HOME, and (bundle) its image is this install's exe. One whose environment or image cannot be read,
+    or names another, is never killed (fail-closed). The S2 incident (p-7d52c9cf): a shell that inherited the
+    fleet's EDP8_RUN_DIR read the fleet's records and `stop` killed the fleet's pool, mcp and bridge; the
+    records alone never prove whose a pid is."""
+    proc = ident.live()
+    return proc is not None and _same_home_proc(proc)
+
+
+def foreign_dirs() -> list[str]:
+    return settings.foreign_dirs()  # the one definition lives in the settings registry (S10)
+
+
+def home_guard() -> None:
+    try:
+        settings.home_guard()
+    except settings.ForeignHome as e:
+        raise LaunchError(str(e)) from None
 
 
 def unrecorded(svc: str, *, procs: Any = None) -> list[ProcId]:
@@ -463,16 +593,116 @@ def unrecorded(svc: str, *, procs: Any = None) -> list[ProcId]:
         return []
     import psutil
     want = [bundle_exe(), SERVICE_FLAG, svc]
-    mine = str(settings.run_dir())
     out: list[ProcId] = []
     for p in (procs if procs is not None else psutil.process_iter(["pid", "cmdline", "create_time", "name"])):
         try:
-            if list(p.info.get("cmdline") or ()) != want or p.environ().get("EDP8_RUN_DIR") != mine:
+            if list(p.info.get("cmdline") or ()) != want or not _same_home_proc(p):
                 continue
             out.append(ProcId(p.info["pid"], float(p.info["create_time"]), p.info.get("name") or ""))
         except (psutil.Error, OSError, TypeError, ValueError):
             continue
     return out
+
+
+def leftovers(svc: str, *, procs: Any = None) -> list[ProcId]:
+    """RC2 item 3 (t-e338298d88): this home's `svc` processes that no live record names: what an interrupted
+    (Ctrl+C) start leaves behind, often still coming up (a large board warms its index for minutes). A bundle's
+    `<app> --heronry-service <svc>` (`unrecorded`), else `<python> -m <module>`; this home only, by the same
+    fail-closed environment check `stop` uses."""
+    if bundled():
+        found = unrecorded(svc, procs=procs)
+    else:
+        import psutil
+        found = []
+        for p in (procs if procs is not None else psutil.process_iter(["pid", "cmdline", "create_time", "name"])):
+            try:
+                if list(p.info.get("cmdline") or ())[-2:] != ["-m", MODULES[svc]] or not _same_home_proc(p):
+                    continue
+                found.append(ProcId(p.info["pid"], float(p.info["create_time"]), p.info.get("name") or ""))
+            except (psutil.Error, OSError, TypeError, ValueError):
+                continue
+    return [f for f in found if f.pid not in _recorded_family(svc)]
+
+
+def _recorded_family(svc: str) -> set[int]:
+    """The recorded `svc` process with its launcher stub and children (a venv's python.exe is a stub over the
+    interpreter that listens): none of them is a leftover."""
+    if not running(svc):
+        return set()
+    import psutil
+    rec = run_state.read(svc) or {}
+    out = {int(rec.get("pid") or 0), getattr(_root(rec), "pid", 0)}
+    for pid in list(out):
+        try:
+            proc = psutil.Process(pid)
+            out.update(p.pid for p in proc.parents())
+            out.update(p.pid for p in proc.children(recursive=True))
+        except (psutil.Error, ValueError):
+            continue
+    return out
+
+
+#: a leftover that neither writes its log nor uses CPU for this long is dead-stuck (architect m-32709b46b8)
+RECOVER_STALL_S = 60.0
+#: never wait longer than this for a leftover, however busy it looks (a large board warms for minutes)
+RECOVER_CEILING_S = 900.0
+RECOVER_SAY_S = 15.0
+
+
+def _progress_mark(svc: str, left: list[ProcId]) -> tuple[Any, float]:
+    """What changes while a leftover warms: its service log (size, mtime) and its processes' CPU time."""
+    import psutil
+    try:
+        st = _log_path(svc).stat()
+        log_mark: Any = (st.st_size, st.st_mtime_ns)
+    except OSError:
+        log_mark = None
+    cpu = 0.0
+    for x in left:
+        proc = x.live()
+        if proc is None:
+            continue
+        try:
+            t = proc.cpu_times()
+            cpu += t.user + t.system
+        except psutil.Error:
+            continue
+    return log_mark, round(cpu, 2)
+
+
+def _recover(svc: str, p: int, left: list[ProcId], wait_s: float) -> dict[str, Any] | None:
+    """An earlier start of this home was interrupted and left `left` behind. Wait for it to answer on :p as this
+    home's `svc`, then adopt it; else stop what it left, so a fresh start never races it for the database or the
+    port. While it shows warm-up progress (its log grows or it uses CPU) the wait goes on past `wait_s`, with a
+    progress line every 15 s, up to RECOVER_CEILING_S; it is stopped only when dead-stuck (no progress for
+    RECOVER_STALL_S) or at the ceiling. Returns the adopted result, or None (cleared: start afresh)."""
+    began = time.monotonic()
+    mark, moved, say_at = _progress_mark(svc, left), began, began + RECOVER_SAY_S
+    while any(x.live() for x in left):
+        who, facts = owner(svc)
+        if who == "ours" and facts.get("answers"):
+            if stray_version(facts):
+                _evict_stray(svc, facts)
+                return None
+            rec = run_state.adopt(svc, port=p)
+            return {"service": svc, "state": "already_running", "pid": (rec or {}).get("pid"), "url": url(svc),
+                    "reason": "adopted from an interrupted start"}
+        now = time.monotonic()
+        seen = _progress_mark(svc, left)
+        if seen != mark:
+            mark, moved = seen, now
+        if now - began >= RECOVER_CEILING_S or (now - began >= wait_s and now - moved >= RECOVER_STALL_S):
+            break
+        if now >= say_at:
+            print(f"{svc:<10} waiting for the {svc} an interrupted start left (pid "
+                  f"{', '.join(str(x.pid) for x in left)}), still warming up: {int(now - began)} s", flush=True)
+            say_at = now + RECOVER_SAY_S
+        time.sleep(0.5)
+    survivors = [s for x in left for s in kill_tree(x).survivors]
+    if survivors:
+        raise LaunchError(f"{svc}: an interrupted start left pid(s) {', '.join(str(s) for s in survivors)} that "
+                          f"could not be stopped; end them in Task Manager, then run `heronry start`")
+    return None
 
 
 def _ours(svc: str, ident: ProcId, *, port_: int | None = None) -> bool:
@@ -482,11 +712,11 @@ def _ours(svc: str, ident: ProcId, *, port_: int | None = None) -> bool:
     if ident.live() is None:
         return False
     if SPECS[svc].health is None:
-        return _recorded(svc, ident)
+        return _recorded(svc, ident) and _same_home(ident)
     hid = (probe(svc, port_=port_) or {}).get("home_id")
     if hid:
         return hid == my_home_id()
-    return _recorded(svc, ident)
+    return _recorded(svc, ident) and _same_home(ident)  # a record alone never proves whose a pid is (S2)
 
 
 def _pool_chain(ident: ProcId) -> list[ProcId]:
@@ -561,6 +791,7 @@ def stop(svc: str, *, keep_seats: bool = False, grace: float = 4.0) -> dict[str,
     """Stop `svc` and verify it is gone: snapshot-first kill_tree of every recorded identity plus its
     listener, and its named job (Windows). `keep_seats` (pool restart) stops only the pool's own chain.
     Returns {service, state: stopped|not_running, killed, survivors}; survivors non-empty = failure."""
+    home_guard()
     rec = run_state.read(svc)
     targets = _targets(svc)
     targets += [u for u in unrecorded(svc) if all(t.pid != u.pid for t in targets)]
@@ -609,9 +840,13 @@ def supervisor_running() -> bool:
 
 def ensure_supervisor(*, wait_s: float = 20.0) -> dict[str, Any]:
     """Start the supervisor daemon unless one runs for this home (it re-adopts live services itself)."""
+    home_guard()
     if supervisor_running():
         rec = run_state.read(SUPERVISOR) or {}
         return {"service": SUPERVISOR, "state": "already_running", "pid": rec.get("pid")}
+    blocked = update_block()
+    if blocked:
+        raise LaunchError(blocked)
     argv = [bundle_exe(), SERVICE_FLAG, SUPERVISOR] if bundled() else [sys.executable, "-m", MODULES[SUPERVISOR]]
     log = _log_path(SUPERVISOR)
     env = settings.environ_copy()
@@ -642,6 +877,7 @@ def ensure_supervisor(*, wait_s: float = 20.0) -> dict[str, Any]:
 def stop_supervisor() -> dict[str, Any]:
     """Ask the supervisor to exit (control port), then make sure: kill_tree of its identity."""
     from . import control
+    home_guard()
     was = supervisor_running()
     if was:
         try:
@@ -698,7 +934,7 @@ def code_row() -> dict[str, Any]:
     return {"service": CODE, "state": st["state"], "pid": st["pid"], "port": st["port"], "url": st["url"],
             "git_rev": rec.get("git_rev"), "uptime": run_state._uptime(rec) if rec.get("started_at") else None,
             "version": st.get("version"), "installed": st["installed"], "install_hint": st["install_hint"],
-            "autostart": st["autostart"], "reason": st.get("reason")}
+            "downloadable": st.get("downloadable", False), "autostart": st["autostart"], "reason": st.get("reason")}
 
 
 def down_reason(svc: str) -> str:

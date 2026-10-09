@@ -17,12 +17,21 @@ What the project is, the UI, the memory layer and the quick start are in the
 | **mcp** | 9402 | the one shared MCP server every seat's board tools talk to |
 | **bridge** | — | Slack doorbell (no port): broker inbox growth → a Slack ping (needs `slack_map.json`) |
 | **supervisor** | — | probes every 15 s and restarts a service after three failed probes |
+| **code** (optional) | 9410 | VS Code in the browser (the Code tab): `heronry start code`. On Windows x64 the first start downloads the pinned code-server (`vscode-ext/code-server.lock.json`, sha256-checked, with its own Node), so nothing is installed first |
 
 On Windows, `..\edp.ps1` is the only way to start, stop, restart or update them:
 `.\edp.ps1 status | start | stop | restart <board|broker|pool|mcp|bridge|supervisor|all> | update`,
 with `-WhatIf` to print the plan and change nothing. It stops a service by its own process chain,
 never by image name and never with a tree kill (every seat is a child of the pool), and it refuses to
-stop the pool without `-Force` because that takes the seats offline. Details: `guides/edp-ps1.md`.
+stop the pool without `-Force` because that takes the seats offline. Details: `docs/operator/edp-ps1.md`.
+
+The board writes a read-only copy of every doc to `<agent-home>/docs/<scope>/<id>.md` (the docs mirror) in the
+same step as the database write; seats Read and grep it and edit only through `doc_edit`. A Claude Code
+seat is woken by the `edp-wake` mod (`.claude/mods/edp-wake`), which runs the feed listener and starts a
+turn only on a real event. The pool sends its crash and close events to the architect. The owner can
+**Close** a seat from the Seats page or the epic page, recorded as closed by the owner. An owner marks a
+quoted span as a requirement with **Mark as requirement** (no message is sent); the epic cannot finish while
+one is open. Each role's MCP bundle holds only the tools that role needs.
 
 Seats never start, stop or restart a shared service. A test that needs a board starts a private one on
 a spare port with its own `EDP8_HOME`/`EDP8_DB`.
@@ -41,7 +50,7 @@ A missing `uv` or `node` makes the launcher exit non-zero with a one-line messag
 ## Reach from another machine (public mode)
 
 On this host the switch is scripted: `.\edp.ps1 tailnet check|apply|remove` (runbook:
-`guides/tailnet-public-mode.md` — Tailscale https front, board kept on 127.0.0.1, one-line rollback).
+`docs/operator/tailnet-public-mode.md` — Tailscale https front, board kept on 127.0.0.1, one-line rollback).
 By hand: set `EDP8_PUBLIC_URL` in `.env` (e.g. your Tailscale hostname). Then:
 
 - the board binds `0.0.0.0` by default (`EDP8_HOST` still overrides), and

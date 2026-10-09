@@ -1,7 +1,7 @@
 # Heronry installer for Windows (S3 s-870e401942, design-e963c656f5 4.4 / 4.10).
 #
 #   irm https://github.com/visak13/eda-harness/releases/latest/download/install.ps1 | iex
-#   .\install.ps1 [-Version v0.9.1] [-ReleaseUrl <folder or https base>] [-Force] [-NoModifyPath] [-Yes] [-NoEmbed]
+#   .\install.ps1 [-Version v0.10.8] [-ReleaseUrl <folder or https base>] [-Force] [-NoModifyPath] [-Yes] [-NoEmbed]
 #
 # 1. uv: uses the uv on PATH when it is at least $UvVersion, else installs exactly $UvVersion into
 #    ~\.local\bin after checking the archive against uv's published SHA-256.
@@ -33,7 +33,8 @@ $Wheels = @("edp8", "edp_contracts", "edp_pool", "edp_broker")
 $Python = "3.12"
 
 function Say($s) { Write-Host "heronry-install: $s" }
-function Die($s) { [Console]::Error.WriteLine("heronry-install: $s"); exit 1 }
+# throw, not exit: under `irm | iex` an `exit` closes the shell the person pasted it into (S10); -File still exits 1
+function Die($s) { throw "heronry-install: $s" }
 function VersionOf($text) { if ("$text" -match '(\d+)\.(\d+)\.(\d+)') { [version]"$($Matches[1]).$($Matches[2]).$($Matches[3])" } else { $null } }
 function Sha256($path) {  # .NET, not Get-FileHash: 5.1 started from pwsh 7 inherits its PSModulePath and
   # cannot autoload Microsoft.PowerShell.Utility ("Get-FileHash is not recognized", CI 36326185339)
@@ -117,6 +118,15 @@ try {
   $installed = $null
   $exe = Join-Path $binDir "heronry.exe"
   if (Test-Path $exe) { $ErrorActionPreference = "Continue"; $installed = VersionOf (& $exe version 2>$null); $ErrorActionPreference = "Stop" }
+  # an update holds <home>\update\update.lock from park to result: replacing the install under it breaks both
+  $uhome = if ($env:EDP_HOME) { $env:EDP_HOME } else { Join-Path $env:LOCALAPPDATA "heronry" }
+  $lockf = Join-Path $uhome "update\update.lock"
+  if (Test-Path -LiteralPath $lockf) {
+    $lk = $null; try { $lk = Get-Content -LiteralPath $lockf -Raw | ConvertFrom-Json } catch { }
+    if ($lk -and @($lk.pids | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue }).Count -gt 0) {
+      Die "an update to $($lk.to) is in progress ($($lk.step)); wait for its result, then run this again"
+    }
+  }
   if ($installed -and $installed -eq (VersionOf $target) -and -not $Force) {
     Say "heronry $target is already installed; nothing to do (-Force reinstalls)"
   } else {

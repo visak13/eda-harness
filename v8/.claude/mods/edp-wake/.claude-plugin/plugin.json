@@ -1,0 +1,5 @@
+{
+  "name": "edp-wake",
+  "version": "0.1.0",
+  "description": "Wakes an edp8 seat once per real board/broker event and sends the 30-minute heartbeat, with no Monitor tool"
+}

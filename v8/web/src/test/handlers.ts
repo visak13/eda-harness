@@ -48,6 +48,8 @@ export const handlers = [
       counts: { total: 0, epics: 0, topics: 0, help: 0, admin: 0 } } }),
   ),
   http.get("/v1/epics/summary", () => HttpResponse.json({ ok: true, value: [] })),
+  // S16: an epic's asks ledger is empty by default (the epic page's ledger section)
+  http.get("/v1/epics/:id/requirements", () => HttpResponse.json({ ok: true, value: { requirements: [], digests: [] } })),
   // t-882e4d2eeb: the seats view (the thread greys `retired` people) and the sign-in page's Request access
   http.get("/v1/seats", () => HttpResponse.json({ ok: true, value: { seats: [], people: [], retired: [] } })),
   http.get("/v1/access-requests/available", () =>

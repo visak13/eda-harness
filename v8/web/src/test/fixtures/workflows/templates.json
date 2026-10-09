@@ -149,7 +149,7 @@
    "make a different (human) role the gate's answerer"
   ],
   "gate_unanswerable": [
-   "no human can answer this gate: it waits forever, and Needs you never shows it",
+   "no human can answer this gate: it waits forever and nobody is asked",
    "add a human role (the owner) to the gate's answerers"
   ],
   "role_without_spawner": [
@@ -251,10 +251,6 @@
   {
    "name": "artifact_upload",
    "description": "Stage a workspace file (25 MB cap) as an artifact"
-  },
-  {
-   "name": "assemble_ruleset",
-   "description": "Compose a ticket's layered ruleset from its strategy/domain docs: enforced lines inlined, each doc one index line"
   },
   {
    "name": "board",

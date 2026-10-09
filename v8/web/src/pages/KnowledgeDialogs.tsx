@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createKnowledgeDoc, importSkill } from "../api/endpoints";
+import { DOC_WRITE_HINT } from "./knowledgeShared";
 import type { BoardApiError } from "../api/client";
 import ui from "../components/ui.module.css";
 import dialogStyles from "../components/NewEpicDialog.module.css";
@@ -60,8 +61,8 @@ export function NewKnowledgeDialog({ open, onClose, onCreated }: {
         <label className={ui.sectionLabel} htmlFor="kn-body">Body (markdown)</label>
         <textarea id="kn-body" className={ui.textarea} rows={10} value={body} onChange={(e) => setBody(e.target.value)}
           data-testid="knowledge-new-body"
-          placeholder={"- a bar a seat applies [required]\n- context a seat reads on demand"} />
-        <p className={dialogStyles.muted}>Lines tagged [required]/[expected]/[preferred] or checkboxes are inlined into briefs; the rest is read on demand.</p>
+          placeholder={"# Title\n\n## Purpose\nWhy this doc exists.\n\n## Rules\n1. A seat MUST … [required]\n\n## Keywords\n\n## Outline\n\n## Topics"} />
+        <p className={dialogStyles.muted} data-testid="knowledge-doc-write-hint">{DOC_WRITE_HINT}</p>
         {create.isError ? <p className={ui.banner} role="alert">{errText(create.error)}</p> : null}
         <div className={dialogStyles.actions}>
           <button type="button" className={ui.button} onClick={onClose} disabled={create.isPending}>Cancel</button>

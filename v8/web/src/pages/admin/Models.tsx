@@ -8,7 +8,7 @@ import { EFFORTS } from "../../components/SeatPicks";
 import { roleLabel } from "../../components/iconPaths";
 import ui from "../../components/ui.module.css";
 import styles from "./Admin.module.css";
-import { AdminError, Done } from "./shared";
+import { AdminError, Done, errorText } from "./shared";
 
 // Admin → Seats & models → Models (S12 s-32035a77da, design §4.14(a); contract m-62fc5b54f9). The catalog
 // in the data dir: every entry names its harness and provider (no id-prefix routing), its context window
@@ -62,7 +62,7 @@ function draftProblem(d: Draft, clash: boolean): string | null {
   const cSet = !own || d.auto_compact.trim() !== "";
   if (wSet && (!Number.isInteger(w) || w <= 0)) return "Give the context window in tokens.";
   if (cSet && (!Number.isInteger(c) || c <= 0 || (wSet && c >= w))) return "Auto-compact must be a token count below the context window.";
-  if (d.harness === "claude" && d.effort_cap === "high") return "Claude models are capped at medium or lower.";
+  if (!["low", "medium", "high"].includes(d.effort_cap)) return "Effort cap is low, medium or high (xhigh and max are never used).";
   return null;
 }
 
@@ -80,7 +80,11 @@ function catalogOf(v: AdminModelsView): ModelsCatalogIn {
 
 export function ModelsEditor(): React.JSX.Element {
   const qc = useQueryClient();
-  const q = useQuery({ queryKey: ["admin", "models"], queryFn: getAdminModels, retry: false });
+  const q = useQuery({ queryKey: ["admin", "models"], queryFn: () => getAdminModels(), retry: false });
+  const reprobe = useMutation({  // Retry: re-run the Codex probe now (still bounded on the board)
+    mutationFn: () => getAdminModels(true),
+    onSuccess: (value) => qc.setQueryData(["admin", "models"], value),
+  });
   const save = useMutation({
     mutationFn: (body: ModelsCatalogIn) => putAdminModels(body),
     onSuccess: ({ value }) => {
@@ -131,29 +135,44 @@ export function ModelsEditor(): React.JSX.Element {
           </button>
         </div>
         <p className={styles.fieldDoc}>Each model names the harness that runs it and its provider. Only models of the selected harnesses ({selected.join(", ") || "none"}) are listed.</p>
-        <AdminError error={q.error} testid="models-load-error" />
-        {data?.warnings.length ? (
+        {q.isError ? (
+          <div className={ui.banner} role="alert" data-testid="models-load-error">
+            <span>Could not load the model catalog: {errorText(q.error)}</span>{" "}
+            <button type="button" className={`${ui.button} ${styles.small}`} data-testid="models-retry"
+              disabled={q.isFetching} onClick={() => void q.refetch()}>Retry</button>
+          </div>
+        ) : null}
+        {data?.codex_probe?.ok === false ? (
+          <div className={ui.banner} role="status" data-testid="models-codex-probe">
+            <span>Codex defaults unavailable: {data.codex_probe.error}.</span>{" "}
+            <button type="button" className={`${ui.button} ${styles.small}`} data-testid="models-codex-retry"
+              disabled={reprobe.isPending} onClick={() => reprobe.mutate()}>{reprobe.isPending ? "Retrying…" : "Retry"}</button>
+          </div>
+        ) : null}
+        <AdminError error={reprobe.error} testid="models-reprobe-error" />
+        {data?.warnings.length || data?.window_problems?.length ? (
           <div className={ui.banner} role="status" data-testid="models-warnings">
             {data.warnings.map((w) => <div key={w}>{w}</div>)}
+            {(data.window_problems ?? []).map((p) => <div key={`${p.code}:${p.model}`} data-testid={`window-problem-${p.model}`}>{p.what}. {p.fix}.</div>)}
           </div>
         ) : null}
         {q.isLoading ? <p className={ui.empty}>Loading…</p> : null}
         {data ? (
           <div className={styles.tableWrap}>
-            <table className={`${styles.table} ${styles.modelsTable}`} data-testid="models-table">
+            <table className={`${styles.table} ${styles.modelsTable} ${styles.stackTable}`} data-testid="models-table">
               <thead>
                 <tr><th>Model</th><th>Harness</th><th>Provider</th><th>Window</th><th>Compact at</th><th>Effort cap</th><th>Roles</th><th /></tr>
               </thead>
               <tbody>
                 {visible.map(([id, e]) => (
                   <tr key={id} data-testid={`model-row-${id}`}>
-                    <td><span className={styles.row}><ProviderIcon harness={e.harness} /><strong>{modelLabel(id)}</strong>{modelLabel(id) !== id ? <code className={styles.usage}>{id}</code> : null}</span></td>
-                    <td className={styles.num}>{e.harness}{missing.has(e.harness) ? <div className={styles.fieldNote} data-testid={`model-why-${id}`}>{NOT_INSTALLED}</div> : null}</td>
-                    <td className={styles.num}>{e.provider || "—"}</td>
-                    <td className={styles.num} data-testid={`model-window-${id}`}>{tokens(e.context_window || undefined, e.harness, data.harness_defaults?.[id]?.context_window)}</td>
-                    <td className={styles.num} data-testid={`model-compact-${id}`}>{tokens(e.auto_compact, e.harness, data.harness_defaults?.[id]?.auto_compact)}</td>
-                    <td>{e.effort_cap ?? "none"}</td>
-                    <td className={styles.usage}>{rolesOf(id).join(", ") || "not in a role"}</td>
+                    <td><span className={styles.row}><ProviderIcon harness={e.harness} /><strong>{modelLabel(id, e)}</strong>{modelLabel(id) !== id ? <code className={styles.usage}>{id}</code> : null}</span></td>
+                    <td data-label="Harness" className={styles.num}>{e.harness}{missing.has(e.harness) ? <div className={styles.fieldNote} data-testid={`model-why-${id}`}>{NOT_INSTALLED}</div> : null}</td>
+                    <td data-label="Provider" className={styles.num}>{e.provider || "—"}</td>
+                    <td data-label="Window" className={styles.num} data-testid={`model-window-${id}`}>{tokens(e.context_window || undefined, e.harness, data.harness_defaults?.[id]?.context_window)}</td>
+                    <td data-label="Compact at" className={styles.num} data-testid={`model-compact-${id}`}>{tokens(e.auto_compact, e.harness, data.harness_defaults?.[id]?.auto_compact)}</td>
+                    <td data-label="Effort cap">{e.effort_cap ?? "none"}</td>
+                    <td data-label="Roles" className={styles.usage}>{rolesOf(id).join(", ") || "not in a role"}</td>
                     <td>
                       <div className={styles.actions}>
                         <button type="button" className={`${ui.button} ${styles.small}`} data-testid={`model-edit-${id}`}
@@ -224,12 +243,9 @@ function ModelForm({ draft, editing, harnesses, pending, taken, onChange, onCanc
         <label className={styles.formCell}>
           <span className={styles.usage}>Effort cap</span>
           <select className={ui.select} value={draft.effort_cap} onChange={set("effort_cap")} data-testid="model-form-cap">
-            {EFFORTS.map((e) => {
-              const capped = e === "high" && draft.harness === "claude";
-              return <option key={e} value={e} disabled={capped} title={capped ? "Claude models are capped at medium or lower" : undefined}>{e}{capped ? " (not for Claude)" : ""}</option>;
-            })}
+            {EFFORTS.map((e) => <option key={e} value={e}>{e}</option>)}
           </select>
-          {draft.harness === "claude" ? <span className={styles.usage} data-testid="model-form-cap-why">high is greyed: Claude models are capped at medium or lower.</span> : null}
+          {draft.harness === "claude" ? <span className={styles.usage} data-testid="model-form-cap-why">A Claude seat runs at the effort picked, up to this cap; xhigh and max are never used.</span> : null}
         </label>
       </div>
       {problem && (touched || clash) ? <p className={styles.fieldNote} data-testid={clash ? "model-form-clash" : "model-form-problem"}>{problem}</p> : null}
@@ -273,7 +289,7 @@ function RoleModels({ data, missing, visibleIds, onSave, pending }: {
                 <span className={styles.usage}>Default</span>
                 <select className={ui.select} value={stale ? "" : ids[0] ?? ""} disabled={!choices.length} onChange={(e) => setDefault(role, e.target.value)} data-testid={`role-default-${role}`}>
                   {stale ? <option value="" disabled>{choices.length ? "pick a default" : "none available"}</option> : null}
-                  {choices.map((id) => <option key={id} value={id}>{modelLabel(id)}</option>)}
+                  {choices.map((id) => <option key={id} value={id}>{modelLabel(id, data.models[id])}</option>)}
                 </select>
               </label>
               {!ids.length ? <span className={styles.fieldNote}>Pick at least one model: the board refuses an empty role.</span> : null}
@@ -284,13 +300,13 @@ function RoleModels({ data, missing, visibleIds, onSave, pending }: {
                     : `The ${roleLabel(role)} role is unavailable until ${[...new Set(ids.map((id) => data.models[id]?.harness ?? stale))].join(" or ")} is selected under Seat harnesses.`}
                 </span>
               ) : null}
-              {ids.some((id) => !visibleIds.includes(id)) ? <span className={styles.usage} data-testid={`role-hidden-${role}`}>also {ids.filter((id) => !visibleIds.includes(id)).map(modelLabel).join(", ")} (unselected harness)</span> : null}
+              {ids.some((id) => !visibleIds.includes(id)) ? <span className={styles.usage} data-testid={`role-hidden-${role}`}>also {ids.filter((id) => !visibleIds.includes(id)).map((id) => modelLabel(id, data.models[id])).join(", ")} (unselected harness)</span> : null}
             </div>
             <div className={styles.row}>
               {visibleIds.map((id) => (
                 <label key={id} className={ids.includes(id) ? ui.chip + " " + ui.active : ui.chip} data-testid={`role-pick-${role}-${id}`}>
                   <input type="checkbox" checked={ids.includes(id)} onChange={(e) => toggle(role, id, e.target.checked)} data-testid={`role-pick-${role}-${id}-input`} />
-                  {modelLabel(id)}
+                  {modelLabel(id, data.models[id])}
                   {missing.has(data.models[id]?.harness ?? "") ? <span className={styles.fieldNote}> ({NOT_INSTALLED.split(":")[0]})</span> : null}
                 </label>
               ))}
@@ -332,7 +348,7 @@ function TestSpawn({ data, missing, visibleIds }: { data: AdminModelsView; missi
       <p className={styles.fieldDoc}>Runs a short stub prompt on a private seat of this model and shows its reply. No ticket is touched.</p>
       <div className={styles.row}>
         <select className={ui.select} value={m} onChange={(e) => { setModel(e.target.value); run.reset(); }} data-testid="test-spawn-model">
-          {visibleIds.map((id) => <option key={id} value={id}>{modelLabel(id)}</option>)}
+          {visibleIds.map((id) => <option key={id} value={id}>{modelLabel(id, data.models[id])}</option>)}
         </select>
         <select className={ui.select} value={r} onChange={(e) => setRole(e.target.value)} data-testid="test-spawn-role">
           {roles.map((x) => <option key={x} value={x}>{roleLabel(x)}</option>)}

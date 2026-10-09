@@ -28,25 +28,52 @@ def test_parse_roundtrip_and_defaults():
     assert roles["neuron"] == "judgment"
 
 
-def test_effort_above_medium_refused():
+def test_effort_above_high_refused_high_allowed_on_claude():
+    """owner §6 words (epic-0cec8d1c31): the cap is high for every seat, Claude included; xhigh/max are refused."""
     raw = _raw()
     raw["seats"]["judgment"]["effort"] = "high"
-    with pytest.raises(SeatsError, match="MEDIUM cap"):
-        parse(raw)
+    seats, _ = parse(raw)
+    assert seats["judgment"].effort == "high"
+    for above in ("xhigh", "max"):
+        raw["seats"]["judgment"]["effort"] = above
+        with pytest.raises(SeatsError, match="HIGH cap"):
+            parse(raw)
 
 
-def test_pi_seat_may_ask_high_effort_claude_may_not():
-    """owner 2026-09-17 (m-2d7ef9243d): "include effort high as well" — for a harness seat (Pi/Astra)
-    high is a thinking level, not the Claude cap; a Claude seat asking high is still refused."""
+def test_pi_seat_may_ask_high_effort():
     raw = _raw()
     raw["seats"]["astra"] = {"model": "openai-codex/gpt-6-astra", "effort": "high",
                              "harness": "pi", "thinking": "high", "context_window": 272000,
                              "auto_compact": 200000}
     seats, _ = parse(raw)
     assert seats["astra"].effort == "high" and seats["astra"].harness == "pi"
-    raw["seats"]["judgment"]["effort"] = "high"
-    with pytest.raises(SeatsError, match="MEDIUM cap"):
-        parse(raw)
+
+
+def test_clamp_effort_and_cap_of():
+    from edp_contracts.seats import clamp_effort, effort_cap_of
+    assert clamp_effort("high", "medium") == ("medium", "effort high capped to medium (catalog entry cap)")
+    assert clamp_effort("HIGH", "high") == ("high", None)
+    assert clamp_effort("max", "high") == (None, None)
+    assert clamp_effort(None, "high") == (None, None)
+    assert effort_cap_of({"harness": "claude", "effort_cap": "high"}) == "high"
+    assert effort_cap_of({"harness": "codex"}) == "high"
+    assert effort_cap_of({"harness": "claude"}) == "medium"
+    assert effort_cap_of({"harness": "claude", "effort_cap": "max"}) == "medium"
+    assert effort_cap_of(None) == "medium"
+
+
+def test_launch_effort_clamps_to_the_models_catalog_cap(tmp_path, monkeypatch):
+    from edp_contracts.seats import launch_effort
+    cat = {"models": {"hi": {"harness": "claude", "effort_cap": "high"},
+                      "lo": {"harness": "claude", "effort_cap": "medium"}}}
+    (tmp_path / "models.json").write_text(json.dumps(cat), encoding="utf-8")
+    monkeypatch.setenv("EDP_MODELS_CONFIG", str(tmp_path / "models.json"))
+    assert launch_effort(tmp_path, "hi", "high") == ("high", None)
+    assert launch_effort(tmp_path, "lo", "high")[0] == "medium"
+    assert launch_effort(tmp_path, "lo", "high")[1] and "capped" in launch_effort(tmp_path, "lo", "high")[1]
+    assert launch_effort(tmp_path, "hi", None) == ("medium", None)       # nothing named: the default
+    assert launch_effort(tmp_path, "ghost", "high")[0] == "medium"      # no catalog row: capped at medium
+    assert launch_effort(tmp_path, "hi", "xhigh") == ("medium", None)   # outside the levels: the default
 
 
 def test_alias_model_ids_refused():
@@ -111,3 +138,17 @@ def test_harness_columns_are_options_next_to_the_claude_column(tmp_path):
     import pytest
     with pytest.raises(s.SeatsError):
         s.load(tmp_path)
+
+
+def test_a_1m_launch_id_keeps_its_rows_effort_cap(tmp_path, monkeypatch):
+    """qa m-1b272db80b: the launcher appends `[1m]` to a 1M row's id; the cap lookup strips it, so
+    `claude-opus-5-5[1m]` at high stays high instead of falling to the unknown-model medium."""
+    from edp_contracts.seats import launch_effort, model_entry
+    cat = {"models": {"claude-opus-5-5": {"harness": "claude", "effort_cap": "high", "context_window": 1000000},
+                      "only-1m[1m]": {"harness": "claude", "effort_cap": "high"}}}
+    (tmp_path / "models.json").write_text(json.dumps(cat), encoding="utf-8")
+    monkeypatch.setenv("EDP_MODELS_CONFIG", str(tmp_path / "models.json"))
+    assert launch_effort(tmp_path, "claude-opus-5-5[1m]", "high") == ("high", None)
+    assert model_entry(tmp_path, "claude-opus-5-5[1m]")["effort_cap"] == "high"
+    assert model_entry(tmp_path, "only-1m[1m]")["effort_cap"] == "high"  # a row keyed with the suffix still matches
+    assert launch_effort(tmp_path, "ghost[1m]", "high")[0] == "medium"   # no row either way: capped

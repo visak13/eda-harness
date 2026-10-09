@@ -4,6 +4,8 @@ import { getModels, modelLabel, spawnSeat } from "../api/seats";
 import { BoardApiError } from "../api/client";
 import type { ModelCatalog } from "../api/types";
 import { NON_AGENT_ROLES } from "../pages/design/model";
+import { roleLabel } from "./iconPaths";
+import { EFFORTS, clampEffort, effortCap, effortDisabledReason, type Effort } from "./SeatPicks";
 import ui from "./ui.module.css";
 import styles from "./SpawnSeatForm.module.css";
 
@@ -39,17 +41,22 @@ export function SpawnSeatForm({ ticketId: fixedTicket, roles: onlyRoles }: {
   const ticket = fixedTicket ?? typed;
   const [picked, setPicked] = useState<string | null>(null);
   const [assignPick, setAssignPick] = useState<boolean | null>(null);
+  // S12-ui2 (m3): the effort pick Models uses, capped by the picked model's catalog cap; "" = the epic's choice
+  const [effortPick, setEffortPick] = useState<Effort | "">("");
   const activeRole = roles.includes(role) ? role : (roles[0] ?? role);
   const options = catalog?.roles?.[activeRole] ?? [];
   const model = picked && options.includes(picked) ? picked : "";  // "" = the epic's choice
   const fallback = catalog?.defaults?.[activeRole] ?? "";
+  const meta = catalog?.models;
+  const cap = effortCap(model, meta);
+  const effort = effortPick ? clampEffort(model, effortPick, meta) : "";
   const doing = DOING_ROLES.has(activeRole);
   const assign = doing && (assignPick ?? true);
   const ticketId = ticket.trim();
   const seatId = ticketId ? `${activeRole}.${ticketId}` : "";
 
   const spawn = useMutation({
-    mutationFn: () => spawnSeat(activeRole, seatId, ticketId, { model, assign }),
+    mutationFn: () => spawnSeat(activeRole, seatId, ticketId, { model, effort: effort || undefined, assign }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["seats"] });
       void qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
@@ -76,13 +83,13 @@ export function SpawnSeatForm({ ticketId: fixedTicket, roles: onlyRoles }: {
           Role
           <select className={ui.select} value={activeRole} data-testid="spawn-seat-role"
             onChange={(e) => { setRole(e.target.value); setPicked(null); setAssignPick(null); spawn.reset(); }}>
-            {roles.map((r) => <option key={r} value={r}>{r}</option>)}
+            {roles.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
           </select>
         </label>
         {fixedTicket === undefined ? (
           <label>
             Ticket
-            <input className={ui.input} value={ticket} placeholder="s-… or epic-…" data-testid="spawn-seat-ticket"
+            <input className={ui.input} value={ticket} placeholder="A story or epic" data-testid="spawn-seat-ticket"
               onChange={(e) => { setTicket(e.target.value); spawn.reset(); }} />
           </label>
         ) : null}
@@ -92,6 +99,18 @@ export function SpawnSeatForm({ ticketId: fixedTicket, roles: onlyRoles }: {
             onChange={(e) => setPicked(e.target.value)}>
             <option value="">{`Epic's choice${fallback ? ` (else ${modelLabel(fallback)})` : ""}`}</option>
             {options.map((id) => <option key={id} value={id}>{modelLabel(id)}</option>)}
+          </select>
+        </label>
+        <label>
+          Effort
+          <select className={ui.select} value={effort} data-testid="spawn-seat-effort"
+            onChange={(e) => setEffortPick(e.target.value as Effort | "")}>
+            <option value="">Epic&rsquo;s choice</option>
+            {EFFORTS.map((e) => (
+              <option key={e} value={e} disabled={Boolean(effortDisabledReason(e, cap))} title={effortDisabledReason(e, cap) ?? undefined}>
+                {e}{effortDisabledReason(e, cap) ? " (above cap)" : ""}
+              </option>
+            ))}
           </select>
         </label>
       </div>
@@ -107,7 +126,7 @@ export function SpawnSeatForm({ ticketId: fixedTicket, roles: onlyRoles }: {
       )}
       <p className={styles.note} data-testid="spawn-seat-preview">
         {seatId
-          ? `Starts ${seatId} on ${model ? modelLabel(model) : `the epic's ${activeRole} model`}${assign ? ` and assigns ${ticketId} to it` : ""}.`
+          ? `Starts ${seatId} on ${model ? modelLabel(model) : `the epic's ${activeRole} model`}${effort ? `, effort ${effort}` : ""}${assign ? ` and assigns ${ticketId} to it` : ""}.`
           : "Name the ticket the seat works on."}
       </p>
       {err ? <p className={styles.error} role="alert" data-testid="spawn-seat-error">{err.hint ?? err.message}</p> : null}

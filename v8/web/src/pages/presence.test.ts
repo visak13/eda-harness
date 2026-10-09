@@ -47,6 +47,16 @@ describe("presenceOf", () => {
     expect(presenceOf(dead, CAPS_NO, NOW).showResume).toBe(false);
   });
 
+  it("Close is offered only for a live shell, and only once the pool capabilities were answered", () => {
+    const live = (state: SeatRow["state"]) => presenceOf({ ...base, state }, CAPS_YES, NOW).showClose;
+    expect(live("alive")).toBe(true);
+    expect(live("parked")).toBe(true);
+    expect(live("stalled")).toBe(true);
+    expect(live("dead")).toBe(false);
+    expect(live(null)).toBe(false);
+    expect(presenceOf({ ...base, state: "alive" }, undefined, NOW).showClose).toBe(false);
+  });
+
   it("a parked seat reads Parked and offers Resume by default", () => {
     const p = presenceOf({ ...base, state: "parked", reason: "waiting on evidence" }, CAPS_YES, NOW);
     expect(p.word).toBe("Parked");
@@ -60,9 +70,9 @@ describe("presenceOf", () => {
     expect(presenceOf(stalled, { ...CAPS_YES, resume_parked: false }, NOW).showResume).toBe(false);
   });
 
-  it("a seat with no mirrored session reads 'Availability unknown', never a death", () => {
+  it("a seat with no mirrored session reads 'Not visible here', never a death", () => {
     const p = presenceOf({ ...base, state: null }, CAPS_YES, NOW);
-    expect(p.word).toBe("Availability unknown");
+    expect(p.word).toBe("Not visible here");
     expect(p.showResume).toBe(false);
   });
 });

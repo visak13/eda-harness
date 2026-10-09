@@ -7,7 +7,7 @@ import * as vscode from 'vscode';
 import type { Anchor } from '../core/anchor';
 import { BoardError, type Board, type Ticket } from '../core/api';
 import { authFailed } from '../core/viewer';
-import { boardTicketUrl } from '../core/boardLinks';
+import { boardArtifactUrl, boardTicketUrl } from '../core/boardLinks';
 import type { ChatState, FeedStatus, HostToView, StoryRow, TicketRef, ViewToHost } from '../core/chatProtocol';
 import type { CodeContext, CommitCard, UncommittedCard } from '../core/chatProtocol';
 import { chipForSend, chipView, newChip, type Chip } from '../core/chip';
@@ -184,7 +184,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
     return this.refs.rows(epic, q).catch(e => { this.log(`$ picker: ${(e as Error).message}`); return []; });
   }
 
-  /** C24: a `$<id>` chip: a ticket or epic opens its board page, a doc the Heronry reader at its current version, a decision
+  /** C24: a `$<id>` chip: a ticket, epic or artifact opens its board page, a doc the Heronry reader at its current version, a decision
    *  its row in the Decisions tab (the open scope's; one outside it is named, not guessed at). */
   async openRef(id: string): Promise<void> {
     const kind = refKind(id);
@@ -192,6 +192,8 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
     try {
       if (kind === 'epic' || kind === 'story' || kind === 'task') {
         await vscode.env.openExternal(vscode.Uri.parse(boardTicketUrl(this.boardUrl(), id, null, kind === 'epic' ? 'epic' : null)));
+      } else if (kind === 'artifact') {
+        await vscode.env.openExternal(vscode.Uri.parse(boardArtifactUrl(this.boardUrl(), id)));
       } else if (kind === 'decision') {
         if (this.ticket && this.decisions.has(id)) this.post({ type: 'focusDecision', v: 1, ticketId: this.ticket.id, id });
         else void vscode.window.showInformationMessage(`${id} is not among this thread's decisions (Decisions tab); open its epic or story to see it.`);

@@ -13,7 +13,7 @@ import pytest
 
 from edp8 import views
 from edp8.board import Board, BoardError
-from edp8.schemas import Check, DocType, EventKind, Gate, Role, TicketKind, TicketStatus, WorkType
+from edp8.schemas import Check, DocType, Gate, Role, TicketKind, TicketStatus, WorkType
 from edp8.store import Store
 
 
@@ -127,44 +127,6 @@ def test_gate_open_refuses_a_lint_offender_with_the_answer_s_words(board, ps):
     assert s.id in ei.value.message and "owner" in ei.value.message
 
 
-# ---- (3) Needs you lists only answerable gates ------------------------------------------------
-
-def _answerable_now(board, ps):
-    """Every gate the owner's views offer is one the board accepts the owner's answer on."""
-    listed = views.decisions_for(board, ps["owner"])["gates"]
-    for g in listed:
-        assert board.gate_answer_refusal(ps["owner"], g["ticket_id"], Gate(g["gate"])) is None, g
-    return listed
-
-
-def test_needs_you_hides_a_gate_the_board_would_refuse(board, ps):
-    epic = _epic(board, ps)
-    board.ticket_update(ps["arch"], epic.id, design_ref=_design(board, ps, epic.id).id)
-    _crit(board, ps, epic.id)
-    board.gate_open(epic.id, Gate.design_signoff, by="arch")
-    assert [g["ticket_id"] for g in _answerable_now(board, ps)] == [epic.id]
-    assert views.summary_for(board, ps["owner"])["counts"]["open_gates"] == 1
-    # an offence lands after the gate opened (a blocks cycle): the answer would be refused, so it leaves the list
-    a = board.ticket_create(ps["arch"], kind=TicketKind.story, work_type=WorkType.feature, title="A", parent_id=epic.id)
-    b = board.ticket_create(ps["arch"], kind=TicketKind.story, work_type=WorkType.feature, title="B", parent_id=epic.id)
-    from edp8.schemas import Relation
-    board.link_create(ps["arch"], from_id=a.id, to_id=b.id, relation=Relation.blocks)
-    board.link_create(ps["arch"], from_id=b.id, to_id=a.id, relation=Relation.blocks)
-    with pytest.raises(BoardError, match="cycle"):
-        board.gate_answer(ps["owner"], epic.id, Gate.design_signoff, "go")
-    assert _answerable_now(board, ps) == []
-    assert views.summary_for(board, ps["owner"])["counts"]["open_gates"] == 0
-
-
-def test_needs_you_hides_a_legacy_gate_on_a_story(board, ps):
-    """A design_signoff opened on a child story before S16 (raw event) cannot be answered there."""
-    epic = _epic(board, ps)
-    s = board.ticket_create(ps["arch"], kind=TicketKind.story, work_type=WorkType.feature, title="S", parent_id=epic.id)
-    board._emit(s.id, EventKind.gate_opened, {"gate": Gate.design_signoff, "by": "arch", "note": ""})
-    board.gate_open(epic.id, Gate.scope, by="arch")  # answerable: stays listed
-    assert [(g["ticket_id"], g["gate"]) for g in _answerable_now(board, ps)] == [(epic.id, "scope")]
-
-
 # ---- (4) the quick standalone ticket walk -----------------------------------------------------
 
 def test_quick_standalone_ticket_walks_owner_note_signoff_checker_done(board, ps):
@@ -178,7 +140,6 @@ def test_quick_standalone_ticket_walks_owner_note_signoff_checker_done(board, ps
     note = board.doc_create(ps["eng"], doc_type=DocType.note, title="Design", body_md="what/how", scope=q.id)
     board.ticket_update(ps["eng"], q.id, design_ref=note.id)
     board.gate_open(q.id, Gate.design_signoff, by="eng", note="please review")
-    assert [g["ticket_id"] for g in _answerable_now(board, ps)] == [q.id]
     board.gate_answer(ps["owner"], q.id, Gate.design_signoff, "go")
     board.ticket_update(ps["eng"], q.id, status=TicketStatus.in_progress)
     c = board.criterion_create(ps["eng"], ticket_id=q.id, text="tab reads Seats", check=Check.verdict)

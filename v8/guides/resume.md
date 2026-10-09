@@ -8,24 +8,28 @@ Any of these means you are resumed, not freshly booted:
 - the first input of this shell says "You were resumed" (the pool types that line on park/resume,
   reap/resume and resume-after-close);
 - your transcript already holds a hand-off, a close_self, or work you do not remember finishing;
-- your context was compacted and you cannot tell whether your Monitor and cron are alive.
+- your context was compacted and you cannot tell whether your Monitor is alive.
 
-A resumed shell is a NEW process. Whatever the transcript shows, its Monitor and cron died with the old
-process; nothing wakes you until you arm them again. A hand-off in the transcript does not end this
+A resumed shell is a NEW process. Whatever the transcript shows, its Monitor died with the old
+process; nothing wakes you until you arm it again. (There is no cron: the feed driver the Monitor runs
+carries the 30-minute heartbeat.) A hand-off in the transcript does not end this
 session: you are live until you close again.
 
 ## The command
 `resume_self()` regenerates, from the board, everything you must do next. It returns:
 - `identity` — who you are (whoami);
 - `steps` — the ordered list below;
-- `monitor_cmd`, `cron`, `listening` — exactly what subscribe() returns: your wake plane;
+- `monitor_cmd`, `listening` — exactly what subscribe() returns: your wake plane;
 - `open_asks` — every steer, question and human message addressed to you that still awaits an answer,
   oldest first, each with its `answer_with` call.
 It also posts `[resumed]` on your thread so your spawner and the owner see the resume happened.
 It is idempotent: call it again after compaction or whenever you are unsure you are armed.
 
 ## The steps, in order
-1. Arm: run `monitor_cmd` under the Monitor tool once; CronCreate `cron` once.
+1. Arm: run `monitor_cmd` under the Monitor tool (`persistent: true` where the tool offers it). The Monitor
+   carries your heartbeat too: when it reports "timed out" or ends, re-arm `monitor_cmd` at once.
+   With the edp-wake mod (`monitor_cmd` is null, `wake: "mod"`) there is nothing to arm: the mod restarted with
+   this session and listens from its saved cursors, so a message sent while you were parked still reaches you.
 2. Answer every open ask, oldest first, with its `answer_with` call. A steer changes your plan.
    A message with `from_type=human` is a person waiting.
 3. `context(ticket_id=<your ticket>)` to reload the current state of your work; continue your plan
@@ -41,7 +45,7 @@ It is idempotent: call it again after compaction or whenever you are unsure you 
   trust, and a resumed seat has none until its fresh `context()` returns one.
 - Not `resume(participant_id)`: that is the SPAWNER's tool (owner/architect only), which asks the pool to bring a parked or
   closed seat back. resume_self is what the brought-back seat calls.
-- Not the fresh-boot sequence: a fresh shell still runs whoami → subscribe → Monitor once, cron once →
+- Not the fresh-boot sequence: a fresh shell still runs whoami → subscribe → Monitor once →
   context, as its role card says.
 
 ## For spawners (architects, the owner)

@@ -42,7 +42,7 @@ on your own machine as a few small services and a board you open in your browser
 - **Any provider.** A seat runs on Claude Code, OpenAI Codex or Pi with any model provider. See
   [harnesses and models](setup/harnesses.md).
 
-Read the [concepts](docs/concepts.md) for the whole picture, or change who does what in the
+See every screen in [Using Heronry](guide/index.md), read the [concepts](docs/concepts.md) for the whole picture, or change who does what in the
 [Design tab](docs/design-tab.md).
 
 ## Get started

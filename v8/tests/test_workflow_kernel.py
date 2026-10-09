@@ -102,6 +102,7 @@ def test_the_pairing_spawn_passes_the_pinned_capacity_and_card(board, owner):
     assert kw["env"]["EDP_CARD"] == wf.card_name("crew", 1, "designer")  # S11 F6: prefix + hash
     assert kw["env"]["EDP_CARD"].startswith("wf-crew-1-designer-")
     std = _epic(board, owner)
+    board.qa_spawn_refusal = lambda *a, **k: None  # S4 C1 would hold qa on a storyless epic; this test is about capacity
     assert board._spawn_seat("qa", f"qa.{std.id}", std.id) is True
     _, _, kw = board._pool_adapter().spawned[-1]
     assert kw["capacity_class"] == "checker" and "EDP_CARD" not in (kw.get("env") or {})
@@ -200,15 +201,15 @@ def test_invariant_role_without_a_spawner(board):
 
 def test_invariant_a_gate_no_human_can_answer(board):
     d = wf.dump(board.workflows.duplicate("standard@1", new_id="nohuman", by="owner"))
-    next(g for g in d["gates"] if g["id"] == "poc")["answerers"] = ["qa"]
-    assert "poc" in _refused(board, d, "gate_unanswerable")["message"]
+    next(g for g in d["gates"] if g["id"] == "scope")["answerers"] = ["qa"]
+    assert "scope" in _refused(board, d, "gate_unanswerable")["message"]
 
 
 def test_invariant_self_approval(board):
     d = wf.dump(board.workflows.duplicate("standard@1", new_id="selfok", by="owner"))
-    g = next(g for g in d["gates"] if g["id"] == "demo")
+    g = next(g for g in d["gates"] if g["id"] == "acceptance")
     g["requires"].append({"check": "role_in", "params": {"roles": ["owner"]}, "phase": "open"})
-    assert "demo" in _refused(board, d, "self_approval")["message"]
+    assert "acceptance" in _refused(board, d, "self_approval")["message"]
 
 
 def test_invariant_caps_at_least_one(board):

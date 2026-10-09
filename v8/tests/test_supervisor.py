@@ -19,6 +19,7 @@ from edp8.supervisor import PROBE_INTERVAL, Supervisor
 
 @pytest.fixture(autouse=True)
 def isolate_run_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("EDP8_HOME", str(tmp_path))  # the run and data dirs sit inside the home (S2 guard 1)
     monkeypatch.setenv("EDP8_RUN_DIR", str(tmp_path / "run"))
 
 
@@ -144,7 +145,7 @@ def test_service_ports_follow_the_launcher_env(tmp_path):
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith(("EDP", "HERONRY"))}
     (tmp_path / "home").mkdir()
     env.update(EDP8_PORT="59518", EDP_BROKER_PORT="59318", EDP_POOL_PORT="59319", EDP8_MCP_PORT="59418",
-               EDP_HOME=str(tmp_path / "home"), EDP8_RUN_DIR=str(tmp_path / "run"))
+               EDP_HOME=str(tmp_path / "home"), EDP8_RUN_DIR=str(tmp_path / "home" / ".run"))
     probe = "from edp8 import run_state as r; print([r.SERVICES[s]['port'] for s in ('board','broker','pool','mcp','bridge')])"
     out = subprocess.run([sys.executable, "-c", probe], env=env, capture_output=True, text=True, timeout=60)
     assert out.stdout.strip() == "[59518, 59318, 59319, 59418, None]", out.stdout + out.stderr

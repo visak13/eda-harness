@@ -67,6 +67,12 @@
   flex: none;
 }
 
+/* a phone wraps the chips onto rows: a connector would dangle at a row end, so the chips stand alone */
+@media (max-width: 600px) {
+  .joint { display: none; }
+  .stages { gap: 8px 4px; }
+}
+
 .offLine {
   margin: 12px 0 0;
   font-size: 13px;

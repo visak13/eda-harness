@@ -53,7 +53,8 @@ def _events(client, subject):
 
 def test_verdict_is_a_first_class_event_with_who(client, rig):
     c = client.post("/v1/criteria", json={"ticket_id": rig["epic"], "text": "t", "check": "look",
-                                          "checked_by": "owner"}, headers={"X-Participant": "arch"}).json()["value"]
+                                          "checked_by": "owner", "override_reason": "owner signs"},
+                    headers={"X-Participant": "owner"}).json()["value"]
     d = client.post("/v1/docs", json={"doc_type": "strategy_hl", "title": "s", "body_md": "b",
                                       "scope": rig["epic"]}, headers={"X-Participant": "craft"}).json()["value"]
     client.patch(f"/v1/criteria/{c['id']}", json={"evidence_ref": d["id"]}, headers={"X-Participant": "craft"})
@@ -84,7 +85,7 @@ def test_message_to_closed_agent_seat_notifies_owner(client, rig, published):
     client.post("/v1/participants", json={"type": "agent", "role": "architect", "handle": seat, "id": seat},
                 headers=ADMIN)
     client.put("/v1/sessions/s-dead", json={"participant_id": seat, "ticket_id": rig["epic"], "pool_id": "local",
-                                            "state": "dead", "reason": "closed by self: done"}, headers=ADMIN)
+                                            "state": "dead", "reason": "process gone (crash)"}, headers=ADMIN)
     published.clear()
     r = client.post("/v1/messages", json={"ticket_id": rig["epic"], "kind": "question", "to": "architect",
                                           "text": "anyone home?"}, headers={"X-Participant": "ravi"})
@@ -115,8 +116,9 @@ def test_doc_page_approve_and_comment(client, rig, ui_prefix):
     # sign-off is the one HITL point, so this is where the owner's doc-approve UI shows.
     kt = client.post("/v1/tickets", json={"kind": "story", "work_type": "knowledge", "title": "hl-craft",
                                           "parent_id": rig["epic"]}, headers={"X-Participant": "arch"}).json()["value"]["id"]
-    c = client.post("/v1/criteria", json={"ticket_id": kt, "text": "strategy signed", "check": "look"},
-                    headers={"X-Participant": "arch"}).json()["value"]
+    c = client.post("/v1/criteria", json={"ticket_id": kt, "text": "strategy signed", "check": "look",
+                                          "checked_by": "owner", "override_reason": "owner signs"},
+                    headers={"X-Participant": "owner"}).json()["value"]
     assert c["checked_by"] == "owner"
     d = client.post("/v1/docs", json={"doc_type": "strategy_hl", "title": "s", "body_md": "b",
                                       "scope": rig["epic"]}, headers={"X-Participant": "craft"}).json()["value"]

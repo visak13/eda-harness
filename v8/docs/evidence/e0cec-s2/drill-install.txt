@@ -1,0 +1,73 @@
+﻿   ports board=58703 pool=58707 mcp=58706 broker=58708; home C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home
+== 03:22:29 install 0.9.1 (spike identity) privately
+PASS  no spike product installed yet
+PASS  the spike wxs runs no custom action (nothing touches a default home at install)
+   msiexec exit 0 in 32.4s
+PASS  0.9.1 installed
+PASS  heronry.exe at C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\install\heronry.exe
+   installed: {2BDBFD4B-F684-421A-A1D1-C6D519AF7C03}=0.9.1
+   Heronry 0.9.1
+   claude seats use their own store C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\.data\claude-pool: sign in once with CLAUDE_CONFIG_DIR set to it, then run `claude` and /login (or copy your .credentials.json there).
+   
+   next: heronry doctor, then heronry start
+PASS  init exit 0
+   board    FAILED  board exited during start (pid 24800 is gone); see C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\.data\logs\board.log
+   broker     started          pid 34440  http://127.0.0.1:58708
+   pool       started          pid 35792  http://127.0.0.1:58707
+   mcp        started          pid 10868  http://127.0.0.1:58706
+   bridge     skipped          (no slack map configured)
+   spawned stub seat engineer.s2-drill : {"session_id":"engineer:20bb9197-04e4-4c11-baba-60c6ff6e1d11"}
+   health ; seat engineer.s2-drill state active pid 35596
+FAIL  board healthy at 0.9.1
+PASS  a stub seat is live
+elapsed 86s
+RESULT: 1 check(s) FAILED
+   ports board=58703 pool=58707 mcp=58706 broker=58708; home C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home
+== 03:24:31 restart the private stack
+   pool stop takes these 1 seat(s) offline:
+     - engineer.s2-drill (pid 35596, active)
+   supervisor not running
+   bridge     not running
+   mcp        stopped
+   pool       stopped
+   broker     stopped
+   board      not running
+   board      started          pid 33832  http://127.0.0.1:58703
+   broker     started          pid 34748  http://127.0.0.1:58708
+   pool       started          pid 35656  http://127.0.0.1:58707
+   mcp        started          pid 24544  http://127.0.0.1:58706
+   bridge     skipped          (no slack map configured)
+   supervisor started          pid 4512
+   setup      first run: finish setup at http://127.0.0.1:58703/ui/setup?code=<redacted>  (the link signs you in once, within 24 h)
+   health 0.9.1; seat engineer.s2-drill state active pid 35596
+PASS  board healthy (0.9.1)
+PASS  the stub seat is live
+elapsed 24s
+RESULT: all checks passed
+
+   ports board=58703 pool=58707 mcp=58706 broker=58708; home C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home
+== 03:25:22 restart the private stack
+   pool stop takes these 1 seat(s) offline:
+     - engineer.s2-drill (pid 35596, active)
+   supervisor stopped
+   bridge     not running
+   mcp        stopped
+   pool       stopped
+   broker     stopped
+   board      stopped
+   board      started          pid 7824  http://127.0.0.1:58703
+   broker     started          pid 33688  http://127.0.0.1:58708
+   pool       started          pid 28552  http://127.0.0.1:58707
+   mcp        started          pid 21300  http://127.0.0.1:58706
+   bridge     skipped          (no slack map configured)
+   supervisor started          pid 22024
+   setup      first run: finish setup at http://127.0.0.1:58703/ui/setup?code=<redacted>  (the 
+link signs you in once, within 24 h)
+   spawned stub seat engineer.s2-drill : {"session_id":"engineer:0b7d1535-acb4-4b93-bc6f-a346d7dcde9f"}
+   health 0.9.1; seat engineer.s2-drill row active pid 19004 liveness alive
+PASS  board healthy (0.9.1)
+PASS  the stub seat is live
+elapsed 32s
+RESULT: all checks passed
+
+

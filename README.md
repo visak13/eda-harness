@@ -31,6 +31,23 @@ cold, and leaves every decision and proof on the board. Seats come and go; the r
 The command-line tool is `heronry`, and the desktop app is **Heronry Desktop**. Both run the same services
 on your machine, and each can do everything the other does.
 
+## Product screenshots
+
+One thread holds the whole piece of work. Owners, guests and every seat post to it, from the browser or from VS Code.
+These screenshots come from a made-up demo project; the [Using Heronry](https://visak13.github.io/eda-harness/latest/guide/)
+guide walks through every screen.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/site/docs/assets/guide/epic-page.png" alt="An epic thread where two owners, a guest and the seats post together"><br><sub>Owners, a guest and the seats on one thread</sub></td>
+    <td width="50%"><img src="docs/site/docs/assets/guide/quotes-three-sources.png" alt="A qa finding that quotes another seat's message, the design and the code"><br><sub>Quotes from another seat, the design and the code</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/site/docs/assets/guide/work-drawer.png" alt="The Work drawer: the epic's criteria and every story with its status and seat"><br><sub>The Work drawer: every story in the epic and its seat</sub></td>
+    <td width="50%"><img src="docs/site/docs/assets/guide/vscode-story.png" alt="The same thread in VS Code beside the code it quotes"><br><sub>The same thread in VS Code, beside the code</sub></td>
+  </tr>
+</table>
+
 ## Install
 
 Pick the desktop app (GUI) or the command line (cmd). Both come from the
@@ -103,7 +120,7 @@ A seat is a role card plus one set of board tools, so the model in the chair is 
 **Claude Code** (`claude`) and **OpenAI Codex CLI** (`codex`) are both optional, and at least one must be
 selected; the wizard and `heronry init --harness claude,codex` refuse to finish with none. Seats then run
 on the harnesses you picked. **Pi** seats run any provider or key you have, including local models; see
-[the Pi guide](v8/guides/pi-seat.md). Heronry never updates your agent CLIs on its own: that stays your call.
+[the Pi guide](v8/docs/operator/pi-seat.md). Heronry never updates your agent CLIs on its own: that stays your call.
 
 > **Adversary risk notice.** The adversary seat runs one hostile review of an epic. With codex selected it
 > runs on codex. Without codex it runs on **Fable** (`claude-fable-5-1`), whose safety safeguards are strict,
@@ -158,10 +175,14 @@ Heronry updates itself from this repository's GitHub Releases, and only when you
   turns it off). `heronry update --check` reports the installed and latest versions.
 - `heronry update` downloads the release, verifies `SHA256SUMS`, checks your custom workflows against the new
   version, backs up the board, stops the services, upgrades and starts again. `--dry-run` stops after the
-  download and checks. The installed desktop app updates through its installer instead: its **Check for update**
-  opens the release page for the new `.msi`, `.dmg` or `.deb`.
+  download and checks. On Windows the installed desktop app updates the same way: `heronry update`, or the tray's
+  **Install update**, runs the new `.msi` in place. On macOS and Linux the desktop app's **Check for update** opens
+  the release page for the new `.dmg` or `.deb`.
 - It refuses while seats are live, and when it cannot secure the installed version's wheels for a rollback.
   If the new version does not start, it reinstalls the previous one and restores the backup.
+- **From 0.9.x, the desktop app upgrades once by hand** (0.9.x's updater refuses the `.msi`):
+  `heronry stop all --force`, run the new `Heronry Desktop-<ver>.msi`, then `heronry start`. From 0.10 on,
+  `heronry update` installs the `.msi` itself.
 - The VS Code extension and your agent CLIs (claude, codex, pi) are not updated by Heronry. The extension
   offers its own one-line fix when its version differs from the board's.
 
@@ -207,9 +228,9 @@ ones with your OS package manager. Optional tools are listed with the feature ea
 
 ## More
 
-- **[Website](https://visak13.github.io/eda-harness/)**: the setup guide, concepts, the update model and the generated reference.
+- **[Website](https://visak13.github.io/eda-harness/)**: the [Using Heronry](https://visak13.github.io/eda-harness/latest/guide/) guide, the setup guide, concepts, the update model and the generated reference.
 - **Docs in this repo:** [the memory layer](docs/readme/memory-layer.md), [self-improvement](docs/readme/self-improvement.md),
-  [two harnesses](docs/readme/harnesses.md), [the Pi guide](v8/guides/pi-seat.md), and the
+  [two harnesses](docs/readme/harnesses.md), [the Pi guide](v8/docs/operator/pi-seat.md), and the
   [service map, Linux and public mode](v8/README.md).
 - **[Changelog](CHANGELOG.md)** · **[Contributing](CONTRIBUTING.md)** (developing from source) · **[Licence](LICENSE)** (Apache-2.0) · **[Notice](NOTICE)**
 - The product video is made with [Remotion](https://www.remotion.dev); its sources and credits are in

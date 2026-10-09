@@ -7,6 +7,7 @@ import subprocess
 import sys
 from typing import Any
 
+from edp_contracts.seats import window_problems
 from edp_contracts.toolpath import find_tool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -54,24 +55,32 @@ def _warnings(models: dict[str, Any]) -> list[str]:
                    find_tool(row["harness"], key=keys[row["harness"]]) is None})
 
 
-def _harness_defaults(models: dict[str, Any]) -> dict[str, Any]:
-    """For each Codex row: the window and compaction Codex itself applies (`codex debug models`), which
-    the UI shows as "Codex default (N)" wherever the row leaves the number unset."""
-    rows = [(mid, row) for mid, row in models.items()
+def _harness_rows(models: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    return [(mid, row) for mid, row in models.items()
             if isinstance(row, dict) and row.get("harness") in model_catalog.HARNESS_WINDOWS]
+
+
+def _harness_defaults(models: dict[str, Any], refresh: bool = False) -> dict[str, Any]:
+    """For each Codex row: the window and compaction Codex itself applies (`codex debug models`), which
+    the UI shows as "Codex default (N)" wherever the row leaves the number unset. The probe is cached and
+    bounded (model_catalog.codex_windows); a failed probe leaves this empty and `codex_probe` names why."""
+    rows = _harness_rows(models)
     if not rows:
         return {}
-    known = model_catalog.codex_windows()
+    known = model_catalog.codex_windows(refresh=refresh)
     return {mid: {**known[slug], "source": "codex debug models"}
             for mid, row in rows if (slug := str(row.get("model") or mid)) in known}
 
 
-def _view(raw: dict[str, Any]) -> dict[str, Any]:
+def _view(raw: dict[str, Any], refresh: bool = False) -> dict[str, Any]:
     models = raw.get("models") or {}
+    defaults = _harness_defaults(models, refresh)
+    probe = model_catalog.codex_probe() if _harness_rows(models) else {"ok": None, "error": None}
     return {"models": models, "role_models": raw.get("role_models") or {},
             "default_model": raw.get(model_catalog.DEFAULT_KEY),
-            "harness_defaults": _harness_defaults(models),
-            "selected": list(harness.selected(raw)), "warnings": _warnings(models)}
+            "harness_defaults": defaults, "codex_probe": probe,
+            "selected": list(harness.selected(raw)), "warnings": _warnings(models),
+            "window_problems": window_problems(models)}
 
 
 def _unselected_defaults(raw: dict[str, Any], body: CatalogIn, default: str | None) -> list[str]:
@@ -107,8 +116,9 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
     r = APIRouter()
 
     @r.get("/v1/admin/models")
-    def get_models(a: Participant = Depends(admin_actor)):
-        return {"ok": True, "value": _view(_catalog()), "hint": ""}
+    def get_models(refresh: bool = False, a: Participant = Depends(admin_actor)):
+        # refresh=true re-probes Codex now (the page's Retry); still bounded by the probe's hard timeout
+        return {"ok": True, "value": _view(_catalog(), refresh), "hint": ""}
 
     @r.put("/v1/admin/models")
     def put_models(body: CatalogIn, a: Participant = Depends(admin_actor)):

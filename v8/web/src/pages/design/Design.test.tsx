@@ -49,7 +49,7 @@ describe("workflow list", () => {
     expect(within(screen.getByTestId("wf-presets")).getAllByRole("listitem")).toHaveLength(3);
     expect(within(screen.getByTestId("wf-custom")).getByTestId("wf-row-broken@1")).toHaveTextContent(/draft/);
     expect(screen.getByTestId("wf-row-broken@1")).toHaveTextContent("from standard@1");
-    expect(screen.getByTestId("wf-pins-standard@1")).toHaveTextContent("pinned by 2 epics: epic-1, epic-2");
+    expect(screen.getByTestId("wf-pins-standard@1")).toHaveTextContent("Pinned by 2 epics");
     expect(screen.getByTestId("wf-pins-lean@1")).toHaveTextContent("no epic pins it");
     expect(screen.getByTestId("wf-row-standard@1")).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByTestId("wf-duplicate-lean@1"));
@@ -73,7 +73,7 @@ describe("pipeline view", () => {
     expect(screen.getByTestId("check-edge-qa-engineer")).toBeInTheDocument();
     expect(screen.getByTestId("flow-gate-design_signoff")).toBeInTheDocument();
     expect(screen.getByTestId("flow-gate-acceptance")).toBeInTheDocument();
-    expect(screen.getByTestId("pipeline-idle")).toHaveTextContent("expert");
+    expect(screen.getByTestId("pipeline-idle")).toHaveTextContent("Expert");
     fireEvent.click(screen.getByTestId("flow-edge-designed-signed_off"));
     expect(screen.getByTestId("flow-edge-detail")).toHaveTextContent("designed → signed off");
   });
@@ -497,7 +497,7 @@ describe("t-0c16c00424 Delete + confirm", () => {
     const c = screen.getByTestId("delete-confirm");
     expect(c).toHaveAttribute("data-outcome", "refused");
     expect(c).toHaveTextContent("team@1 can’t be deleted");
-    expect(c).toHaveTextContent("pinned by 2 epics: epic-9, epic-10");
+    expect(c).toHaveTextContent("pinned by 2 epics");
     expect(screen.queryByTestId("delete-confirm-run")).toBeNull();
     fireEvent.click(screen.getByTestId("delete-confirm-cancel"));
     expect(screen.queryByTestId("delete-confirm")).toBeNull();

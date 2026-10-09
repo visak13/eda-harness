@@ -16,7 +16,7 @@
 }
 .fields {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); /* a select keeps room for "Epic's choice (else Claude Opus 5.5)" */
   gap: 12px;
 }
 .fields label {

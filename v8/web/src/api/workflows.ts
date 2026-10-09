@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, postJson } from "./client";
 import { ROLES } from "./types";
+import { useGuestState } from "../auth/guest";
 
 // S14 (design-e963c656f5 §4.14(c)-(e)): the Design tab's reads and writes. The board owns the definition
 // schema, the lint (Validate), the dry run and the immutable versions; the tab is a client of
@@ -106,7 +107,7 @@ export interface DeleteOutcome { action: "deleted" | "archived" | "refused"; rea
 export function deleteOutcomeOf(r: Pick<WorkflowRow, "builtin" | "published" | "pinned_by" | "archived">): DeleteOutcome {
   const n = r.pinned_by.length;
   if (r.builtin) return { action: "refused", reason: "a built-in preset always stays" };
-  if (n) return { action: "refused", reason: `pinned by ${n} epic${n === 1 ? "" : "s"}: ${r.pinned_by.join(", ")}` };
+  if (n) return { action: "refused", reason: `pinned by ${n} epic${n === 1 ? "" : "s"}` };
   if (r.archived) return { action: "refused", reason: "already archived; restore it instead" };
   return r.published ? { action: "archived", reason: "published: hidden from the list, restorable" }
     : { action: "deleted", reason: "an unpublished draft" };
@@ -204,10 +205,12 @@ export function useWorkflowRoles(ticketId: string | null | undefined): { roles: 
     retry: false,
   });
   const ref = pin.data?.workflow ?? null;
+  // S12-ui2 (qa m-da89ef8294 m7): the board refuses a workflow read to a guest; a guest gets the static roles
+  const { teammate } = useGuestState();
   const wf = useQuery({
     queryKey: ["workflow", ref],
     queryFn: () => getWorkflow(ref ?? ""),
-    enabled: Boolean(ref),
+    enabled: Boolean(ref) && teammate,
     staleTime: Infinity, // an epic pins a PUBLISHED version: immutable
     retry: false,
   });

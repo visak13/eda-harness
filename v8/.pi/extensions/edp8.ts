@@ -1,7 +1,7 @@
 /**
  * edp8.ts — Pi extension giving a GPT-6 Astra seat Claude Code's Monitor / TaskStop /
  * CronCreate / CronList / CronDelete tools with the SAME schemas, description texts,
- * result strings, notification envelopes and delivery rules (guides/harness-parity.md),
+ * result strings, notification envelopes and delivery rules (docs/operator/harness-parity.md),
  * plus a bridge that registers the edp8 board's MCP tools (Pi has no MCP client).
  *
  * epic-6a8a6020fd · s-e1260012b9 · SP spike. Every rule cites its parity row.
@@ -16,7 +16,7 @@ import { localArtifactUpload } from "./edp8-upload.ts";
 
 // ---------------------------------------------------------------- config
 const CWD = process.cwd();
-const DESC_PATH = process.env.EDP_PARITY_DESCRIPTIONS ?? resolve(CWD, "guides/harness-parity/descriptions.ours.json"); // our wording (owner m-2d7ef9243d); descriptions.json = Claude reference, measurement only
+const DESC_PATH = process.env.EDP_PARITY_DESCRIPTIONS ?? resolve(CWD, "src/edp8/codex_seat/descriptions.ours.json"); // our wording (owner m-2d7ef9243d); descriptions.json = Claude reference, measurement only
 const TASKS_DIR = process.env.EDP_PI_TASKS_DIR ?? resolve(CWD, ".pi/tasks");
 const MCP_URL = `${process.env.EDP8_MCP_URL ?? "http://127.0.0.1:9402"}/mcp/${process.env.EDP_ROLE || "unset"}`; // no default identity: a person's role is never an agent (owner m-da9a2ae62f)
 const MCP_HEADERS: Record<string, string> = {
@@ -62,7 +62,7 @@ function setClockScale(s: number) {
 const DESC: Record<string, string> = JSON.parse(readFileSync(DESC_PATH, "utf8"));
 
 // parity §4.1 preamble [V]
-const PREAMBLE_IDLE = // our wording (owner m-2d7ef9243d); equivalence to Claude's preamble is mapped by guides/harness-parity/wording.json
+const PREAMBLE_IDLE = // our wording (owner m-2d7ef9243d); equivalence to Claude's preamble is mapped by docs/operator/harness-parity/wording.json
 	"[BACKGROUND EVENT - NOT FROM THE USER]\n" +
 	"A watch or a scheduled job produced this message automatically; it is not a message from the user.\n" +
 	"It is not the user's acknowledgement, confirmation, or answer to anything you asked.\n" +
@@ -637,6 +637,13 @@ export default async function edp8(pi: ExtensionAPI) {
 		}
 		return r.json();
 	}
+	/** an MCP content block as pi content: text and image (the browser tool's screenshots, artifact_read's pixels) pass
+	 *  through as themselves, so the model sees the image (t-732cf1dd92); anything else as its JSON text */
+	function mcpBlock(c: any): { type: "text"; text: string } | { type: "image"; data: string; mimeType: string } {
+		if (c?.type === "text") return { type: "text", text: c.text };
+		if (c?.type === "image" && typeof c.data === "string") return { type: "image", data: c.data, mimeType: c.mimeType ?? "image/png" };
+		return { type: "text", text: JSON.stringify(c) };
+	}
 	let bridged = 0;
 	try {
 		await mcp("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "pi-edp8", version: "0.1" } }, 1);
@@ -657,7 +664,7 @@ export default async function edp8(pi: ExtensionAPI) {
 					}
 					const res = await mcp("tools/call", { name: t.name, arguments: params ?? {} }, n++);
 					if (res.error) return { content: [{ type: "text", text: JSON.stringify(res.error) }], details: {}, isError: true };
-					const content = (res.result?.content ?? []).map((c: any) => (c.type === "text" ? { type: "text", text: c.text } : { type: "text", text: JSON.stringify(c) }));
+					const content = (res.result?.content ?? []).map(mcpBlock);
 					return { content: content.length ? content : [{ type: "text", text: "" }], details: res.result?.structuredContent ?? {}, isError: !!res.result?.isError };
 				},
 			});

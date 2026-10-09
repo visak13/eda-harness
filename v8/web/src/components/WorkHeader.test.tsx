@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { screen } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { server } from "../test/setup";
 import { renderRoute } from "../pages/testUtils";
@@ -26,6 +26,18 @@ function reviewMocks() {
   );
 }
 const header = () => <WorkHeader ticketId="epic-req" kind="epic" title="Review source" status="designed" assignee={null} actions={null} work={<div />} />;
+
+describe("WorkHeader open requirements (qa report-138db92cad)", () => {
+  it("says them in the Needs attention field, with the list link, instead of 'Nothing open'", async () => {
+    server.use(http.get("/v1/tickets/epic-req/contextual", () => okJson(contextual({ gates: [] }))), http.get("/v1/me/people", () => okJson([])));
+    renderRoute("/epic/epic-req", "/epic/:id", <WorkHeader ticketId="epic-req" kind="epic" title="Review source" status="designed" assignee={null} actions={null} work={<div />} openRequirements={1} />);
+    const field = await screen.findByTestId("work-attention");
+    await waitFor(() => expect(field).toHaveTextContent("1 open requirement"));
+    expect(field).not.toHaveTextContent("Nothing open");
+    expect(within(field).getByTestId("requirements-chip-open")).toHaveTextContent("Open the list");
+    expect(within(field).getByTestId("requirements-chip")).toHaveAttribute("title", expect.stringContaining("cannot finish until the architect links each one"));
+  });
+});
 
 describe("WorkHeader request deep link (finding 1)", () => {
   it("opens the source-bound review when ?request= matches a design_signoff gate", async () => {
@@ -132,17 +144,62 @@ describe("stripMarkdown (t-994970028d)", () => {
 // S20 attention trail: each opener holding an item carries its dot (Design, Work), and whatever hides the openers
 // (the collapsed title bar) carries their sum, so the trail never breaks at a closed control.
 describe("WorkHeader attention openers (S20)", () => {
-  it("dots Design and Work, not Files; the collapsed bar keeps the sum", async () => {
+  it("dots Work, not Design or Files; the collapsed bar keeps the sum", async () => {
     localStorage.clear();
     server.use(attentionHandler(), http.get("/v1/tickets/epic-1/contextual", () => okJson({ ...contextual({ gates: [] }), ticket_id: "epic-1" })));
     const { fireEvent, within } = await import("@testing-library/react");
     renderRoute("/epic/epic-1", "/epic/:id", <WorkHeader ticketId="epic-1" kind="epic" title="Galaxy site" status="designed" assignee={null}
       designRef="design-req" actions={null} work={<div />} />);
-    const design = screen.getByTestId("work-design");
-    expect(await within(design).findByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
-    expect(within(screen.getByTestId("work-work")).getByRole("img", { name: "needs your attention: 2" })).toBeInTheDocument();
+    expect(await within(screen.getByTestId("work-work")).findByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    expect(within(screen.getByTestId("work-design")).queryByRole("img")).toBeNull();
     expect(within(screen.getByTestId("work-files")).queryByRole("img")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Collapse title bar" }));
-    expect(screen.getByRole("img", { name: "needs your attention: 3" })).toBeVisible();
+    expect(screen.getByRole("img", { name: "needs your attention: 1" })).toBeVisible();
+  });
+});
+
+// S12-ui2 (qa m-da89ef8294 item 7): at 390 px the context summary and the Needs attention row both said
+// "3 unanswered requests"; open, the summary names the section instead.
+describe("WorkHeader attention said once (S12-ui2)", () => {
+  it("drops the attention words from the summary while the details are open", async () => {
+    reviewMocks();
+    const asks = [1, 2, 3].map((i) => ({ id: `m-${i}`, by: "architect.e", text: `ask ${i}`, created_at: "2026-10-01T00:00:00Z", to: "owner" }));
+    server.use(http.get("/v1/tickets/epic-req/contextual", () => okJson(contextual({ unresolved_asks: asks, gates: [] }))));
+    renderRoute("/epic/epic-req", "/epic/:id", header());
+    const summary = await screen.findByTestId("work-context-summary");
+    const details = summary.closest("details") as HTMLDetailsElement;
+    if (!details.open) fireEvent.click(screen.getByTestId("work-context-toggle"));
+    details.open = true; fireEvent(details, new Event("toggle"));
+    expect(await screen.findByTestId("work-attention")).toHaveTextContent("3 unanswered requests");
+    expect(screen.getByTestId("work-context-summary")).not.toHaveTextContent("unanswered");
+    details.open = false; fireEvent(details, new Event("toggle"));
+    expect(await screen.findByText("3 unanswered requests", { selector: "[data-testid=work-context-summary]" })).toBeInTheDocument();
+  });
+});
+
+describe("WorkHeader owner while loading (qa m-aa62e7bd8e, 390 px)", () => {
+  it("shows a skeleton, never \"Unknown\", until the contextual route answers", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    server.use(
+      http.get("/v1/tickets/epic-req/contextual", async () => { await gate; return okJson(contextual({ owner: "owner" })); }),
+      http.get("/v1/me/people", () => okJson([])),
+    );
+    renderRoute("/epic/epic-req", "/epic/:id", header());
+    const owner = await screen.findByTestId("work-owner");
+    expect(within(owner).getByTestId("work-owner-skeleton")).toBeInTheDocument();
+    expect(owner).not.toHaveTextContent("Unknown");
+    release();
+    await waitFor(() => expect(owner).toHaveTextContent("owner"));
+    expect(within(owner).queryByTestId("work-owner-skeleton")).toBeNull();
+  });
+
+  it("says Unknown only when the answer came back without an owner", async () => {
+    server.use(
+      http.get("/v1/tickets/epic-req/contextual", () => okJson(contextual({ owner: null }))),
+      http.get("/v1/me/people", () => okJson([])),
+    );
+    renderRoute("/epic/epic-req", "/epic/:id", header());
+    await waitFor(() => expect(screen.getByTestId("work-owner")).toHaveTextContent("Unknown"));
   });
 });

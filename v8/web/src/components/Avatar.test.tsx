@@ -46,3 +46,13 @@ it("a failed shared request is evicted so a new consumer can recover", async () 
   await waitFor(() => expect(screen.getAllByTestId("avatar")[1]).toHaveAttribute("src", "blob:recovered"));
   expect(requests).toBe(2); view.unmount();
 });
+it("a Heronry service shows the shared chip avatar and fetches no generated avatar", () => {
+  let requests = 0;
+  server.use(http.get("/v1/avatars/:id", () => { requests++; return new HttpResponse("<svg/>"); }));
+  render(<Avatar id="board" />);
+  const avatar = screen.getByTestId("avatar");
+  expect(avatar).toHaveAttribute("data-service", "board");
+  expect(avatar.querySelector("svg")).toHaveAttribute("viewBox", "0 0 36 36");
+  expect(avatar.querySelectorAll("svg rect")).toHaveLength(3);
+  expect(requests).toBe(0);
+});

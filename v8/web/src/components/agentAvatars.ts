@@ -78,7 +78,20 @@ export const AGENT_AVATARS: Record<SeatRole, string> = {
     `<path d="M22.4 22.4l2.1 2.1M29.5 29.5l2.1 2.1M31.6 22.4l-2.1 2.1M24.5 29.5l-2.1 2.1" stroke="#D95C5C" stroke-width="3"/>`),
 };
 
+/** Heronry's services share one warm, rounded chip tile with the agent avatars. */
+export const SERVICE_AVATAR: string = [
+  `<rect width="36" height="36" rx="8" fill="#E7B99D"/>`,
+  `<path d="M13 7v4m5-4v4m5-4v4M13 25v4m5-4v4m5-4v4M7 13h4m-4 5h4m-4 5h4m14-10h4m-4 5h4m-4 5h4" fill="none" stroke="${INK}" stroke-width="2.4" stroke-linecap="round"/>`,
+  `<rect x="10" y="10" width="16" height="16" rx="3.5" fill="${INK}"/>`,
+  `<rect x="14" y="14" width="8" height="8" rx="2" fill="#EABF3B"/>`,
+].join("");
+
 /** The inline SVG markup of an agent seat's avatar at `size` px (36×36 viewBox, like the people avatars). */
 export function agentAvatarSvg(role: SeatRole, size: number): string {
   return `<svg width="${size}" height="${size}" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${AGENT_AVATARS[role]}</svg>`;
+}
+
+/** The inline SVG markup of Heronry's service avatar at `size` px. */
+export function serviceAvatarSvg(size: number): string {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${SERVICE_AVATAR}</svg>`;
 }

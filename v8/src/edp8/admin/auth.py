@@ -25,7 +25,7 @@ def owner_handle() -> str:
 
 
 def is_admin(p: Participant) -> bool:
-    if p.type != "human" or p.role == Role.expert:
+    if p.type != "human" or p.role in (Role.expert, Role.guest):  # e0cec S5: a guest is never an admin
         return False
     return bool(getattr(p, "admin", False)) or p.handle.lstrip("@") == owner_handle()
 

@@ -7,10 +7,14 @@ was typed. All broker publishing is best-effort: the board record is the truth.
 
 from __future__ import annotations
 
+import logging
+
 from . import broker_adapter
 from .board import Board, BoardError
 from .quotes import render_quotes
 from .schemas import Event, EventKind, Message, MessageKind, Reason
+
+_log = logging.getLogger("edp8.delivery")
 
 
 def delivery_plan(board: Board, ev: Event) -> list[tuple[str, list[Reason]]]:
@@ -52,13 +56,15 @@ def _seat_alive(board: Board, pid: str) -> bool | None:
     return rows[-1].state.value in ("alive", "parked")
 
 
-def after_message(board: Board, actor_id: str, m: Message) -> None:
-    """Mirror an addressed message + every @mention into broker inboxes.
+def after_message(board: Board, actor_id: str, m: Message, *, starting: bool = False) -> dict[str, str]:
+    """Mirror an addressed message + every @mention into broker inboxes. Returns {seat: receipt phrase} for each
+    closed seat it could not deliver to live; empty when every recipient had a live shell.
 
-    Blind-spot guard: a message addressed to an AGENT seat with no live shell would
-    otherwise wait silently — the epic's owning human gets an fyi naming the closed
-    seat so the recovery decision (respawn / let it wait) is theirs, immediately."""
+    A message addressed to an AGENT seat with no live shell waits in its inbox. The board never revives it (design
+    63db8a7d42 D): it emits one `board_hint` the epic architect's listener prints, naming the seat and the message,
+    and the architect decides whether to spawn or resume."""
     targets: list[str] = []
+    receipts: dict[str, str] = {}
     if m.to and _is_participant(board, m.to):
         targets.append(m.to)
     for pid in board.message_mentions(m, exclude={actor_id, *(t for t in targets)}):  # C23: notes too
@@ -75,19 +81,16 @@ def after_message(board: Board, actor_id: str, m: Message) -> None:
             p = board.participant(to)
         except BoardError:
             continue
-        # closed-seat fyi: only for a REAL per-ticket seat (role.<ticket>) with no live shell —
-        # a base-role stub is not a seat, and the fyi goes to THIS epic's human owner, else to
-        # its live resident architect; never to a shared 'owner' handle (2026-09-05 flood)
-        if p.type == "agent" and "." in to and _seat_alive(board, to) is not True and m.kind.value != "status":
-            fyi_to = board.recovery_seat(m.ticket_id, exclude={to, actor_id})
-            if fyi_to:
-                broker_adapter.publish("board", fyi_to, "fyi",
-                                       {"ticket_id": m.ticket_id,
-                                        "text": f"{m.kind.value} from {actor_id} awaits CLOSED seat {to} "
-                                                f"on {m.ticket_id} — it reads its inbox first thing on its "
-                                                f"next shell; spawn(participant_id={to!r}) revives it "
-                                                f"without reassigning the ticket",
-                                        "board_msg_id": m.id, "closed_seat": to})
+        # closed-seat handling: only for a REAL per-ticket seat (role.<ticket>) with no live shell — a base-role
+        # stub is not a seat. The board hints the epic's architect; it never revives the seat or pages the owner.
+        if (p.type == "agent" and "." in to and _seat_alive(board, to) is not True and m.kind.value != "status"
+                and not (starting and to == m.to)):  # `starting`: the addressee is being spawned right now
+            try:
+                board.hint_closed_seat_message(m, to)  # deduped with the close-side sweep (c-a7059e9d27)
+                receipts[to] = f"seat is closed; the epic's architect was told ({to} reads it when started)"
+            except BoardError:
+                continue
+    return receipts
 
 
 def spawner_of(participant_id: str) -> str | None:

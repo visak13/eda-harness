@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { identity } from "../auth/identity";
+import { hasToken, identity } from "../auth/identity";
 import { RequestAccess } from "./RequestAccess";
 import styles from "./IdentityPanel.module.css";
 
@@ -12,15 +12,48 @@ import styles from "./IdentityPanel.module.css";
 //
 // t-882e4d2eeb: this is also where Sign out lands (identity() is then empty, so it says "signed out" and
 // shows no board error), and where a person without a token can Request access on a remote-enabled board.
-export function IdentityPanel({ hint }: { hint?: string }): React.JSX.Element {
+// qa 0.10.8: the card used to pre-fill Participant with the default identity, "owner": on a public board that showed the
+// owner's handle to strangers. It starts empty. Only a value this browser itself used before (its own localStorage), or the
+// participant whose token the board just refused, is offered back.
+const LAST_KEY = "edp8.last-participant";
+function lastParticipant(): string {
+  try {
+    return localStorage.getItem(LAST_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+// architect m-67dc851e4f: an untouched card shows no error. One shows only after a sign-in attempt this tab made (or with a token the board refused).
+const TRIED_KEY = "edp8.sign-in-tried";
+function tried(): boolean {
+  try {
+    return sessionStorage.getItem(TRIED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function IdentityPanel(): React.JSX.Element {
   const signedOut = identity() === "";
-  const [as, setAs] = useState(identity());
+  const [as, setAs] = useState(hasToken() ? identity() : lastParticipant());
   const [token, setToken] = useState("");
+  const failed = !signedOut && (hasToken() || tried());
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const url = new URL(window.location.href);
     url.searchParams.set("as", as.trim());
+    try {
+      sessionStorage.setItem(TRIED_KEY, "1");
+    } catch {
+      /* storage unavailable: no error line after the reload */
+    }
+    try {
+      if (as.trim()) localStorage.setItem(LAST_KEY, as.trim());
+    } catch {
+      /* storage unavailable: nothing is remembered */
+    }
     url.searchParams.delete("token");
     // The token goes to sessionStorage directly — never into a document URL, where it would land in
     // the request line and the server access log (adversary finding #1, 2026-09-10). identity.ts
@@ -46,13 +79,13 @@ export function IdentityPanel({ hint }: { hint?: string }): React.JSX.Element {
           </p>
         ) : (
           <p className={styles.body}>
-            The board rejected your credentials for <span className={styles.who}>{identity()}</span>.
-            Enter a participant id and, if this board requires one, the matching token to continue.
+            {/* a failed sign-in says so once, in the alert below; the sentence here only asks again */}
+            {failed ? <>Try again with a participant id and, if this board requires one, the matching token.</> : <>Sign in to use this board. Enter a participant id and, if this board requires one, the matching token to continue.</>}
           </p>
         )}
-        {hint && !signedOut ? (
+        {failed ? (
           <p className={styles.hint} role="alert" data-testid="identity-hint">
-            {hint}
+            That participant and token don't match.
           </p>
         ) : null}
         <label className={styles.label}>

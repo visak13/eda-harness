@@ -1,0 +1,2 @@
+# pip-audit advisories the CI `security` job ignores: one id per line, then `# why it does not apply and until when`.
+# Empty by design: an entry needs a reason a maintainer can check. Keep it short; fix by upgrading instead.

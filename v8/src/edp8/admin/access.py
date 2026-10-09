@@ -65,12 +65,14 @@ OFF_REASON = ("Remote access is off on this board, so it takes no access request
               "Ask the person who runs it to invite you.")
 
 #: roles a person may ask for (a human's board role; experts join from a Library topic, never here)
-HUMAN_ROLES = tuple(r.value for r in Role if r not in (Role.expert, Role.doctor))
+#: owner m-ab7c81eb8d: a person is a guest (external, scoped to the epics they are added to) or a member (`owner`);
+#: an agent role is never a person's, and an expert comes only from a Library topic
+HUMAN_ROLES = (Role.guest.value, Role.owner.value)
 
 
 class AccessIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
-    role_wanted: str = Field(default="owner", max_length=20)
+    role_wanted: str = Field(default="guest", max_length=20)  # e0cec S5: owner access is an explicit grant
     note: str = Field(default="", max_length=500)
 
 
@@ -205,7 +207,74 @@ def _stale(q: AccessRequest) -> bool:
 
 
 def _expire(board: Any, q: AccessRequest) -> AccessRequest:
-    return board.store.put("access_request", q.model_copy(update={"status": "expired"}))
+    out = board.store.put("access_request", q.model_copy(update={"status": "expired"}))
+    _settle_notice(board, q.id, "expired")
+    return out
+
+
+def _owner_of_board(board: Any) -> Any:
+    """The human owner a new access request is told to: the first owner-role person, an admin first."""
+    owners = [p for p in board.store.query("participant", {"role": "owner"}, limit=100) if p.type == "human"]
+    owners.sort(key=lambda p: (not p.admin, p.created_at))
+    return owners[0] if owners else None
+
+
+def _access_topic(board: Any, owner: Any) -> Any:
+    """The one standing "Access requests" topic, opened by the board the first time it is needed. It has no resident
+    seat and is not a Library topic (s-aa76c83998: the message needs a thread, the owner wants no new structure)."""
+    from ..board import ACCESS_TAG, is_access
+    from ..schemas import EventKind, Ticket, TicketKind, TicketStatus, WorkType
+    from ..store import new_id
+    with board._lock:
+        for t in board.store.query("ticket", {"kind": TicketKind.topic.value}, limit=-1):
+            if is_access(t):
+                return t
+        t = Ticket(id=new_id("topic"), kind=TicketKind.topic, work_type=WorkType.knowledge, title="Access requests",
+                   words="People who ask for access from the sign-in page. Each request is decided on the Access page.",
+                   created_by=owner.id, description="", tags=[ACCESS_TAG])
+        t.status = TicketStatus.in_progress
+        t.epic_id = t.id
+        board.store.put("ticket", t)
+    board._index("ticket", t.id, board.store._fts_text("ticket", t.model_dump(mode="json")) or t.title)
+    board._emit(t.id, EventKind.ticket_created, {"kind": TicketKind.topic, "parent_id": None, "by": owner.id,
+                                                 "access": True})
+    return t
+
+
+def _notify_owner(board: Any, q: AccessRequest) -> None:
+    """A new request is also a chat message to the owner, linked to the Access page. Never blocks the request."""
+    try:
+        owner = _owner_of_board(board)
+        if owner is None:
+            return
+        t = _access_topic(board, owner)
+        board.owner_notice(t.id, f"New access request {q.id}: {q.name} asks for access as {q.role_wanted}."
+                                 f"{f' They say: {q.note}' if q.note else ''} "
+                                 f"Decide it on the Access page: /ui/admin?tab=teammates#{q.id}")
+    except Exception:  # noqa: BLE001 — the sign-in page must not fail because the owner message could not be posted
+        pass
+
+
+def _settle_notice(board: Any, request_id: str, reason: str) -> None:
+    """The request was decided (or expired): its message stops waiting on the owner."""
+    try:
+        for t in board.store.query("ticket", {"kind": "topic"}, limit=-1):
+            from ..board import is_access
+            if not is_access(t):
+                continue
+            for m in board.store.query("message", {"ticket_id": t.id, "created_by": "board"}, limit=1000):
+                if request_id in m.text:
+                    board.settle_notice(m.id, reason=reason, via=request_id)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def reconcile_expired(board: Any) -> None:
+    """Mark every pending request past the TTL expired (which settles its owner notice). Safe to call on any read."""
+    try:
+        live_pending(board)
+    except Exception:  # noqa: BLE001 — a read of someone's attention must not fail on this
+        pass
 
 
 def live_pending(board: Any) -> list[AccessRequest]:
@@ -250,7 +319,7 @@ def public_router(ctx: AdminContext) -> APIRouter:
     def ask(b: AccessIn, request: Request):
         if not remote_on(request) or not ctx.tokens_file().exists():
             raise HTTPException(409, OFF_REASON)
-        role = b.role_wanted.strip() or "owner"
+        role = b.role_wanted.strip() or "guest"
         if role not in HUMAN_ROLES:
             raise HTTPException(400, f"role_wanted must be one of {list(HUMAN_ROLES)}")
         name = " ".join(b.name.split())
@@ -264,6 +333,7 @@ def public_router(ctx: AdminContext) -> APIRouter:
                 raise HTTPException(429, "this board has too many open access requests; try again later")
             q = board.store.put("access_request", AccessRequest(id=new_id("acc"), created_by="", name=name,
                                                                  role_wanted=role, note=b.note.strip()))
+            _notify_owner(board, q)
         code = claims.issue(q.id)
         return {"ok": True, "value": {"id": q.id, "claim_code": code, "poll_s": POLL_S},
                 "hint": "keep this page open: it signs you in once an admin approves"}
@@ -275,6 +345,7 @@ def public_router(ctx: AdminContext) -> APIRouter:
         hit = claims.peek(b.code)
         q = board.store.get("access_request", hit["request_id"]) if hit else None
         if hit is None or q is None:
+            reconcile_expired(board)  # the code lapsed with its request: settle the owner's notice now (review F5)
             raise HTTPException(401, "this request code is unknown, expired or already used")
         if _stale(q):
             with board._lock:
@@ -334,9 +405,13 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
         with board._lock:
             q = _pending(req_id)
             handle = (b.handle or "").strip().lstrip("@") or _slug(q.name)
-            role = (b.role or q.role_wanted or "owner").strip()
+            # the requester's role_wanted is only a note to the admin: approving grants guest unless the admin
+            # chooses member here (owner m-ab7c81eb8d: a stranger approved with one click is never a member)
+            role = (b.role or Role.guest.value).strip()
             if role not in HUMAN_ROLES:
                 raise HTTPException(400, f"role must be one of {list(HUMAN_ROLES)}")
+            if b.admin and role != Role.owner.value:
+                raise HTTPException(400, "a guest cannot be an admin")
             if handle == "agents":
                 raise HTTPException(400, "'agents' is reserved")
             try:
@@ -352,6 +427,7 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
                 raise HTTPException(410, "this request expired before it was approved")
             q = board.store.put("access_request", q.model_copy(update={
                 "status": "approved", "decided_by": a.id, "decided_at": now(), "handle": p.handle.lstrip("@")}))
+            _settle_notice(board, q.id, "approved")
         return {"ok": True, "value": _view(q),
                 "hint": "their browser signs in on its next check; nothing to send them"}
 
@@ -361,6 +437,7 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
             q = _pending(req_id)
             q = board.store.put("access_request", q.model_copy(update={
                 "status": "denied", "decided_by": a.id, "decided_at": now()}))
+            _settle_notice(board, q.id, "denied")
         return {"ok": True, "value": _view(q), "hint": "their page says the request was declined"}
 
     return r

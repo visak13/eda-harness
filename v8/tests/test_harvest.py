@@ -104,9 +104,17 @@ def _call(client, who: str, name: str, **args):
 
 
 def _enforced(client, story: str) -> list[str]:
-    out = _call(client, "owner", "assemble_ruleset", ticket_id=story)
-    assert out["ok"], out
-    return [line["text"] for line in out["value"]["enforced"]]
+    """The bars a seat on `story` reads: its epic's linked active strategy docs, head-first (S17: the ruleset
+    tool is gone; doc_read returns each doc's first page, which is the whole of these short docs)."""
+    epic = client.get(f"/v1/tickets/{story}", headers=OWNER).json()["value"]["parent_id"]
+    links = client.get("/v1/links", params={"from_id": epic, "relation": "uses_strategy"}, headers=OWNER).json()
+    bars = []
+    for lk in links["value"]:
+        out = _call(client, "owner", "doc_read", id=lk["to_id"])
+        assert out["ok"], out
+        if out["value"].get("status", "active") == "active":
+            bars += [ln for ln in out["value"]["body_md"].splitlines() if ln.startswith("- ")]
+    return bars
 
 
 def test_qa_harvest_records_approve_carries_the_new_version_reject_leaves_it(client, rig):

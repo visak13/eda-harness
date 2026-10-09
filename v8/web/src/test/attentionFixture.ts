@@ -1,10 +1,9 @@
 import { http, HttpResponse } from "msw";
 import type { Attention, AttentionItem, AttentionScope } from "../api/attention";
 
-// S20 attention trail: one fixture every surface's spec renders from — an epic (epic-1) waiting on the viewer for a
-// question on its own thread, a scope decision (Actions), a design sign-off (Design), an evidence sign-off on story
-// s-1 (Work → s-1 → Files) and a question on story s-1 (Work → s-1 → thread); a Library topic question; a help
-// thread fix; an access request (Admin). Shaped exactly like GET /v1/me/attention (edp8/attention.py).
+// S20 attention trail: one fixture every surface's spec renders from — an epic (epic-1) with a question on its own
+// thread and a question on story s-1 (Work → s-1 → thread), and a Library topic question. Shaped exactly like
+// GET /v1/me/attention (edp8/attention.py); s-aa76c83998: asks are the only kind.
 
 const epic = { type: "epic" as const, id: "epic-1", title: "Galaxy site" };
 const story = { id: "s-1", title: "Ship sheet" };
@@ -17,23 +16,12 @@ function item(p: Partial<AttentionItem> & Pick<AttentionItem, "kind" | "id" | "t
 export const ITEMS: AttentionItem[] = [
   item({ kind: "ask", id: "m-epicq", noun: "question", tab: "thread", section: "asks", at: { tab: "thread", section: "asks" },
     url: "/ui/epic/epic-1#m-epicq" }),
-  item({ kind: "gate", id: "ev-scope", noun: "scope decision", tab: "actions", section: "decisions",
-    at: { tab: "actions", section: "decisions" }, item: { type: "gate", id: "ev-scope", gate: "scope" },
-    url: "/ui/epic/epic-1?request=ev-scope" }),
-  item({ kind: "gate", id: "ev-design", noun: "design sign-off", tab: "design", section: "signoff",
-    at: { tab: "design", section: "signoff" }, item: { type: "gate", id: "ev-design", gate: "design_signoff" },
-    url: "/ui/epic/epic-1?request=ev-design" }),
-  item({ kind: "signoff", id: "c-1", noun: "sign-off", tab: "work", section: "tickets", ticket: story,
-    at: { tab: "files", section: "evidence" }, item: { type: "criterion", id: "c-1", doc: "report-1" },
-    url: "/ui/ticket/s-1?doc=report-1#c-1" }),
   item({ kind: "ask", id: "m-storyq", noun: "question", tab: "work", section: "tickets", ticket: story,
     at: { tab: "thread", section: "asks" }, url: "/ui/ticket/s-1#m-storyq" }),
   item({ kind: "ask", id: "m-topicq", noun: "question", scope: { type: "topic", id: "topic-1", title: "Rendering" },
     tab: "thread", section: "asks", at: { tab: "thread", section: "asks" }, url: "/ui/library/topics/topic-1#m-topicq" }),
-  item({ kind: "fix", id: "fix-1", noun: "fix to approve", scope: { type: "help", id: "topic-h1", title: "Board is slow" },
-    tab: "fixes", section: "fixes", at: { tab: "fixes", section: "fixes" }, url: "/ui/library/topics/topic-h1#fix-1" }),
-  item({ kind: "access_request", id: "ar-1", noun: "access request", scope: { type: "admin", id: "admin", title: "Admin" },
-    tab: "teammates", section: "requests", at: { tab: "teammates", section: "requests" }, url: "/ui/admin?tab=teammates#ar-1" }),
+  item({ kind: "ask", id: "m-helpq", noun: "question", scope: { type: "help", id: "topic-h1", title: "Board is slow" },
+    tab: "thread", section: "asks", at: { tab: "thread", section: "asks" }, url: "/ui/library/topics/topic-h1#m-helpq" }),
 ];
 
 function scope(s: AttentionItem["scope"], reason: string): AttentionScope {
@@ -53,12 +41,11 @@ export const ATTENTION: Attention = {
   participant: "owner",
   items: ITEMS,
   scopes: [
-    scope(epic, "2 questions, 1 scope decision, 1 design sign-off, 1 sign-off"),
+    scope(epic, "2 questions"),
     scope({ type: "topic", id: "topic-1", title: "Rendering" }, "1 question"),
-    scope({ type: "help", id: "topic-h1", title: "Board is slow" }, "1 fix to approve"),
-    scope({ type: "admin", id: "admin", title: "Admin" }, "1 access request"),
+    scope({ type: "help", id: "topic-h1", title: "Board is slow" }, "1 question"),
   ],
-  counts: { total: 8, epics: 5, topics: 1, help: 1, admin: 1 },
+  counts: { total: 4, epics: 2, topics: 1, help: 1, admin: 0 },
 };
 
 /** The attention read answering with `value` (the full fixture by default). */

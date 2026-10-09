@@ -1,0 +1,11 @@
+{
+ "sessions": 352,
+ "seat_hours": 799.3,
+ "heartbeat_turns": 983,
+ "idle_heartbeat_turns": 660,
+ "heartbeat_cost_usd": 581.85,
+ "idle_heartbeat_cost_usd": 207.36,
+ "heartbeat_turns_per_seat_hour": 1.23,
+ "idle_heartbeat_turns_per_seat_hour": 0.826,
+ "skipped_unreadable_files": 1
+}

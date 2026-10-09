@@ -5,12 +5,14 @@ import { getDocHtml } from "../api/endpoints";
 import type { DocHtml } from "../api/types";
 import { DocumentSource } from "./DocumentSource";
 import { Markdown } from "./Markdown";
+import { dropLeadingTitle } from "./dropLeadingTitle";
 import { SignoffPane } from "./SignoffPane";
 import { DocControls } from "./DocControls";
 import { DesignReview } from "./DesignReview";
 import { pendingWork } from "./PendingNavigation";
 import { docSource, quoteRegionRef } from "./QuoteLayer";
 import { findRendered } from "./quoteMatch";
+import { isExternalHref } from "../desktop/shell";
 import ui from "./ui.module.css";
 import styles from "./DocView.module.css";
 
@@ -44,6 +46,11 @@ export function writeReaderPref(on: boolean): void {
   try {
     localStorage.setItem(READER_KEY, on ? "1" : "0");
   } catch { /* the choice lives in memory for this view */ }
+}
+
+/** S17: a section size for the heading map ("820 chars", "4.1k chars"). */
+export function kChars(n: number): string {
+  return n < 1000 ? `${n} chars` : `${(n / 1000).toFixed(1)}k chars`;
 }
 
 export type OutlineEntry = { level: 1 | 2 | 3; text: string };
@@ -138,6 +145,8 @@ export function DocView({
   const signoffNow = (data?.signoff_criteria?.length ?? 0) > 0 || Boolean(data?.signoff_criterion);
   if (signoffNow) signoffDoc.current = docId;
   const reviewing = !!source && signoffDoc.current !== docId;
+  // the page's own reader mode, read here so the source strip follows the one toggle by the title
+  const [readerOn, setReaderOn] = useState<boolean>(readerPref);
 
   const outline = useMemo(() => (q.data ? outlineOf(q.data.html) : []), [q.data]);
   const pick = (v: number) => {
@@ -160,9 +169,11 @@ export function DocView({
       versionsHosted={versionsHosted}
       hideTitle={reviewing}
       reviewing={reviewing}
+      readerOn={readerOn}
+      onReader={setReaderOn}
       focusLines={focusLines}
     />;
-  return reviewing ? <DesignReview key={`${docId}:${source}:${q.data.version}`} docId={docId} source={source} version={q.data.version} title={q.data.title} request={request} versions={q.data.versions} onPickVersion={pick} outline={outline} tabHref={tabHref} onBack={onBack} onLatest={pick}>{content}</DesignReview> : <><DocumentSource key={docId} docId={docId} version={q.data.version} />{content}</>;
+  return reviewing ? <DesignReview key={`${docId}:${source}:${q.data.version}`} docId={docId} source={source} version={q.data.version} title={q.data.title} request={request} versions={q.data.versions} onPickVersion={pick} outline={outline} tabHref={tabHref} onBack={onBack} onLatest={pick}>{content}</DesignReview> : <><DocumentSource key={docId} docId={docId} version={q.data.version} onLatest={pick} readerOverride={readerOn} />{content}</>;
 }
 
 function DocBody({
@@ -173,6 +184,8 @@ function DocBody({
   versionsHosted,
   hideTitle,
   reviewing,
+  readerOn,
+  onReader,
   focusLines,
 }: {
   focusLines?: string | null;
@@ -186,6 +199,9 @@ function DocBody({
   /** Inside a design review the reader is not the author: the author actions
    *  (Ask for a review / Publish a new version) do not belong on the review surface (finding 5). */
   reviewing?: boolean;
+  /** Reader mode (the document alone), owned by DocView so the source strip follows the same switch. */
+  readerOn: boolean;
+  onReader: (on: boolean) => void;
 }): React.JSX.Element {
   const latest = doc.versions.length ? Math.max(...doc.versions) : doc.version;
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -207,6 +223,7 @@ function DocBody({
     const a = (e.target as HTMLElement).closest("a");
     if (!a) return;
     const href = a.getAttribute("href") ?? "";
+    if (isExternalHref(href)) return; // S11: https://host/…/doc/x is another site's page, not a board doc
     const doc_ = href.match(/\/(?:ui|app)?\/?doc\/([\w.-]+)/) ?? href.match(/[?&]doc=([\w.-]+)/);
     const tkt = href.match(/\/(?:ui|app)?\/?ticket\/([\w.-]+)/);
     if (doc_ && onOpenDoc) {
@@ -233,10 +250,11 @@ function DocBody({
   const signoffSeen = useRef<string | null>(null);
   if (signoffNow) signoffSeen.current = doc.id;
   const hasSignoff = signoffNow || signoffSeen.current === doc.id;
-  const [reader, setReader] = useState<boolean>(readerPref);
+  const reader = readerOn;
   const panelHidden = reader && !hasSignoff && !reviewing;
   function toggleReader() {
-    setReader((r) => { writeReaderPref(!r); return !r; });
+    writeReaderPref(!reader);
+    onReader(!reader);
   }
   const isLatest = doc.version === latest;
   const scopeHref = doc.scope.startsWith("epic-")
@@ -274,8 +292,28 @@ function DocBody({
           </h1>
         )}
 
+        {doc.warning ? (
+          <p className={styles.legacyBanner} role="note" data-testid="doc-legacy-warning">{doc.warning}</p>
+        ) : null}
+        {(doc.map?.length ?? 0) > 1 ? (
+          <details className={styles.sectionMap} data-testid="doc-section-map">
+            <summary>Sections ({doc.map!.length}) · {kChars(doc.total_chars ?? 0)}</summary>
+            <ul>
+              {doc.map!.map((s, i) => (
+                <li key={i} className={styles[`outlineL${Math.min(s.level, 3)}`]}>
+                  <button type="button" className={styles.outlineLink} onClick={() => scrollToHeading(i)}>
+                    {/* S13 F12: a repeated heading's selector is its path ("## A > ### B"): show the heading */}
+                    {(s.h.split(" > ").pop() ?? s.h).replace(/^\s*#+\s*/, "")}
+                  </button>{" "}
+                  <span className={styles.sectionSize}>{kChars(s.chars)}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+
         <div ref={setBody} onClick={onBodyClick} className={styles.body} data-testid="doc-body">
-          <Markdown html={doc.html} />
+          <Markdown html={hideTitle ? doc.html : dropLeadingTitle(doc.html, doc.title)} />
         </div>
 
 

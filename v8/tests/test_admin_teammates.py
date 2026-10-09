@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from admin_support import ADMIN_H, BOB_H, make_env
+from admin_support import ADMIN_H, BOB_H, MACHINE_ADMIN, make_env
 from edp8 import settings
 from edp8.admin import teammates
 
@@ -132,3 +132,15 @@ def test_duplicate_and_reserved_handles(env):
     _invite(env)
     assert env.client.post("/v1/admin/teammates", headers=ADMIN_H, json={"handle": "carol"}).status_code == 409
     assert env.client.post("/v1/admin/teammates", headers=ADMIN_H, json={"handle": "agents"}).status_code == 400
+
+
+@pytest.mark.parametrize("bad", ["Bad Name!", "../etc", "a..b", "a/b", "x" * 70, "a", "-lead"])
+def test_sweep3_invalid_handle_is_refused_by_the_server(env, bad):
+    r = env.client.post("/v1/admin/teammates", headers=ADMIN_H, json={"handle": bad})
+    assert r.status_code == 400, r.text
+    r = env.client.post("/v1/participants", headers={"X-Admin": MACHINE_ADMIN}, json={"type": "human", "role": "owner", "handle": bad})
+    assert r.status_code == 400, r.text
+
+
+def test_sweep3_valid_handles_still_work(env):
+    assert env.client.post("/v1/admin/teammates", headers=ADMIN_H, json={"handle": "dr.o-neil_2"}).status_code == 200

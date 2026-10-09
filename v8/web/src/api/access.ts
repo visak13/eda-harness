@@ -34,7 +34,7 @@ export const askAccess = (body: { name: string; role_wanted: string; note: strin
 export const claimAccess = (code: string) => postJson<AccessClaim>("/v1/access-requests/claim", { code });
 
 export const getAccessRequests = () => api<AccessRequestRow[]>("/v1/admin/access-requests");
-export const approveAccess = (id: string, body: { handle?: string; admin?: boolean } = {}) =>
+export const approveAccess = (id: string, body: { handle?: string; role?: string; admin?: boolean } = {}) =>
   postJson<AccessRequestRow>(`/v1/admin/access-requests/${encodeURIComponent(id)}/approve`, body);
 export const denyAccess = (id: string) =>
   postJson<AccessRequestRow>(`/v1/admin/access-requests/${encodeURIComponent(id)}/deny`, {});

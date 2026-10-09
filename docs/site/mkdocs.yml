@@ -86,6 +86,12 @@ nav:
       - Harnesses and models: setup/harnesses.md
       - Remote access and teammates: setup/remote-access.md
       - Integrations: setup/integrations.md
+  - Using Heronry:
+      - guide/index.md
+      - The conversation: guide/conversation.md
+      - Work and design: guide/work.md
+      - VS Code: guide/vscode.md
+      - Anywhere: guide/anywhere.md
   - Docs:
       - Concepts: docs/concepts.md
       - The Design tab: docs/design-tab.md

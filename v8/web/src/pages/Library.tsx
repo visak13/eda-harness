@@ -9,9 +9,11 @@ import ui from "../components/ui.module.css";
 import { ArtifactLink } from "../components/ArtifactLink";
 import styles from "./Library.module.css";
 import { KnowledgeSection } from "./Knowledge";
+import { docTitle, KIND_LABEL } from "./knowledgeShared";
 import { useAttention } from "../api/attention";
 import { AttentionDot } from "../components/AttentionDot";
 import { TopicsSection } from "./Topics";
+import { PainsSection } from "./Pains";
 
 // S-LIBRARY (design-34bf11cc07 §4.3): Knowledge (strategies, domains, lessons) is the first section and
 // the rail's Library item lands on it.
@@ -19,7 +21,7 @@ import { TopicsSection } from "./Topics";
 // History over one workspace. Tickets is the cross-epic table with the seven legacy filters bound
 // to the query string (parity test_tickets_page_filters); History is the day-grouped activity
 // replay (parity /ui/activity). The legacy /ui/tickets and /ui/activity paths redirect here.
-const SECTIONS = ["knowledge", "topics", "documents", "artifacts", "links", "tickets", "history"] as const;
+const SECTIONS = ["knowledge", "topics", "documents", "artifacts", "links", "tickets", "pains", "history"] as const;
 type Section = (typeof SECTIONS)[number];
 
 export function LibraryPage(): React.JSX.Element {
@@ -51,6 +53,7 @@ export function LibraryPage(): React.JSX.Element {
       {active === "artifacts" ? <ArtifactsSection /> : null}
       {active === "links" ? <LinksSection /> : null}
       {active === "tickets" ? <TicketsSection /> : null}
+      {active === "pains" ? <PainsSection /> : null}
       {active === "history" ? <HistorySection /> : null}
     </>
   );
@@ -73,8 +76,8 @@ function DocumentsSection(): React.JSX.Element {
       {q.data.docs.map((d) => (
         <li key={d.id}>
           <button type="button" className={styles.docRow} onClick={() => drawer.openDoc(d.id)}>
-            <span className={ui.tag}>{d.doc_type.replace(/_/g, " ")}</span>
-            <span className={styles.docTitle}>{d.title}</span>
+            <span className={ui.tag}>{KIND_LABEL[d.doc_type] ?? d.doc_type.replace(/_/g, " ")}</span>
+            <span className={styles.docTitle}>{docTitle(d.title)}</span>
             <span className={ui.idMono}>{d.id}</span>
           </button>
         </li>
@@ -118,9 +121,9 @@ function LinksSection(): React.JSX.Element {
     <table className={styles.table} tabIndex={0} aria-label="Records (scroll horizontally)">
       <thead>
         <tr>
-          <th>from</th>
-          <th>relation</th>
-          <th>to</th>
+          <th>From</th>
+          <th>Relation</th>
+          <th>To</th>
         </tr>
       </thead>
       <tbody>
@@ -210,32 +213,32 @@ function TicketsSection(): React.JSX.Element {
       ) : q.data.rows.length === 0 ? (
         <p className={ui.empty}>No tickets match these filters.</p>
       ) : (
-        <table className={styles.table} tabIndex={0} aria-label="Tickets (scroll horizontally)" data-testid="tickets-table">
+        <table className={`${styles.table} ${styles.ticketsTable}`} tabIndex={0} aria-label="Tickets (scroll horizontally)" data-testid="tickets-table">
           <thead>
             <tr>
-              <th>id</th>
-              <th>epic</th>
-              <th>title</th>
-              <th>kind</th>
-              <th>status</th>
-              <th>assignee</th>
-              <th>criteria</th>
+              <th>Id</th>
+              <th>Epic</th>
+              <th>Title</th>
+              <th>Kind</th>
+              <th>Status</th>
+              <th>Assignee</th>
+              <th>Criteria</th>
             </tr>
           </thead>
           <tbody>
             {q.data.rows.map((t) => (
               <tr key={t.id}>
-                <td className={ui.idMono}>{t.id}</td>
-                <td className={ui.idMono}>{t.epic_id ?? "—"}</td>
-                <td>{t.title}</td>
-                <td>
+                <td data-label="Id" className={ui.idMono}>{t.id}</td>
+                <td data-label="Epic" className={ui.idMono}>{t.epic_id ?? "—"}</td>
+                <td className={styles.ticketTitle}>{t.title}</td>
+                <td data-label="Kind">
                   {t.kind}/{t.work_type}
                 </td>
-                <td>
+                <td data-label="Status">
                   <StatusChip status={t.status} />
                 </td>
-                <td>{t.assignee ?? "—"}</td>
-                <td className={ui.idMono}>
+                <td data-label="Assignee">{t.assignee ?? "—"}</td>
+                <td data-label="Criteria" className={ui.idMono}>
                   {t.criteria.passed}/{t.criteria.total}
                 </td>
               </tr>

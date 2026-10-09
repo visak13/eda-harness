@@ -4,6 +4,7 @@ import type { CriterionView, Verdict } from "../api/types";
 import { getDocHtml, postVerdict } from "../api/endpoints";
 import { BoardApiError } from "../api/client";
 import { RewordCriterion } from "./CriterionControls";
+import { useIsGuest } from "../auth/guest";
 import { useDirtyGuard } from "../live/useDraftGuard";
 import styles from "./CriterionCard.module.css";
 import { Icon } from "./Icon";
@@ -57,6 +58,8 @@ export function CriterionCard({
   useDirtyGuard(`note:${criterion.id}`, note.trim().length > 0, ticketId);
   const [decided, setDecided] = useState<"pass" | "fail" | null>(null);
   const [rewording, setRewording] = useState(false);
+  // e0cec S5: a guest reads the criterion but never rules on it (the board refuses verdicts from a guest).
+  const guest = useIsGuest();
 
   // A ruling pane whose caller could not name the version reads the evidence doc's versions once.
   const needsVersion = Boolean(ruling) && ruling!.evidenceVersion == null && Boolean(criterion.evidence_ref);
@@ -117,7 +120,7 @@ export function CriterionCard({
       <p className={styles.text}>{criterion.text}</p>
       <div className={styles.id}>{criterion.id}</div>
 
-      {!ruling ? (
+      {!ruling || guest ? (
         <>
           {criterion.evidence_ref ? (
             <button
@@ -205,6 +208,16 @@ export function CriterionCard({
               Approve criterion
             </button>
           </div>
+          {needsVersion && resolvedVersion == null ? (
+            evidenceDoc.isError ? (
+              <p className={styles.error} role="alert">
+                Approve is unavailable: the evidence doc {criterion.evidence_ref} could not be read ({(evidenceDoc.error as Error).message}).
+                Open it from the evidence link, or ask its author to re-attach the evidence.
+              </p>
+            ) : (
+              <p className={styles.footer} role="status">Reading the evidence version…</p>
+            )
+          ) : null}
           <p className={styles.footer}>
             Records pass or fail for this criterion. Ticket advancement depends on the remaining checks.
           </p>

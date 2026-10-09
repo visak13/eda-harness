@@ -1,3 +1,4 @@
+import { hideFromGuests } from "../auth/guest";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createCriterion, rewordCriterion } from "../api/endpoints";
@@ -11,7 +12,7 @@ import styles from "./CriterionControls.module.css";
 // control names the check kind (with its glossary meaning) and reports the board's hint verbatim.
 // Rewording reuses the same PATCH route the verdict path uses; there is no second write of the rule.
 
-export function AddCriterion({ ticketId }: { ticketId: string }): React.JSX.Element {
+function AddCriterionView({ ticketId }: { ticketId: string }): React.JSX.Element {
   const qc = useQueryClient();
   const [text, setText] = useState("");
   const [check, setCheck] = useState<string>("command");
@@ -76,7 +77,7 @@ export function AddCriterion({ ticketId }: { ticketId: string }): React.JSX.Elem
 }
 
 // Inline reword of one existing criterion (a small edit affordance the CriterionCard opens).
-export function RewordCriterion({
+function RewordCriterionView({
   criterionId,
   ticketId,
   current,
@@ -134,3 +135,9 @@ export function RewordCriterion({
     </form>
   );
 }
+
+/** e0cec S5: a guest never sees this control (the board refuses it). */
+export const AddCriterion = hideFromGuests(AddCriterionView);
+
+/** e0cec S5: a guest never sees this control (the board refuses it). */
+export const RewordCriterion = hideFromGuests(RewordCriterionView);

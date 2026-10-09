@@ -1,3 +1,4 @@
+import { hideFromGuests } from "../auth/guest";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { openGate } from "../api/endpoints";
@@ -11,7 +12,7 @@ import styles from "./GateOpenControl.module.css";
 // picks the right question. The other half of the loop — answering — is GateForm, mounted on
 // Decisions and on the Ticket page's "Answer a decision" card. The board decides who may open and
 // what it holds; its hint is shown verbatim.
-export function GateOpenControl({
+function GateOpenControlView({
   ticketId,
   onOpened,
 }: {
@@ -77,3 +78,6 @@ export function GateOpenControl({
     </form>
   );
 }
+
+/** e0cec S5: a guest never sees this control (the board refuses it). */
+export const GateOpenControl = hideFromGuests(GateOpenControlView);

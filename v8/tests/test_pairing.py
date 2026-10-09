@@ -103,10 +103,22 @@ def test_story_in_review_pairs_no_checker(pool):
     assert crit.checked_by == "qa"
 
 
-def _acceptance(board):
+def _ready_epic(board):
+    """S4 C1 (dec-40efecb36c): qa pairs once every story is in_review/done — drop the bare hold sibling."""
     r = rig(board)
     epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
-    board.gate_open(epic.id, Gate.acceptance)
+    story_to_in_review(board, r, epic)
+    for k in board.children(epic.id):
+        if k.title == "hold":
+            board.ticket_update(r["architect"], k.id, status=TicketStatus.dropped)
+    return r, epic
+
+
+def _acceptance(board):
+    """The board stages no qa itself (B); the pairing queue is still drained for seats something else queued
+    (a requeued checker, a topic seat), so these tests queue qa by hand."""
+    r, epic = _ready_epic(board)
+    board._enqueue_pairing(f"qa.{epic.id}", Role.qa.value, epic.id)
     return epic, f"qa.{epic.id}"
 
 
@@ -155,15 +167,11 @@ def test_failed_spawn_keeps_the_entry_for_retry_with_one_note(raises):
     assert seat not in board._pending_pairings
 
 
-def test_acceptance_gate_spawns_single_qa(pool):
+def test_the_board_stages_no_qa_whatever_the_epic_or_gate_does(pool):
     board = make_board(pool)
-    r = rig(board)
-    epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
-    board.gate_open(epic.id, Gate.acceptance)
-    assert f"qa.{epic.id}" in board._pending_pairings
+    r, epic = _ready_epic(board)
+    assert not board._pending_pairings
     board.run_pending_pairings()
-    assert pool.spawns.count((Role.qa.value, f"qa.{epic.id}")) == 1
-    # opening the (idempotent) gate again enqueues nothing new; still a single qa spawn
-    board.gate_open(epic.id, Gate.acceptance)
+    board.gate_open(epic.id, Gate.acceptance)  # opened by hand: still no seat
     board.run_pending_pairings()
-    assert pool.spawns.count((Role.qa.value, f"qa.{epic.id}")) == 1
+    assert board._pending_pairings == {} and pool.spawns == []

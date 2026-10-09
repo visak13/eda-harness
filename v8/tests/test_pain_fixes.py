@@ -102,7 +102,7 @@ def test_design_signoff_stays_answerable_after_a_child_story_started(b):
 # ------------------------------------------------------------------ p-b618055b answered scope lifts the cap
 
 def test_an_answered_scope_gate_lifts_the_story_cap_for_design_signoff(b):
-    from edp8.board import STORY_CAP, BoardError
+    from edp8.board import STORY_CAP
     from edp8.schemas import Gate
     board, ps = b
     epic = board.ticket_create(ps["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
@@ -141,7 +141,7 @@ def test_the_board_carries_the_epic_to_in_review_when_every_story_is_released(b)
     assert board.ticket(epic.id).status == TicketStatus.in_progress
     board.ticket_update(ps["eng"], story.id, status=TicketStatus.in_review)
     assert board.ticket(epic.id).status == TicketStatus.in_review  # no seat moved it
-    assert board.open_gates(epic.id, Gate.acceptance)
+    assert not board.open_gates(epic.id, Gate.acceptance)  # the board opens no gate (C)
 
 
 def test_a_story_sent_back_reopens_the_epic(b):
@@ -184,35 +184,17 @@ def test_the_architect_may_finish_its_epic_but_not_a_story(b):
     assert board.ticket(epic.id).status == TicketStatus.done
 
 
-# ------------------------------------------------------------------ quick design stop (owner m-b13c61ddea)
+# ------------------------------------------------------------------ no quick design step (design-63db8a7d42 N)
 
-def test_a_quick_task_cannot_start_before_the_owner_signs_its_design(b):
-    from edp8.board import BoardError
-    from edp8.schemas import Gate
+def test_a_quick_task_starts_without_a_design_note_or_sign_off_even_after_blocked(b):
     board, ps = b
     t = board.ticket_create(ps["owner"], kind=TicketKind.story, work_type=WorkType.feature, title="Q",
                             words="w", tags=["quick"], assignee="eng")
-    with pytest.raises(BoardError, match="design sign-off"):
-        board.ticket_update(ps["eng"], t.id, status=TicketStatus.in_progress)
-    d = board.doc_create(ps["eng"], doc_type=DocType.note, title="Design", body_md="plan", scope=t.id)
-    board.ticket_update(ps["eng"], t.id, design_ref=d.id)
-    board.gate_open(t.id, Gate.design_signoff, by="eng", note="review please")
-    with pytest.raises(BoardError, match="design sign-off"):  # open, not yet answered
-        board.ticket_update(ps["eng"], t.id, status=TicketStatus.in_progress)
-    board.gate_answer(ps["owner"], t.id, Gate.design_signoff, "approved")
     board.ticket_update(ps["eng"], t.id, status=TicketStatus.in_progress)
     assert board.ticket(t.id).status == TicketStatus.in_progress
-
-
-def test_a_quick_design_signoff_needs_a_design_note(b):
-    from edp8.board import BoardError
-    from edp8.schemas import Gate
-    board, ps = b
-    t = board.ticket_create(ps["owner"], kind=TicketKind.story, work_type=WorkType.feature, title="Q",
-                            words="w", tags=["quick"], assignee="eng")
-    with pytest.raises(BoardError, match="no design note"):  # S16: refused at open
-        board.gate_open(t.id, Gate.design_signoff, by="eng", note="review")
-    assert not board.open_gates(t.id, Gate.design_signoff)
+    board.ticket_update(ps["eng"], t.id, status=TicketStatus.blocked)
+    board.ticket_update(ps["eng"], t.id, status=TicketStatus.in_progress)
+    assert board.ticket(t.id).status == TicketStatus.in_progress
 
 
 # ------------------------------------------------------------------ per-flow card (owner m-b13c61ddea)
@@ -371,21 +353,6 @@ def test_astra2_another_architect_cannot_walk_someone_elses_epic(b):
     board.ticket_update(ps["arch"], epic.id, status=TicketStatus.done)
 
 
-def test_astra3_a_quick_task_cannot_start_through_blocked_nor_after_a_reopened_gate(b):
-    from edp8.board import BoardError
-    from edp8.schemas import Gate
-    board, ps = b
-    t = board.ticket_create(ps["owner"], kind=TicketKind.story, work_type=WorkType.feature, title="Q",
-                            words="w", tags=["quick"], assignee="eng")
-    board.ticket_update(ps["eng"], t.id, status=TicketStatus.blocked)
-    with pytest.raises(BoardError, match="design sign-off"):
-        board.ticket_update(ps["eng"], t.id, status=TicketStatus.in_progress)
-    _sign_quick_design(board, ps, t)
-    board.gate_open(t.id, Gate.design_signoff, by="eng", note="changed the design")
-    with pytest.raises(BoardError, match="design sign-off"):
-        board.ticket_update(ps["eng"], t.id, status=TicketStatus.in_progress)
-
-
 def test_astra5_one_failed_post_commit_step_does_not_skip_the_quick_reopen(b, monkeypatch):
     from edp8 import views
     board, ps = b
@@ -417,7 +384,7 @@ def test_astra6_design_signoff_answerable_after_the_board_carried_the_epic_to_in
 
 
 def test_astra7_and_8_quick_design_feedback_reaches_the_engineer_and_the_gate_is_a_decision(b):
-    from edp8 import design_review, views
+    from edp8 import design_review
     from edp8.schemas import Gate
     board, ps = b
     t = board.ticket_create(ps["owner"], kind=TicketKind.story, work_type=WorkType.feature, title="Q",
@@ -425,7 +392,6 @@ def test_astra7_and_8_quick_design_feedback_reaches_the_engineer_and_the_gate_is
     d = board.doc_create(ps["eng"], doc_type=DocType.note, title="Design", body_md="plan", scope=t.id)
     board.ticket_update(ps["eng"], t.id, design_ref=d.id)
     board.gate_open(t.id, Gate.design_signoff, by="eng", note="review please")
-    assert any(tid == t.id for tid, _ in views._owner_gates(board, ps["owner"]))
 
     class Body:
         ticket_id, design_ref, reviewed_version, artifacts = t.id, d.id, 1, []
@@ -487,3 +453,21 @@ def test_qa3_epic_lines_passed_before_the_last_hand_off_close_the_epic(b):
     board.criterion_update(ps["qa"], c.id, verdict=Verdict.passed)
     assert board.ticket(story.id).status == TicketStatus.done
     assert board.ticket(epic.id).status == TicketStatus.done
+
+
+def test_a_criterion_moved_to_a_new_report_cites_that_reports_version_not_the_old_ones(b):
+    # qa m-db8924ad06: a row re-pointed from report v2 to a new report's v1 (verdict reset to pending) still showed v2
+    board, ps = b
+    epic, story, c = _epic_with_evidenced_story(board, ps)
+    board.ticket_update(ps["eng"], story.id, status=TicketStatus.in_review)
+    old = board.store.get("criterion", c.id).evidence_ref
+    board.doc_update(ps["eng"], old, body_md="done, v2")
+    board.criterion_update(ps["qa"], c.id, verdict=Verdict.failed, evidence_version=2)
+    assert board.store.get("criterion", c.id).evidence_version == 2
+    new = board.doc_create(ps["qa"], doc_type=DocType.report, title="R2", body_md="re-walk", scope=story.id)
+    board.criterion_update(ps["qa"], c.id, evidence_ref=new.id, verdict=Verdict.pending, evidence_version=1)
+    got = board.store.get("criterion", c.id)
+    assert (got.evidence_ref, got.evidence_version) == (new.id, 1)
+    newer = board.doc_create(ps["qa"], doc_type=DocType.report, title="R3", body_md="again", scope=story.id)
+    board.criterion_update(ps["qa"], c.id, evidence_ref=newer.id)  # no version named: none is carried over
+    assert board.store.get("criterion", c.id).evidence_version is None

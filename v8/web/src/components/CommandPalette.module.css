@@ -80,6 +80,8 @@
   text-align: left;
   cursor: pointer;
 }
+/* one label, not a type/title/epic row: it must not fall into the 84px type column */
+.browse { display: block; text-align: left; white-space: nowrap; }
 .row.active,
 .row:hover {
   background: var(--accentwash);

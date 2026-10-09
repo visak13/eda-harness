@@ -29,17 +29,23 @@ p {
 
 /* Reflow is intrinsic, never hidden at the page boundary. Code/tables scroll locally. */
 main, section, article, form, fieldset, details { min-width: 0; }
-p, h1, h2, h3, li, dd, dt, label, a { overflow-wrap: anywhere; }
+/* break-word, never anywhere: `anywhere` counts every character as a break point in the min-content size, so a flex item, grid
+   track or auto-layout table cell may shrink to one letter (or nothing) and the words break letter by letter (qa report-689ceb50f0).
+   `break-word` only breaks a word that cannot fit on a line of its own. */
+p, h1, h2, h3, li, dd, dt, label, a { overflow-wrap: break-word; }
 img, video { max-width: 100%; }
 input, textarea, select { max-width: 100%; min-width: 0; }
 /* Essential form boundaries use the contrast-audited token, not decorative separators.
    Root specificity overrides legacy CSS-module input rules without changing border widths. */
+/* layering token: the quote popover and its toast sit above every sticky or fixed layer (composer, drawers, palette) */
+:root { --z-popover: 1000; }
+
 :root :is(input:not([type="radio"]):not([type="checkbox"]), textarea, select) {
   border-color: var(--strongline);
 }
 pre { max-width: 100%; overflow: auto; }
 main table { display: block; max-width: 100%; overflow-x: auto; }
-main table td, main table th { overflow-wrap: anywhere; }
+main table td, main table th { overflow-wrap: break-word; }
 :focus-visible { outline: 2px solid var(--accentink); outline-offset: 3px; }
 
 a {

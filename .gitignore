@@ -36,6 +36,8 @@ claude/scratch/
 !v8/assets/brand/**
 !v8/web/public/brand/**
 !v8/vscode-ext/edp-code/media/heronry.png
+# the site's product-guide screenshots, generated from a made-up demo (v8/web/guide, s-bcc0c06de7)
+!docs/site/docs/assets/guide/**
 claude/.recipes/
 claude/.plans/
 claude/.specs/

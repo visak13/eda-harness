@@ -47,7 +47,9 @@ REVOKED_PREFIX = "revoked:"
 
 class TeammateIn(BaseModel):
     handle: str
-    role: str = "owner"      # a human's role on the board (owner = full member, not admin)
+    # e0cec S5 (design-b6a55eed13 §4.B): an invite is a GUEST unless the inviter grants owner access explicitly
+    # (role="owner": full member, not admin). A guest reads only the epics it is a member of.
+    role: str = "guest"
     admin: bool = False
 
 
@@ -265,6 +267,8 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
         handle = b.handle.strip().lstrip("@")
         if b.role == Role.expert.value:
             raise HTTPException(400, "experts are added from their Library topic, not as teammates")
+        if b.role == Role.guest.value and b.admin:
+            raise HTTPException(400, "a guest cannot be an admin; grant owner access first")
         if handle == "agents":  # tokens.json keeps humans and the agents map in one namespace (les-b1fa61c4c4)
             raise HTTPException(400, "'agents' is reserved")
         try:
@@ -293,8 +297,8 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
     @r.put("/v1/admin/teammates/{handle}")
     def teammate_patch(handle: str, b: TeammatePatch, a: Participant = Depends(admin_actor)):
         p = _human(handle)
-        if p.role == Role.expert and b.admin:
-            raise HTTPException(400, "an expert cannot be an admin")
+        if p.role in (Role.expert, Role.guest) and b.admin:
+            raise HTTPException(400, f"{'an expert' if p.role == Role.expert else 'a guest'} cannot be an admin")
         if not b.admin and p.handle.lstrip("@") == owner_handle():
             raise HTTPException(409, "the init human (EDP8_OWNER) is always an admin")
         p = board.store.put("participant", p.model_copy(update={"admin": b.admin}))

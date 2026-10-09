@@ -30,3 +30,4 @@
 .row:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
 .meta { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 .text { font-size: 14px; line-height: 20px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.why { font-size: 12px; line-height: 16px; color: var(--muted); font-style: italic; }

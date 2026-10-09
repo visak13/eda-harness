@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PoolCapabilities, SeatRow, SeatsView } from "../api/types";
-import { getSeats, getPoolCapabilities, resumeSeat } from "../api/seats";
+import { closeSeat, getSeats, resumeSeat } from "../api/seats";
+import { usePoolCapabilities } from "../auth/guest";
 import { api } from "../api/client";
 import { label as glossLabel } from "../copy/glossary";
 import { usePageFrame } from "../components/PageFrame";
@@ -12,9 +13,9 @@ import { useScrollToHash } from "../components/useScrollToHash";
 import { copyProps } from "../copy/pages";
 import { useViewerAliases } from "../auth/useViewer";
 import { AgentLine } from "../components/AgentLine";
-import { useAttention } from "../api/attention";
 import { presenceOf } from "./presence";
 import { MessageText } from "../components/ArtifactLink";
+import { MessageMarkdown } from "../components/Markdown";
 import { SpawnSeatForm } from "../components/SpawnSeatForm";
 import styles from "./Seats.module.css";
 
@@ -22,9 +23,9 @@ const FRAMING = "See who is available, read their latest status, and message or 
 
 // A short, human "last heard" time: "Just now" under a minute, else the local clock time.
 function clock(iso: string | null, now: number): string {
-  if (!iso) return "—";
+  if (!iso) return "Not heard yet";
   const t = Date.parse(iso);
-  if (Number.isNaN(t)) return "—";
+  if (Number.isNaN(t)) return "Not heard yet";
   if (now - t < 60_000) return "Just now";
   return new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
@@ -49,7 +50,7 @@ export function SeatsPage(): React.JSX.Element {
     { category: "role", value: "qa" },
   ]);
   const seatsQ = useQuery({ queryKey: ["seats"], queryFn: getSeats, retry: false });
-  const capsQ = useQuery({ queryKey: ["pool", "capabilities"], queryFn: getPoolCapabilities, retry: false });
+  const capsQ = usePoolCapabilities();
   const [tab, setTab] = useState<TabKey>("all");
   // Find a seat by name / ticket / role: with a hundred closed seats the one you want (the human
   // looked for owner.epic-…) is otherwise buried (human report m-a398600978, 2026-09-10).
@@ -138,7 +139,7 @@ export function SeatsPage(): React.JSX.Element {
           </colgroup>
           <thead>
             <tr>
-              <th>Seat / shell state</th>
+              <th>Seat state</th>
               <th>Assigned ticket</th>
               <th>Latest work status</th>
               <th>Last refresh</th>
@@ -171,11 +172,11 @@ export function SeatsPage(): React.JSX.Element {
       ) : null}
 
       <p className={styles.footnote}>
-        Shell alive ≠ work progressing. Latest work status is the seat's last report.
+        A seat that is running is not necessarily making progress. Latest work status is the seat's last report.
       </p>
       <p className={styles.footnote}>
         Resume continues the saved session on parked and closed seats. Messages to closed seats stay
-        on the ticket for the next shell.
+        on the ticket for the next seat to pick up.
       </p>
     </>
   );
@@ -220,6 +221,11 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["seats"] }),
   });
 
+  const close = useMutation({
+    mutationFn: () => closeSeat(seat.id, seat.ticket_id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["seats"] }),
+  });
+
   return (
     <>
       <tr id={seat.id} data-testid="seat-row" data-seat={seat.id} data-presence={presence.kind}>
@@ -243,14 +249,17 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
               <span className={styles.mono}>{seat.ticket_id}</span>
             </Link>
           ) : (
-            <span className={styles.muted}>—</span>
+            <span className={styles.muted}>No ticket</span>
           )}
         </td>
 
         <td data-label="Latest work status">
           {seat.latest_status ? (
             <div data-testid="latest-status">
-              <div className={styles.statusText}>{seat.latest_status.text}</div>
+              {/* S12-ui2 (qa m-da89ef8294): the note is markdown — render it like a message, not as literal **bold** */}
+              {seat.latest_status.html !== undefined
+                ? <MessageMarkdown className={styles.statusText} html={seat.latest_status.html} />
+                : <div className={styles.statusText}>{seat.latest_status.text}</div>}
               <div className={styles.statusMeta}>
                 Status · {glossLabel("role", seat.latest_status.role ?? seat.role)} ·{" "}
                 {clock(seat.latest_status.at, now)}
@@ -295,10 +304,23 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
               </button>
             ) : isClosed && !canResumeClosed ? (
               <span className={styles.resumeNote} data-testid="no-resume-note">
-                Closed; the owner shell can spawn a fresh seat.
+                Closed; the owner can start a fresh seat.
               </span>
             ) : null}
-            {resume.data?.hint ? <span className={styles.resumeNote} role="status" data-testid="resume-result">{resume.data.hint}</span> : null}
+            {presence.showClose ? (
+              <button
+                type="button"
+                className={styles.action}
+                data-testid="seat-close"
+                {...copyProps("seats", "close")}
+                disabled={close.isPending}
+                onClick={() => close.mutate()}
+              >
+                {close.isPending ? "Closing…" : "Close"}
+              </button>
+            ) : null}
+            {close.error ? <span className={styles.resumeNote} role="alert" data-testid="close-error">{String(close.error)}</span> : null}
+            {resume.data?.hint ?<span className={styles.resumeNote} role="status" data-testid="resume-result">{resume.data.hint}</span> : null}
             {resume.error ? <span className={styles.resumeNote} role="alert">{String(resume.error)}</span> : null}
           </div>
         </td>
@@ -310,9 +332,9 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
             <div className={styles.messagePanel}>
               <p className={styles.deliveryNote} data-testid="seat-delivery-note">
                 {isClosed
-                  ? "This seat is closed — your message waits on its ticket for the next shell; nobody is woken now."
+                  ? "This seat is closed — your message waits on its ticket for the next seat; nobody is woken now."
                   : isUnknown
-                  ? "This seat is remote and its availability is unknown — your message waits on its ticket; we can't promise a wake."
+                  ? "This seat runs elsewhere and this board cannot see whether it is running — your message waits on its ticket; we can't promise a wake."
                   : `Sending will wake ${seat.handle} now.`}
               </p>
               {seat.ticket_id ? (
@@ -354,7 +376,6 @@ function SeatThread({
   seat: SeatRow;
   onReply?: (m: { id: string; by: string }) => void;
 }): React.JSX.Element {
-  const asks = new Set(useAttention().items.filter((i) => i.kind === "ask").map((i) => i.id)); // S20: the one rule
   const mine = useViewerAliases(); // round 2 #4: canonical id + handle, not the raw login string
   const q = useQuery({
     queryKey: ["messages", ticketId, seat.id],
@@ -373,7 +394,7 @@ function SeatThread({
     <ul className={styles.seatThread} data-testid="seat-thread">
       {rows.map((m) => (
         <li key={m.id} className={styles.seatThreadRow}>
-          <AgentLine by={m.created_by} kind={m.kind} waiting={asks.has(m.id)} at={m.created_at} />
+          <AgentLine by={m.created_by} kind={m.kind} at={m.created_at} />
           <MessageText className={styles.seatThreadText} text={m.text} />
           {onReply && !isMine(m.created_by) ? (
             <button type="button" className={styles.replyBtn} data-testid="seat-reply" onClick={() => onReply({ id: m.id, by: m.created_by })}>

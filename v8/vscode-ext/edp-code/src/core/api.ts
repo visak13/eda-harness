@@ -4,7 +4,7 @@
 import type { Anchor } from './anchor';
 import type { QuoteIn } from './quotes';
 import type { BoardArtifact } from './attachments';
-import { gatePath, type DecisionsHome, type InboxGate, type verdictBody } from './inbox';
+import { gatePath, type BoardQuestion, type DecisionsHome, type InboxGate, type verdictBody } from './inbox';
 import type { Reachable } from './people';
 import type { BoardDecision, BoardDecisionList } from './decisions';
 import type { DocMeta } from './docs';
@@ -37,7 +37,9 @@ export type Staged = BoardArtifact & { staged: true; content_type: string };
 export type Content = { bytes: Uint8Array | null; type: string; size: number | null };
 
 /** A board doc (`GET /v1/docs/{id}[?version=N]`): the body at that version, the doc's current fields, every version. */
-export type BoardDoc = DocMeta & { body_md: string; resolution?: string | null; versions?: number[] };
+export type BoardDoc = DocMeta & { body_md: string; resolution?: string | null; versions?: number[];
+  /** S17: a legacy doc's read carries this warning ("not structured for easy read; …") */
+  layout?: 'legacy' | 'summary_first'; warning?: string };
 /** `GET /v1/docs/{id}/context`: the design review this viewer may do from `source` on that version. */
 export type DocContext = { ticket_id: string; source_title: string; design_ref: string; reviewed_version: number; current_version: number;
   gate_event_id: string | null; can_approve: boolean; can_review: boolean };
@@ -108,7 +110,9 @@ export function boardClient(baseUrl: string, creds: () => Promise<Creds | undefi
       if (env && typeof env === 'object' && 'ok' in env && !env.ok) throw new BoardError(env.error?.code ?? 'error', env.error?.message ?? `HTTP ${res.status}`, res.status);
       throw new BoardError('bad_response', `HTTP ${res.status} from GET ${path}`, res.status);
     }
-    const len = Number(res.headers.get('content-length'));
+    // RC2: no Content-Length (a chunked or compressed reply) is an unknown size, never Number(null) = "0 B"
+    const raw = res.headers.get('content-length');
+    const len = raw === null || raw.trim() === '' ? NaN : Number(raw);
     const type = (res.headers.get('content-type') ?? '').split(';')[0].trim();
     if (probe) { ctl.abort(); await res.body?.cancel().catch(() => {}); return { bytes: null, type, size: Number.isFinite(len) && len >= 0 ? len : null }; }
     const bytes = new Uint8Array(await res.arrayBuffer());
@@ -139,13 +143,15 @@ export function boardClient(baseUrl: string, creds: () => Promise<Creds | undefi
     artifact: (id: string) => call<BoardArtifact>('GET', `/v1/artifacts/${encodeURIComponent(id)}`),
     content,
     // the Inbox (C15): what waits on the viewer, and the three writes that answer it
-    decisions: () => call<DecisionsHome>('GET', '/v1/me/decisions'),
+    // s-aa76c83998: /v1/me/decisions is gone; what waits on the viewer is the board's inbox (asks to them)
+    inbox: async (): Promise<DecisionsHome> => ({ questions: await call<BoardQuestion[]>('GET', '/v1/inbox') }),
     verdict: (b: ReturnType<typeof verdictBody>) => call<{ criterion: unknown; message: string | null }>('POST', '/v1/me/verdict', b),
     gateAnswer: (g: InboxGate, answer: string) => call<unknown>('POST', gatePath(g), { answer }),
     doc: (id: string, version: number) =>
-      call<BoardDoc>('GET', `/v1/docs/${encodeURIComponent(id)}?version=${version}`),
+      call<BoardDoc>('GET', `/v1/docs/${encodeURIComponent(id)}?version=${version}&all=true`),
     // the Docs tab and the reader (C16): what a scope links, the doc's review context and its writes
-    latestDoc: (id: string) => call<BoardDoc>('GET', `/v1/docs/${encodeURIComponent(id)}`),
+    // S17: the doc GET returns the head by default; the reader shows the whole body and the version list (all=true)
+    latestDoc: (id: string) => call<BoardDoc>('GET', `/v1/docs/${encodeURIComponent(id)}?all=true`),
     docsOf: (scope: string) => call<DocMeta[]>('GET', `/v1/docs?scope=${encodeURIComponent(scope)}`),
     links: (fromId: string) => call<{ to_id: string; relation: string }[]>('GET', `/v1/links?from_id=${encodeURIComponent(fromId)}`),
     criteria: (ticketId: string) => call<{ id: string; evidence_ref?: string | null }[]>('GET', `/v1/criteria?ticket_id=${encodeURIComponent(ticketId)}`),
@@ -167,5 +173,9 @@ export function boardClient(baseUrl: string, creds: () => Promise<Creds | undefi
     find: (q: string, types: string, k = 20) =>
       call<FindHit[]>('GET', `/v1/find?${new URLSearchParams({ q, types, k: String(k) })}`),
     epics: () => call<{ id: string; title: string; status: string }[]>('GET', '/v1/epics/summary'),
+    // S16: the one artifact search every `$` picker shares (the web composer calls the same route): the caller's readable
+    // artifacts, `epic`'s own first (group scope), each row naming its epic; the rows are cleaned by artifactRows
+    artifactSearch: (q: string, epic: string | null) =>
+      call<unknown>('GET', `/v1/artifacts/search?${new URLSearchParams({ q, ...(epic ? { epic_id: epic } : {}), limit: '40' })}`),
   };
 }

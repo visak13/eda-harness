@@ -1,0 +1,29 @@
+{
+ "kind": "msi",
+ "caller_pid": 8788,
+ "from_version": "0.9.1",
+ "to_version": "0.9.2.dev0",
+ "msi": "C:\\src\\Learning\\.wt-e0cec-S2\\v8\\.data\\s2-spike\\home\\.data\\updates\\0.9.2.dev0\\Heronry S2 Spike-0.9.2.dev0.msi",
+ "previous_msi": "C:\\src\\Learning\\.wt-e0cec-S2\\v8\\.data\\s2-spike\\home\\.data\\updates\\0.9.1\\Heronry S2 Spike-0.9.1.msi",
+ "upgrade_code": "{41C17ED3-4788-5F2A-812B-7C2DA17661FF}",
+ "install_dir": "C:\\src\\Learning\\.wt-e0cec-S2\\v8\\.data\\s2-spike\\install",
+ "pool_url": "http://127.0.0.1:58707",
+ "stop_argv": [
+  "C:\\src\\Learning\\.wt-e0cec-S2\\v8\\.data\\s2-spike\\install\\heronry.exe",
+  "stop",
+  "--force"
+ ],
+ "start_argv": [
+  "C:\\src\\Learning\\.wt-e0cec-S2\\v8\\.data\\s2-spike\\install\\heronry.exe",
+  "start",
+  "--no-browser"
+ ],
+ "app_argv": null,
+ "health_url": "http://127.0.0.1:58703/v1/health",
+ "db": "C:\\src\\Learning\\.wt-e0cec-S2\\v8\\.data\\s2-spike\\home\\.data\\edp8.db",
+ "backup": "C:\\src\\Learning\\.wt-e0cec-S2\\v8\\.data\\s2-spike\\home\\.data\\backups\\edp8-0.9.1-20261002T001412Z.db",
+ "log": "C:\\src\\Learning\\.wt-e0cec-S2\\v8\\.data\\s2-spike\\home\\.data\\logs\\update.log",
+ "result": "C:\\src\\Learning\\.wt-e0cec-S2\\v8\\.data\\s2-spike\\home\\update\\update-result.json",
+ "recover_hint": "reinstall 0.9.1 from its cached installer: msiexec /i \"C:\\src\\Learning\\.wt-e0cec-S2\\v8\\.data\\s2-spike\\home\\.data\\updates\\0.9.1\\Heronry S2 Spike-0.9.1.msi\" MSIINSTALLPERUSER=1, then `heronry start`",
+ "fault": "unhealthy"
+}

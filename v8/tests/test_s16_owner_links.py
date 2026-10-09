@@ -14,9 +14,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from edp8 import views
 from edp8.board import Board
-from edp8.schemas import Check, DocType, Role, TicketKind, WorkType
+from edp8.schemas import Role
 from edp8.service import create_app
 from edp8.store import Store
 
@@ -80,49 +79,3 @@ def test_sme_card_says_the_owner_ask_is_a_direct_link():
     assert "<ui_url>/ticket/<ticket-id>?view=work" in line and "<ui_url>/doc/<doc-id>" in line
     assert "Approve criterion (Pass) or Needs work (Fail)" in line and "whoami()" in line
     assert not re.search(r"https?://", line)
-
-
-# ---- the Decisions card says what the owner decides ---------------------------------------------
-
-@pytest.fixture
-def board():
-    return Board(Store(":memory:"))
-
-
-@pytest.fixture
-def ps(board):
-    return {
-        "owner": board.participant_create("human", Role.owner, "owner", id_="owner"),
-        "arch": board.participant_create("agent", Role.architect, "arch", id_="arch"),
-        "sme": board.participant_create("agent", Role.sme, "sme", id_="sme"),
-    }
-
-
-class _T:
-    def __init__(self, title, work_type=WorkType.feature, tags=()):
-        self.title, self.work_type, self.tags, self.parent_id, self.kind = title, work_type, list(tags), None, TicketKind.story
-
-
-@pytest.mark.parametrize("title,work_type,tags,want", [
-    ("hl-craft: shipping a multi-service Python+SPA app cross-platform", WorkType.knowledge, (), "Accept the hl-craft strategy?"),
-    ("ll-craft: process control on Windows", WorkType.knowledge, (), "Accept the ll-craft domain research?"),
-    ("HL-craft — packaging", WorkType.knowledge, (), "Accept the hl-craft strategy?"),
-    ("Survey: board search", WorkType.knowledge, (), "Accept the research on “board search”?"),
-    ("Rename the tab", WorkType.chore, ("quick",), "Accept the quick task “Rename the tab” as done?"),
-    ("S7: brand the CLI", WorkType.feature, (), "Accept “brand the CLI” as meeting this criterion?"),
-])
-def test_signoff_ask_wording(title, work_type, tags, want):
-    assert views.signoff_ask(_T(title, work_type, tags)) == want
-
-
-def test_decisions_signoff_row_carries_the_ask(board, ps):
-    epic = board.ticket_create(ps["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="Productize")
-    story = board.ticket_create(ps["arch"], kind=TicketKind.story, work_type=WorkType.knowledge, parent_id=epic.id,
-                                title="hl-craft: shipping it cross-platform")
-    c = board.criterion_create(ps["arch"], ticket_id=story.id, text="A strategy_hl doc is published.",
-                               check=Check.verdict, checked_by="owner")
-    doc = board.doc_create(ps["sme"], doc_type=DocType.strategy_hl, title="hl 1/3", body_md="# hl", scope=epic.id)
-    board.criterion_update(ps["sme"], c.id, evidence_ref=doc.id)
-    rows = views.decisions_for(board, ps["owner"])["signoffs"]
-    assert [r["ask"] for r in rows] == ["Accept the hl-craft strategy?"]
-    assert rows[0]["criterion"]["text"] == "A strategy_hl doc is published."

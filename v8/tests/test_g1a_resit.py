@@ -10,6 +10,7 @@ import os
 
 os.environ.setdefault("EDP8_EMBEDDER", "none")
 
+from asks_support import serve_rest
 import pytest
 from fastapi.testclient import TestClient
 
@@ -46,7 +47,8 @@ def rig(client):
     kt = _post(client, "/v1/tickets", {"kind": "story", "work_type": "knowledge", "title": "hl-craft",
                                        "parent_id": epic_a, "assignee": "craft"}, {"X-Participant": "arch"})["id"]
     kcrit = _post(client, "/v1/criteria", {"ticket_id": kt, "text": "strategy signed by the owner",
-                                           "check": "look", "checked_by": "owner"}, {"X-Participant": "arch"})["id"]
+                                           "check": "look", "checked_by": "owner",
+                                           "override_reason": "owner signs"}, {"X-Participant": "alice"})["id"]
     doc = _post(client, "/v1/docs", {"doc_type": "strategy_hl", "title": "shape", "body_md": "# skeleton",
                                      "scope": epic_a}, {"X-Participant": "craft"})["id"]
     client.patch(f"/v1/criteria/{kcrit}", json={"evidence_ref": doc}, headers={"X-Participant": "craft"})
@@ -88,7 +90,7 @@ def test_owner_may_verdict_an_epic_with_no_human_owner(client):
     kt = _post(client, "/v1/tickets", {"kind": "story", "work_type": "knowledge", "title": "k",
                                        "parent_id": epic, "assignee": "craft"}, {"X-Participant": "arch"})["id"]
     crit = _post(client, "/v1/criteria", {"ticket_id": kt, "text": "signed", "check": "look",
-                                          "checked_by": "owner"}, {"X-Participant": "arch"})["id"]
+                                          "checked_by": "owner", "override_reason": "owner signs"}, {"X-Participant": "alice"})["id"]
     doc = _post(client, "/v1/docs", {"doc_type": "strategy_hl", "title": "s", "body_md": "# b",
                                      "scope": epic}, {"X-Participant": "craft"})["id"]
     client.patch(f"/v1/criteria/{crit}", json={"evidence_ref": doc}, headers={"X-Participant": "craft"})
@@ -103,7 +105,8 @@ def test_foreign_owner_refused_on_engineer_checked_criterion(rig):
     # checker branch — a foreign owner cannot verdict any criterion outside its epic.
     c = rig["client"]
     task = _post(c, "/v1/tickets", {"kind": "task", "work_type": "bug", "title": "T", "parent_id": rig["kt"],
-                                    "assignee": "craft"}, {"X-Participant": "arch"})["id"]
+                                    "assignee": "craft",
+                                    "serves": serve_rest(c, rig["epic_a"], {"X-Participant": "alice"})}, {"X-Participant": "arch"})["id"]
     tcrit = _post(c, "/v1/criteria", {"ticket_id": task, "text": "self-check", "check": "command"},
                   {"X-Participant": "arch"})["id"]  # a task criterion defaults to checked_by=engineer
     r = c.post("/v1/me/verdict", json={"criterion_id": tcrit, "verdict": "pass", "ticket_id": task,

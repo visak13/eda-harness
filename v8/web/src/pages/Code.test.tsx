@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router";
@@ -6,6 +6,16 @@ import { http, HttpResponse } from "msw";
 import { server } from "../test/setup";
 import type { CodeStatus } from "../api/types";
 import { CodeFaqPage, CodePage } from "./Code";
+import type { LoginForm } from "./codeLink";
+
+// RC2 F5 (architect m-e26cf15b4f): the guard login is POSTed into the frame or window, never a token in a URL.
+// The real postLogin submits a form (jsdom does not navigate); the test records what would be POSTed, and where.
+const posted = vi.hoisted(() => [] as { win: unknown; form: LoginForm }[]);
+vi.mock("./codeLink", async (orig) => ({
+  ...(await orig<typeof import("./codeLink")>()),
+  postLogin: (win: Window, form: LoginForm) => { posted.push({ win, form }); },
+}));
+beforeEach(() => { posted.length = 0; });
 
 // epic-91fcd3b370 S3: the Code tab — the iframe comes from GET /v1/code (never a hard-coded port),
 // a stopped service is a named state with the start command (never a blank frame), a remote browser
@@ -52,20 +62,26 @@ function mount(path = "/code", status: Partial<CodeStatus> | "error" = {}, hostn
   return { calls: () => calls, mints: () => mints, client, starts };
 }
 
-/** The frame loads the guard's login URL; `next` is the embed URL the guard redirects to. */
-function framed(src: string): { origin: string; token: string | null; target: string } {
-  const u = new URL(src);
+/** The last login POSTed (to the frame or a new window); `next` is the embed URL the guard redirects to. */
+async function lastLogin(n = 1): Promise<{ origin: string; token: string; target: string }> {
+  await waitFor(() => expect(posted.length).toBeGreaterThanOrEqual(n));
+  const f = posted[posted.length - 1].form;
+  const u = new URL(f.action);
   expect(u.pathname).toBe("/__edp/login");
-  return { origin: u.origin, token: u.searchParams.get("t"), target: new URL(u.searchParams.get("next")!, u.origin).toString() };
+  expect(u.search).toBe("");
+  return { origin: u.origin, token: f.fields.t, target: new URL(f.fields.next, u.origin).toString() };
 }
 
 describe("CodePage", () => {
   it("embeds code-server at the port the board reports with no folder, so it reopens its last folder", async () => {
     mount();
     const frame = await screen.findByTestId("code-frame");
-    const f = framed(frame.getAttribute("src")!);
-    expect(f).toEqual({ origin: "http://127.0.0.1:9555", token: "tok1", target: "http://127.0.0.1:9555/" });
-    expect(new URL(frame.getAttribute("src")!).searchParams.get("next")).toBe("/");
+    expect(await lastLogin()).toEqual({ origin: "http://127.0.0.1:9555", token: "tok1", target: "http://127.0.0.1:9555/" });
+    expect(posted[0].form.fields.next).toBe("/");
+    expect(posted[0].win).toBe((frame as HTMLIFrameElement).contentWindow); // POSTed into the frame itself
+    // RC2 F5: the token is nowhere in the page: not the frame's src, not any attribute
+    expect(frame.getAttribute("src")).toBeNull();
+    expect(document.documentElement.outerHTML).not.toContain("tok1");
     expect(screen.getByTestId("code-state")).toHaveTextContent("code-server 4.138.0 · running");
     expect(screen.getByTestId("code-newwindow")).toHaveAttribute("href", "http://127.0.0.1:9555/");
     expect(screen.getByTestId("code-newwindow")).toHaveAttribute("target", "_blank");
@@ -74,7 +90,8 @@ describe("CodePage", () => {
 
   it("a deep link opens the folder and the file at the range's start line, and shows the range", async () => {
     mount("/code?folder=C%3A%5CWork%5Cv8&file=src%2Fedp8%2Fboard.py&line=10-20");
-    const u = new URL(framed((await screen.findByTestId("code-frame")).getAttribute("src")!).target);
+    await screen.findByTestId("code-frame");
+    const u = new URL((await lastLogin()).target);
     expect(u.searchParams.get("folder")).toBe("/c:/Work/v8");
     expect(JSON.parse(u.searchParams.get("payload")!)).toEqual([
       ["openFile", "vscode-remote://127.0.0.1:9555/c:/Work/v8/src/edp8/board.py:10"],
@@ -130,6 +147,18 @@ describe("CodePage", () => {
     expect(screen.queryByTestId("code-start")).toBeNull();
   });
 
+  it("S16 downloadable: no install command; the first start downloads the pinned release and an admin can press Start", async () => {
+    mount("/code", { running: false, version: null, installed: false, downloadable: true,
+      install_hint: "nothing to install: the first start downloads the pinned code-server 4.138.0 (207 MB, with its own node) and checks its sha256" },
+      "127.0.0.1", "ok", true);
+    expect(await screen.findByTestId("code-down")).toHaveTextContent("Code service is not running");
+    expect(screen.getByTestId("code-downloads")).toHaveTextContent("first start downloads the pinned release");
+    expect(screen.getByTestId("code-download-hint")).toHaveTextContent("4.138.0");
+    expect(screen.queryByTestId("code-install-hint")).toBeNull();
+    expect(screen.getByTestId("code-start")).toBeEnabled();
+    expect(screen.getByTestId("code-down").textContent ?? "").not.toMatch(/npm/i);
+  });
+
   it("foreign: another home's code-server on the port is named, never framed (S8 m-baed3c1589)", async () => {
     mount("/code", { running: false, foreign: true, version: null });
     expect(await screen.findByTestId("code-down")).toBeInTheDocument();
@@ -139,7 +168,8 @@ describe("CodePage", () => {
 
   it("a board opened as localhost frames the guard as localhost (the SameSite=Strict cookie stays same-site)", async () => {
     mount("/code", {}, "localhost");
-    expect(framed((await screen.findByTestId("code-frame")).getAttribute("src")!).origin).toBe("http://localhost:9555");
+    await screen.findByTestId("code-frame");
+    expect((await lastLogin()).origin).toBe("http://localhost:9555");
   });
 
   it("a board that predates the mint route (404) frames the guard directly, as before S8", async () => {
@@ -174,38 +204,43 @@ describe("CodePage", () => {
     expect(await screen.findByTestId("code-reset-result")).toHaveTextContent("only the board's human owner");
   });
 
-  it("Open in new window mints its own token (the frame's is spent) and opens the login URL", async () => {
+  it("Open in new window mints its own token (the frame's is spent) and POSTs it into the new window", async () => {
     const m = mount();
     await screen.findByTestId("code-frame");
+    await lastLogin();
     const win = { opener: {} as unknown, location: { href: "" } };
     const open = vi.spyOn(window, "open").mockReturnValue(win as unknown as Window);
     fireEvent.click(screen.getByTestId("code-newwindow"));
     expect(open).toHaveBeenCalledWith("about:blank", "_blank");
-    await waitFor(() => expect(win.location.href).not.toBe(""));
+    expect(await lastLogin(2)).toEqual({ origin: "http://127.0.0.1:9555", token: "tok2", target: "http://127.0.0.1:9555/" });
+    expect(posted[1].win).toBe(win);
     expect(win.opener).toBeNull();
-    expect(framed(win.location.href)).toEqual({ origin: "http://127.0.0.1:9555", token: "tok2", target: "http://127.0.0.1:9555/" });
+    expect(win.location.href).toBe(""); // never a URL carrying the token
     expect(m.mints()).toBe(2);
     open.mockRestore();
   });
 
   it("a feed invalidation of the code queries neither remints nor reloads the frame", async () => {
     const m = mount();
-    const src = (await screen.findByTestId("code-frame")).getAttribute("src");
+    const frame = await screen.findByTestId("code-frame");
+    await lastLogin();
     const before = m.calls();
     await m.client.invalidateQueries({ queryKey: ["code"] });
     await waitFor(() => expect(m.calls()).toBeGreaterThan(before));
-    expect(screen.getByTestId("code-frame").getAttribute("src")).toBe(src);
+    expect(screen.getByTestId("code-frame")).toBe(frame);
+    expect(posted).toHaveLength(1);
     expect(m.mints()).toBe(1);
   });
 
   it("a frame shown again after a board error signs in with a fresh token, never the spent one", async () => {
     const m = mount();
-    expect(framed((await screen.findByTestId("code-frame")).getAttribute("src")!).token).toBe("tok1");
+    await screen.findByTestId("code-frame");
+    expect((await lastLogin()).token).toBe("tok1");
     server.use(http.get("/v1/code", () => HttpResponse.json({ ok: false, error: { code: "http", message: "board down" }, hint: "" }, { status: 502 }), { once: true }));
     await m.client.invalidateQueries({ queryKey: ["code", "status"] });
     await screen.findByTestId("code-board-error");
     fireEvent.click(screen.getByRole("button", { name: /retry/i }));
-    await waitFor(() => expect(framed(screen.getByTestId("code-frame").getAttribute("src")!).token).toBe("tok2"));
+    expect((await lastLogin(2)).token).toBe("tok2");
   });
 
   it.each(["::1", "127.0.0.2"])("a board opened as %s is asked to use 127.0.0.1 or localhost (the guard answers only those)", async (host) => {
@@ -232,9 +267,29 @@ describe("CodePage", () => {
 
 describe("CodeFaqPage", () => {
   it("renders the FAQ the board serves and links back to the tab", async () => {
-    server.use(http.get("/v1/code/faq", () => ok({ name: "code-tab-faq", path: "guides/code-tab-faq.md", html: "<h1>Code tab FAQ</h1><h2>The shared tree and live seats</h2>" })));
+    server.use(http.get("/v1/code/faq", () => ok({ name: "code-tab-faq", path: "docs/operator/code-tab-faq.md", html: "<h1>Code tab FAQ</h1><h2>The shared tree and live seats</h2>" })));
     mount("/code/faq");
     expect(await screen.findByText("The shared tree and live seats")).toBeInTheDocument();
     expect(screen.getByTestId("code-faq-back")).toHaveAttribute("href", "/code");
+  });
+});
+
+// S12-ui2 (qa m-da89ef8294 m7): a guest saw "The board did not answer" — the board's refusal. A guest is told Code
+// is not for guests, and the page never asks GET /v1/code.
+describe("CodePage for a guest (S12-ui2)", () => {
+  it("says Not available for guests and never calls /v1/code", async () => {
+    let calls = 0;
+    server.use(
+      http.get("/v1/whoami", () => ok({ participant: { id: "guest-1", handle: "gina", role: "guest", type: "human" }, tickets: [], admin: false })),
+      http.get("/v1/code", () => { calls += 1; return HttpResponse.json({ ok: false, error: { code: "forbidden", message: "guests may not" }, hint: "" }, { status: 403 }); }),
+    );
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter initialEntries={["/code"]}><Routes><Route path="code" element={<CodePage hostname="127.0.0.1" />} /></Routes></MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByTestId("code-guest")).toHaveTextContent("Not available for guests");
+    expect(screen.queryByTestId("code-board-error")).toBeNull();
+    expect(calls).toBe(0);
   });
 });

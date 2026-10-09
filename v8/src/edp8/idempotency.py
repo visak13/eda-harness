@@ -4,7 +4,9 @@ A POST carrying `Idempotency-Key` runs once per (caller, path, key) for 24 h:
 - the same key with the same body replays the FIRST reply (`value.replay: true`), whether the retry comes from
   the same MCP proxy or one restarted since — the key lives in the board DB (`idem` table), not a process;
 - the same key with a different body is a 409 `conflict` (a key names one intent);
-- only successes are kept, so a refused create can be retried with its key.
+- only successes are kept, so a refused create can be retried with its key;
+- a replay re-runs authentication and authorisation for the caller as it is NOW (S13 F3): a revoked token, a
+  removed guest or a target outside the caller's scope gets the same refusal a fresh request would.
 The caller is the X-Participant + X-Token pair (hashed): one seat's key never replays another seat's reply.
 Concurrent duplicates are serialised per slot, so a retry racing its original waits and then replays.
 
@@ -18,7 +20,7 @@ import asyncio
 import hashlib
 import json
 import time
-from typing import Any
+from typing import Any, Callable
 
 from .store import Store
 
@@ -54,9 +56,11 @@ def replay_body(body: bytes) -> bytes:
 class IdempotencyMiddleware:
     """Pure ASGI (no BaseHTTPMiddleware): reads the body once, replays or records the reply."""
 
-    def __init__(self, app: Any, store: Store):
+    def __init__(self, app: Any, store: Store,
+                 authorize: Callable[[dict, bytes, bytes], tuple[int, bytes] | None] | None = None):
         self.app = app
         self.store = store
+        self.authorize = authorize  # (scope, body, first reply) -> a refusal (status, body), or None to replay
         self._locks: dict[str, asyncio.Lock] = {}
 
     async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
@@ -83,7 +87,10 @@ class IdempotencyMiddleware:
                     status, headers_out, out = await self._run_and_keep(scope, body, slot, digest)
                 else:
                     first_digest, status, first = hit
-                    if first_digest != digest:
+                    refused = self.authorize(scope, body, first) if self.authorize else None
+                    if refused is not None:
+                        status, out = refused
+                    elif first_digest != digest:
                         status, out = _json(409, {
                             "ok": False,
                             "error": {"code": "conflict", "field": "idempotency_key",

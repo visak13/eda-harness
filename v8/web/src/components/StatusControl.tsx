@@ -1,3 +1,4 @@
+import { hideFromGuests } from "../auth/guest";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getTicketTransitions, patchTicket } from "../api/endpoints";
@@ -13,7 +14,7 @@ import styles from "./StatusControl.module.css";
 // carries a one-line consequence — the glossary meaning of the status it moves to — so the person
 // sees what the move DOES before they make it. A blocked move stays visible but disabled, wearing
 // the board's own reason; nothing is hidden, so the loop is legible even when you can't close it.
-export function StatusControl({
+function StatusControlView({
   ticketId,
   currentStatus,
 }: {
@@ -122,3 +123,6 @@ function MoveRow({
     </li>
   );
 }
+
+/** e0cec S5: a guest never sees this control (the board refuses it). */
+export const StatusControl = hideFromGuests(StatusControlView);

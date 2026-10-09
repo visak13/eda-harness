@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import re
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -116,13 +117,22 @@ def _local(host: str | None) -> bool:
 
 
 def _installed() -> tuple[bool, str | None]:
-    """Whether a code-server is there to start (S21), and the per-OS install command when it is not."""
+    """Whether a code-server is there to start (S21), and what to do when it is not: on Windows x64 the first
+    start downloads the pinned one (a sentence, never an npm command), elsewhere the per-OS install command."""
     from . import code_service
     try:
         found = code_service.locate() is not None
     except Exception:  # noqa: BLE001 — a status answer never fails over the lookup
         found = False
     return found, None if found else code_service.install_hint()
+
+
+def _downloadable() -> bool:
+    from . import code_service
+    try:
+        return code_service.pinned_download() is not None
+    except Exception:  # noqa: BLE001 — a status answer never fails over the lookup
+        return False
 
 
 def code_status() -> dict[str, Any]:
@@ -144,6 +154,8 @@ def code_status() -> dict[str, Any]:
         "start_command": "heronry start code",
         "installed": installed,
         "install_hint": hint,
+        # Windows x64: `heronry start code` downloads the pinned release itself, so a missing one is startable
+        "downloadable": (not installed) and _downloadable(),
     }
 
 
@@ -203,7 +215,7 @@ def code_router(actor: Callable[..., Participant], render_markdown: Callable[[st
 
     @router.post("/v1/code/session")
     def session(request: Request, response: Response, who: Participant = Depends(actor)):
-        """A one-time, 60 s login token for the guard (``<guard>/__edp/login?t=<token>&next=<path>``).
+        """A one-time, 60 s login token for the guard (POSTed as ``t=<token>&next=<path>`` to ``<guard>/__edp/login``).
         Only the board's human owner, on the board host: every agent token or seat gets 403."""
         if (refused := owner_only(request, who)) is not None:
             return refused
@@ -232,14 +244,14 @@ def code_router(actor: Callable[..., Participant], render_markdown: Callable[[st
 
     @router.get("/v1/code/faq")
     def faq(_: Participant = Depends(actor)):
-        p = _home() / "guides" / "code-tab-faq.md"
-        try:
-            body = p.read_text(encoding="utf-8")
-        except OSError:
+        from . import operator_docs
+        body = operator_docs.read("code-tab-faq")
+        if body is None:
             return JSONResponse(status_code=404, content={
-                "ok": False, "error": {"code": "not_found", "message": "guides/code-tab-faq.md is missing"},
-                "hint": "the FAQ ships with the board tree under guides/"})
-        return {"ok": True, "value": {"name": "code-tab-faq", "path": "guides/code-tab-faq.md",
+                "ok": False, "error": {"code": "not_found", "message": f"{operator_docs.shown_path('code-tab-faq')} is missing"},
+                "hint": "the FAQ ships with the board build as edp8/operator_docs"})
+        body = re.sub(r"(?<!\d)9410(?!\d)", str(code_port()), body)  # sweep #14: say this install's port, not the default
+        return {"ok": True, "value": {"name": "code-tab-faq", "path": operator_docs.shown_path("code-tab-faq"),
                                       "html": render_markdown(body)}, "hint": ""}
 
     return router

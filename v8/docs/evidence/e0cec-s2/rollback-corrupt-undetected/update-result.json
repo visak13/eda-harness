@@ -1,0 +1,23 @@
+{
+ "from": "0.9.1",
+ "to": "0.9.2.dev0",
+ "state": "ok",
+ "reason": "",
+ "timings": {
+  "parked": 0.5,
+  "stopped": 5.2,
+  "holders_checked": 20.5,
+  "installed": 115.5,
+  "relaunched": 132.3,
+  "resumed": 135.7
+ },
+ "parked": [
+  "engineer.s2-drill"
+ ],
+ "resumed": [
+  "engineer.s2-drill"
+ ],
+ "installed": "0.9.2",
+ "health_version": "0.9.2.dev0",
+ "finished_at": "2026-10-01T23:55:16+00:00"
+}

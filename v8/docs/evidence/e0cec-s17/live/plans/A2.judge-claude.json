@@ -1,0 +1,113 @@
+{
+ "must": {
+  "A2-m1": {
+   "v": "present",
+   "why": "Step 1: 'branches ... named feat/A2-<slug>'; steps 3/15: 'feat(recon): reconcile nightly settlements [A2]'; must_not: 'Do not use the old ticket-prefix commit format'"
+  },
+  "A2-m2": {
+   "v": "present",
+   "why": "Step 14: unit and scheduled-job/Postgres integration tests in the feature PR, '85% changed-executable-line coverage', GatewayFake with reconciliation fixtures; step 3: integration tests for new tables under tests/integration/; must_not: never call the sandbox from unit/integration tests"
+  },
+  "A2-m3": {
+   "v": "present",
+   "why": "Steps 3/16: 'one non-author Ledger Guild approval'; must_not: 'Do not request a second ledger-owner approval'"
+  },
+  "A2-m4": {
+   "v": "present",
+   "why": "Step 8: 'Money.parse_major(amount, currency)' in the boundary layer, 'retaining Money throughout'; step 9: retain both amounts; step 2: both amounts in minor units; must_not: 'Do not pass amounts through float or Decimal'"
+  },
+  "A2-m5": {
+   "v": "present",
+   "why": "must_not: 'Do not post, update or delete ledger journals or entries ... or change payment/refund states'; step 18: 'Leave discrepancy correction to finance through the adjustments tool'"
+  },
+  "A2-m6": {
+   "v": "present",
+   "why": "Step 8: 'Finish the download and close the connection before opening a database transaction'; must_not: 'Do not hold a database transaction across any network call'"
+  },
+  "A2-m7": {
+   "v": "present",
+   "why": "Step 7: '@scheduled_job in tallyline/jobs/registry.py for daily 08:00 UTC'; steps 2/10: recon_runs keyed by (report_date, currency), replace a prior run's discrepancies; must_not: 'Do not add job-owned single-instance locks'"
+  },
+  "A2-m8": {
+   "v": "present",
+   "why": "Step 10: 'in batches using tallyline.jobs.batches ... with commits between batches'"
+  },
+  "A2-m9": {
+   "v": "present",
+   "why": "Step 2: db/migrations/<YYYYMMDDHHMMSS>_<description>.sql, SET lock_timeout='3s' / statement_timeout under -- migrate:up, empty -- migrate:down; step 4: make rehearse-migration, rota DB engineer sign-off on the release ticket, link in the Links field"
+  },
+  "A2-m10": {
+   "v": "present",
+   "why": "Step 3: 'only the migration and its own tests in the migration PR'; step 5: 'Release the migration alone before cutting any release containing application code'"
+  },
+  "A2-m11": {
+   "v": "present",
+   "why": "Step 6: flag created before merging, A2 in description, default off in production; step 7: checks the flag first, emits skipped and exits; step 15: cleanup ticket opened with the PR; step 19: 60 days after fully on"
+  },
+  "A2-m12": {
+   "v": "present",
+   "why": "Step 15: 'finance/support-readable one-line CHANGELOG.md entry under Unreleased' in the feature PR"
+  },
+  "A2-m13": {
+   "v": "present",
+   "why": "Step 11: emit_event, .started/.finished with counts/.failed, recon.discrepancy_found, schemas added; step 7: .skipped; step 12: customer_id on customer-specific logs; step 13: metric labelled only by kind and currency"
+  },
+  "A2-m14": {
+   "v": "present",
+   "why": "Step 13: 'Tallyline \u2013 jobs panel as code in ops/dashboards/ and at least one alert in ops/alerts/ ... for last success older than 26 hours' (24h interval + 2h)"
+  },
+  "A2-m15": {
+   "v": "present",
+   "why": "Step 9: 'Detect differing currencies explicitly without performing cross-currency arithmetic'; must_not: 'catch CurrencyMismatch and continue'"
+  },
+  "A2-m16": {
+   "v": "present",
+   "why": "Step 6: 'using flagpole create ... owner to the Ledger Guild'; step 7: 'while off, remain scheduled but emit only ...skipped and exit'"
+  }
+ },
+ "must_not": {
+  "A2-n1": {
+   "v": "ok",
+   "why": "Step 8: 'without an idempotency key'; stated as a must_not"
+  },
+  "A2-n2": {
+   "v": "ok",
+   "why": "must_not: 'Do not ... backfill existing rows'"
+  },
+  "A2-n3": {
+   "v": "ok",
+   "why": "Uses dbmate with an empty migrate:down; must_not forbids Flyway V/U files"
+  },
+  "A2-n4": {
+   "v": "ok",
+   "why": "must_not: 'Do not combine migration and feature code in one PR or one production release, even behind an off flag'"
+  },
+  "A2-n5": {
+   "v": "ok",
+   "why": "Stated as a must_not"
+  },
+  "A2-n6": {
+   "v": "ok",
+   "why": "Both forbidden in must_not"
+  },
+  "A2-n7": {
+   "v": "ok",
+   "why": "must_not: 'Do not log raw gateway payloads, request bodies or secrets'"
+  }
+ },
+ "order": {
+  "A2-o1": {
+   "v": "kept",
+   "why": "Step 4 obtains sign-off before production; step 5: 'Ensure rehearsal sign-off precedes approval'"
+  },
+  "A2-o2": {
+   "v": "kept",
+   "why": "Step 5 releases the migration alone first; step 17 releases the feature 'in a later production release than the migration'"
+  },
+  "A2-o3": {
+   "v": "kept",
+   "why": "Step 17 verifies the panel and alert are live before enabling; step 18 enables the flag after monitoring is live"
+  }
+ },
+ "extras": []
+}

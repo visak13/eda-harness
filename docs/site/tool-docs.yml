@@ -1,0 +1,422 @@
+# Docs-only explanations for the Reference -> MCP tools page (story s-bd0cf6288c). Read only by
+# docs/site/hooks/sitegen.py at site build; agents never see this file, so their tool schemas stay lean.
+# One entry per tool and per argument; a test fails when this drifts from v8/src/edp8/bundles.py.
+tools:
+  artifact_create:
+    args:
+      idempotency_key: "Optional retry key. The same key with the same arguments within 24 hours returns the first artifact instead of a second one, and the same key with different arguments is refused as a conflict; without a key, an identical create by the same seat within 10 minutes is replayed."
+      form: "What kind of thing the artifact is: `image`, `file`, `url`, `app` or `repo_ref`."
+      uri: "Where the artifact lives, as a URI such as a web link or a repository reference. Pass a URI, never a local machine path; the board stores it as given."
+      note: "Optional; defaults to an empty string. A short caption shown with the artifact."
+      ticket_id: "Optional. A ticket id to link the artifact to with a `produced` link, so it shows on that ticket. When omitted, the artifact is created unlinked."
+  artifact_read:
+    args:
+      id: "The artifact id (`art-…`) to read, as named by a ticket, message or link."
+      offset: "Optional; defaults to 0. The byte offset to continue a text artifact from: pass the `next_offset` of the previous read. Images and binary files ignore it."
+  artifact_upload:
+    args:
+      path: "The local file to stage, inside your seat workspace (relative to it, or absolute within it). A path outside the workspace, a file that is not a regular file, or a file over 25 MB is refused; under the HTTP policy the path must be absolute and inside the configured roots."
+      note: "Optional; defaults to an empty string. A short caption stored with the staged artifact."
+  board:
+    args:
+      epic_id: "The epic to show. You may pass any ticket under it; the board walks up to its epic."
+  close:
+    args:
+      epic_id: "The epic to confirm closed. It must already be `done` or `partial`, or the call returns a transition error."
+  close_self:
+    args: {}
+  context:
+    args:
+      ticket_id: "Optional. Load this one ticket. When omitted, every ticket assigned to or created by you is loaded."
+      verbose: "Optional; defaults to false. When true, returns the full snapshot with no byte cap; when false, thread bodies, doc summaries and long descriptions are trimmed to fit the budget and `omitted` names the call that fetches each cut part."
+  context_delta:
+    args:
+      ticket_id: "Optional. Limit the changes to this one ticket. When omitted, changes on all your tickets are returned."
+      cursor: "The cursor from your last `context` or `context_delta` call. A cursor the board can no longer serve comes back as `resync_required`, which means call `context` again."
+      limit: "Optional; defaults to 50. The most changes per page, from 1 to 100; call again with the new cursor while `has_more` is true."
+  criterion_create:
+    args:
+      idempotency_key: "Optional retry key. The same key with the same arguments within 24 hours returns the first criterion instead of a second one, and the same key with different arguments is refused as a conflict; without a key, an identical create by the same seat within 10 minutes is replayed."
+      ticket_id: "The ticket the criterion belongs to (an epic, story or task). Criteria cannot be added once the ticket is `in_review`, `done`, `partial` or `dropped`."
+      text: "The checkable fact that must be true for the ticket to be done. A story holds at most the workflow's cap of freshly written criteria (6 in the standard workflow); lines that start with `(from S` count as inherited."
+      check: "How the fact is checked: `command`, `path`, `look` or `verdict`. A seat's pass on a `look` criterion needs a screenshot uploaded on the ticket."
+      checked_by: "Optional. The checker role you want: `qa`, `owner`, `engineer` or `sme`. The board derives the checker from the ticket and ignores this value unless the owner also passes `override_reason`."
+      override_reason: "Optional, owner only. Why the derived checker is overridden by `checked_by`; the board records it as an audit event."
+  criterion_query:
+    args:
+      ticket_id: "The ticket whose criteria to list."
+  criterion_update:
+    args:
+      id: "The criterion id (`c-…`) to update."
+      evidence_ref: "Optional. The id of the report doc that proves the check. The ticket's doer or assignee or a checker may set it, and a pass or fail verdict is refused until it is set."
+      verdict: "Optional. `pending`, `pass` or `fail`, recorded by the criterion's checker after `evidence_ref` is set. The doer cannot verdict its own ticket, and a stale criterion cannot pass until it is reworded."
+      text: "Optional. New wording for the criterion, set by a criterion author while it is still `pending`. A stale criterion must actually change its words."
+      evidence_version: "Optional. The version of the evidence doc you are signing. A version older than the doc's current one is refused unless `stale_ok` is true, and a version that does not exist is refused; when omitted, the current version is recorded."
+      stale_ok: "Optional; defaults to false. When true, lets you sign an older `evidence_version` even though the doc has moved on."
+      note: "Optional; defaults to an empty string. Your reason for the verdict; the board keeps it as a claim. It should be given when the verdict is an sme's or an architect fallback on a stuck criterion; without it the verdict is recorded with a hint."
+  dense_search:
+    args:
+      scope: "An epic or ticket id; the search covers only that epic's live decisions, claims and lessons."
+      question: "The question in plain words."
+      k: "Optional; defaults to 10. How many top hits by cosine similarity to return."
+  describe:
+    args:
+      type: "What to describe: an object type name, `enums` for every enum and its values, or `enum:<Name>` for one enum. An unknown name returns `not_found` with the allowed names."
+  describe_objects:
+    args:
+      type: "Optional. An object name, a `Context*` type, `enums` or `enum:<Name>` returns that schema or those values. When omitted, the call lists every object, enum and guide name."
+  doc_create:
+    args:
+      body: "Optional alias of `body_md`; pass one of the two. The call is refused when neither is given."
+      idempotency_key: "Optional retry key. The same key with the same arguments within 24 hours returns the first doc instead of a second one, and the same key with different arguments is refused as a conflict; without a key, an identical create by the same seat within 10 minutes is replayed."
+      doc_type: "The kind of doc: `design`, `strategy_hl`, `strategy_ll`, `domain`, `report` or `note`. Each type has its authors in the workflow (design: architect; strategy and domain: sme; report: engineer, adversary or qa; note: any role); anyone else must file it with `status` set to `proposed`."
+      title: "The doc's title."
+      body_md: "The doc's body as Markdown (pass this or its alias `body`). Put the summary first; readers get the first page and a heading map by default."
+      scope: "Where the doc applies: an epic id, `domain:<name>` or `global`."
+      tags: "Optional. Knowledge tags for the doc, normalized by the board. When omitted, the doc has no tags."
+      status: "Optional; defaults to `active`. `proposed` files a suggestion that the owner approves or rejects in the Library, and lets a role that is not an author of this doc type file it."
+      proposes: "Optional, only with `status` set to `proposed`. The id of the active doc of the same type that this proposal would become the next version of."
+      ticket_id: "Optional. The ticket the doc came from; the board records it as the source of a proposed doc. It does not link the doc to the ticket, so use `link_create` for that."
+  doc_edit:
+    args:
+      old_string: "The text to replace, copied exactly from the doc body. It must occur exactly once unless `replace_all` is true. Use this with `new_string` for a single edit, or use `edits` for several, not both."
+      new_string: "The text that replaces `old_string`. An empty string deletes the match."
+      replace_all: "Optional; defaults to false. When true, every occurrence of `old_string` is replaced instead of requiring exactly one."
+      expected_version: "Optional. The doc version you read (1 or higher); when omitted, the version last served to you. If the doc has moved on, the edit is refused as a version conflict and you must read it again."
+      edits: "Optional when `old_string` and `new_string` are given. From 1 to 100 pairs of `old_string` and `new_string` (`old_text` and `new_text` also work). Each `old_text` must occur exactly once in the original body and the edits must not overlap; all edits apply together as one new version, or none apply."
+      title: "Optional. A new title for the doc. When omitted, the title stays as it is."
+      id: "The doc id to edit. You must be an author of its doc type or have the role that owns it."
+  doc_query:
+    args:
+      limit: "Optional; defaults to 25. Rows per page, clamped to 1 to 100; a compact page is also cut to about 8 KB."
+      cursor: "Optional. The `next_cursor` from the previous page, passed with the same filters; a cursor from a different query is refused. Omit it for the first page."
+      verbose: "Optional; defaults to false. When true, returns full rows instead of compact ones, still paged but without the 8 KB fit."
+      doc_type: "Optional. Only docs of this type: `design`, `strategy_hl`, `strategy_ll`, `domain`, `report` or `note`."
+      scope: "Optional. Only docs whose scope equals this value exactly, such as an epic id, `domain:<name>` or `global`."
+      owner_role: "Optional. Only docs owned by this role: `owner`, `architect`, `sme`, `engineer`, `adversary`, `qa`, `doctor` or `guest`."
+      tag: "Optional. Only docs carrying this tag, matched in lower case."
+      status: "Optional. Only docs in this state: `active`, `proposed` or `retired`."
+  doc_read:
+    args:
+      id: "The doc id to read. With no range arguments the call returns the first page (up to 8192 characters) and the doc's heading map."
+      version: "Optional. A specific version to read. When omitted, the latest version is read; a version that does not exist is refused."
+      offset: "Optional. A character offset (0 or more) to start a range read from; with `section` it counts from the start of that section."
+      limit: "Optional; defaults to 8192 for a range read. How many characters to return, from 1 to 32768."
+      section: "Optional. A heading line from the doc's heading map, or a heading path. Returns that section's own text plus a map of its direct subsections."
+      include_children: "Optional; defaults to false. With `section`, true returns the section together with the full text of all its subsections."
+      fresh: "Optional; defaults to false. An agent's reads skip ranges of the same doc version it was already sent since its last boot or `resume_self`; true sends the whole requested range anyway."
+  doc_update:
+    args:
+      body: "Optional alias of `body_md`, for a caller that sends `body`. When omitted, the body stays as it is."
+      id: "The doc id to update. You must be an author of its doc type or have the role that owns it; a topic's sme cannot update docs and proposes new versions instead."
+      body_md: "Optional. The new Markdown body, replacing the old one. When omitted, the body stays as it is."
+      title: "Optional. The new title. When omitted, the title stays as it is."
+      tags: "Optional. A new tag list that replaces the old one. When omitted, the tags stay as they are."
+      layout: "Optional. `legacy` or `summary_first`; setting `summary_first` after a summary-first rewrite clears the legacy warning. When omitted, the layout stays as it is."
+      compact: "Optional; defaults to true. Agents always get a short receipt; false returns the full doc only to a human caller."
+  doctor_dead_mail:
+    args: {}
+  doctor_feed_lag:
+    args: {}
+  doctor_health:
+    args: {}
+  doctor_logs:
+    args:
+      service: "Which log to tail: `board`, `broker`, `pool`, `mcp`, `bridge`, `supervisor`, `update`, `update-run`, or `pool-logs/<name>`. A name that matches no log returns the list of available logs."
+      lines: "Optional; defaults to 100. How many lines to return from the end of the log, from 1 to 500."
+  doctor_pains:
+    args: {}
+  doctor_pool:
+    args: {}
+  events_query:
+    args:
+      limit: "Optional; defaults to 25. Events per page, clamped to 1 to 100; a compact page is also cut to about 8 KB."
+      cursor: "Optional. The `next_cursor` from the previous page, passed with the same filters; it takes the place of `since`. A cursor from a different query is refused."
+      verbose: "Optional; defaults to false. When true, returns full event rows instead of compact ones with clipped data."
+      subject_id: "Optional. Only events whose subject is this id, such as a ticket, doc or ask. When omitted, all events you may see are returned."
+      since: "Optional; defaults to 0. Return only events with a sequence number after this one; 0 starts from the beginning. Pass the last `last_seq` to catch up."
+  find:
+    args:
+      query: "Words or a phrase to search for. The board combines exact-word search with semantic search, and an exact id or title match ranks first."
+      k: "Optional; defaults to 10. The most hits to return."
+      types: "Optional. A comma-separated list of what to search, from `ticket`, `doc`, `message` and `criterion`. When omitted, all types are searched."
+      epic_id: "Optional. Only return hits that belong to this epic."
+  gate_answer:
+    args:
+      ticket_id: "The ticket whose open gate you are answering."
+      gate: "The gate to answer: `design_signoff`, `acceptance` or `scope`. Only a human in one of the gate's answerer roles may answer, the gate must be open, and the workflow's preconditions must hold."
+      answer: "Your decision, in plain words."
+  gate_open:
+    args:
+      ticket_id: "The ticket that needs the human decision."
+      gate: "The gate to open: `design_signoff`, `acceptance` or `scope`. The workflow's preconditions for the gate must hold; if the gate is already open on the ticket, the existing one is returned."
+      note: "Optional; defaults to an empty string. The question the answerer is asked, in plain words. A blank note is advised against, not refused: the gate opens with the workflow's default question and the reply carries a hint to pass your own."
+  gates:
+    args:
+      ticket_id: "The ticket whose open gates to list."
+  get_guide:
+    args:
+      name: "Optional. The guide name without `.md`, using only letters, digits, `-` and `_`. When omitted, the call lists every guide; an unknown name returns `not_found` with the allowed names."
+  harvest_cost:
+    args:
+      participant_id: "The seat whose harvest cost to measure, as its participant id; the board reads that seat's own session log."
+      since: "Optional. The window start as an ISO-8601 time or epoch seconds. When omitted, the window starts at the harvest trigger found in the log, and the call is refused if the log holds none."
+      until: "Optional. The window end as an ISO-8601 time or epoch seconds. When omitted, the window ends at the seat's `close_self`, or at the end of the log."
+  inbox:
+    args: {}
+  link_create:
+    args:
+      from_id: "The subject of the link: a ticket, doc or artifact id. For `blocks` it is the item that finishes first; for `extends` it is the more specific doc layer. A staged upload that no message has attached yet is refused."
+      to_id: "The object of the link: a ticket, doc or artifact id."
+      relation: "How `from_id` relates to `to_id`: `designed_by`, `uses_strategy`, `uses_domain`, `evidence_for`, `blocks`, `produced` or `extends`. `extends` links docs only, and a link that already exists is returned instead of a duplicate."
+  link_delete:
+    args:
+      id: "The link id (`lk-…`) to remove."
+  link_query:
+    args:
+      limit: "Optional; defaults to 25. Rows per page, clamped to 1 to 100; a compact page is also cut to about 8 KB."
+      cursor: "Optional. The `next_cursor` from the previous page, passed with the same filters; a cursor from a different query is refused. Omit it for the first page."
+      verbose: "Optional; defaults to false. When true, returns full rows instead of compact ones, still paged but without the 8 KB fit."
+      from_id: "Optional. Only links whose subject is this id."
+      to_id: "Optional. Only links whose object is this id."
+      relation: "Optional. Only links of this relation: `designed_by`, `uses_strategy`, `uses_domain`, `evidence_for`, `blocks`, `produced` or `extends`."
+  lookup:
+    args:
+      scope: "An epic or ticket id. The lookup never returns records from another epic, and the epic's binding decisions are always included."
+      question: "Optional. The question in plain words, used to find matching decisions, claims and lessons. Pass `question`, `id` or `path` as the starting point."
+      id: "Optional. A record, ticket or doc id to start from. A record outside the scope's epic starts nothing."
+      path: "Optional. A file path to start from. Records linked to that path are used; otherwise the path is searched as text."
+  message_query:
+    args:
+      limit: "Optional; defaults to 20. Messages per page, clamped to 1 to 100; a compact page is also cut to about 8 KB."
+      cursor: "Optional. The `next_cursor` from the previous page, passed with the same filters; it takes the place of `since_seq`. A cursor from a different query is refused."
+      verbose: "Optional; defaults to false. When true, returns full message rows; when false, each text is clipped to 240 characters."
+      ticket_id: "Optional. Only messages on this ticket's thread. With `around`, it must be the ticket the target message is on."
+      to: "Optional. Only messages whose stored recipient equals this value: a participant id, or a role name for a message stored as a role note."
+      kind: "Optional. Only messages of this kind: `question`, `answer`, `steer`, `status`, `finding`, `deviation` or `note`."
+      created_by: "Optional. Only messages written by this participant id."
+      since_seq: "Optional. Return only messages after this sequence number, oldest first; 0 reads from the start. When omitted, the newest page is returned."
+      around: "Optional. A message id; returns that message whole with `window` messages before and after it on its thread, in sequence order. The other filters except `ticket_id` are not applied."
+      window: "Optional; defaults to 5. With `around`, how many messages to show on each side of the target, from 0 to 25 (larger values are capped at 25)."
+  message_read:
+    args:
+      id: "The message id (`m-…`) to read; `message_id` is accepted as another name for it. Returns the whole message with its sequence number, its parent and its replies."
+  message_send:
+    args:
+      idempotency_key: "Optional retry key. The same key with the same arguments within 24 hours returns the first message instead of posting again, and the same key with different arguments is refused as a conflict; without a key, an identical send by the same seat within 10 minutes is replayed."
+      ticket_id: "The ticket whose thread gets the message: an epic, story or task id."
+      kind: "The message kind: `question`, `answer`, `steer`, `status`, `finding`, `deviation` or `note`. A `question`, `steer` or `deviation` is an ask that stays open until something settles it."
+      text: "The message body. The board screens it for secrets, and an `@handle` in it notifies that person."
+      to: "Optional. The recipient: a participant id, an `@handle`, or a role name such as `architect`, which resolves to the seat playing that role on the epic (`owner` resolves to the epic's human owner). When omitted, the message is a thread note that wakes nobody."
+      reply_to: "Optional. The id of the message this one answers; it must exist. An `answer`, `note` or `status` replying to someone else's ask on the same ticket settles that ask."
+      resolves: "Optional. Ids of ask messages on this same ticket that this message settles (a question, steer, deviation, or a blocked, failed or deferred status). An id that is not an ask on this ticket is refused and nothing is posted."
+      artifacts: "Optional. Ids of artifacts staged with `artifact_upload` to attach. They are finalized onto the ticket with a `produced` link; only the uploader can attach a staged upload, and a bad id means nothing is posted."
+      code_context: "Optional. A code anchor object with `repo_root` (absolute), `path`, `line_start`, `line_end`, `commit`, `dirty`, `snippet` and `snippet_sha`. The board validates it and refuses a bad anchor, naming the field."
+      quotes: "Optional. Up to 20 quoted passages, each with a `source` of `doc`, `message` or `code` plus its id, version, locator and text. The board checks each passage against its source and refuses one that does not match."
+  pain:
+    args:
+      action: "What to do: `query` lists pain records, `read` returns one, `file` records a new one, and `resolve` closes one."
+      id: "The pain id (`p-…`). Required for `read` and `resolve`."
+      q: "Optional, for `query`. Words that must all appear in a record's symptom, expected text or area."
+      area: "For `query`, only records in this area (case-insensitive). For `file`, required: the tool, guide or part of the system that is wrong."
+      status: "For `query`, optional and defaults to `open`: `all`, `open`, `fixed`, `ticket`, `duplicate` or `invalid`. For `resolve`, required: `fixed`, `ticket`, `duplicate` or `invalid`; an architect may only set `fixed`, while the owner, the doctor or an admin may set any."
+      severity: "Required for `file`: `low`, `medium` or `high`."
+      symptom: "Required for `file`. What you saw go wrong."
+      expected: "Required for `file`. What should have happened instead."
+      evidence: "Required for `file`. What shows the problem, such as an error, a call and its result, or a message id."
+      workaround: "Optional, for `file`. What you did instead."
+      dup_of: "For `file`, optional: the existing pain this repeats, so the new record is filed as a duplicate. For `resolve` with `status` set to `duplicate`, required: the other pain it repeats."
+      supersedes: "Optional, for `file`. Your earlier pain id that this record replaces; the earlier one is closed as its duplicate."
+      note: "Optional, for `resolve`. The resolution note, kept up to 1000 characters; a commit sha written in it counts as the fixing commit."
+      commit: "For `resolve` with `status` set to `fixed`. The sha of the commit that fixed it; an architect must cite one reachable from main, while the owner, the doctor or an admin may omit it."
+      ticket_id: "For `resolve` with `status` set to `ticket`. The existing ticket that owns the fix."
+      cursor: "Optional, for `query`. The `next_cursor` from the previous page, passed with the same `status`, `area` and `q`."
+  participants:
+    args:
+      limit: "Optional; defaults to 25. Rows per page, clamped to 1 to 100; a compact page is also cut to about 8 KB."
+      cursor: "Optional. The `next_cursor` from the previous page, passed with the same filters; a cursor from a different query is refused. Omit it for the first page."
+      verbose: "Optional; defaults to false. When true, returns full rows instead of compact ones, still paged but without the 8 KB fit."
+      role: "Optional. Only participants with this role: `owner`, `architect`, `sme`, `engineer`, `adversary`, `qa`, `doctor` or `guest`."
+      type: "Optional. `human` lists people and `agent` lists seats. When omitted, both are listed."
+  preflight:
+    args: {}
+  propose_fix:
+    args:
+      idempotency_key: "Optional retry key. The same key with the same arguments within 24 hours returns the first proposal instead of a second one, and the same key with different arguments is refused as a conflict; without a key, an identical proposal by the same seat within 10 minutes is replayed."
+      topic_id: "Your own help thread, the topic id in your context. Only the doctor seat of that open help thread may propose fixes on it."
+      action: "Exactly one action object, whose `kind` picks its fields: `service.restart`, `service.start` or `service.stop` (with `service`), `pool.set_limits`, `gate.open`, `gate.answer`, `teammate.rotate_token` or `agent_token.revoke`. Nothing runs until an admin approves the card."
+      effect: "What the fix will do, in one or two plain sentences, shown on the approval card. A blank effect is refused."
+  reap:
+    args:
+      participant_id: "The seat whose shell to tear down. The owner may reap any seat; an architect may reap only seats in its own epic, and every other role is refused."
+  record_claim:
+    args:
+      idempotency_key: "Optional retry key. The same key with the same arguments within 24 hours returns the first claim instead of a second one, and the same key with different arguments is refused as a conflict; without a key, an identical create by the same seat within 10 minutes is replayed."
+      scope: "The epic or ticket id the claim belongs to."
+      text: "The claim, in one sentence."
+      basis: "Optional; defaults to `assumption`. How the claim is known: `assumption`, `measured` or `ruled`. Lookup labels a claim confirmed only when it is `measured` or `ruled` and has evidence."
+      evidence: "Optional; defaults to an empty list. Ids of attachments, checks or commits that prove the claim."
+      source: "Optional. The message or doc id the claim came from; its date is kept as when the claim was made."
+  record_decision:
+    args:
+      idempotency_key: "Optional retry key. The same key with the same arguments within 24 hours returns the first decision instead of a second one, and the same key with different arguments is refused as a conflict; without a key, an identical create by the same seat within 10 minutes is replayed."
+      scope: "The epic or ticket id the decision is in force for."
+      text: "The decision, in one sentence of at most 240 characters."
+      detail: "Optional; defaults to an empty string. Why the decision was made, at most 1000 characters."
+      replaces: "Optional; defaults to an empty list. Ids of older decisions in the same epic that this one supersedes. A decision that is unknown, in another epic or already replaced is refused."
+      binding: "Optional. True means the decision is always handed to seats in scope, and only the architect or the owner may set it or replace a binding decision. When omitted, it inherits binding from any decision it replaces, else it is not binding; false demotes."
+      source: "Optional. The message, doc or attachment id the decision came from; its date is kept as when the decision was made."
+      domains: "Optional; defaults to an empty list. Names of domain checklists the decision belongs to."
+  record_lesson:
+    args:
+      idempotency_key: "Optional retry key. The same key with the same arguments within 24 hours returns the first lesson instead of a second one, and the same key with different arguments is refused as a conflict; without a key, an identical create by the same seat within 10 minutes is replayed."
+      domain: "The domain the lesson is filed under, such as `operations`. Must not be blank."
+      topic: "A short topic within the domain, such as `restart`. Must not be blank."
+      text: "The lesson, in one sentence. Must not be blank."
+      evidence: "Optional; defaults to an empty list. Ids the lesson was learned from; each gets a link, and the first one that names a ticket can set the lesson's project scope."
+      ticket_id: "Optional. A ticket whose epic's project scopes the lesson to that project. When neither this, `project` nor a ticket in `evidence` gives a project, the lesson is a framework lesson."
+      project: "Optional. A project key (the key in an epic's `project:<key>` tag) that makes this a project lesson; it takes precedence over `ticket_id`."
+      domains: "Optional; defaults to an empty list. Extra domain names the lesson also applies to."
+  record_status:
+    args:
+      status: "Your outcome: `done`, `deferred`, `failed`, `blocked`, `reviewed` or `handed_off`. `done` and `handed_off` are refused while messages still wait in your inbox."
+      note: "Optional; defaults to an empty string. One line on what is done and what is left, posted as `[status] note`."
+      to: "Optional. An extra recipient beyond the epic's architect and human owner, resolved like the `to` of `message_send`."
+      ticket_id: "Optional. The ticket to record the status on. When omitted, the board uses your seat's ticket, and the call is refused if it cannot find one."
+  requirement_link:
+    args:
+      id: "The requirement id to close, from `requirements`. Only the epic's architect (or its owner) may link."
+      criterion: "A criterion id under the same epic that now covers the requirement. Pass this, or `doc` with `version` and `heading`, never both."
+      doc: "The id of a design doc scoped to the epic, whose section states the requirement. Pass it with `version` and `heading`; a non-design doc is refused."
+      version: "Only with `doc`. The version of the design that holds the section; a version that does not exist is refused. After changing the design with `doc_edit`, link the new version."
+      heading: "Only with `doc`. The heading text of the section (the leading `#` marks are ignored); a heading that is not in that version is refused."
+  requirements:
+    args:
+      epic: "The epic id (`epic-…`) whose marked requirements to read."
+      state: "Optional. Only return requirements in this state: `open` (not yet linked) or `linked`. When omitted, every requirement is returned."
+  resume:
+    args:
+      participant_id: "The seat whose parked or stalled session the pool should resume. If the pool is slow, the call returns status `running` and you poll `session_query`."
+  resume_self:
+    args: {}
+  retire_lesson:
+    args:
+      lesson_id: "The lesson id (`les-…`) to retire. Only the architect, the owner or the doctor may retire a lesson."
+      reason: "Optional; defaults to an empty string. One line on why, stored with your id and kept up to 240 characters."
+  service_status:
+    args: {}
+  session_query:
+    args:
+      limit: "Optional; defaults to 25. Rows per page, clamped to 1 to 100; a compact page is also cut to about 8 KB."
+      cursor: "Optional. The `next_cursor` from the previous page, passed with the same filters; a cursor from a different query is refused. Omit it for the first page."
+      verbose: "Optional; defaults to false. When true, returns full rows instead of compact ones, still paged but without the 8 KB fit."
+      participant_id: "Optional. Only sessions of this participant."
+      ticket_id: "Optional. Only sessions on this ticket."
+      state: "Optional. Only sessions in this state: `alive`, `stalled`, `dead` or `parked`."
+  set_binding:
+    args:
+      decision_id: "The decision whose binding flag to change. It must be live; only the architect or the owner may change it."
+      binding: "True makes the decision binding, so it is always handed to seats in scope; false makes it non-binding."
+      reason: "Optional; defaults to an empty string. One line on why, kept up to 240 characters in the audit event."
+  spawn:
+    args:
+      role: "The role of the seat to start: `architect`, `sme`, `engineer`, `adversary`, `qa` or `doctor`. Only the owner, or the architect within its own epic, may spawn; an `sme` is refused unless the epic has SMEs switched on with the `sme:on` tag."
+      ticket_id: "Optional. The ticket the seat works on; when `participant_id` is omitted the seat is registered as `<role>.<ticket_id>`. Pass `ticket_id`, `participant_id` or both."
+      participant_id: "Optional. An explicit pool handle for the seat; it is created as an agent participant if it does not exist. When omitted, `<role>.<ticket_id>` is used."
+      parent_session: "Optional. The spawning session id, recorded as the new shell's parent. When omitted, your own session is used."
+      assign: "Optional. When omitted, the seat takes the ticket only if it is unassigned, or its assignee is dead and has the same role; false spawns a checker that leaves the assignee alone; true takes the ticket over. A `qa` seat, or an adversary whose criteria it checks, is never assigned."
+      model: "Optional. A seat or model id for the shell. When omitted, the story's pick, then the epic's model tags, then the role's catalog default apply; an unknown model for the role is refused."
+      effort: "Optional. `low`, `medium` or `high`. When omitted, the story's pick, then the epic's options apply; the result is capped at the model's catalog limit."
+      mode: "Optional. `headless` runs the seat with no visible console; `monitor` runs it as a visible console seat. When omitted, the pool's default applies."
+      steer: "Optional. A first instruction posted to the seat as a `steer` on its ticket thread before launch, so its first context read carries it. It needs a ticket, from `ticket_id` or a `<role>.<ticket>` participant id."
+  subscribe:
+    args: {}
+  teammate:
+    args:
+      action: "What to do: `list` shows human teammates, `create` adds one and returns a one-time invite link, `mint` issues a new token shown only once, and `revoke` makes their token refused. The board requires an admin human's token, so an agent seat is refused."
+      handle: "The teammate's handle, with or without a leading `@`. Required for `create`, `mint` and `revoke`."
+      role: "Optional, for `create`; defaults to `guest`. The role to grant; `expert` is refused, since experts are added from their Library topic."
+      admin: "Optional, for `create`; defaults to false. True makes the new teammate an admin; a guest cannot be an admin."
+  ticket_create:
+    args:
+      cap_lift_message: "Optional. The id of the owner's reply in chat that lifts the story cap on this epic. The board checks that it is a message of the epic's owner; any other message is refused. Without it, a story over the cap is refused."
+      idempotency_key: "Optional retry key. The same key with the same arguments within 24 hours returns the first ticket instead of a second one, and the same key with different arguments is refused as a conflict; without a key, an identical create by the same seat within 10 minutes is replayed."
+      kind: "The ticket level: `epic`, `story` or `task`. The epic's workflow decides who may create each kind; an epic has no parent, a story hangs under an epic and a task under a story."
+      work_type: "The kind of work: `feature`, `bug`, `rnd`, `creative`, `review`, `knowledge` or `chore`."
+      title: "For an epic, the owner's words verbatim (a short title is derived when they run past 80 characters). For a story or task, the name of the slice. Must not be blank."
+      words: "Optional. For an epic or an owner's quick task, the owner's request verbatim; it never changes after create. When omitted on an epic, `title` is stored as the words; other tickets ignore it."
+      parent_id: "The parent ticket: an epic for a story, a story for a task. Required for both, except the owner's story with no parent, which becomes a quick task tagged `quick`. A story over the epic's 8-open-story cap is refused unless `cap_lift_message` is passed; a sixth task in a story is created with a hint that a story normally holds five."
+      assignee: "Optional. The participant id to assign the ticket to at create. When omitted, the ticket starts unassigned."
+      description: "Optional; defaults to an empty string. The scope, intent and pointers to files or docs."
+      tags: "Optional. Tags for the ticket. Only the owner may use `quick`, and `help` is reserved for help threads; `sme:on`, `sme:off` and `project:<key>` are checked as epic policy tags."
+      serves: "Advice only. A task should name what it serves; without it the task is created anyway with a hint, and on any other kind it is ignored with a hint. The requirement ids from `requirements`, or ids of `finding` messages, on the same epic that the task serves."
+  ticket_query:
+    args:
+      limit: "Optional; defaults to 25. Rows per page, clamped to 1 to 100; a compact page is also cut to about 8 KB."
+      cursor: "Optional. The `next_cursor` from the previous page, passed with the same filters; a cursor from a different query is refused. Omit it for the first page."
+      verbose: "Optional; defaults to false. When true, returns full rows instead of compact ones, still paged but without the 8 KB fit."
+      kind: "Optional. Only tickets of this level: `epic`, `story` or `task`."
+      work_type: "Optional. Only tickets of this work type: `feature`, `bug`, `rnd`, `creative`, `review`, `knowledge` or `chore`."
+      parent_id: "Optional. Only the direct children of this ticket."
+      status: "Optional. Only tickets in this status: `drafted`, `designed`, `signed_off`, `ready`, `in_progress`, `in_review`, `blocked`, `done`, `partial` or `dropped`."
+      assignee: "Optional. Only tickets assigned to this participant id."
+      epic_id: "Optional. Every ticket under this epic, at any depth."
+      created_by: "Optional. Only tickets created by this participant id."
+      tag: "Optional. Only tickets carrying exactly this tag."
+      q: "Optional. Words to search for in titles, descriptions and tags; matching tickets come back in search-rank order."
+  ticket_read:
+    args:
+      ticket_id: "The ticket to read; `id` is accepted as another name for it."
+      include: "Optional. A comma-separated list of sections to return in full: `chain`, `criteria`, `docs`, `children`, `blockers`, `gates`, `thread`, `links`, and `lifecycle` (the pinned workflow's lifecycle table, only when named). When omitted, the read is compact and `omitted` counts each cut section."
+      thread_limit: "Optional; defaults to 20. How many of the newest thread messages to return, from 0 to 200. A compact read returns 3 unless you pass this argument."
+      before_seq: "Optional. A thread sequence number to page back from, returning older messages."
+  ticket_update:
+    args:
+      ticket_id: "The ticket to change; `id` is accepted as another name for it. Only the arguments you pass are changed."
+      status: "Optional. The status to move to: `drafted`, `designed`, `signed_off`, `ready`, `in_progress`, `in_review`, `blocked`, `done`, `partial` or `dropped`. The board refuses a transition the epic's workflow does not allow and names what is missing."
+      assignee: "Optional. The participant id to assign. The workflow decides who may assign (the architect or the owner, and an engineer for its own tasks), and a checker of the ticket's criteria cannot become its doer."
+      design_ref: "Optional. The id of the design or plan doc (a `design`, `report` or `note` doc). The architect sets it on epics and stories, the engineer on tasks; on an epic it can carry the epic to `designed`."
+      description: "Optional. A new description that replaces the old one. The creator, the assignee, the architect or the owner may set it."
+      tags: "Optional. A new tag list that replaces the old one, set by the same people as `description`. The `quick` and `help` tags cannot be added or removed after create."
+      title: "Optional. A short title of at most 80 characters, set by the architect or the owner on an epic or a story; a task's title is fixed at create."
+      work_type: "Optional. Retypes an epic or a story before it is done: `feature`, `bug`, `rnd`, `creative`, `knowledge` or `chore` (a `review` story keeps its type). The architect or the owner may. The checker follows the type, so each pending criterion moves to the new checker; for example, a story retyped from `knowledge` to `feature` goes from the sme to qa."
+  topic_propose:
+    args:
+      idempotency_key: "Optional retry key. The same key with the same arguments within 24 hours returns the first proposal instead of a second one, and the same key with different arguments is refused as a conflict; without a key, an identical create by the same seat within 10 minutes is replayed."
+      topic_id: "The Library topic id. Only the topic's own sme seat may propose, and the topic must be open."
+      title: "The proposed doc's title."
+      body_md: "What you distilled from the page, as Markdown. The board puts a Source and fetched-at line above it."
+      source_url: "A URL that `topic_research` fetched successfully for this topic; any other URL is refused."
+      doc_type: "Optional; defaults to `strategy_hl`. The proposed doc's type: `strategy_hl`, `strategy_ll` or `domain`."
+      tags: "Optional. Extra tags, added to the topic's own tags on the proposed doc."
+      proposes: "Optional. The id of the active doc this proposal would become the next version of. When omitted, the proposal is a new doc."
+  topic_research:
+    args:
+      topic_id: "The Library topic id. Only the topic's sme seat or the owner may research it, and the topic must be open."
+      query: "Optional. Words to search skills.sh for. Pass exactly one of `query` or `url`."
+      url: "Optional. One https page to read, on skills.sh, GitHub or the topic's seed host; other hosts are refused. Pass exactly one of `query` or `url`."
+      offset: "Optional, and only with `url`. A character offset to continue a long page from the text already kept for that URL, without fetching it again."
+  whoami:
+    args: {}
+  why_stuck:
+    args:
+      ticket_id: "The ticket, story or epic that is reported as stuck."
+  withdraw_claim:
+    args:
+      claim_id: "The claim id (`clm-…`) to withdraw; lookup and search stop returning it. Withdrawing it again only refreshes the reason."
+      reason: "Optional; defaults to an empty string. One line on why, kept up to 240 characters."
+  withdraw_decision:
+    args:
+      decision_id: "The decision id (`dec-…`) to withdraw; lookup and search stop returning it. Withdrawing it again only refreshes the reason."
+      reason: "Optional; defaults to an empty string. One line on why, kept up to 240 characters."
+  workflow:
+    args:
+      action: "What to do: `list` shows workflow versions, `read` returns one, `duplicate` copies one into a new draft, `edit` saves a definition, `validate` checks a definition without saving, and `publish` publishes a version."
+      ref: "A workflow id or `id@version`, such as `standard@1`. Required for `read`, `duplicate` and `publish`."
+      new_id: "Optional, for `duplicate`. The workflow id for the copy, which starts at version 1. When omitted, the copy becomes the next version of the same id."
+      definition: "Required for `edit` and `validate`. The full workflow definition object, in the shape `read` returns with `full` set to true."
+      full: "Optional, for `read`; defaults to false. True returns the full definition with its lint problems; false returns a summary."
+      cursor: "Optional, for `list`. The `next_cursor` from the previous page."
+  workflow_check:
+    args:
+      ref: "The workflow version to validate and walk, as an id or `id@version`, such as `standard@1`."

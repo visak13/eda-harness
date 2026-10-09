@@ -233,7 +233,7 @@ function TransitionTable({ wf, onPick, picked }: { wf: WorkflowDef; onPick: (k: 
   return (
     <details data-testid="pipeline-transitions">
       <summary className={styles.fieldLabel}>Every move and what the board checks ({wf.transitions.length})</summary>
-      <table className={styles.diffTable}>
+      <table className={`${styles.diffTable} ${styles.cardsTable}`}>
         <thead><tr><th>Move</th><th>Who may make it</th><th>What the board checks</th></tr></thead>
         <tbody>
           {wf.transitions.map((t) => {
@@ -241,8 +241,8 @@ function TransitionTable({ wf, onPick, picked }: { wf: WorkflowDef; onPick: (k: 
             return (
               <tr key={key} aria-selected={picked === key}>
                 <td><button type="button" className={`${styles.item} ${styles.small}`} onClick={() => onPick(key)}>{plain(t.from)} → {plain(t.to)}</button></td>
-                <td>{whoTakes(wf, t)}</td>
-                <td>{t.requires.length ? t.requires.map((p, i) => <span key={i} title={`board check: ${preconditionKey(p)}`}>{i ? "; " : ""}{preconditionText(p)}</span>) : <span className={`${styles.badge} ${styles.badgeDraft}`}>none</span>}</td>
+                <td data-label="Who may make it">{whoTakes(wf, t)}</td>
+                <td data-label="What the board checks">{t.requires.length ? t.requires.map((p, i) => <span key={i} title={`board check: ${preconditionKey(p)}`}>{i ? "; " : ""}{preconditionText(p)}</span>) : <span className={`${styles.badge} ${styles.badgeDraft}`}>none</span>}</td>
               </tr>
             );
           })}

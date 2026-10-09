@@ -114,6 +114,7 @@
 
 .hookRow { display: grid; grid-template-columns: minmax(180px, 240px) minmax(0, 1fr); gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
 .hookRow:first-child { border-top: 0; }
+@media (max-width: 640px) { .hookRow { grid-template-columns: minmax(0, 1fr); gap: 4px; } } /* the 180px label column left the help text 66px (qa 0.10.7 sweep of every Design tab) */
 
 /* validate + dry run + diff */
 .problems { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
@@ -156,6 +157,16 @@
 .checkItem { display: grid; grid-template-columns: minmax(140px, 200px) minmax(0, 1fr); gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; }
 .checkItem:first-child { border-top: 0; }
 .diffTable td:first-child, .diffTable td:nth-child(2) { word-break: normal; white-space: nowrap; }
+/* A phone: each row of a table inside a fold is a small card (a 3-column table was wider than its frame, which does not scroll) */
+@media (max-width: 640px) {
+  .cardsTable thead { display: none; }
+  .cardsTable, .cardsTable tbody { display: block; }
+  .cardsTable tr { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .cardsTable td { display: block; min-width: 0; padding: 0; border-top: 0; white-space: normal; word-break: normal; overflow-wrap: break-word; }
+  .cardsTable td:first-child, .cardsTable td:nth-child(2) { white-space: normal; }
+  .cardsTable .item { padding-left: 0; }
+  .cardsTable td[data-label]::before { content: attr(data-label); display: block; color: var(--muted); font-size: 11px; }
+}
 /* S14 reopen: a tool reads as its plain name with the board's one-line description under it */
 .tool { align-items: flex-start; }
 .tool input { margin-top: 3px; }

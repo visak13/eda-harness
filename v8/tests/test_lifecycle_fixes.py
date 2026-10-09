@@ -1,5 +1,5 @@
 """Field-report fixes: self-asserted close (inbox → record_status → close_self), steers in context, close reasons,
-criterion text edits, extends validation, ruleset graceful skips."""
+criterion text edits, extends validation, dangling layers skipped from the reading list."""
 
 from __future__ import annotations
 
@@ -62,14 +62,21 @@ def _tool(name, **kw):
     return t.handler(t.args_model(**kw))
 
 
-def test_close_self_refuses_with_pending_asks_and_no_status(client, rig, monkeypatch):
+def test_close_self_with_pending_asks_and_no_status_closes_and_names_what_was_left(client, rig, monkeypatch):
     set_client(BoardClient(participant="eng", admin_token="t", client=client))
+    from edp8 import pool_adapter
+    released = []
+    monkeypatch.setattr(pool_adapter, "sessions", lambda: {"ok": True, "value": [
+        {"session_id": "sid-eng", "handle": "eng", "state": "active", "parent": "sid-own"},
+        {"session_id": "sid-own", "handle": "owner", "state": "active", "parent": None}]})
+    monkeypatch.setattr(pool_adapter, "_post", lambda path, body=None, timeout=90.0:
+                        released.append((path, body)) or {"ok": True, "value": {"ok": True}, "hint": ""})
     client.post("/v1/messages", json={"ticket_id": rig["epic"], "kind": "question", "to": "eng",
                                       "text": "blocking q"}, headers={"X-Participant": "owner"})
     out = _tool("close_self")
-    assert out["ok"] is False and out["error"]["code"] == "precondition"
-    assert "blocking q" in out["error"]["message"] and "no status recorded" in out["error"]["message"]
-    assert out["value"]["inbox"][0]["answer_with"].startswith("message_send(")
+    assert out["ok"] is True, out
+    assert "blocking q" in out["hint"] and "no status was recorded" in out["hint"]
+    assert released and released[0][0] == "/v1/release/sid-eng"
 
 
 def test_closing_sequence_inbox_status_close(client, rig, board, monkeypatch):
@@ -120,7 +127,13 @@ def test_architect_and_owner_have_no_close_self():
 def test_close_reason_reaches_feed_and_broker(client, rig, monkeypatch):
     sent = []
     monkeypatch.setattr(broker_adapter, "publish", lambda *a: sent.append(a) or True)
-    body = {"participant_id": "arch", "ticket_id": rig["epic"], "pool_id": "local",
+    # design-63db8a7d42 F: a pool event goes to the epic's live architect, never the owner
+    arch = f"architect.{rig['epic']}"
+    assert client.post("/v1/participants", json={"type": "agent", "role": "architect", "handle": arch, "id": arch},
+                       headers=ADMIN).json()["ok"]
+    client.put("/v1/sessions/s-8", json={"participant_id": arch, "ticket_id": rig["epic"], "pool_id": "local",
+                                         "state": "alive"}, headers=ADMIN)
+    body = {"participant_id": "eng", "ticket_id": rig["epic"], "pool_id": "local",
             "state": "alive"}
     client.put("/v1/sessions/s-9", json=body, headers=ADMIN)
     client.put("/v1/sessions/s-9", json={**body, "state": "dead",
@@ -130,7 +143,7 @@ def test_close_reason_reaches_feed_and_broker(client, rig, monkeypatch):
     dead = [e for e in evs if e["kind"] == "shell_dead"]
     assert dead and dead[-1]["data"]["clean"] is True
     assert "closed by self" in dead[-1]["data"]["reason"]
-    assert sent[-1][2] == "fyi"  # clean close is not a crash notice
+    assert sent[-1][2] == "fyi" and sent[-1][1] == arch  # clean close is not a crash notice; the architect hears it
 
 
 def test_criterion_text_edit_and_unknown_kwarg(client, rig):
@@ -151,7 +164,7 @@ def test_extends_must_link_docs(client, rig):
     assert bad["ok"] is False and "DOCS only" in bad["error"]["message"]
 
 
-def test_ruleset_skips_dangling_layer(client, rig, board):
+def test_reading_list_skips_dangling_layer(client, rig, board):
     set_client(BoardClient(participant="arch", admin_token="t", client=client))
     d = client.post("/v1/docs", json={"doc_type": "strategy_hl", "title": "t", "body_md": "- rule one",
                                       "scope": rig["epic"]}, headers={"X-Participant": "craft"}).json()["value"]
@@ -161,11 +174,10 @@ def test_ruleset_skips_dangling_layer(client, rig, board):
     from edp8.schemas import Link, Relation
     board.store.put("link", Link(id="lk-bad", from_id=d["id"], to_id=rig["epic"], relation=Relation.extends,
                                  created_by="arch"))
-    out = ALL_TOOLS["assemble_ruleset"].handler(
-        ALL_TOOLS["assemble_ruleset"].args_model(ticket_id=rig["epic"], full=True))
+    out = ALL_TOOLS["ticket_read"].handler(ALL_TOOLS["ticket_read"].args_model(ticket_id=rig["epic"], include="docs"))
     assert out["ok"], out
-    assert out["value"]["skipped_layers"] == [rig["epic"]]
-    assert any("rule one" in x["text"] for x in out["value"]["constructive"])
+    assert [x["id"] for x in out["value"]["docs"]] == [d["id"]]  # the layer is read; the dangling parent is not
+    assert "rule one" in out["value"]["docs"][0]["summary"]
 
 
 def test_open_design_signoff_gate_blocks_auto_ready_until_answered(client, rig):

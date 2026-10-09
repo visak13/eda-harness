@@ -5,6 +5,7 @@ name: CI
 #                 byte-level PII gate over every tracked file. Blocking.
 #   test          windows, macos, ubuntu: pytest for edp-contracts, edp-pool, edp-broker and v8, vitest for the
 #                 web app and the VS Code extension.
+#   security      bandit, semgrep (local rules) and pip-audit over the four packages; ubuntu only (.github/security/).
 #   install-smoke build the wheels, install.sh / install.ps1 into a clean home, init, start, /v1/health and
 #                 /ui, a stub seat through the installed pool, stop with no process left (install.yml).
 # Third-party actions are pinned by commit SHA; Dependabot (github-actions) keeps the pins current.
@@ -123,6 +124,38 @@ jobs:
         if: ${{ !cancelled() }}  # run every suite even after one fails: one push shows every red
         working-directory: v8/vscode-ext/edp-code
         run: npm ci && npm test
+
+  security:
+    # S10 (s-b431082892): static and dependency scans, ubuntu only, tool versions pinned, uv cache kept. Config and
+    # baselines live in .github/security/ (each baselined finding has a reason: v8/docs/evidence/e0cec-s10/security-scan.md).
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            v8/uv.lock
+            edp-*/pyproject.toml
+
+      - name: bandit (medium severity and above)
+        run: uvx --from bandit==1.9.4 bandit -r -ll -c .github/security/bandit.yaml v8/src edp-pool/src edp-broker/src edp-contracts/src
+
+      - name: semgrep (local rules, offline)
+        if: ${{ !cancelled() }}  # run every scan even after one fails: one push shows every red
+        run: uvx --from semgrep==1.179.0 semgrep scan --config .github/security/semgrep-rules.yml --error --metrics=off --quiet --exclude tests v8/src edp-pool/src edp-broker/src edp-contracts/src
+
+      - name: pip-audit (v8 from its lock, the other packages resolved)
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p sec
+          uv export --project v8 --frozen --no-hashes --no-emit-project --no-emit-package edp-contracts --all-extras --output-file sec/edp8.txt
+          python3 .github/scripts/security_inputs.py sec
+          for f in sec/*.in; do uv pip compile --quiet --python-version 3.12 "$f" -o "${f%.in}.txt"; done
+          IGN=$(sed -E 's/#.*//' .github/security/pip-audit-ignore.txt | awk 'NF {print "--ignore-vuln " $1}')
+          for f in sec/*.txt; do echo "== $f"; uvx --from pip-audit==2.10.1 pip-audit --strict --no-deps --disable-pip -r "$f" $IGN; done
 
   install-smoke:
     uses: ./.github/workflows/install.yml

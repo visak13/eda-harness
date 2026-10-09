@@ -248,6 +248,8 @@ export function stopAnswering(): void {
 
 /** The active participant id/handle (`as`). */
 export const identity = (): string => AS;
+/** Whether this tab holds a token at all (a first visit sends none, so nothing was "rejected"). */
+export const hasToken = (): boolean => Boolean(tok());
 
 /** Headers every board request carries; X-Token only when a token is held. */
 export function authHeaders(): Record<string, string> {

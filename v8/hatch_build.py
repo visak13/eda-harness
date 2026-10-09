@@ -8,6 +8,10 @@ bundle older than the SPA sources would ship stale UI silently (adversary findin
 - an editable install (`uv sync`, `pip install -e`) ships no bundle: the checkout serves dist from source, so
   the check is skipped and dist leaves the editable force-include (CI run 36324602694: `uv sync` on a runner
   with no web/node_modules died on `vite: not found`, then on "Forced include not found: …/webapp/dist").
+
+The wheel also carries the EDP Chat extension (vscode-ext/edp-code/edp-code.vsix, gitignored), so an installed
+`heronry start code` installs and updates it like a checkout does. Built by `npm --prefix vscode-ext/edp-code run
+package`; a wheel without it warns, and EDP8_REQUIRE_VSIX=1 (the release builds) makes that an error.
 """
 from __future__ import annotations
 
@@ -43,6 +47,7 @@ class WebBundleFreshness(BuildHookInterface):
                 src: dst for src, dst in self.build_config.get_force_include().items() if os.path.normpath(src) != dist}
             return
         root = Path(self.root)
+        self._include_vsix(root, build_data)
         web = root / "web"
         dist_index = root / "src" / "edp8" / "webapp" / "dist" / "index.html"
         if not (web / "src").is_dir():
@@ -64,3 +69,13 @@ class WebBundleFreshness(BuildHookInterface):
         subprocess.run([npm, "--prefix", str(web), "run", "build"], check=True, env=env)
         if not dist_index.exists():
             raise RuntimeError("edp8 wheel: npm run build did not produce dist/index.html")
+
+    def _include_vsix(self, root: Path, build_data: dict) -> None:
+        vsix = root / "vscode-ext" / "edp-code" / "edp-code.vsix"
+        if vsix.is_file():
+            build_data["force_include"][str(vsix)] = "edp8/vscode_ext/edp-code/edp-code.vsix"
+            return
+        if os.environ.get("EDP8_REQUIRE_VSIX") == "1":
+            raise RuntimeError(f"edp8 wheel: the EDP Chat extension is missing ({vsix}). Run "
+                               "`npm --prefix vscode-ext/edp-code ci && npm --prefix vscode-ext/edp-code run package`.")
+        self.app.display_warning(f"edp8: no {vsix.name}; this wheel's `heronry start code` will not install EDP Chat")

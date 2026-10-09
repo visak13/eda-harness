@@ -275,12 +275,30 @@ def test_topic_is_its_own_record_listed_in_the_library(client, board):
     assert [r["id"] for r in rows] == [t["id"]] and rows[0]["status"] == "open"
     page = client.get(f"/v1/topics/{t['id']}", headers=OWNER).json()["value"]
     assert page["seed_url"] == "https://docs.pytest.org/en/stable/"
+    assert "docs.pytest.org" in page["allowlist"] and "skills.sh" in page["allowlist"]  # S16: the panel's allowlist
     assert page["tags_set_by"]["by"] == "owner" and page["topic"]["tags"] == ["python", "testing"]
     assert t["id"] not in [e["id"] for e in client.get("/v1/tickets?kind=epic", headers=OWNER).json()["value"]]
     # only the owner opens one; a topic never moves through the delivery walk
     assert client.post("/v1/topics", json={"title": "x"}, headers={"X-Participant": "eng"}).status_code in (400, 403)
     r = client.patch(f"/v1/tickets/{t['id']}", json={"status": "in_review"}, headers=OWNER).json()
     assert not r["ok"] and "closed by the owner" in r["error"]["message"] + r["hint"]
+
+
+def test_the_ticket_page_routes_serve_a_topic_to_the_owner_and_never_to_an_expert(client, tokens):
+    """S16 c-320d037cb8: the owner's TopicPage reads the ticket page, contextual and gates of the topic; an expert
+    stays on /v1/topics/{id}* and its allowlist rides that route."""
+    t = _topic(client, "Python testing", seed_url="https://docs.pytest.org/en/stable/")["topic"]
+    crit = client.post("/v1/criteria", json={"ticket_id": t["id"], "text": "notes cover fixtures", "check": "look",
+                                              "checked_by": "owner", "override_reason": "a topic has no architect"}, headers=OWNER).json()
+    assert crit["ok"], crit
+    page = client.get(f"/v1/tickets/{t['id']}/page", headers=OWNER).json()
+    assert page["ok"] and page["value"]["ticket"]["kind"] == "topic" and page["value"]["epic_id"] == t["id"]
+    assert [c["text"] for c in page["value"]["criteria"]] == ["notes cover fixtures"]
+    assert client.get(f"/v1/tickets/{t['id']}/contextual", headers=OWNER).json()["ok"]
+    assert client.get(f"/v1/gates/{t['id']}", headers=OWNER).json()["ok"]
+    _, dana = _expert(client, t["id"])
+    assert client.get(f"/v1/tickets/{t['id']}/page", headers=dana).status_code in (401, 403, 404)
+    assert "docs.pytest.org" in client.get(f"/v1/topics/{t['id']}", headers=dana).json()["value"]["allowlist"]
 
 
 def test_seat_spawned_through_the_pairing_queue(client, board, pool, tokens):
@@ -649,9 +667,10 @@ def test_open_sme_model_and_effort_ride_the_seat_spawn_not_the_tags(tokens, repo
     assert c.patch(f"/v1/topics/{tid}/tags", json={"tags": ["pytest"]}, headers=OWNER).json()["ok"]
     assert board.run_pending_pairings()["spawned"] == [f"sme.{tid}"]
     assert pool.choices[-1] == (f"sme.{tid}", "gpt-6-sol", "high")
-    # a Claude sme asked for high runs at medium (fleet cap); no choice = the catalog default
+    # a Claude sme asked for high runs at high (c36da88a: Claude rows ship effort_cap high); no choice = the
+    # catalog default
     claude = _topic(c, title="Claude topic", model="claude-opus-5-5", effort="high")
-    assert claude["seat"]["model"] == "claude-opus-5-5" and claude["seat"]["effort"] == "medium"
+    assert claude["seat"]["model"] == "claude-opus-5-5" and claude["seat"]["effort"] == "high"
     plain = _topic(c, title="Default topic")
     assert plain["seat"]["model"] == "claude-opus-5-5"
 

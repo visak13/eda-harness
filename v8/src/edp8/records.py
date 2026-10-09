@@ -2,8 +2,8 @@
 a seat gets without asking and the board writes without being asked.
 
 Read — `recall(store, ticket_id)`: the ticket's recall section, built from knowledge.wired_lookup with
-no semantic index (FTS + the knowledge graph only), capped to RECALL_MAX one-line items. context() and
-assemble_ruleset append it; a seat never calls anything for it.
+no semantic index (FTS + the knowledge graph only), capped to RECALL_MAX one-line items. context()
+appends it; a seat never calls anything for it.
 
 Record — the board writes records itself, deterministically, on events (Board calls these hooks):
   criterion verdict with a note  → claim     (basis ruled for an owner judgment, measured otherwise)
@@ -95,6 +95,37 @@ def recall(store: Any, ticket_id: str, *, question: str | None = None) -> dict[s
     return {"items": items,
             "receipt": {"question": one_line(q, 80), "returned": len(items), "cut": cut, "cap": RECALL_MAX,
                         "more": "lookup(scope=<ticket>, question=…) for the full pack" if cut else ""}}
+
+
+DESIGN_NUDGE_MAX = 5  # lessons named in the doc_create(design) hint
+
+
+def uncited_lessons(store: Any, scope: str, body_md: str) -> list[dict[str, str]]:
+    """Lessons the epic's own words recall (scope-filtered, FTS + graph, no model) that a design doc does
+    not cite by id: `[{id, text}]`, at most DESIGN_NUDGE_MAX. Advisory — doc_create(design) names them in
+    its hint so the architect reads or cites them; nothing is refused."""
+    epic = _epic(store, scope)
+    t = store.get("ticket", epic)
+    if t is None:
+        return []
+    question = one_line(f"{t.title} {t.words or ''}", 400)
+    got = knowledge.wired_lookup(store, None, epic, question=question)
+    body = body_md or ""
+    out: list[dict[str, str]] = []
+    for r in got.get("records", []):
+        if r.get("type") == "lesson" and r["id"] not in body and all(o["id"] != r["id"] for o in out):
+            out.append({"id": r["id"], "text": one_line(r.get("text", ""), RECALL_TEXT)})
+    return out[:DESIGN_NUDGE_MAX]
+
+
+def design_nudge(store: Any, scope: str, body_md: str) -> str:
+    """The hint sentence for uncited lessons, "" when there are none."""
+    got = safely(uncited_lessons, store, scope, body_md) or []
+    if not got:
+        return ""
+    lines = "; ".join(f"{x['id']} — {x['text']}" for x in got)
+    return (f"{len(got)} recalled lesson(s) this design does not cite: {lines}. Read them with "
+            "lookup(scope=<epic>, id=<lesson id>) and cite each id or say why it does not apply (advisory)")
 
 
 # ----------------------------------------------------------------------------- record: shared guards
@@ -193,63 +224,50 @@ def pain_file() -> Path:
     return settings.get("EDP8_PAIN_FILE")
 
 
-def read_pains(path: Path) -> list[dict[str, Any]]:
-    """Open, first-hand pain records (latest resolution per id wins; dup_of records fold into theirs)."""
-    records: list[dict[str, Any]] = []
-    resolved: dict[str, str] = {}
-    for raw in path.read_text(encoding="utf-8-sig").splitlines():
-        raw = raw.strip().lstrip("﻿")
-        if not raw:
-            continue
-        try:
-            d = json.loads(raw)
-        except ValueError:
-            continue
-        if not isinstance(d, dict):
-            continue
-        if d.get("resolves"):
-            resolved[str(d.get("id"))] = str(d.get("status") or "")
-        elif d.get("id") and d.get("symptom") and not d.get("dup_of"):
-            records.append(d)
-    return [d for d in records if resolved.get(d["id"], "open") == "open"]
-
-
-_pain_seen: dict[str, float] = {}  # pain file path → mtime already ingested (per board process)
+_pain_seen: dict[str, Any] = {}  # (store id, pain-table stamp, jsonl mtimes) already turned into lessons
 
 
 def lessons_from_pains(board: Any, path: Path | None = None) -> list[Any]:
-    """pain filed → lesson: one lesson per open pain (domain=area, topic=symptom head, evidence=[pain
-    id]), skipped when a lesson already names that pain or carries the same text. Re-reads the file
-    only when its mtime moved. Lessons are cross-epic, so the cap is global: auto_cap() pain lessons."""
-    p = path or pain_file()
-    try:
-        mtime = p.stat().st_mtime
-    except OSError:
+    """pain filed → lesson: one lesson per open pain of the board's pain store (domain=area, topic=symptom
+    head, evidence=[pain id]), skipped when a lesson already names that pain or carries the same text. The
+    jsonl stores are imported first (edp8.pains.sync; `path` names one file to import instead of the usual
+    two). Re-reads only when the pain table or a store moved. Lessons are cross-epic, so the cap is global:
+    auto_cap() pain lessons."""
+    from . import pains
+    if path is not None:
+        label = "file"
+        pains.import_files(board, [(label, Path(path))])
+        stamp_files: tuple[Any, ...] = (str(path), path.stat().st_mtime if Path(path).exists() else 0.0)
+    else:
+        pains.sync(board)
+        stamp_files = tuple(p.stat().st_mtime if p.exists() else 0.0 for _, p in pains.import_sources())
+    key = f"{pains.store_token(board.store)}|{path}"
+    stamp = (board.store.stamp("pain"), stamp_files)
+    if _pain_seen.get(key) == stamp:
         return []
-    if _pain_seen.get(str(p)) == mtime:
-        return []
-    _pain_seen[str(p)] = mtime
+    _pain_seen[key] = stamp
     lessons = board.store.query("lesson", {}, limit=-1)
     known = {e for le in lessons for e in (le.evidence or [])}
     texts = {norm(le.text) for le in lessons if le.status == LessonStatus.live}
     auto = sum(1 for le in lessons if le.created_by == AUTHOR)
     out = []
-    for d in read_pains(p):
-        if d["id"] in known:
+    for d in pains.open_pains(board.store):
+        if d.id in known:
             continue
-        text = one_line(d["symptom"], 400)
-        if d.get("expected"):
-            text = one_line(f"{text} — expected: {d['expected']}", 600)
+        text = one_line(d.symptom, 400)
+        if d.expected:
+            text = one_line(f"{text} — expected: {d.expected}", 600)
         if norm(text) in texts:
             continue
         if auto >= auto_cap():
-            _log.info("pain lessons at the cap (%d); %s not recorded", auto_cap(), d["id"])
+            _log.info("pain lessons at the cap (%d); %s not recorded", auto_cap(), d.id)
             break
-        le = board.record_lesson(board_actor(), domain=str(d.get("area") or "other"),
-                                 topic=one_line(d["symptom"], 60), text=text, evidence=[d["id"]])
+        le = board.record_lesson(board_actor(), domain=d.area or "other",
+                                 topic=one_line(d.symptom, 60), text=text, evidence=[d.id],
+                                 scope_kind="framework")  # a pain is about Heronry itself, never a project
         out.append(le)
         texts.add(norm(text))
-        known.add(d["id"])  # S-ADV finding 8: the same pain id twice in one file makes one lesson
+        known.add(d.id)  # S-ADV finding 8: the same pain id twice makes one lesson
         auto += 1
     return out
 

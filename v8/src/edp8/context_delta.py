@@ -14,7 +14,8 @@ import json
 import secrets
 import time
 
-from . import settings
+from . import epic_work
+from . import guest_scope, settings
 from .board import BoardError
 from .quotes import with_quotes
 from .schemas import code_row
@@ -92,6 +93,18 @@ class ContextReader:
         rows = self.board.inbox(actor)
         return hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest()
 
+    def _digests(self, actor):
+        """S4: {epic: 8-char hash of its per-story digests} for an architect/qa seat; others carry none."""
+        if actor.role.value not in ('architect', 'qa'):
+            return {}
+        out = {}
+        for eid in sorted(self.board.my_epics(actor)):
+            ep = self.board.store.get('ticket', eid)
+            if ep is None or ep.status.value in ('done', 'partial', 'dropped'):
+                continue
+            out[eid] = self._digest(epic_work.epic_digests(self.board, eid))[:8]
+        return out
+
     @staticmethod
     def _digest(value):
         return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
@@ -112,6 +125,7 @@ class ContextReader:
         return self._encode({'v': 1, 'at': time.time(), 'p': self._digest(actor.id), 'role': actor.role.value,
                              'scope': self._digest(ticket_id), 'roots': self._digest(roots),
                              'metadata': self._metadata(roots), 'asks': self._asks(actor),
+                             'digests': self._digests(actor),
                              'seq': self.board.store.max_seq(), 'through': None,
                              'anchor': latest[0].id if latest else None})
 
@@ -148,6 +162,12 @@ class ContextReader:
             self._fail('event retention boundary passed')
         through = state['through'] if state['through'] is not None else high
         refs = self._references(roots)
+        # e0cec S5 (review m-33154269a9 #1): a guest's refs and rows are its closure only. ticket_view names
+        # cross-epic link/blocker ends, and change rows carry no id the JSON redactor recognises, so every
+        # event is checked against the scope here, fail-closed on an event whose object is unknown.
+        scope = guest_scope.scope_for(self.board, actor)
+        if scope is not None:
+            refs = {r for r in refs if scope.has(r)}
         changes = []
         cut = None
         consumed = state['seq']
@@ -164,6 +184,8 @@ class ContextReader:
             if seq > through:
                 break
             relevant = event.subject_id in refs or self.board.relevant(event, actor)
+            if relevant and scope is not None and not guest_scope.event_visible(scope, event):
+                relevant = False
             if relevant:
                 change = self._change(seq, event)
                 cost = len(json.dumps(change).encode()) + 2
@@ -200,10 +222,14 @@ class ContextReader:
         asks_changed = asks != state['asks']
         metadata = self._metadata(roots)
         metadata_changed = metadata != state['metadata']
+        digests = self._digests(actor)
+        old_digests = state.get('digests', digests)
+        digest_epics = sorted(e for e in digests if digests[e] != old_digests.get(e))
         next_state = {**state, 'seq': consumed, 'anchor': anchor, 'through': through if more else None,
                       'metadata': metadata if not more else state['metadata'],
-                      'asks': asks if not more else state['asks']}
-        result = {'changed': bool(changes) or asks_changed or metadata_changed,
+                      'asks': asks if not more else state['asks'],
+                      'digests': digests if not more else old_digests}
+        result = {'changed': bool(changes) or asks_changed or metadata_changed or bool(digest_epics),
                   'next_cursor': self._encode(next_state), 'has_more': more}
         if metadata_changed:
             result['orientation_changed'] = {'read_ref': {'tool': 'context'},
@@ -216,6 +242,9 @@ class ContextReader:
             result['omitted'] = {'why': why, 'continue': 'context_delta(cursor=next_cursor)'}
         if asks_changed:
             result['asks_changed'] = {'read_ref': {'tool': 'inbox'}, 'action': 'read new/resolved/reopened asks'}
+        if digest_epics and not more:
+            result['digests_changed'] = [{'epic': e, 'read_ref': {'tool': 'requirements', 'epic': e},
+                                          'digests': epic_work.epic_digests(self.board, e)} for e in digest_epics]
         return result
 
     def _change(self, seq, event):
@@ -231,6 +260,11 @@ class ContextReader:
                        text=message.text[:TEXT_HEAD], truncated=len(message.text) > TEXT_HEAD,
                        **code_row(message))  # S4: the anchor, snippet capped
             return with_quotes(row, message, capped=True)  # C18: cited passages above the text
+        req = b.store.get('requirement', event.subject_id) if kind.startswith('requirement_') else None
+        if req is not None:
+            row.update(object_type='requirement', read_ref={'tool': 'requirements', 'epic': req.epic_id},
+                       state=req.state.value, text=req.text[:TEXT_HEAD])
+            return row
         for typ, tool, arg in [('ticket', 'ticket_read', 'ticket_id'), ('doc', 'doc_read', 'id'),
                                ('criterion', 'criterion_query', 'ticket_id'), ('artifact', 'artifact_read', 'id')]:
             obj = b.store.get(typ, event.subject_id)

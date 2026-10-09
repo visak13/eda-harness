@@ -98,7 +98,7 @@ def test_server_env_strips_every_edp_variable_and_the_password_bearing_ones():
 
 def test_install_hint_per_os_names_the_official_route():
     from edp8.code_service import install_hint
-    assert "npm install -g code-server" in install_hint("win32")
+    assert "npm" not in install_hint("win32").lower() and "code_server.path" in install_hint("win32")
     assert "brew install code-server" in install_hint("darwin")
     assert "code-server.dev/install.sh" in install_hint("linux")
 
@@ -115,6 +115,7 @@ def test_not_installed_reports_the_install_hint(home, monkeypatch, tmp_path):
     empty = tmp_path / "empty-path"
     empty.mkdir()
     monkeypatch.setenv("PATH", str(empty))
+    monkeypatch.setattr(code_service, "pinned_download", lambda: None)  # a host with no pinned download (not Windows x64)
     st = code_service.status()
     assert st["state"] == "not_installed" and st["installed"] is False
     assert st["install_hint"] == code_service.install_hint()

@@ -47,7 +47,7 @@ describe("chat panes are framed (t-6129a95a3d)", () => {
       topic: { id: "topic-1", title: "T", tags: [], status: "open", created_at: "2026-09-24T10:00:00Z", created_by: "owner",
         seat: { participant: "sme.topic-1", state: "live" }, docs: 0, experts: 0, messages: 1, description: "" },
       seed_url: null, tags_set_by: null, docs: [], experts: [], seat: { participant: "sme.topic-1", state: "live" }, fetches: [],
-      viewer: { id: "owner", role: "owner" },
+      viewer: { id: "priya", role: "expert" },
       thread: [{ id: "m-1", created_at: "2026-09-24T10:06:00Z", created_by: "owner", to: null, kind: "question", text: "q",
         reply_to: null, from: { id: "owner", role: "owner", type: "human" } }],
     } as unknown as TopicPageData;

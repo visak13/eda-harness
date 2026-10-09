@@ -46,6 +46,7 @@ def app_update(monkeypatch):
     monkeypatch.setattr(updater, "download", lambda rel: {})
     monkeypatch.setattr(updater, "secure_previous", lambda version, url=None: {"edp8": Path("prev.whl")})
     monkeypatch.setattr(launcher, "running", lambda svc: True)
+    monkeypatch.setattr(launcher, "owner", lambda svc: ("ours", {}))
     calls: list[str] = []
     monkeypatch.setattr(updater, "backup_db", lambda db, v: calls.append("backup") or Path("b.db"))
 
@@ -53,6 +54,8 @@ def app_update(monkeypatch):
         calls.append("stop")
         raise ReachedStop()
     monkeypatch.setattr(updater, "_stop_all", stop)
+    from edp8 import update_helper
+    monkeypatch.setattr(update_helper, "_park", lambda plan: calls.append("park") or ["engineer.x"])
     return calls
 
 
@@ -73,11 +76,13 @@ def test_unknown_live_seats_with_force_proceeds(app_update, monkeypatch):
     assert app_update[-1] == "stop"
 
 
-def test_live_seats_refuse_and_none_live_proceeds(app_update, monkeypatch):
-    monkeypatch.setattr(launcher, "live_seats", lambda: ["engineer.x (pid 7)"])
-    with pytest.raises(updater.UpdateError, match=r"1 seat\(s\) are live \(engineer.x"):
+def test_live_seats_are_parked_before_the_stop_not_refused(app_update, monkeypatch):
+    # S10 #7: a live seat is parked and resumed by the update; only a pool that cannot answer refuses
+    monkeypatch.setattr(launcher, "live_seats", lambda: ["engineer.x (pid 7, active)"])
+    with pytest.raises(ReachedStop):
         updater.apply({})
-    assert app_update == []
+    assert app_update[-2:] == ["park", "stop"]
+    app_update.clear()
     monkeypatch.setattr(launcher, "live_seats", lambda: [])
     with pytest.raises(ReachedStop):
         updater.apply({})

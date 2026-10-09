@@ -49,8 +49,11 @@ def contextual_work(board: Board, ticket_id: str, category: HistoryCategory = "a
     asks = []
     if ticket.status != TicketStatus.dropped and board.epic_of(ticket).status not in {TicketStatus.done, TicketStatus.partial, TicketStatus.dropped}:
         for message in board.store.query("message", {"ticket_id": ticket_id, "kind": [MessageKind.question, MessageKind.steer]}, limit=100000):
-            if message.to and not board.ask_resolved(message):  # closed-seat asks and addressee replies resolve (c-8f893cc2e8)
+            # owner-only (e0cec S3, R3): an ask a live seat can answer is that seat's to answer, never the owner's
+            if (message.to and board.ask_waits_on_owner(message)
+                    and not board.ask_resolved(message)):  # closed-seat asks and addressee replies resolve (c-8f893cc2e8)
                 asks.append({"id": message.id, "kind": message.kind.value, "to": message.to,
+                             "why": "Addressed to you; work does not wait on it, the seat carries on with its recommendation",
                              # S-UI: the header badge lists them oldest first and jumps to each
                              "by": message.created_by, "at": message.created_at.isoformat(),
                              "text": message.text[:160]})

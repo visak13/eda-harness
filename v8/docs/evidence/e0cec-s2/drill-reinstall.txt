@@ -1,0 +1,23 @@
+﻿   fleet before: board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+PASS  pre-check: every record in C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\.run names a private (or dead) pid
+   ports board=58703 pool=58707 mcp=58706 broker=58708; home C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home
+== 05:41:36 reinstall the rebuilt 0.9.1 over {66EE4CF2-7A4D-4633-B56F-FCFCBB9762ED}=0.9.1
+   private pids: 3900:heronry.exe 11020:heronry.exe 22372:heronry.exe 20212:heronry.exe 26604:heronry.exe 21308:OpenConsole.exe 26608:cmd.exe 35092:python.exe 33996:python.exe
+   private pids left: 0
+   msiexec exit 0; installed {FD382D81-51CD-4D23-A249-5FB643FE861A}=0.9.1
+PASS  rebuilt 0.9.1 installed
+   board      started          pid 33768  http://127.0.0.1:58703
+   broker     started          pid 34304  http://127.0.0.1:58708
+   pool       started          pid 34316  http://127.0.0.1:58707
+   mcp        started          pid 32940  http://127.0.0.1:58706
+   bridge     skipped          (no slack map configured)
+   supervisor started          pid 5524
+   setup      first run: finish setup at http://127.0.0.1:58703/ui/setup?code=<redacted>  (the link signs you in once, within 24 h)
+   spawned stub seat engineer.s2-drill : {"session_id":"engineer:848bff08-3035-462b-8ea3-6327065c3f91"}
+   health 0.9.1; seat engineer.s2-drill row active pid 22688 liveness alive
+PASS  board healthy (0.9.1)
+PASS  the stub seat is live
+   fleet after:  board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+PASS  fleet pids unchanged
+elapsed 154s
+RESULT: all checks passed

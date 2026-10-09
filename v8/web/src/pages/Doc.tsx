@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { getTicket } from "../api/endpoints";
 import { Link, useSearchParams } from "react-router";
 import { useRouteId } from "../routeId";
 import type { DocHtml } from "../api/types";
-import { DocView } from "../components/DocView";
+import { DocView, stripScopeId } from "../components/DocView";
 import styles from "./Doc.module.css";
 import { Icon } from "../components/Icon";
 
@@ -25,12 +27,15 @@ export function DocPage(): React.JSX.Element {
   // S19 D11: opened from a review ("Open in tab"), the review header's crumb is the way back to the
   // source conversation (by its title) — no second crumb with the raw scope id.
   const source = params.get("source");
+  // the way back is named by the scope's title, as the breadcrumbs do, not by its id (qa m-b25e693093)
+  const scopeIsTicket = Boolean(doc && !doc.scope.includes(":") && doc.scope !== "global");
+  const scopeTitle = useQuery({ queryKey: ["ticket", doc?.scope], queryFn: () => getTicket(doc!.scope), enabled: scopeIsTicket, retry: false }).data?.title;
 
   return (
     <div className={styles.page}>
       {source ? null : <nav className={styles.crumb} aria-label="Breadcrumb">
         {doc ? (
-          <Link to={`/epic/${encodeURIComponent(doc.scope)}`}><Icon name="back" /> {doc.scope}</Link>
+          <Link to={`/${doc.scope.startsWith("epic-") ? "epic" : "ticket"}/${encodeURIComponent(doc.scope)}`}><Icon name="back" /> {scopeTitle ? stripScopeId(scopeTitle) : scopeIsTicket ? "Back" : doc.scope}</Link>
         ) : (
           <Link to="/library/documents"><Icon name="back" /> Library</Link>
         )}

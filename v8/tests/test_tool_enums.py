@@ -137,6 +137,32 @@ def test_third_consecutive_failure_inlines_full_schema():
     assert tool.schema_inline() in r3["hint"]
 
 
+def test_third_failure_hint_keeps_container_types():
+    """astra F1: the inlined schema said `tags (optional: str)` while the advertised one is an array of strings."""
+    tool = ALL_TOOLS["ticket_update"]
+    seat = "engineer.tripwire-F1"
+    bad = {"ticket_id": "t-fake", "tags": "not-an-array"}
+    r3 = [invoke(tool, bad, seat=seat) for _ in range(3)][-1]
+    assert "valid list" in r3["error"]["message"]
+    assert "tags (optional: list[str])" in r3["hint"]
+    assert "edits (optional: list[TextEdit])" in ALL_TOOLS["doc_edit"].schema_inline()  # nested model
+    assert "quotes (optional: list[dict])" in ALL_TOOLS["message_send"].schema_inline()
+
+
+def _is_array(prop: dict) -> bool:
+    return prop.get("type") == "array" or any(o.get("type") == "array" for o in prop.get("anyOf", []))
+
+
+@pytest.mark.parametrize("name", sorted(ALL_TOOLS))
+def test_inline_schema_names_a_list_wherever_the_advertised_schema_has_an_array(name: str):
+    tool = ALL_TOOLS[name]
+    props = tool.input_schema.get("properties", {})
+    inline = tool.schema_inline()
+    for field, prop in props.items():
+        if _is_array(prop) and field not in enum_fields(tool.args_model):
+            assert f"{field} (required: list[" in inline or f"{field} (optional: list[" in inline, (field, inline)
+
+
 def test_tripwire_is_per_seat_and_per_tool():
     tool = ALL_TOOLS["ticket_update"]
     other = ALL_TOOLS["criterion_update"]
@@ -149,3 +175,38 @@ def test_tripwire_is_per_seat_and_per_tool():
     # a different tool for the same seat starts fresh
     r_other_tool = invoke(other, {"id": "c", "verdict": "nope"}, seat="seatX")
     assert "full schema" not in r_other_tool["hint"]
+
+
+# ---------------------------------------------------------------- astra F2: no advertised value every handler refuses
+
+def test_spawn_never_advertises_a_guest_seat():
+    roles = enum_fields(ALL_TOOLS["spawn"].args_model)["role"]
+    assert "guest" not in roles and {"owner", "expert"}.isdisjoint(roles)
+    assert {"architect", "engineer", "qa", "adversary", "sme", "doctor"} <= set(roles)
+    resp = invoke(ALL_TOOLS["spawn"], {**_valid_kwargs(ALL_TOOLS["spawn"]), "role": "guest"}, seat="seat-F2-spawn")
+    assert resp["ok"] is False and resp["error"]["code"] == "schema" and "guest" not in resp["error"]["allowed"]
+
+
+def test_topic_propose_advertises_only_the_knowledge_doc_types_a_topic_accepts():
+    from edp8.schemas import KNOWLEDGE_DOC_TYPES
+    assert enum_fields(ALL_TOOLS["topic_propose"].args_model)["doc_type"] == list(KNOWLEDGE_DOC_TYPES)
+    assert ALL_TOOLS["topic_propose"].input_schema["properties"]["doc_type"]["default"] == "strategy_hl"
+
+
+# ---------------------------------------------------------------- astra F3: describe's call examples use real arguments
+
+def test_every_describe_call_example_names_arguments_the_tool_accepts():
+    import re
+    from edp8.schemas import DESCRIBE
+    seen, bad = 0, []
+    for obj, text in DESCRIBE.items():
+        for tool, args in re.findall(r"\b([a-z][a-z_]*)\(([^()]*)\)", text):
+            if tool not in ALL_TOOLS or not args.strip():
+                continue
+            fields = set(ALL_TOOLS[tool].args_model.model_fields)
+            for arg in re.findall(r"(?:^|,)\s*([a-z_]+)\s*(?==|,|$)", args):
+                seen += 1
+                if arg not in fields:
+                    bad.append(f"describe({obj}): {tool}({arg}) — {tool} accepts {sorted(fields)}")
+    assert seen and not bad, bad
+    assert DESCRIBE["ask"].startswith("RETIRED") and "requirement" in DESCRIBE["ask"]

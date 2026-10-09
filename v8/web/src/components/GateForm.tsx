@@ -1,4 +1,5 @@
-import { useEffect, useReducer, useRef, useState } from "react";
+import { hideFromGuests } from "../auth/guest";
+import { useReducer, useRef, useState } from "react";
 import { Link } from "react-router";
 import { identity } from "../auth/identity";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -7,7 +8,6 @@ import { answerGate } from "../api/endpoints";
 import { useDirtyGuard } from "../live/useDraftGuard";
 import { Term } from "./Term";
 import { label as glossLabel, meaning as glossMeaning } from "../copy/glossary";
-import { attentionMark } from "./AttentionDot";
 import styles from "./GateForm.module.css";
 
 // One open gate the owner can answer (design §5, folded S7). The gate kind is FIXED (it is the
@@ -56,7 +56,7 @@ export function gateQuestion(g: Pick<GateRow, "gate" | "note" | "ticket_id">): s
   return `${glossLabel("gate", g.gate)} on ${g.ticket_id}: ${glossMeaning("gate", g.gate)} Answer it here.`;
 }
 
-export function GateForm(props: GateFormProps): React.JSX.Element {
+function GateFormView(props: GateFormProps): React.JSX.Element {
   const { gate } = props;
   if (gate.gate === "design_signoff") return <section className={styles.gate} data-testid="gate-form" aria-label="Gate design_signoff">
     <h3>Design review · {gate.ticket_id}</h3>
@@ -143,22 +143,14 @@ function AcceptanceGateForm({ gate, onAnswered, closed, onDismiss }: GateFormPro
   );
 }
 
-/** S20 (design-e963c656f5 §4.18): the Actions drawer's decisions, each the end of an attention trail when its gate event
- *  waits on the viewer — that form carries the mark, its event id as DOM id, and scrolls into view on open. */
-export function GateForms({ gates, waiting }: { gates: RetainedGate[]; waiting: Set<string> }): React.JSX.Element {
-  const first = gates.find(({ gate: g }) => g.event_id && waiting.has(g.event_id))?.gate.event_id ?? null;
-  const scrolled = useRef<string | null>(null);
-  useEffect(() => {
-    const el = first && scrolled.current !== first ? document.getElementById(first) : null;
-    if (!el) return;
-    scrolled.current = first;
-    if (typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "center" }); // jsdom has none
-  }, [first]);
-  return <>{gates.map(({ gate: g, closed, onDismiss }) => {
-    const hit = Boolean(g.event_id && waiting.has(g.event_id));
-    return <div key={`${g.ticket_id}:${g.gate}`} id={g.event_id} className={hit ? attentionMark : undefined}
-      data-attention={hit ? "true" : undefined}>
+/** The Actions drawer's open decisions, each with its event id as DOM id. */
+export function GateForms({ gates }: { gates: RetainedGate[] }): React.JSX.Element {
+  return <>{gates.map(({ gate: g, closed, onDismiss }) => (
+    <div key={`${g.ticket_id}:${g.gate}`} id={g.event_id}>
       <GateForm gate={g} closed={closed} onDismiss={onDismiss} />
-    </div>;
-  })}</>;
+    </div>
+  ))}</>;
 }
+
+/** e0cec S5: a guest never sees this control (the board refuses it). */
+export const GateForm = hideFromGuests(GateFormView);

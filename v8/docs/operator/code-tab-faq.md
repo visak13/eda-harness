@@ -1,0 +1,220 @@
+# Code tab FAQ
+
+The Code tab (`/ui/code`) is a full VS Code (code-server 4.138, native Windows) running on the board
+host as the `code` service on `127.0.0.1:9410`, embedded in the board. This page answers what it is
+safe to do there. It grows over time (design-449b628cdd §4).
+
+## Starting it and where it works
+
+- **Start / stop:** `heronry start code` and `heronry stop code` (`heronry restart code`), on any OS.
+  An admin can also press **Start** in the tab when it is down, use Admin → Services → code-server,
+  or the tray's **Start code server** / **Stop code server**. It is optional: `heronry start` leaves
+  it alone unless `code_server.autostart` is on, and then starts it last. `heronry status` shows why
+  code is down. If the tab says the code server is not running, start it and press Retry.
+- **Nothing to install on Windows (x64).** The first `heronry start code` (or **Start** in the tab)
+  downloads the pinned standalone code-server release (`vscode-ext/code-server.lock.json`, about
+  207 MB, with its own Node), checks its sha256 before unpacking anything, and keeps it under
+  `<data>/code/server/<version>`. Node, npm and Python do not have to be on PATH, and a failed hash
+  unpacks nothing. It never fetches "latest": a new version is a lock edit.
+- **macOS and Linux** print the code-server install command for your OS (`brew install code-server`
+  or the code-server install script). A checkout uses its pinned build; `code_server.path` names any
+  other code-server (an unpacked release folder, or its entry point) on any OS.
+- **Board host only.** code-server listens on loopback behind the guard, with a password that is new
+  on every start (a terminal is a shell on the host), so the tab works only in a browser on the board host. A browser on another machine sees
+  "Code runs on the board host only" and nothing is exposed.
+- **The owner only.** A guard on :9410 relays only for a browser holding its sign-in cookie. The tab
+  gets that cookie through a one-time, 60-second sign-in the board issues to its human owner alone,
+  and the cookie lasts until the code service restarts or the browser closes. Agent seats and other callers get 401 from
+  :9410 and "The board did not open a code session" in the tab. After `heronry restart code`,
+  reload the tab to sign in again. A bare `http://127.0.0.1:9410/` bookmark answers 401 until the
+  tab has signed that browser in.
+- **Browsers:** Chromium (Chrome, Edge) and stock Firefox. In Firefox, webviews that load local
+  resources (VS Code's Markdown preview) stay blank: upstream bug coder/code-server#7913. The EDP Chat
+  panel and the EDP doc reader inline their bundles, so they work in both. Playwright's automation
+  Firefox build renders no webviews at all, so browser checks use stock Firefox.
+- **Deep links:** `/ui/code?folder=<abs>&file=<rel>&line=<n>` or `line=<n>-<m>` opens a folder and
+  puts the cursor on line `n` (code-server reveals the start line; the range is shown in the header).
+  The "Open in Code" button on a code card uses this.
+- **Open in new window** in the header opens the same editor in its own browser tab, with more room
+  and native keyboard shortcuts such as Ctrl-W.
+
+## The shared tree and live seats
+
+The `v8` folder the tab opens by default is the **shared tree**: every agent seat on this host edits
+the same working copy at the same time. Anything you save is visible to them at once, and anything
+they save appears in your editor.
+
+- Edit freely, but expect files to change under you; the editor reloads unmodified files on its own.
+- Do not run `git clean`, `git stash`, `git checkout -- <path>` or `git reset --hard` on the shared
+  tree: they delete or revert other seats' uncommitted work.
+- Commit by path (`git commit -m "…" -- <your files>`), never `git add -A`, so you never sweep a
+  seat's staged hunks into your commit.
+- The EDP extension's status-bar badge shows `<branch> · N seats live` when the open folder is a shared
+  tree; click it to see which seats and tickets are live.
+
+## Git worktree: your own copy
+
+To work without racing the seats, use a **git worktree**: a second checkout of the same repo in its
+own folder, on its own branch.
+
+```powershell
+git worktree add ..\eda-base3-mine -b my-branch
+```
+
+Then open it in the tab: `/ui/code?folder=C:\Work\Learning\eda-base3-mine`. Branch switches,
+merges and resets there touch only your copy. Merge back when ready, and remove the worktree with
+`git worktree remove ..\eda-base3-mine`.
+
+## Why there is no Pylance or C/C++ (cpptools)
+
+code-server installs extensions from **Open VSX**, not the Microsoft Marketplace; Microsoft's terms
+limit the Marketplace and its closed extensions to Microsoft's own products. So Pylance, cpptools,
+Live Share and the Remote-* extensions are absent by design.
+
+What we use instead (pinned in `v8/vscode-ext/extensions.txt`, installed on service start, never
+auto-updated):
+
+| Missing | Replacement |
+|---|---|
+| Pylance | **basedpyright** (types, hover, go-to-definition into site-packages, rename) with ms-python.python |
+| cpptools | **clangd** (needs a `compile_commands.json` for the project) |
+| Live Share | the board: tag a selection to a person or seat (below) |
+
+Other pinned extensions: ESLint, GitLens (commit and ticket links in blame hovers), Playwright Test,
+PowerShell. Adding one is a commit to `extensions.txt` with its exact version.
+
+## How tagging works
+
+Select code, then right-click **EDP: Tag selection on board…** (or `Ctrl+Alt+M`). Where the tag goes
+depends on the EDP Chat panel (edp-code 0.13 and later):
+
+- **The chat panel has been opened in this window and a thread is open:** the panel is revealed and the
+  lines become a **code chip** above its composer (path, lines, commit). Type your text and press
+  `Ctrl+Enter`: one message with the code anchor. The chip and a Reply target can go in the same message.
+- **The chat panel is open but no thread is picked:** the thread picker opens first, then the chip lands.
+- **The chat panel has never been opened in this window:** the palette chain:
+  1. The first use asks for your board participant id and token. They are kept in the browser's
+     secret storage, not in settings; sign in once per browser profile.
+  2. Pick the **person**: any human or a live agent seat.
+  3. Pick the **ticket**: that person's open tickets first, or any open ticket.
+  4. Type the **note** and pick the kind: question (default), steer, finding or note.
+
+The board message carries a code anchor: repo, path, lines, commit (or none outside git), whether the
+file was dirty, and the snippet. The recipient is woken like any board message; an agent reads the
+anchor in its context. On the ticket page the message shows as a code card with **Open in Code**,
+which reopens those lines here. Tagging never creates tickets.
+
+## Quote + note: collect passages, send one message
+
+A message can carry several **quotes**, each with its own note: lines of code, a passage of a board
+doc (the EDP reader, its markdown source or a version diff) and a passage of a chat message. They go
+to the thread open in the EDP Chat panel, in the order you arrange, and the board checks each one
+against its source when you send.
+
+- **Code, a doc's markdown source or a diff side: the inline comment box.** Select lines and press
+  `Ctrl+Alt+Q` (or right-click **EDP: Comment for chat (quote + note)**). A comment box opens under
+  the lines: type a note (optional) and click **Add to chat** (**Cancel** drops it). The lines keep a
+  small **EDP draft** comment marker until the message is sent; its **×** removes the draft.
+- **The EDP reader:** select a passage and click **❝ Quote in chat** by the selection (or
+  `Ctrl+Alt+Q`, or right-click **EDP: Quote in chat**). Type a note and click **Add to chat** (or
+  `Ctrl+Enter`); `Escape` cancels. The quoted blocks stay marked in the reader until the send.
+- **A chat message:** select part of a message and click **❝ Quote** (or `Ctrl+Alt+Q`), add a note,
+  then **Add to chat** or `Ctrl+Enter`.
+- **The draft tray:** the quotes wait as chips above the chat composer, one per quote, showing the
+  source, the passage and an editable note. **↑**/**↓** reorder them and **×** removes one. While the
+  chat panel is hidden the status bar shows **EDP draft: N → <thread>**; click it to show the chat.
+  The drafts survive a reload of the window. They belong to the board and person signed in: after
+  signing in as someone else you see that person's drafts, never yours.
+- **Mentions, paths and board objects in notes:** every note box (the comment box, the reader and message
+  popovers, the chip notes) completes `@`, `#` and `$` as the composer does (next section).
+- **Send:** press `Ctrl+Enter` in the composer (the text is optional when quotes are attached). The
+  message carries every chip in order, together with any code chip, attachments or Reply target.
+  If the board refuses one quote (its source changed), that chip is marked and nothing is sent;
+  remove it or quote again.
+- **Reading:** each quote shows as a card above the message text, here and on the board's ticket
+  page. The card's source link opens the doc version on those lines, the code range, or the quoted
+  message.
+
+`Ctrl+Alt+Q` acts only while a passage is selected in a code editor, the reader or a chat message,
+never while you are typing in a text field, so on keyboards where `AltGr` types a character with `Q`
+(for example `@` on German layouts) typing is unaffected. The board UI uses the same `Ctrl+Alt+Q`
+to open its Quote popover. `Ctrl+Shift+Q` is not used: it quits Firefox.
+
+## @, # and $ in the composer and in notes
+
+Three pickers, in the chat composer and in every quote note box. **↑**/**↓** move, **Enter** or **Tab**
+picks, **Escape** closes the list and keeps what you typed.
+
+- **`@` people:** board people and live agent seats (each seat shows its role, ticket and title). A picked
+  `@handle` wakes that person or seat when the message is sent. Board UI and VS Code.
+- **`#` files and folders (VS Code only):** paths of the open workspace, honouring `.gitignore`. A picked
+  path goes into the text as a repo-relative path; in messages it becomes a link that opens the file or
+  reveals the folder. The board UI keeps `#` as plain text.
+- **`$` board objects:** tickets (epics, stories, tasks), docs (design, hl and ll strategies, reports) and
+  decisions. `$` at the start of a word followed by a letter opens the list: this epic's tickets, docs and
+  live decisions first, then the board's other open items; each row shows kind, id and title. A pick
+  inserts `$<id> (<title>)`, so agents read the id they act on. In messages and notes a `$<id>` shows as a
+  chip: a ticket or epic opens its board page; a doc opens the EDP reader (VS Code) or the doc drawer
+  (board UI); a decision opens its row in the Decisions tab (VS Code) or the History drawer on
+  Decisions (board UI, which has no decision page). `$5`, `$env:X` and `$` inside code never open the
+  list. Board UI and VS Code.
+
+## No menu, activity bar or status bar? (Zen mode, Reset layout)
+
+The editor lost its File/Edit menu, the activity bar (Explorer, Extensions) and the status bar: it is in
+**Zen mode**. Any one of these brings them back:
+
+- **Reset layout** in the Code tab's top strip: every open editor window leaves Zen and puts its views
+  back where VS Code puts them by default.
+- `Ctrl+K Z` inside the editor (the same key again enters Zen, so press it once).
+- **Heronry: Reset layout** from the command palette (`Ctrl+Shift+P` or `F1`, which work in Zen too).
+
+Zen is what the doc reader's **Full screen** (⛶) uses; while it is on, the reader shows a banner with
+**Exit full screen**. `Ctrl+K` is also the board's Find, but only while the focus is outside the editor:
+inside the editor, `Ctrl+K` then `Z` is VS Code's Zen chord. Since edp-code 0.13.4 a reload always
+leaves Zen (`zenMode.restore` is off), and the menu bar is the classic one in the title bar.
+
+## Known behaviours and limits (edp-code 0.13.4)
+
+- **Dropping files into chat needs `Shift`.** VS Code takes a plain drop itself and opens the file; only
+  a drop with `Shift` held reaches the chat. An extension cannot change this. The paperclip's tooltip
+  says so; the paperclip and pasting a screenshot need no `Shift`.
+- **`Ctrl+Alt+Q` on AltGr keyboards** is designed not to interfere with typing (above) but has not been
+  tried on a physical AltGr keyboard. Report anything odd.
+- **Firefox console warnings.** Firefox logs a few `style-src` Content-Security-Policy warnings when the
+  chat or reader opens. Nothing looks different; the policy is kept strict on purpose.
+- **Console errors from code-server itself are harmless.** Opening the tab can log a ServiceWorker
+  registration error (code-server runs in a cross-origin iframe), 404s for `vsda` assets (not shipped in
+  open-source builds) and a `settings.json` read race while the editor starts. They come from upstream
+  code-server, change nothing you can see, and need no action.
+- **Sign-out and switching person.** Signing out clears the chat, Inbox, Docs, Decisions and any open
+  reader. Signing in as someone else shows only their data and drafts. A refused sign-in (401) does the
+  same.
+- **A tab you may not read.** When the board refuses one tab (403, for example Decisions on an epic you
+  are not a seat on) only that tab says so; the chat, feed and drafts stay.
+- **Connection drops.** If the board stops answering, the chat reconnects on its own and falls back to
+  polling; missed messages are fetched when it recovers. **Load older** reaches any gap.
+- **Using another machine (teammates).** Install `vscode-ext/edp-code/edp-code.vsix` in your own VS Code,
+  set `edp.boardUrl` to `https://msi.tail884b19.ts.net` (you must be on the tailnet), then run
+  **EDP: Sign in to board** with your handle and token. The Code tab itself stays on the board host
+  only (above). Full steps: `docs/operator/tailnet-public-mode.md` §5.
+
+## The built-in git UI is not guarded
+
+The Source Control panel (commit, checkout, pull, merge, discard) is VS Code's own, and VS Code has no
+way for an extension to veto it. It runs your system `git` with your own SSH keys and credentials, at
+your own risk (owner ruling m-558038e702).
+
+- A branch switch, pull or discard in the Source Control panel on the shared tree changes files under
+  every live seat immediately.
+- Prefer the guarded commands: **EDP: Checkout… (guarded)**, **EDP: Merge… (guarded)** and
+  **EDP: Pull (guarded)**. They list the live seats and the dirty paths and ask before running git.
+- Or use a worktree (above) and nothing is shared.
+
+## Terminals
+
+The integrated terminal is Windows PowerShell 5.1 by default (cmd and Git Bash are in the profile
+list). It is a shell on the board host, started without the fleet's `EDP_*`/`EDP8_*` variables, so a
+test run does not inherit the fleet's configuration or tokens through those variables. It still runs
+as your OS user and can access files that user can read. **EDP: Open external terminal here** opens a normal
+console window in the folder instead.

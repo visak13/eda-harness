@@ -5,7 +5,6 @@ import { identity } from "../auth/identity";
 import { useDocDrawer } from "./DocDrawer";
 import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
-import { AttentionDot, attentionMark } from "./AttentionDot";
 import { dispositionOf, fetchArtifactContent, NotUploaded, PREVIEW_TYPES } from "./ArtifactLink";
 import ui from "./ui.module.css";
 import styles from "./ContextualWork.module.css";
@@ -20,7 +19,7 @@ export interface WorkContext {
   design_ref: string | null; scope: string; truncated: boolean;
   blockers?: { id: string; title: string; status: string }[];
   /** Oldest first; by/at/text on a board with S-UI (the header badge lists and jumps to them). */
-  unresolved_asks?: { id: string; kind: string; to: string; by?: string; at?: string; text?: string }[];
+  unresolved_asks?: { id: string; kind: string; to: string; by?: string; at?: string; text?: string; why?: string }[];
   gates: { id: string; data: { gate: string } }[];
   records: { type: string; group: string; relation: string; record: { id: string; title?: string; note?: string; version?: number; scope?: string; filename?: string; form?: string; content_type?: string; has_content?: boolean; uri?: string } }[];
   events: { id: string; created_at: string; created_by: string; kind: string; data: Record<string, unknown> }[];
@@ -92,29 +91,13 @@ function FileCard({ record, relation }: { record: WorkContext["records"][number]
   </li>;
 }
 
-/** Files & evidence: records grouped, with a designed empty state (owner defect: blank pane). S20: `waitingDocs` are
- *  evidence docs whose sign-off waits on the viewer — their row carries the attention dot, and one this ticket's
- *  records do not list gets its own row on top, so the trail never ends in an empty pane. t-77c3a55b75: `asks` maps a
- *  waiting doc to the sign-off's plain-words question, which its row shows so the owner reads what they decide. */
-export function FilesViewer({ ticketId, waitingDocs, asks, onRule }: { ticketId: string; waitingDocs?: Set<string>; asks?: Map<string, string>; onRule?: (docId: string) => void }): React.JSX.Element {
+/** Files & evidence: records grouped, with a designed empty state (owner defect: blank pane). */
+export function FilesViewer({ ticketId }: { ticketId: string }): React.JSX.Element {
   const query = useWorkContext(ticketId);
   const { openDoc } = useDocDrawer();
   if (query.isPending) return <p className={ui.empty}>Loading files…</p>;
   if (query.isError) return <Unavailable what="files" reason={(query.error as Error).message} />;
   const records = query.data.records;
-  const waiting = new Set([...(waitingDocs ?? [])].filter(Boolean));
-  const open = (id: string) => (onRule && waiting.has(id) ? onRule(id) : openDoc(id));
-  const unlisted = [...waiting].filter((id) => !records.some((r) => r.type !== "artifact" && r.record.id === id));
-  const signoffRows = unlisted.length ? <section className={styles.group} data-testid="files-waiting">
-    <h3>Sign-off waiting on you</h3>
-    <ul className={styles.rows}>{unlisted.map((id) => <li key={id} id={id} className={`${styles.row} ${attentionMark}`} data-attention="true">
-      <Icon name="design" size={18} />
-      <button className={styles.rowLink} onClick={() => open(id)} data-testid={asks?.has(id) ? "signoff-ask" : undefined}>{asks?.get(id) ?? id}</button>
-      {asks?.has(id) ? <span className={styles.rowMeta}>{id}</span> : null}
-      <AttentionDot count={1} />
-    </li>)}</ul>
-  </section> : null;
-  if (records.length === 0 && signoffRows) return <div className={styles.content}>{signoffRows}</div>;
   if (records.length === 0) {
     return <div className={styles.emptyState} data-testid="files-empty">
       <Icon name="files" size={24} />
@@ -123,18 +106,14 @@ export function FilesViewer({ ticketId, waitingDocs, asks, onRule }: { ticketId:
     </div>;
   }
   return <div className={styles.content}>
-    {signoffRows}
     {GROUPS.filter((g) => records.some((r) => r.group === g)).map((group) => <section key={group} className={styles.group}>
       <h3>{group}</h3>
       <ul className={styles.rows}>{records.filter((r) => r.group === group).map((r, i) => r.type === "artifact"
         ? <FileCard key={`${r.record.id}:${i}`} record={r.record} relation={r.relation} />
-        : <li key={`${r.record.id}:${i}`} id={waiting.has(r.record.id) ? r.record.id : undefined}
-          className={`${styles.row} ${waiting.has(r.record.id) ? attentionMark : ""}`} data-attention={waiting.has(r.record.id) ? "true" : undefined}>
+        : <li key={`${r.record.id}:${i}`} className={styles.row}>
         <Icon name="design" size={18} />
-        <button className={styles.rowLink} onClick={() => open(r.record.id)}>{r.record.title ?? r.record.id}{r.record.version ? ` · v${r.record.version}` : ""}</button>
+        <button className={styles.rowLink} onClick={() => openDoc(r.record.id)}>{r.record.title ?? r.record.id}{r.record.version ? ` · v${r.record.version}` : ""}</button>
         <span className={styles.rowMeta}>{r.relation.replaceAll("_", " ")} · {r.record.scope === "global" || r.record.scope?.startsWith("domain:") ? "shared" : "this work"}</span>
-        {waiting.has(r.record.id) && asks?.has(r.record.id) ? <span className={styles.rowAsk} data-testid="signoff-ask">{asks.get(r.record.id)}</span> : null}
-        <AttentionDot count={waiting.has(r.record.id) ? 1 : 0} />
       </li>)}</ul>
     </section>)}
   </div>;

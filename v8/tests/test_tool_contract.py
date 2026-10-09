@@ -18,11 +18,12 @@ from fastapi.testclient import TestClient
 
 from edp8 import broker_adapter, tool_idem
 from edp8.board import Board
-from edp8.bundles import ALL_TOOLS, CreateArgs, PageArgs, _object_index, invoke, set_client
+from edp8.bundles import ALL_TOOLS, CreateArgs, PageArgs, _links_for, _object_index, invoke, set_client
 from edp8.client import BoardClient
 from edp8.service import create_app
 from edp8.store import Store
-from edp8.tool_contracts import CREATE_EXEMPT, IDEMPOTENT_CREATES, OBJECT_SKILLS, tool_objects
+from edp8.tool_contracts import (CREATE_EXEMPT, IDEMPOTENT_CREATES, OBJECT_SKILLS, SELF_EVIDENT_ARGS, tool_objects,
+                                 tools_by_object)
 
 LIST_TOOLS = ("ticket_query", "doc_query", "session_query", "link_query", "participants", "message_query",
               "events_query")
@@ -32,19 +33,19 @@ LIST_TOOLS = ("ticket_query", "doc_query", "session_query", "link_query", "parti
 
 
 @pytest.mark.parametrize("name", sorted(ALL_TOOLS))
-def test_description_names_objects_skills_and_enums(name):
+def test_tool_is_listed_under_its_objects_and_names_its_enum_args(name):
+    """e0cec S9 (architect m-1fc3764b91): the description no longer carries Objects/Skills; describe_objects() does."""
     tool = ALL_TOOLS[name]
     desc = tool.description
     objs = tool_objects(name)
     assert objs, f"{name}: no linked object in tool_contracts.TOOL_OBJECTS"
-    assert "Objects: " + ", ".join(objs) in desc, f"{name}: objects clause missing"
+    assert "Objects: " not in desc and "Skills: " not in desc, name
     for o in objs:
-        for skill in OBJECT_SKILLS.get(o, ()):
-            assert skill in desc, f"{name}: skill {skill} for {o} not named"
+        assert name in tools_by_object()[o], f"{name}: not listed under {o}"
+        assert set(OBJECT_SKILLS.get(o, ())) <= set(_links_for(o)["related_skills"]), f"{name}: describe({o}) lacks its skills"
     props = tool.input_schema.get("properties", {})
     enum_args = [f for f, node in props.items() if node.get("enum")]
     if enum_args:
-        assert "describe('enums')" in desc, name
         for f in enum_args:
             assert f in desc.split("Enums: ", 1)[-1], f"{name}: enum arg {f} not named"
 
@@ -54,7 +55,9 @@ def test_required_fields_are_described(name):
     tool = ALL_TOOLS[name]
     props = tool.input_schema.get("properties", {})
     for f in tool.input_schema.get("required", []):
-        assert props[f].get("description"), f"{name}.{f}: required but undescribed"
+        node = props[f]
+        typed_enum = bool(node.get("enum") or "$ref" in node)  # named in the Enums clause
+        assert node.get("description") or typed_enum or f in SELF_EVIDENT_ARGS, f"{name}.{f}: required but undescribed"
 
 
 @pytest.mark.parametrize("name", sorted(ALL_TOOLS))
@@ -190,7 +193,8 @@ def _create_args(rig, name: str, tag: str) -> dict:
         "record_claim": {"scope": e, "text": f"idem {tag}"},
         "record_lesson": {"domain": "tools", "topic": "idem", "text": f"idem {tag}"},
         "topic_propose": {"topic_id": e, "title": f"idem {tag}", "body_md": "b", "source_url": "https://x"},
-        "propose_fix": {"topic_id": e, "action": {"kind": "gate.open"}, "effect": f"idem {tag}"},
+        "propose_fix": {"topic_id": e, "action": {"kind": "gate.open", "ticket_id": e, "gate": "scope", "note": "n"},
+                        "effect": f"idem {tag}"},
     }[name]
 
 
@@ -286,6 +290,31 @@ def test_artifact_read_returns_text_inline_with_continuation(rig):
         got += nxt["text"]
         off = nxt.get("next_offset")
     assert got.encode() == body
+
+
+def test_artifact_read_keeps_a_multibyte_char_split_by_the_page_edge(rig):
+    # audit R1 (report-8dbe7c91c9): '€' straddling the 6,000-byte edge was dropped when following next_offset
+    body = ("a" * 5999 + "€tail").encode()
+    aid = _upload(rig, body, "euro.txt", "text/plain")
+    got, off = "", 0
+    while off is not None:
+        c = call(rig["owner"], "artifact_read", id=aid, offset=off)["value"]["content"]
+        got += c["text"]
+        off = c.get("next_offset")
+    assert got.encode() == body
+
+
+@pytest.mark.parametrize("action, field", [({"kind": "gate.open"}, "ticket_id"),
+                                           ({"kind": "service.restart", "service": "not-a-service"}, "service")])
+def test_propose_fix_schema_refuses_a_bad_action_at_the_call(action, field):
+    # audit R3 (report-8dbe7c91c9): `action` was any object, so these reached the board and failed there
+    from pydantic import ValidationError
+    model = ALL_TOOLS["propose_fix"].args_model
+    with pytest.raises(ValidationError) as e:
+        model.model_validate({"topic_id": "t", "action": action, "effect": "x"})
+    assert field in str(e.value)
+    sch = json.dumps(model.model_json_schema())
+    assert '"discriminator"' in sch and "gate.answer" in sch and "not-a-service" not in sch
 
 
 def test_artifact_read_image_becomes_an_image_block(rig):

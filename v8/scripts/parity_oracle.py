@@ -69,10 +69,10 @@ def normalise(text: str) -> str:
 
 
 # ---------------------------------------------------------------- wording equivalence (owner m-2d7ef9243d, 2026-09-17)
-# The Astra seat speaks OUR words; Claude Code speaks its own. guides/harness-parity/wording.json pairs every
+# The Astra seat speaks OUR words; Claude Code speaks its own. docs/operator/harness-parity/wording.json pairs every
 # reference sentence with ours; both collapse to <W:name …groups> so a diff still catches any change in
 # structure, ids, numbers or timing while the wording itself is exempt. Missing file = no exemption (byte parity).
-WORDING_PATH = Path(os.environ.get("EDP_PARITY_WORDING") or (Path(__file__).resolve().parents[1] / "guides" / "harness-parity" / "wording.json"))
+WORDING_PATH = Path(os.environ.get("EDP_PARITY_WORDING") or (Path(__file__).resolve().parents[1] / "docs" / "operator" / "harness-parity" / "wording.json"))
 _WORDING: list[tuple[str, re.Pattern[str], re.Pattern[str]]] | None = None
 
 

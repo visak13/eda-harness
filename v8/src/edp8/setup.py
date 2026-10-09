@@ -257,14 +257,17 @@ def claude_signed_in(store: Path | None = None) -> bool:
 
 def seed_pool_settings(agent_home: Path, store: Path | None = None) -> str:
     """Seed the pool store's settings.json (hooks, outputStyle) from edp_pool's shipped template when it is
-    missing; an existing file is kept. Returns the line init prints."""
+    missing; an existing file is kept, with a changed template merged in once (pool_config.upgrade_settings).
+    Returns the line init prints."""
     store = store or claude_store()
     try:
-        from edp_pool.pool_config import seed_settings
+        from edp_pool.pool_config import seed_settings, upgrade_settings
     except ImportError:  # a board-only env: the pool seeds it at its own start
         return f"settings {store / 'settings.json'}: edp_pool not installed here, the pool seeds it at start"
     written = seed_settings(store, agent_home)
-    return f"settings {store / 'settings.json'} ({'written' if written else 'kept'})"
+    changed = upgrade_settings(store, agent_home)
+    state = "written" if written else ("merged: " + "; ".join(changed)) if changed else "kept"
+    return f"settings {store / 'settings.json'} ({state})"
 
 
 def pool_settings_problem(store: Path | None = None) -> str | None:

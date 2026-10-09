@@ -1,0 +1,251 @@
+{
+  "steps": [
+    {
+      "n": 1,
+      "do": "Link B1 to the epic design's B1 section and record the scope: Rookery REST handlers, two new Postgres tables, blob staging and sweeper, ATTACHMENT_READY stream handling, quill-sync uploader and SQLite persistence, and the quill-mobile version bump. Use the epic design rather than creating a standalone design. Apply specific process documents over the handbook, amendments over older text, and process rules over the design's illustrative rollout.",
+      "per": "strategyll-0c803cca71 / HB-1–HB-4, §2–3; design-05f874c4f8 / Story B1, §5"
+    },
+    {
+      "n": 2,
+      "do": "Before opening PRs, open a security-review ticket linked to the design and subsequently list the PRs there: B1 introduces SHA-256 verification, and the security policy explicitly includes any use of cryptography. Use the existing rookery/crypto and quill-sync/crypto primitives. Obtain security-champion sign-off on that ticket before merging any B1 PR.",
+      "per": "strategyll-48d8fc820d / §1, §3, §5; SS-7, SS-12"
+    },
+    {
+      "n": 3,
+      "do": "Create sync.chunked_attachments in every environment, OFF except in development, before merging any code that reads it. Record a staged ramp and removal plan in B1 or the introducing PR. File any necessary Platform alert-routing request early, allowing approximately two working days.",
+      "per": "strategyll-0c803cca71 / HB-23–HB-27, HB-40; design-05f874c4f8 / §4"
+    },
+    {
+      "n": 4,
+      "do": "Use B1/<short-slug> branches and small, sequenced PRs, each referencing exactly B1. Give PRs area: summary titles and commits imperative summaries under 72 characters with Refs: B1. Include what and why, the design section, flag name where applicable, sequence position and cross-links. Include a Rollback section explaining flag disablement, revert safety and migration-down safety as applicable.",
+      "per": "strategyll-0c803cca71 / HB-4, HB-15–HB-17; §6; Amendment 2"
+    },
+    {
+      "n": 5,
+      "do": "Prepare a separate migration PR for attachment_upload_sessions and attachment_chunks, with the specified chunk metadata. Use the next free NNNN_<snake_case>.up.sql and .down.sql pair; begin both with SET lock_timeout = '5s'; and make down reverse up. Give each table a primary key and created_at timestamptz NOT NULL DEFAULT now(). Ordinary indexes may share this new-table migration. Declare a suitable documented retention class and one-line justification in db/retention/<table_name>.yaml for each table, and justify each class in the PR.",
+      "per": "design-05f874c4f8 / Story B1, Server side; strategyll-262160d8c2 / SM-2–SM-7, §2.1, July update"
+    },
+    {
+      "n": 6,
+      "do": "Document the migration's expected locks and production run time, link the dependent code PR once it exists, and state when down remains safe. Run migration-check through up/down/up on an empty database and a staging-schema snapshot, plus a container-backed integration test exercising the migration. Obtain a non-author CODEOWNERS approval and the security-review sign-off, then squash-merge the migration PR; renumber first if its number was taken.",
+      "per": "strategyll-262160d8c2 / SM-2–SM-3, SM-14–SM-17; strategyll-0c803cca71 / HB-11, HB-19, HB-21; strategyll-48d8fc820d / SS-12"
+    },
+    {
+      "n": 7,
+      "do": "Allow up to one working day for on-call to check production load against the lock/runtime estimate and run migrate apply <NNNN> from the operations console. Wait until migrate status confirms application and on-call records it in the migration log channel before merging dependent application code. Code review and approval may proceed while waiting.",
+      "per": "strategyll-262160d8c2 / SM-12–SM-16, §3"
+    },
+    {
+      "n": 8,
+      "do": "Implement POST /v3/attachments/sessions accepting note_id, byte_size, sha256 and mime and returning session_id and a 4 MiB chunk_size; PUT /v3/attachments/sessions/{id}/chunks/{n} with zero-based indexes; GET /v3/attachments/sessions/{id} returning received indexes; and POST /v3/attachments/sessions/{id}/commit verifying assembled SHA-256, moving bytes to final storage and creating the attachment row. Make session creation, chunk retries and repeated commits idempotent. Use the primary for reads that must observe preceding writes.",
+      "per": "design-05f874c4f8 / Story B1, Server side; B1-c1; strategyll-0c803cca71 / HB-13, HB-30"
+    },
+    {
+      "n": 9,
+      "do": "Keep chunk bytes in a blob-store staging prefix. Refresh session activity on every chunk and implement the sweeper deleting sessions and staged chunks after 24 hours of inactivity. Clean staging on completed success and failure, with sweepers covering abandoned work after crashes; retain progress across resumable disconnects and app kills as required by the design.",
+      "per": "design-05f874c4f8 / Story B1, §6; B1-c2, B1-c4; strategyll-0c803cca71 / HB-8"
+    },
+    {
+      "n": 10,
+      "do": "Implement ATTACHMENT_READY {attachment_id, note_id, byte_size, mime} fan-out after successful commit to the user's other online devices. Gate every emission with conn.Supports(the introducing minor), preserving every older negotiated minor and its message shapes.",
+      "per": "design-05f874c4f8 / Story B1, Protocol side; B1-c3; strategyll-f49f47c558 / SP-3–SP-4, SP-13"
+    },
+    {
+      "n": 11,
+      "do": "In the server PR, update rookery/api/ OpenAPI for all four endpoints and protocol/spec/ for ATTACHMENT_READY, including fields, types, introducing version, sender and receiver behavior. Prepare the protocol/VERSIONS.md entry identifying B1 and every introduced message and field. Generate and commit golden fixtures with make fixtures: at least one frame per new message and present/absent coverage for each new field.",
+      "per": "strategyll-0c803cca71 / HB-35; strategyll-f49f47c558 / SP-6–SP-8, §3, Update 2"
+    },
+    {
+      "n": 12,
+      "do": "Implement quill-sync's session uploader for all file sizes, using one chunk for files at or below 4 MiB and multiple server-sized chunks above it. Persist session ID and confirmed indexes in SQLite, query server state after interruption and resume at the first missing chunk. Honor the existing unmetered-network default and user setting. Handle ATTACHMENT_READY so receiving devices can begin downloading before the note change arrives. Reuse the existing progress indicator unchanged.",
+      "per": "design-05f874c4f8 / Story B1, Client side and Protocol side; B1-c2–B1-c3"
+    },
+    {
+      "n": 13,
+      "do": "Gate client behavior on the flag and negotiated WELCOME version, falling back entirely to the old upload path below B1's introducing minor. Raise protocol_max only in the same PR that handles everything introduced by the advertised version. Keep client flag defaults OFF in train builds, read through the existing app-start/session-cached flag behavior.",
+      "per": "design-05f874c4f8 / Story B1, Client side; strategyll-f49f47c558 / SP-10–SP-11; strategyll-2bcc945031 / §4"
+    },
+    {
+      "n": 14,
+      "do": "Run repository formatters before pushing. Wrap Go errors with context and handle them; cap retries with jittered backoff. Prefer existing documented error codes and their client behavior. If a distinct client response requires a new code, use snake_case, document it in the appropriate API specification and explicitly handle it in quill-sync. If dependencies are added or upgraded, justify them, obtain the reviewer's allow-list license check and tech-lead agreement for a quill-sync addition over 100 KB.",
+      "per": "strategyll-0c803cca71 / HB-5–HB-6, HB-9, HB-36; §4; Appendix I"
+    },
+    {
+      "n": 15,
+      "do": "Add structured dotted log events with snake_case fields and trace_id; propagate context into spawned goroutines. Use logging.ErrorWithPayload to include payload_sha256 on failed upload requests/messages. Route ordinary stream logs through synclog at 10% sampling and leave REST logs unsampled. Preserve unsampled WARN sync.negotiate.failed events with client_version, protocol_max and server maximum, and test failed negotiation at the new version. Security/auth events, if emitted, remain unsampled.",
+      "per": "strategyll-ba9c1938f3 / OB-1–OB-6, June update; strategyll-f49f47c558 / SP-14, §4"
+    },
+    {
+      "n": 16,
+      "do": "Add the expected RED metrics for each endpoint and ATTACHMENT_READY: rookery_<area>_<op>_requests_total with bounded outcome labels, _errors_total with code labels and _duration_seconds histograms. Export rookery_job_<name>_last_success_timestamp_seconds and rookery_job_<name>_items_processed_total for the sweeper. Use only existing SyncTelemetry aggregates on the client and add <service>.<area>.<op> spans around request/message, database and blob-store paths.",
+      "per": "strategyll-ba9c1938f3 / OB-7–OB-11, §3–4"
+    },
+    {
+      "n": 17,
+      "do": "Add runbook entries for all four endpoints, the sweeper and alerts. Describe endpoint behavior, relevant alerts and who to page; describe what the sweeper deletes, how to pause it and the consequences of falling behind. Add rate/error/latency panels to a collapsible sync.chunked_attachments row on Sync Overview, an error-rate alert routed to Inkwell on-call with a runbook link, and a sweeper staleness alert at more than twice its configured interval. Have these in place before ramping beyond 1%.",
+      "per": "strategyll-0c803cca71 / HB-34; strategyll-ba9c1938f3 / OB-12–OB-13, §5, August update; handbook Amendment 6"
+    },
+    {
+      "n": 18,
+      "do": "Test the four REST endpoints and each changed SQL query against containerized Postgres. Send identical session-open POST, chunk PUT and commit POST requests at least twice, asserting equivalent responses and no duplicate rows, bytes, accounting or notifications. Test checksum verification, staging cleanup and expiry without sweeping actively refreshed sessions.",
+      "per": "B1-c1, B1-c4; design-05f874c4f8 / Story B1, §6; strategyll-0c803cca71 / HB-8, HB-11, HB-13"
+    },
+    {
+      "n": 19,
+      "do": "Add server unit tests for ATTACHMENT_READY and suppression on a previous-minor connection; pass the previous-minor contract suite with byte-identical responses. Add client unit/device scenarios for receipt, WELCOME downgrade fallback, network interruption, app-kill recovery, both file-size paths and network-setting behavior. Require a green run-e2e-triggered sync-e2e run before merging the client stream-handling PR.",
+      "per": "strategyll-f49f47c558 / SP-9, SP-13, SP-15; strategyll-0c803cca71 / HB-37; design-05f874c4f8 / Story B1; B1-c2–B1-c3"
+    },
+    {
+      "n": 20,
+      "do": "Require at least 85% line coverage in changed packages, excluding generated code and migrations as documented, and pass applicable blocking lint, unit, coverage, integration, openapi-check, contract, migration-check and secret-scan jobs. Pass both device-ios and device-android for quill-sync and quill-mobile PRs. Check the reported quill-sync performance budgets, including cold-start sync of 1,000 notes under 10 seconds on the reference low-end Android device. If tests are flaky, quarantine with @flaky and a ticket within one working day and fix or delete within two weeks; investigate after at most one CI retry.",
+      "per": "strategyll-0c803cca71 / HB-10–HB-12, HB-14; §15; Appendix E; Amendments 1 and 5"
+    },
+    {
+      "n": 21,
+      "do": "Add an Unreleased CHANGELOG.md entry in each behavior-changing repository's own PR, explaining the user perspective and B1. Obtain at least one non-author CODEOWNERS approval for every PR; require local reviewer execution if the implementation touches outbox or revision handling. Confirm flag creation, production migration application, required tests and security-review sign-off before dependent server code merges.",
+      "per": "strategyll-0c803cca71 / HB-18–HB-20, HB-25, HB-29; strategyll-48d8fc820d / SS-12"
+    },
+    {
+      "n": 22,
+      "do": "At the wire-changing server merge, allocate the next available minor in actual merge order, reconcile the version entry, specification, gates and generated fixtures, and rerun affected checks if the allocation changed. Squash-merge Rookery and quill-sync PRs. A gated client PR may merge before server deployment, but its release must obey the later server and train gates.",
+      "per": "strategyll-f49f47c558 / SP-5–SP-9, Update 1; strategyll-0c803cca71 / HB-21, HB-38"
+    },
+    {
+      "n": 23,
+      "do": "Deploy the server through canary and its fifteen-minute automated analysis, then full-fleet promotion during permitted working hours. Confirm the contract job passed on that exact supporting build and that all client-required REST behavior is deployed fleet-wide. Complete this server release step before the target train cut and before any client advertising the new minor reaches users; link the fleet promotion on the train ticket.",
+      "per": "strategyll-0c803cca71 / §7.4, §11.1; strategyll-f49f47c558 / SP-12; strategyll-2bcc945031 / MT-8–MT-9"
+    },
+    {
+      "n": 24,
+      "do": "Publish the quill-sync release and open the quill-mobile PR bumping its exact pinned version. Include the expected user-facing entry in release-notes/<train>.md in the PR completing the client work. Ensure every commit independently builds, passes tests and follows the commit-message format; pass both device jobs and obtain code-owner approval, then rebase-merge by 17:00 on the second working day before the Monday 10:00 cut. Target train 26.11 only if both this deadline and the server-before-cut gate are met; otherwise use the next train.",
+      "per": "strategyll-2bcc945031 / MT-2–MT-5, MT-8–MT-9, MT-13, April update; strategyll-0c803cca71 / Amendment 5; design-05f874c4f8 / §4–5"
+    },
+    {
+      "n": 25,
+      "do": "Follow the train's testing and store-release process, with only fixes for bugs found in that train's testing accepted after cut. Start the client flag ramp only after release to users. Ramp 1% to 10% to 50% to 100%, spending at least one full day at each stage and watching the documented panels and alerts. Keep author ownership through rollout; if a page affects over 1% of devices for over ten minutes, follow incident declaration and the post-incident review within five working days.",
+      "per": "strategyll-2bcc945031 / §2, MT-7, MT-14; strategyll-0c803cca71 / HB-22, HB-26, HB-32; strategyll-ba9c1938f3 / OB-13"
+    },
+    {
+      "n": 26,
+      "do": "After 100% rollout for a full train cycle without incidents, remove flag reads from the code before archiving the flag. Keep rollback constraints explicit: a production down migration after dependent code has deployed requires agreement from the author and a tech lead.",
+      "per": "strategyll-0c803cca71 / HB-27; strategyll-262160d8c2 / SM-17"
+    }
+  ],
+  "must_not": [
+    {
+      "rule": "Do not add B2 merge behavior, B3 revocation/wipe behavior, download resumption, new UI, client-selected chunk sizes or Postgres chunk-byte storage. B1 uses the unchanged progress indicator, server-selected chunks and blob staging.",
+      "per": "design-05f874c4f8 / Story B1, Notes from planning; §7"
+    },
+    {
+      "rule": "Do not require UI accessibility screenshots, new translations or Notebook UI review solely for B1; those rules apply only to added or altered UI.",
+      "per": "strategyll-2bcc945031 / MT-10–MT-12, §6; strategyll-0c803cca71 / HB-39"
+    },
+    {
+      "rule": "Do not add secret provisioning, inventory, rotation, per-device key derivation, revocation audits or security-control bypass-test workflows to this story: B1 introduces no secret, key derivation or access-removing control. Its checksum use does not make it eligible for the no-feature-flag exception. Do not require constant-time comparison of ordinary attachment checksums under the rule specifically covering secrets, tokens, MACs and signatures.",
+      "per": "strategyll-48d8fc820d / SS-3–SS-6, SS-8, SS-10–SS-11, SS-14–SS-15; design-05f874c4f8 / Story B1; Story B3, The wipe command"
+    },
+    {
+      "rule": "Do not impose the former external penetration-test requirement; it was withdrawn. A Threat model section is conditional on an in-scope PR altering attacker capabilities, and a penetration test is scheduled only if security champions request it.",
+      "per": "strategyll-48d8fc820d / §5, May update"
+    },
+    {
+      "rule": "Do not require a second code-owner approval merely because the story is large or changes quill-sync. That extra approval applies to rookery/auth/ changes and must come from a security champion, not the superseded security-reviewers group.",
+      "per": "strategyll-0c803cca71 / HB-19, §7.1, Amendment 4, Appendix L.2"
+    },
+    {
+      "rule": "Do not combine application code with the migration PR, apply schema by hand, rely on deploy-time or 'safe' automatic migration, or merge dependent code after only migration merge or staging application.",
+      "per": "strategyll-262160d8c2 / SM-1, SM-12–SM-14; strategyll-0c803cca71 / HB-28–HB-29"
+    },
+    {
+      "rule": "Do not add expand/backfill/contract or mandatory concurrent-index migrations for these new tables. Those requirements concern changes to existing production tables. Do not put data UPDATEs into migrations or alter the frozen db/retention.yaml.",
+      "per": "strategyll-262160d8c2 / SM-5–SM-11, §2.1–2.4, July update"
+    },
+    {
+      "rule": "Do not require a feature flag or changelog entry in the migration-only PR; the behavior-changing code PR carries those obligations.",
+      "per": "strategyll-262160d8c2 / SM-18, §8; strategyll-0c803cca71 / HB-18"
+    },
+    {
+      "rule": "Do not reserve 3.5 for B1, share a minor with another wire-changing merge or treat the design's expected version numbers as allocations. Allocate at merge time.",
+      "per": "strategyll-f49f47c558 / SP-5, §2.1, Update 1; design-05f874c4f8 / §4"
+    },
+    {
+      "rule": "Do not add a major bump, deprecation notice, web-client migration guide or breaking-change support schedule for this additive message. REST endpoint additions alone do not cause a stream-version bump.",
+      "per": "strategyll-f49f47c558 / SP-1, SP-16–SP-17, §1, §6"
+    },
+    {
+      "rule": "Do not hand-write golden fixtures, defer the protocol specification or OpenAPI updates to later PRs, raise protocol_max before implementing its supported behavior, compare protocol numbers by hand, or emit new messages to older negotiated connections.",
+      "per": "strategyll-f49f47c558 / SP-7–SP-11, SP-13, Update 2; strategyll-0c803cca71 / HB-35"
+    },
+    {
+      "rule": "Do not use per-message version fields, capability flags instead of protocol versions or feature-flag names on the wire.",
+      "per": "strategyll-f49f47c558 / SP-18, §7; strategyll-0c803cca71 / HB-24, §8.4"
+    },
+    {
+      "rule": "Do not omit idempotency tests for session creation: both POST endpoints and the PUT endpoint require them. Do not impose that REST idempotency-test requirement on GET or ATTACHMENT_READY; stream behavior uses protocol tests.",
+      "per": "strategyll-0c803cca71 / HB-13, §5.4, §18"
+    },
+    {
+      "rule": "Do not treat sync-e2e's non-blocking CI configuration as permission to merge the stream-handling PR without a green run. Conversely, do not add run-e2e to separate PRs limited to REST calls or local storage.",
+      "per": "strategyll-0c803cca71 / HB-37, Appendix E"
+    },
+    {
+      "rule": "Do not use the superseded 80% coverage floor, waive the 85% floor, require the rejected 95% target or substitute one platform's device tests for both.",
+      "per": "strategyll-0c803cca71 / §5.2–5.3, Amendments 1 and 5, Appendix C.4"
+    },
+    {
+      "rule": "Do not log user content, filenames, request bodies, email addresses or user/device display names at any level or in crash reports/analytics. Do not commit real secrets or bypass secret-scan with exclusions; do not log credentials or their hashes/fragments. Existing authentication middleware remains responsible for authenticated REST access and authorization checks.",
+      "per": "strategyll-0c803cca71 / HB-7, HB-33, §12, Appendix E; strategyll-ba9c1938f3 / OB-4; strategyll-48d8fc820d / SS-2, SS-9"
+    },
+    {
+      "rule": "Do not apply the shared-note-merge payload-hash prohibition to B1 upload errors; that exception is scoped to merge code. Do not sample REST logs or negotiation failures, and do not evade ordinary stream sampling with the ordinary logger.",
+      "per": "strategyll-ba9c1938f3 / OB-5–OB-6, §2.2–2.3; strategyll-f49f47c558 / SP-14"
+    },
+    {
+      "rule": "Do not add camelCase log fields, unbounded ID metric labels, per-event client sync analytics, StatsD metrics, new free-text log.Printf logging, panels on graphite dashboards or a new feature-specific dashboard. Convert legacy logging when its package is substantially changed and remove touched-file StatsD no-ops.",
+      "per": "strategyll-ba9c1938f3 / OB-2, OB-8, OB-10, OB-12, OB-14, June and August updates; strategyll-0c803cca71 / HB-31"
+    },
+    {
+      "rule": "Do not skip the feature flag because the change is small or the flag service is unavailable, create it after reader code merges, reuse an old flag or enable the client default in train builds.",
+      "per": "strategyll-0c803cca71 / HB-23–HB-25, §18; strategyll-2bcc945031 / MT-6"
+    },
+    {
+      "rule": "Do not release even a small client percentage before full-fleet server support and a passing contract job; canary alone is insufficient. Do not defer that server gate until the train's release date: it must be met before cut.",
+      "per": "strategyll-f49f47c558 / SP-12, §3.2, §8; strategyll-2bcc945031 / MT-8–MT-9"
+    },
+    {
+      "rule": "Do not use the old 'merge any time before cut' deadline, squash-merge quill-mobile even for a single commit, use the emergency hotfix path for B1, ramp the client at cut/store review or couple B1's release to readiness of B2/B3.",
+      "per": "strategyll-2bcc945031 / MT-3–MT-4, MT-7, MT-14, April update; design-05f874c4f8 / §4"
+    },
+    {
+      "rule": "Do not bypass the out-of-hours fleet-promotion block for ordinary story work. Do not remove the flag merely in the next train after reaching 100%; first complete a full incident-free train cycle at 100%, then delete reads before archival.",
+      "per": "strategyll-0c803cca71 / §11.1, HB-27; design-05f874c4f8 / §5"
+    },
+    {
+      "rule": "Do not defer changelog entries until release or substitute changelog fragments. The proposal to remove the requirement was rejected.",
+      "per": "strategyll-0c803cca71 / HB-18, §6.3, Amendment 3, Appendix O.5"
+    },
+    {
+      "rule": "Do not turn historical examples, advice or unadopted proposals into requirements: no mandatory pairing, table partitioning, endpoint load test, complete debug-log ban, sweeper dry-run mode, QA sign-off sheet, three-day main freeze, company-wide release email or head-of-engineering sign-off.",
+      "per": "strategyll-0c803cca71 / §0, §5.6, Appendices A–C, H, K–M"
+    }
+  ],
+  "criteria_checks": [
+    {
+      "criterion": "B1-c1",
+      "how": "Container-backed endpoint tests cover session open, chunk PUT, received-index GET and commit. Repeat identical opens, chunk uploads and commits; assert equivalent responses, repeated chunk success, a single committed attachment and no duplicate bytes, accounting or notifications. Verify assembled SHA-256 and matching OpenAPI documentation."
+    },
+    {
+      "criterion": "B1-c2",
+      "how": "On both device platforms, interrupt uploads by network loss and app kill, reload persisted session/index state, query received chunks and assert resumption at the first missing chunk without restarting confirmed chunks. Cover single-chunk and multi-chunk files."
+    },
+    {
+      "criterion": "B1-c3",
+      "how": "Server/client unit tests and the required sync-e2e run verify other online devices receive ATTACHMENT_READY after successful commit. A previous-minor connection receives no new message, WELCOME downgrade selects the unchanged old upload path, and the previous-minor contract suite remains byte-identical."
+    },
+    {
+      "criterion": "B1-c4",
+      "how": "Integration tests advance session inactivity to the expiry threshold, run the sweeper and verify deletion of session records and staged chunks. Refresh activity through chunk receipt and verify the active session survives. Verify sweeper success metrics and its staleness alert."
+    }
+  ],
+  "complete": true
+}

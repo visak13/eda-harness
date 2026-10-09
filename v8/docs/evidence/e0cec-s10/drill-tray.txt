@@ -1,0 +1,60 @@
+   fleet before: board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+PASS  pre-check: every record in <repo>\v8\.data\s2-spike\home\.run names a private (or dead) pid
+   ports board=55585 pool=55588 mcp=55586 broker=55589; home <repo>\v8\.data\s2-spike\home
+== 08:59:30 tray from {015FD807-D012-4E4E-A414-93FC737F76F7}=0.9.1
+   health 0.9.1; seat engineer.s2-drill row active pid 4116 liveness alive
+   private desktop window pids before: 38348
+PASS  a private desktop window is open before the update
+   08:59:31 heronry update --release-url <repo>\v8\.data\s2-spike\release-0.9.2.dev0 --previous-url <repo>\v8\.data\s2-spike\release-0.9.1
+   | current 0.9.1, release 0.9.2.dev0
+   | verified Heronry S2 Spike-0.9.2.dev0.msi against SHA256SUMS (0.2s)
+   | the installed 0.9.1's MSI is cached for a rollback (<repo>\v8\.data\s2-spike\home\.data\updates\0.9.1\Heronry S2 Spike-0.9.1.msi)
+   | compat check passed (0 workflow(s))
+   | backed up the DB to <repo>\v8\.data\s2-spike\home\.data\backups\edp8-0.9.1-20261002T033004Z.db
+   | installing 0.9.2.dev0 from <repo>\v8\.data\s2-spike\home\update (outside the install folder); progress in <repo>\v8\.data\s2-spike\home\.data\logs\update.log, outcome in <repo>\v8\.data\s2-spike\home\update\update-result.json
+   cli exit 0 after 33.6s
+   09:04:07 outcome after 276.5s
+   log 2026-10-02T03:30:05+00:00 helper up (pid 21844): 0.9.1 -> 0.9.2.dev0
+   log 2026-10-02T03:30:05+00:00 park engineer.s2-drill: {"parked": true, "session_id": "engineer:d2e3d07a-7f43-4504-ac82-3cb2c888c06a", "handle": "engineer.s2-drill", "inbox_watermark": 0, "claude_session_id": "80c7df8c-e05b-4d7b-83f6-4b4a09e995cd"}
+   log 2026-10-02T03:30:05+00:00 stop: <repo>\v8\.data\s2-spike\install\heronry.exe stop --force
+   log 2026-10-02T03:30:11+00:00   | pool stop takes these 1 seat(s) offline:
+   log 2026-10-02T03:30:11+00:00   |   - engineer.s2-drill (pid 4116, parked)
+   log 2026-10-02T03:30:11+00:00   | supervisor stopped
+   log 2026-10-02T03:30:11+00:00   | bridge     not running
+   log 2026-10-02T03:30:11+00:00   | mcp        stopped
+   log 2026-10-02T03:30:11+00:00   | pool       stopped
+   log 2026-10-02T03:30:11+00:00   | broker     stopped
+   log 2026-10-02T03:30:11+00:00   | board      stopped
+   log 2026-10-02T03:30:11+00:00 stop exit 0
+   log 2026-10-02T03:30:11+00:00 closing the desktop app (pid 38348)
+   log 2026-10-02T03:30:50+00:00 holders in <repo>\v8\.data\s2-spike\install: []
+   log 2026-10-02T03:30:50+00:00 install: msiexec /i <repo>\v8\.data\s2-spike\home\.data\updates\0.9.2.dev0\Heronry S2 Spike-0.9.2.dev0.msi MSIINSTALLPERUSER=1 ALLUSERS=2 INSTALLFOLDER=<repo>\v8\.data\s2-spike\install REBOOT=ReallySuppress /qn /norestart /l*v <repo>\v8\.data\s2-spike\home\.data\logs\msiexec-install.log
+   log 2026-10-02T03:33:42+00:00 install exit 0 (log <repo>\v8\.data\s2-spike\home\.data\logs\msiexec-install.log)
+   log 2026-10-02T03:33:42+00:00 start: <repo>\v8\.data\s2-spike\install\heronry.exe start --no-browser
+   log 2026-10-02T03:34:07+00:00   | board      started          pid 36764  http://127.0.0.1:55585
+   log 2026-10-02T03:34:07+00:00   | broker     started          pid 32676  http://127.0.0.1:55589
+   log 2026-10-02T03:34:07+00:00   | pool       started          pid 25308  http://127.0.0.1:55588
+   log 2026-10-02T03:34:07+00:00   | mcp        started          pid 9440  http://127.0.0.1:55586
+   log 2026-10-02T03:34:07+00:00   | bridge     skipped          (no slack map configured)
+   log 2026-10-02T03:34:07+00:00   | supervisor started          pid 36212
+   log 2026-10-02T03:34:07+00:00   | setup      first run: finish setup at http://127.0.0.1:55585/ui/setup?code=<redacted>  (the link signs you in once, within 24 h)
+   log 2026-10-02T03:34:07+00:00 start exit 0
+   log 2026-10-02T03:34:07+00:00 health after start: '0.9.2.dev0' (want 0.9.2.dev0)
+   log 2026-10-02T03:34:07+00:00 app relaunched: <repo>\v8\.data\s2-spike\install\Heronry S2 Spike.exe
+   log 2026-10-02T03:34:07+00:00 resume engineer.s2-drill: {"resumed": false, "handle": "engineer.s2-drill", "no_op": true, "state": "active", "message": "continued 4f94fd32-be4b-4cc5-ba1a-84470fc2988e", "reason": "session is already active \u2014 no-op"}
+   log 2026-10-02T03:34:07+00:00 result ok
+   result: {"from":"0.9.1","to":"0.9.2.dev0","state":"ok","reason":"","timings":{"parked":0.5,"stopped":6.4,"holders_checked":45.4,"installed":217.0,"relaunched":242.1,"resumed":242.1},"parked":["engineer.s2-drill"],"resumed":["engineer.s2-drill"],"installed":"0.9.2","health_version":"0.9.2.dev0","recover_hint":"reinstall 0.9.1 from its cached installer: msiexec /i \"<repo>\\v8\\.data\\s2-spike\\home\\.data\\updates\\0.9.1\\Heronry S2 Spike-0.9.1.msi\" MSIINSTALLPERUSER=1, then `heronry start`","finished_at":"2026-10-02T03:34:07+00:00"}
+   installed after: {5512910A-7FDC-475F-BAE7-32A6C5FDF4D6}=0.9.2; health 0.9.2.dev0; seat engineer.s2-drill row active liveness alive
+   private desktop window pids after: 37488
+PASS  the window was closed and the new version's window relaunched by the runner
+PASS  update outcome ok
+PASS  0.9.2 installed, 0.9.1 gone (one product: {5512910A-7FDC-475F-BAE7-32A6C5FDF4D6}=0.9.2)
+PASS  board healthy at 0.9.2 (0.9.2.dev0)
+PASS  msiexec log: MajorUpgrade removed the old product inside the install transaction (no separate uninstall)
+PASS  seats parked engineer.s2-drill and resumed engineer.s2-drill
+PASS  the seat is live after the update
+PASS  the runner ran from <repo>\v8\.data\s2-spike\home\update, outside <repo>\v8\.data\s2-spike\install
+   fleet after:  board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+PASS  fleet pids unchanged
+elapsed 280s
+RESULT: all checks passed

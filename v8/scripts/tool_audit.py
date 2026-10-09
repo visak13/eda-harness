@@ -643,7 +643,6 @@ def sample_args(a: Audit, role: str, name: str) -> dict:
                "record_decision": {"scope": ids.get("epic")},
                "record_claim": {"scope": ids.get("epic")},
                "lookup": {"scope": ids.get("epic")},
-               "assemble_ruleset": {"ticket_id": ids.get("story")},
                "find": {"query": "audit"},
                "spawn": {"role": "engineer", "ticket_id": ids.get("story"), "assign": False},
                "reap": {"participant_id": "engineer.audit-missing"},
@@ -863,15 +862,15 @@ IDEM_NOT_MEASURED = {
 
 # S23: guide hits that are NOT an agent workaround, each with its reason (T2 triage of report-e517e9e87e).
 RULED_OUT = {
-    ("guides/tailnet-public-mode.md", "framework_script"):
+    ("docs/operator/tailnet-public-mode.md", "framework_script"):
         "owner host operation: tailnet_readiness.py is the human owner's pre-flight on the host, not a seat step",
-    ("guides/tailnet-public-mode.md", "board_rest"):
+    ("docs/operator/tailnet-public-mode.md", "board_rest"):
         "owner host operation: a curl proving the public route answers 401 without a token (no token sent)",
-    ("guides/tailnet-public-mode.md", "token_file"):
+    ("docs/operator/tailnet-public-mode.md", "token_file"):
         "names tokens.json as the readiness check and forbids hand edits; the teammate tool replaces the steps",
     (".claude/commands/doctor.md", "token_file"):
         "a prohibition: the doctor must never tell a person to hand-edit tokens.json",
-    ("guides/astra-seat.md", "artifact_disk"):
+    ("docs/evidence/astra-seat.md", "artifact_disk"):
         "a historical probe log path in a findings table, not an instruction",
 }
 

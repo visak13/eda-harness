@@ -1,0 +1,63 @@
+[
+  {
+    "name": "1-guest-epic",
+    "who": "gina",
+    "url": "/ui/epic/epic-2eb80783bd",
+    "rail": [
+      "Epics",
+      "Alpha (shared)"
+    ],
+    "handle": "ext:gina",
+    "adminLink": 0,
+    "askHelp": 0
+  },
+  {
+    "name": "2-guest-actions",
+    "who": "gina",
+    "url": "/ui/epic/epic-2eb80783bd",
+    "actions": [
+      "Ask a role\nposts a question on the epic thread addressed to a role (architect, engineer, qa, adversary, sme, owner). Wakes: that role's seat on this epic.",
+      "People\nthe guests on this epic: they read it and ask, never decide.",
+      "Original request\nthe owner's words verbatim (never edited by agents).",
+      "Record ids\nthe epic's id, kind and raw status, for a message or a shell."
+    ],
+    "rail": [
+      "Epics",
+      "Alpha (shared)"
+    ],
+    "handle": "ext:gina",
+    "adminLink": 0,
+    "askHelp": 0
+  },
+  {
+    "name": "3-guest-story",
+    "who": "gina",
+    "url": "/ui/ticket/s-4a0a1d4fc1",
+    "actions": [
+      "Ask a role\nposts a question on the epic thread addressed to a role (architect, engineer, qa, adversary, sme, owner). Wakes: that role's seat on this epic.",
+      "Record ids\nthe ticket's id, kind, work type and raw status, for a message or a shell."
+    ]
+  },
+  {
+    "name": "4-guest-non-member-epic",
+    "who": "gina",
+    "url": "/ui/epic/epic-25011152f6",
+    "alert": "Could not load epic-25011152f6: ticket 'epic-25011152f6' does not exist"
+  },
+  {
+    "name": "5-owner-people-panel",
+    "who": "owner",
+    "url": "/ui/epic/epic-2eb80783bd",
+    "members": [
+      "ext:gina\nguest\nRemove"
+    ],
+    "actions": 0
+  },
+  {
+    "name": "6-owner-invite-defaults-guest",
+    "who": "owner",
+    "url": "/ui/admin?tab=teammates",
+    "inviteRole": "guest",
+    "adminDisabled": true
+  }
+]

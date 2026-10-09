@@ -34,7 +34,8 @@ MIGRATIONS: dict[int, Any] = {}  # {from_version: fn(body: dict) -> dict}; the a
 # as KERNEL_PREAMBLE + the role's own text — the user writes only the role-specific part.
 KERNEL_TOOLS = ("whoami", "subscribe", "context", "context_delta", "message_send", "record_status", "inbox")
 KERNEL_PREAMBLE = """<!-- edp kernel preamble (ships with the app; not editable in a workflow) -->
-**Boot:** `whoami()` → `subscribe()` → arm the feed monitor once and the heartbeat cron once → `context()`.
+**Boot:** `whoami()` → `subscribe()` → arm the feed monitor once (it carries the heartbeat) → `context()`.
+A seat with the edp-wake mod (`subscribe()` returns `wake: "mod"`, no `monitor_cmd`) never arms a Monitor.
 **Heartbeat:** `context_delta(cursor=<your last cursor>)`; `context()` only at boot or on resync_required.
 **Feed and wake:** you wake on events addressed to you and on your tickets; on an idle wake with your work
 in progress, resume the next unbuilt item of your plan; end the turn silently only when handed off or blocked.
@@ -440,12 +441,12 @@ HOOKS: dict[str, dict[str, Any]] = {
     "epic_auto_advance": {},  # the board carries an epic's phase from facts (in_progress, in_review, signed_off)
     "release_cascade": {"review_work_type": "review"},  # released tickets promote signed_off successors to ready
     "criteria_auto_done": {"epic_checker": "qa"},  # in_review → done once every criterion passed (an epic needs the epic checker)
-    "signoff_before_start": {},  # a quick task starts only after the owner's design sign-off
+    "signoff_before_start": {},  # retired (N): no precondition reads it; kept so stored workflow definitions still load
     "evidence_before_review": {},  # in_review needs evidence on every criterion
     "acceptance_pairs_checker": {"role": "qa"},  # the acceptance gate pairs `<role>.<epic>` once
     "resident_designer": {"role": "architect"},  # the epic's own designer walks its epic and is addressed as it
     "review_story_last": {"work_type": "review"},  # the review story waits on its siblings, never blocks them
-    "knowledge_tickets": {"checked_by": "owner"},  # knowledge tickets are checked by this role
+    "knowledge_tickets": {"checked_by": "sme"},  # knowledge tickets are checked by this role (e0cec S6: their own sme)
     "one_checker_per_epic": {"role": "qa"},  # a `<role>.<epic>` checker seat verdicts only its own epic
     "quick_task": {"tag": "quick", "checked_by": "owner"},  # the owner's parentless story is a quick task
 }
@@ -629,11 +630,7 @@ def _arrive_guards(designer: str, signers: list[str], readiers: list[str]) -> di
             _pre("blockers_released", "blocked by unfinished tickets", "open blockers: {open_blockers}"),
         ],
         "in_progress": [
-            # s-ccdafcb229 (owner m-b13c61ddea): on a quick task the owner reviews the design before any edit
-            _pre("design_signed", "quick task {id} waits for the owner's design sign-off",
-                 "doc_create(note) as the design, ticket_update(design_ref=…), "
-                 "gate_open(design_signoff), then wait for the owner's answer",
-                 when={"quick_root": True}, hook="signoff_before_start", exempt_roles=["owner"]),
+            # a quick task has no design step (owner m-85520c3bd1, design-63db8a7d42 N): its words are the design
             _pre("assignee_or_claim", "in_progress needs an assignee", "ticket_update(assignee=...)",
                  when={"from_not_in": ["in_review"]}, roles_from="claim"),
         ],
@@ -681,8 +678,6 @@ def _signoff_gate(answerers: list[str]) -> dict[str, Any]:
         _pre("story_cap", "the epic has {n} open stories (> {cap}); design_signoff is refused",
              "split the epic, drop/fold stories to {cap} or fewer, or ask the owner to answer a scope gate",
              code="scope", when={"kinds": ["epic"]}, phase="open"),
-        _pre("design_ref", "quick task {id} has no design note to sign off",
-             "the engineer sets design_ref to its design note first", when={"quick_root": True}),
         _pre("kind_in", "design_signoff is answered on the epic, not {id} ({kind})",
              "open and answer the gate on the epic ticket", code="scope", when=not_quick, kinds=["epic"]),
         _pre("design_ready", "epic {id} is not ready for design sign-off: {why}",
@@ -699,7 +694,7 @@ def _plain_gates(answerers: list[str]) -> list[dict[str, Any]]:
     return [{"id": g, "answerers": answerers, "requires": [
         _pre("not_terminal", "{kind} {id} is {status}; a {gate} gate opens only on live work",
              "open it on a live ticket", phase="open")]}
-        for g in ("poc", "demo", "adversarial", "budget", "acceptance", "scope")]
+        for g in ("acceptance", "scope")]
 
 
 def _all_hooks_on() -> dict[str, dict[str, Any]]:
@@ -814,7 +809,8 @@ def build_lean() -> WorkflowDef:
         "lean", "Lean", "owner designs and signs off → engineers build → qa checks at epic acceptance.",
         keep_roles=["owner", "engineer", "qa"], designer="owner", checker_roles=["qa", "owner"],
         spawns={"owner": ["engineer", "qa"]}, story_checker="qa",
-        hooks={"resident_designer": {"on": True, "params": {"role": "owner"}}})
+        hooks={"resident_designer": {"on": True, "params": {"role": "owner"}},
+               "knowledge_tickets": {"on": True, "params": {"checked_by": "owner"}}})  # no sme role in Lean
 
 
 def build_solo() -> WorkflowDef:
@@ -824,6 +820,7 @@ def build_solo() -> WorkflowDef:
         keep_roles=["owner", "engineer"], designer="owner", checker_roles=["owner"],
         spawns={"owner": ["engineer"]}, story_checker="owner",
         hooks={"resident_designer": {"on": True, "params": {"role": "owner"}},
+               "knowledge_tickets": {"on": True, "params": {"checked_by": "owner"}},  # no sme role in Solo
                "acceptance_pairs_checker": {"on": False, "params": {"role": "qa"}},
                "one_checker_per_epic": {"on": False, "params": {"role": "qa"}},
                "criteria_auto_done": {"on": True, "params": {"epic_checker": "owner"}}})
@@ -880,7 +877,7 @@ WHY_FIX: dict[str, tuple[str, str]] = {
                         "check the kind with a role that is not a builder (qa, or the owner)"),
     "self_approval": ("the role that opens this gate also answers it, so the gate approves itself",
                       "make a different (human) role the gate's answerer"),
-    "gate_unanswerable": ("no human can answer this gate: it waits forever, and Needs you never shows it",
+    "gate_unanswerable": ("no human can answer this gate: it waits forever and nobody is asked",
                           "add a human role (the owner) to the gate's answerers"),
     "agent_answerer": ("a gate is a human's decision; an agent role among its answerers could approve it",
                        "remove the role from the gate's answerers, or answer with a human role"),

@@ -22,18 +22,18 @@ function row(over: Partial<EpicSummaryRow>): EpicSummaryRow {
 }
 
 describe("EpicsPage", () => {
-  it("renders a row with the status word and 'N of M passed', with the waiting reason", async () => {
+  it("renders a row with the status word and 'N/M criteria passed', with the waiting reason", async () => {
     server.use(http.get("/v1/epics/summary", () => okJson([row({})])));
     renderRoute("/epics", "/epics", <EpicsPage />);
 
     await screen.findByTestId("epic-list");
     expect(screen.getByText("Upgrade the board UI")).toBeInTheDocument();
-    expect(screen.getByText("2 of 4 passed")).toBeInTheDocument();
+    expect(screen.getByText("2/4 criteria passed")).toBeInTheDocument();
     expect(screen.getByTestId("status-chip")).toHaveTextContent("In progress");
     expect(screen.getByTestId("waiting-reason")).toHaveTextContent("engineer building");
   });
 
-  it("shows 'None defined' and no progress bar for a 0/0 epic", async () => {
+  it("shows 'No criteria yet' and no progress bar for a 0/0 epic", async () => {
     server.use(
       http.get("/v1/epics/summary", () =>
         okJson([row({ id: "epic-2", criteria: { passed: 0, failed: 0, pending: 0, total: 0 } })]),
@@ -41,9 +41,35 @@ describe("EpicsPage", () => {
     );
     renderRoute("/epics", "/epics", <EpicsPage />);
     await screen.findByTestId("epic-list");
-    expect(screen.getByText("None defined")).toBeInTheDocument();
+    expect(screen.getByText("No criteria yet")).toBeInTheDocument();
     // No progress bar for 0/0 (design §4.2): the tally reads as words alone.
-    expect(screen.queryByText("0 of 0 passed")).not.toBeInTheDocument();
+    expect(screen.queryByText("0/0 criteria passed")).not.toBeInTheDocument();
+  });
+
+  it("says 'No criteria yet' once: the board's own fallback reason is not repeated beside the tally (qa 0.10.8)", async () => {
+    server.use(http.get("/v1/epics/summary", () => okJson([row({ id: "epic-2", criteria: { passed: 0, failed: 0, pending: 0, total: 0 },
+      waiting_reason: { reason: "None defined", presence: null, latest_status: null } })])));
+    renderRoute("/epics", "/epics", <EpicsPage />);
+    await screen.findByTestId("epic-list");
+    expect(screen.getAllByText("No criteria yet")).toHaveLength(1);
+    expect(screen.queryByTestId("waiting-reason")).toBeNull();
+  });
+
+  it("offers Quick task and New epic to a teammate", async () => {
+    server.use(http.get("/v1/epics/summary", () => okJson([row({})])));
+    renderRoute("/epics", "/epics", <EpicsPage />);
+    await screen.findByTestId("epic-list");
+    expect(await screen.findByTestId("new-epic-open")).toBeInTheDocument();
+    expect(screen.getByTestId("quick-task-open")).toBeInTheDocument();
+  });
+
+  it("hides Quick task and New epic from a guest", async () => {
+    server.use(http.get("/v1/epics/summary", () => okJson([row({})])),
+      http.get("/v1/whoami", () => okJson({ participant: { id: "gina", handle: "gina", role: "guest", type: "human" }, tickets: [], admin: false })));
+    renderRoute("/epics", "/epics", <EpicsPage />);
+    await screen.findByTestId("epic-list");
+    await waitFor(() => expect(screen.queryByTestId("new-epic-open")).toBeNull());
+    expect(screen.queryByTestId("quick-task-open")).toBeNull();
   });
 
   it("binds status/q to the query string: the URL params reach the request and the select", async () => {
@@ -87,8 +113,8 @@ describe("EpicsPage attention (S20)", () => {
     await waitFor(() => expect(screen.getAllByTestId("epic-row")[0]).toHaveTextContent("Galaxy site"));
     const [first, second] = screen.getAllByTestId("epic-row");
     expect(first).toHaveAttribute("data-attention", "true");
-    expect(within(first).getByRole("img", { name: "needs your attention: 5" })).toBeInTheDocument();
-    expect(within(first).getByTestId("attention-reason")).toHaveTextContent("Waiting on you: 2 questions, 1 scope decision, 1 design sign-off, 1 sign-off");
+    expect(within(first).getByRole("img", { name: "needs your attention: 2" })).toBeInTheDocument();
+    expect(within(first).getByTestId("attention-reason")).toHaveTextContent("2 questions");
     expect(second).not.toHaveAttribute("data-attention");
     expect(within(second).queryByRole("img")).toBeNull();
   });

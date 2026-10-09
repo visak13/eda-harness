@@ -23,10 +23,10 @@ declare("lanes.aging_s", "EDP8_LANE_AGING_S", "float", 120.0, "Limits/tuning",
 
 # ---- uploads (edp8.http_upload, read by the MCP proxy at startup)
 declare("uploads.http_mode", "EDP8_HTTP_UPLOAD_MODE", "str", None, "Integrations",
-        "'single-host' enables MCP uploads over HTTP from local seats; anything else disables them.",
+        "Unset: loopback single-host installs let agent seats upload from the agent home. 'single-host' uses the policy file instead; 'off' (or anything else) disables MCP uploads over HTTP.",
         restart_required="mcp",
         tier="advanced", label='Agent file uploads',
-        help='single-host lets agents on this computer attach files to the board; off turns uploads off.', choices=("single-host", "off"))
+        help='Unset lets agents on this computer attach files from the agent home; single-host uses your rules file; off turns uploads off.', choices=("single-host", "off"))
 declare("uploads.http_policy", "EDP8_HTTP_UPLOAD_POLICY", "path", None, "Integrations",
         "Absolute path of the HTTP upload policy JSON (workspace root and per-seat roots).",
         restart_required="mcp",
@@ -62,6 +62,15 @@ declare("records.pain_file", "EDP8_PAIN_FILE", "path",
         "The pain-point log (JSONL) the pain skill appends to and the board reads.",
         default_doc="<EDP_HOME>/.pain/pain-points.jsonl, else <data>/.pain/pain-points.jsonl",
         tier="internal")
+declare("records.pain_repo_file", "EDP8_REPO_PAIN_FILE", "path", None, "Paths",
+        "The repo pain store imported beside the installed one; default <checkout>/v8/.pain/pain-points.jsonl.",
+        env_only=True, tier="internal")
+declare("records.pain_import", "EDP8_PAIN_IMPORT", "str", None, "Paths",
+        "An os.pathsep list of pain JSONL files to import instead of the installed and repo stores.",
+        env_only=True, tier="internal")
+declare("records.pain_repo", "EDP8_REPO", "path", None, "Paths",
+        "The git checkout a pain's fix commit is checked against (on main, pushed); default the board's own checkout.",
+        env_only=True, tier="internal")
 
 # ---- code-server guard: one-shot secrets the board hands the guard by env, popped at start
 declare("code_guard.session", "CODE_GUARD_SESSION", "str", None, "Integrations",

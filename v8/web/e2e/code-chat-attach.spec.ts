@@ -40,7 +40,7 @@ async function call(method: string, p: string, body?: unknown, who: Record<strin
 }
 async function upload(name: string, bytes: Uint8Array, who: Record<string, string>): Promise<string> {
   const form = new FormData();
-  form.append("file", new Blob([bytes]), name);
+  form.append("file", new Blob([bytes as Uint8Array<ArrayBuffer>]), name);
   form.append("ticket_id", EPIC());
   const r = await fetch(`${BASE()}/v1/artifacts/upload`, { method: "POST", headers: who, body: form });
   const j = await r.json();

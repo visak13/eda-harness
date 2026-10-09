@@ -77,8 +77,12 @@ def test_doctor_is_a_standard_workflow_role_with_a_card():
     assert {r.id: r.spawnable for r in wf.roles}.get("doctor") is True
     assert [p for p in validate(wf) if p["severity"] == "error"] == []
     card = (V8 / ".claude" / "commands" / "doctor.md").read_text(encoding="utf-8")
+    # e0cec S9: the card sends the seat to the get_guide index (one `troubleshooting-<class>` guide per class)
+    assert "get_guide()" in card and "troubleshooting-*" in card
+    from edp8.guides import index as guide_index
+    names = {g["name"] for g in guide_index()}
     for c in FAILURE_CLASSES:
-        assert f"troubleshooting-{c}" in card, c
+        assert f"troubleshooting-{c}" in names, c
 
 
 # ----------------------------------------------------------------------------- c-77bbea9ee3 (c): guides
@@ -481,3 +485,35 @@ def test_help_requests_list_shows_each_seat_phase_and_the_failure_reason(tmp_pat
     assert env.client.post(f"/v1/topics/{tid}/close", headers=BOB_H).status_code == 200
     assert env.client.get("/v1/help", headers=BOB_H).json()["value"] == []
     assert [r["id"] for r in env.client.get("/v1/help?closed=true", headers=BOB_H).json()["value"]] == [tid]
+
+
+# ----------------------------------------------------------------------------- S7: model window warnings
+
+def _row(window, compact, harness="claude"):
+    return {"harness": harness, "provider": harness, "context_window": window, "auto_compact": compact,
+            "effort_cap": "medium"}
+
+
+def test_doctor_warns_when_auto_compact_exceeds_the_real_window():
+    models = {
+        "fine-1m": _row(1_000_000, 350_000),                 # launched as [1m]: 1M is real
+        "fine-small": _row(200_000, 150_000),                # 200K row compacting below it
+        "liar": _row(500_000, 350_000),                      # not 1M: Claude gives 200K, 350K never fires
+        "wants[1m]": _row(200_000, 100_000),                 # names 1M, has no 1M window
+        "gpt": _row(None, 900_000, harness="codex"),         # not Claude: the harness owns its window
+    }
+    got = {c["evidence"]["model"]: c for c in doctor.model_window_causes(models)}
+    assert set(got) == {"liar", "wants[1m]"}
+    assert got["liar"]["code"] == "compact_above_window" and "200000" in got["liar"]["what"]
+    assert got["wants[1m]"]["code"] == "one_m_without_window"
+    assert got["liar"]["fix"] and got["wants[1m]"]["fix"]
+
+
+def test_doctor_health_includes_the_window_warning(tmp_path, monkeypatch):
+    monkeypatch.setattr(doctor, "model_window_causes", lambda models=None: [
+        {"code": "compact_above_window", "what": "x", "evidence": {"model": "m"}, "fix": "f", "guide": ""}])
+    env = make_env(tmp_path, monkeypatch)
+    _fake_services(monkeypatch)
+    _fake_pool(monkeypatch, up=True)
+    h = env.client.get("/v1/doctor/health", headers=ADMIN_H).json()["value"]
+    assert _codes(h) == {"compact_above_window"}

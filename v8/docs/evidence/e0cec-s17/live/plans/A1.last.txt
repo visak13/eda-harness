@@ -1,0 +1,237 @@
+{
+  "steps": [
+    {
+      "n": 1,
+      "do": "Implement A1 within the existing Tallyline API, refund flow and ledger-posting packages. Use the agreed A1 design and ticket criteria; raise any discovered disagreement rather than silently choosing one. Apply appended amendments over older chapter text and the handbook's explicit precedence rulings; raise any unresolved document conflict in the guild channel.",
+      "per": "design-16997fc8c9 §3 and Story A1; strategyll-ecbcff9c68 §§1.1–1.3, 5.1, 16.1, Updates"
+    },
+    {
+      "n": 2,
+      "do": "Use short-lived branches from main named <type>/A1-<slug>, with type feat, fix, chore or docs. Write commits as <type>(<scope>): <summary> [A1], using an allowed Conventional Commit type, a package/area scope and a summary under 72 characters; any body explains why. Keep main releasable. Apply the testing and review rules below to each PR, including migration and backfill PRs.",
+      "per": "strategyll-ecbcff9c68 §§4.1–4.4, Update 2026-03-02; strategyll-2a4568e35a §How releases work"
+    },
+    {
+      "n": 3,
+      "do": "Create the expand migration with make new-migration NAME=<description>, producing db/migrations/<YYYYMMDDHHMMSS>_<description>.sql with a UTC timestamp. Put SET lock_timeout = '3s'; and SET statement_timeout = '15min'; first under -- migrate:up. Add refund_lines with refund id, invoice line id, amount minor and currency, and its refund_id index in the same migration. Add nullable refunds.kind for full/partial. Leave -- migrate:down present and empty.",
+      "per": "design-16997fc8c9 Story A1 / Schema changes; strategyll-3e707d102f §§1, 3, 6, Updates 2025-11-10 and 2026-05-04"
+    },
+    {
+      "n": 4,
+      "do": "Put each migration in its own PR containing only that migration and any tests of the migration itself. Include integration coverage for refund_lines against Postgres. Use synthetic factory/fixture data, run make check and the applicable integration suite, and meet 85% coverage of changed executable lines. Let CI perform migration-application checks against the empty database and anonymised seed snapshot.",
+      "per": "strategyll-3e707d102f §§2, 7; strategyll-ecbcff9c68 §§3.1–3.3, 6.1–6.5, Update 2026-04-01"
+    },
+    {
+      "n": 5,
+      "do": "Rehearse every migration using make rehearse-migration NAME=<migration> against staging's production-sized snapshot. Record total duration, longest lock and lock-timeout retries; paste the output into the release ticket carrying the migration, obtain the rota database engineer's sign-off there, and link the sign-off in the ticket's Links field. Repeat rehearsal if the migration changes.",
+      "per": "strategyll-3e707d102f §4; strategyll-2a4568e35a §3 and Update 2026-05-11"
+    },
+    {
+      "n": 6,
+      "do": "Obtain one non-author Ledger Guild approval for each migration PR and resolve review threads only after the concern is addressed by a change or acknowledged answer. Merge by squash-and-merge for a single logical change, otherwise rebase-and-merge. Release the expand schema to production before any release containing code that uses it is cut. Use the normal working-day 10:00 UK release outside freezes, with automated staging smoke checks and release-captain approval after rehearsal sign-off; pull the migration from that day's release if sign-off is missing at 10:00.",
+      "per": "strategyll-ecbcff9c68 §§4.4, 5.2, 5.5, 15.3; strategyll-3e707d102f §3; strategyll-2a4568e35a §§How releases work, 3"
+    },
+    {
+      "n": 7,
+      "do": "Prepare a separate schema-backfill script in db/backfills/, named after its migration, to set the approximately 4.2 million existing refunds to kind='full'. Select only rows still needing the value; process at most 10,000 rows per batch, commit each batch and sleep briefly between batches. Include same-PR tests, including running the script twice on the same data and proving the second run changes nothing; obtain the normal guild review.",
+      "per": "design-16997fc8c9 Story A1 / Schema changes; strategyll-3e707d102f §§2, 5, 7; strategyll-ecbcff9c68 §§5.2, 6.2, 16.5"
+    },
+    {
+      "n": 8,
+      "do": "After the expand migration is live in production, run the resumable backfill and verify that all pre-existing refunds have kind='full'. Complete the backfill before releasing any code that relies on these values, including the GET response field.",
+      "per": "design-16997fc8c9 Story A1 / Schema changes; strategyll-3e707d102f §5"
+    },
+    {
+      "n": 9,
+      "do": "Create tallyline-refunds-partial using flagpole create before merging code that reads it. Default it off in production, set its owner to the Ledger Guild and include A1 in its description. Open the flag-cleanup ticket together with the PR introducing the flag.",
+      "per": "design-16997fc8c9 Story A1 / Observability and rollout; strategyll-2a4568e35a §1, §8, Update 2026-02-23"
+    },
+    {
+      "n": 10,
+      "do": "Implement POST /v2/payments/{payment_id}/refunds with a flag check returning 404 while off. Require OAuth2 bearer authorization with refunds:write. Accept an amount object containing integer amount_minor and ISO currency, plus reason from damaged_item, missing_item, late_delivery, goodwill or other. Convert amounts to Money at the schema boundary and retain Money throughout computation. Return 201 with the refund in pending state; retain polling through GET /v2/refunds/{refund_id} and the existing settlement push notification.",
+      "per": "design-16997fc8c9 Story A1 / What we are building and Observability and rollout; strategyll-70f21f1bd2 §2; strategyll-ecbcff9c68 §7.1; strategyll-2a4568e35a §1"
+    },
+    {
+      "n": 11,
+      "do": "Use @idempotent and api_idempotency_keys for the public POST: require Idempotency-Key, return 400 idempotency_key_required when absent, retain the key and request-body hash for 24 hours, replay the stored response for the same key/body, and return 409 idempotency_key_reused for the same key with a different body.",
+      "per": "strategyll-70f21f1bd2 §5"
+    },
+    {
+      "n": 12,
+      "do": "Define 422 refund_amount_invalid for non-positive amounts, 422 refund_currency_mismatch for currency mismatch, 409 payment_not_refundable for a payment not captured or already fully refunded, and 422 refund_exceeds_captured_amount when the requested amount exceeds the remaining amount. Format errors as application/problem+json with type, title, status, detail and code, using a specific https://errors.tallyline.example/ URI and corresponding snake_case code.",
+      "per": "design-16997fc8c9 Story A1 / What we are building; strategyll-70f21f1bd2 §2"
+    },
+    {
+      "n": 13,
+      "do": "In the transaction recording refund intent, lock the payment row with SELECT ... FOR UPDATE and re-sum its pending and succeeded refunds. Enforce the captured-amount limit there. Insert the pending refund with kind='full' if it refunds exactly the remaining amount, otherwise kind='partial'. Allocate proportionally across invoice lines with Money.allocate(), preserving deterministic remainder distribution, and insert refund_lines in the same transaction. Commit before the gateway call.",
+      "per": "design-16997fc8c9 Story A1 / Allocation to invoice lines and The refund flow; strategyll-ecbcff9c68 §§7.1, 8.3, 16.2"
+    },
+    {
+      "n": 14,
+      "do": "Outside any database transaction, call GatewayClient.refund() with the payment's gateway reference and Money amount. Derive the gateway key with idempotency_key_for(operation_type, operation_id) using the refund operation and refund id, and reuse it for retries and recovery. Continue using the existing pending-refund recovery job unchanged.",
+      "per": "design-16997fc8c9 Story A1 / The refund flow; strategyll-ecbcff9c68 §§8.1–8.3"
+    },
+    {
+      "n": 15,
+      "do": "In a new transaction, record the gateway outcome. On success, post exactly one refund_paid journal through LedgerPoster and mark the refund succeeded; on failure, mark it failed with the gateway reason code and no journal. Change tallyline/ledger/posting/journal_types/refunds.py to accept any positive refund amount, keeping the remaining-amount guard in the refund flow. Use the existing refund_paid account mapping, balance every journal per currency and use LedgerPoster's injected UTC clock. Preserve the documented gateway-state mappings and derive payment refund status from local succeeded refunds.",
+      "per": "design-16997fc8c9 Story A1 / The refund flow; strategyll-ecbcff9c68 §§7.2–7.5, Appendices H, K, M; A1-c3"
+    },
+    {
+      "n": 16,
+      "do": "Extend GET /v2/refunds/{refund_id} additively to read kind from refunds.kind and return full or partial for every refund. Ensure newly created refunds have a populated kind as well as the backfilled historical rows. Preserve existing public field meanings and outcomes; serialize any timestamps as RFC 3339 UTC.",
+      "per": "design-16997fc8c9 Story A1 / What we are building and Schema changes; A1-c4; strategyll-70f21f1bd2 §§1–2"
+    },
+    {
+      "n": 17,
+      "do": "Emit refund.requested for the intent step and refund.succeeded/refund.failed for the outcome step through tallyline.common.events.emit_event. Add a schema in tallyline/common/events/schemas/ in the same PR for each new event name. Represent event amounts as integer amount_minor plus currency. Use get_logger for JSON debugging logs with customer_id and applicable payment, refund, invoice and journal ids; use WARNING for handled failures and ERROR for unhandled failures. Log gateway status/reason only and retain the redaction filter. Use the default 14-day request-log retention and 13-month event-stream retention followed by the finance warehouse.",
+      "per": "design-16997fc8c9 Story A1 / Observability and rollout; strategyll-57ba44c849 §§1–2, 5–7, Update 2026-01-19; strategyll-ecbcff9c68 §§11.1, 11.3"
+    },
+    {
+      "n": 18,
+      "do": "Add the refund counter labelled only by outcome and currency, using the tallyline_<area>_<what>_<unit> naming convention. Use automatic HTTP rate/error/latency metrics. Add a panel to the Tallyline – service dashboard as code in ops/dashboards/ and at least one alert in ops/alerts/ for endpoint error rate above 1% for 10 minutes, routed to the guild alert channel. Check that the existing GET panel still makes sense.",
+      "per": "design-16997fc8c9 Story A1 / Observability and rollout; strategyll-57ba44c849 §§3–4, 7"
+    },
+    {
+      "n": 19,
+      "do": "In the handler PR, update hand-written api/openapi.yaml for the new POST and changed GET: request/response schemas, required scope and headers, every possible error type and at least one example per documented response code. Run make api-lint and make contract-tests; commit generated tests in tests/contract/. Record both public API changes only in docs/api/changes.md under Unreleased, naming v2, each operation and partner-actionable changes, with entries ending [A1].",
+      "per": "strategyll-70f21f1bd2 §§2–6, 10, Update 2026-07-14; strategyll-ecbcff9c68 §§1.3, 4.3"
+    },
+    {
+      "n": 20,
+      "do": "Include unit tests for all changed behaviour and Postgres integration tests for the endpoint and new table in the relevant PRs. Verify the five criteria and error/auth/idempotency behaviour, deterministic allocation, gateway decline/timeout, retry and crash recovery without duplicate refunds or journals, and observability. Use factories and GatewayFake, extending the fake in the same PR if needed. Run make check, integration and contract suites and meet 85% changed-executable-line coverage; moved lines count. For genuinely untestable glue, use a reasoned pragma. If a flaky test appears, open a flaky ticket and fix or quarantine it.",
+      "per": "strategyll-ecbcff9c68 §§3.1–3.3, 6.1–6.5, 16.3, Update 2026-04-01; strategyll-3e707d102f §7; strategyll-70f21f1bd2 §4; A1-c1–A1-c5"
+    },
+    {
+      "n": 21,
+      "do": "Prepare the feature PR with the suggested Summary, Ticket, Risk, Rollback, Testing and applicable Links, explaining refund-concurrency and recovery risks and rollback by disabling tallyline-refunds-partial; use previous-tag redeployment for problems outside flag control and forward fixes for schema problems. Obtain one non-author Ledger Guild approval plus a second approval from a CODEOWNERS ledger owner because refunds.py is under tallyline/ledger/posting/. Resolve review concerns before resolving their threads, then merge using the permitted merge method.",
+      "per": "strategyll-ecbcff9c68 §§4.4, 5.2–5.5, Appendix A, Update 2026-06-15; strategyll-2a4568e35a §4; design-16997fc8c9 Story A1 / The refund flow"
+    },
+    {
+      "n": 22,
+      "do": "Release the feature code in a later production release than the expand migration, after backfill completion, with the flag still off. Follow the normal release from main, automated staging smoke run and release-captain production approval. Respect the last-two-working-days-of-month and 20 December–2 January freezes.",
+      "per": "strategyll-3e707d102f §§3, 5; strategyll-2a4568e35a §§How releases work, 1, 3, 6; strategyll-ecbcff9c68 §15.3"
+    },
+    {
+      "n": 23,
+      "do": "Verify the dashboard and alert are merged and live, then enable tallyline-refunds-partial in production as a deliberate step after deployment. Tell the guild channel when enabling it because it changes refunds. Mobile release 7.12 can then call the operation.",
+      "per": "strategyll-57ba44c849 §4; strategyll-2a4568e35a §§1, 8; design-16997fc8c9 Story A1 / Observability and rollout"
+    },
+    {
+      "n": 24,
+      "do": "Use the cleanup ticket to remove the off-paths and delete the flag 60 days after it is fully on in production.",
+      "per": "strategyll-2a4568e35a §Flag clean-up and Update 2026-02-23"
+    }
+  ],
+  "must_not": [
+    {
+      "rule": "Do not add client-chosen line allocation, Console partial refunds, cross-currency refunds, changes to /v1/, new services or new third-party dependencies. A1 does not implement A2 reconciliation or A3 archival and does not depend on their release order.",
+      "per": "design-16997fc8c9 §3, Story A1 / Out of scope for A1, §6"
+    },
+    {
+      "rule": "Do not treat A1 as exempt from public API policy because the historical full-refund example used /internal/. Do not introduce breaking changes within v2, date/header-based versioning, decimal-string or float API amounts, or generic error types such as about:blank. No operation is being retired, so deprecation markers and Sunset headers are not required; these operations introduce no paginated collection.",
+      "per": "strategyll-70f21f1bd2 §§Scope, 1–2, 7–8; strategyll-ecbcff9c68 Appendix B; design-16997fc8c9 Story A1"
+    },
+    {
+      "rule": "Do not duplicate A1's public API change entries in CHANGELOG.md. The API-policy-only location explicitly overrides the release procedure's general changelog rule. Do not omit [A1] from the end of the API entries.",
+      "per": "strategyll-ecbcff9c68 §1.3; strategyll-70f21f1bd2 §6 and Update 2026-07-14"
+    },
+    {
+      "rule": "Do not use Flyway V/U file pairs, write reverse SQL in migrate:down, roll back schema migrations, or request a maintenance window. Both the original undo requirement and the intermediate dbmate reverse-change requirement are superseded.",
+      "per": "strategyll-3e707d102f §History, Updates 2025-11-10 and 2026-05-04; strategyll-2a4568e35a §4"
+    },
+    {
+      "rule": "Do not combine migration and application code in one PR or release them together behind an off flag. Merging the migration first is insufficient; it must already be live in an earlier production release.",
+      "per": "strategyll-3e707d102f §§2–3; strategyll-ecbcff9c68 §1.3, overriding strategyll-2a4568e35a §3"
+    },
+    {
+      "rule": "Do not perform the 4.2-million-row backfill inside the migration, exceed 10,000 rows per batch, or release dependent code before completion. The small-backfill inline-UPDATE allowance does not apply. This is a schema backfill, not the business-backfill one-off-job-and-delete workflow.",
+      "per": "design-16997fc8c9 Story A1 / Schema changes; strategyll-3e707d102f §5; strategyll-ecbcff9c68 §16.5"
+    },
+    {
+      "rule": "Do not add an index to an existing table. The refund_lines index is exempt from CREATE INDEX CONCURRENTLY, a separate index migration and transaction:false because its table is created in the same migration. No rename, removal or foreign key on a large existing table is specified, so their multi-release procedures and a contract migration are not required.",
+      "per": "design-16997fc8c9 Story A1 / Schema changes; strategyll-3e707d102f §§3, 6, 8"
+    },
+    {
+      "rule": "Do not skip rehearsal for an add-table migration, approve its production deploy without database-engineer sign-off, reuse rehearsal after editing the migration, or bury the required release artefact link only in a comment.",
+      "per": "strategyll-3e707d102f §§4, 8; strategyll-2a4568e35a §3 and Update 2026-05-11"
+    },
+    {
+      "rule": "Do not use float or Decimal internally, swallow CurrencyMismatch and continue, round outside Money.allocate()/currency-conversion helpers, convert ledger currencies, add a balance column, or compute accounting periods independently. Do not split one refund into per-line journals.",
+      "per": "strategyll-ecbcff9c68 §§7.1–7.5, 16.2, Appendix H; design-16997fc8c9 Story A1 / Allocation to invoice lines"
+    },
+    {
+      "rule": "Do not update or delete ledger_entries or ledger_journals through application code, migrations, backfills or scripts; do not create their rows except through LedgerPoster or post to closed accounts. A1 has no archival exception and needs no new ledger account or account-creation finance approval.",
+      "per": "strategyll-ecbcff9c68 §§7.2–7.3, Appendix M; strategyll-3e707d102f §5; design-16997fc8c9 §3.1"
+    },
+    {
+      "rule": "Do not check the refund limit only before the transaction, omit pending refunds from the reservation sum, hold a transaction across any network call, bypass GatewayClient, or generate a fresh random/timestamp gateway key on retry. The public Idempotency-Key does not replace gateway idempotency.",
+      "per": "design-16997fc8c9 Story A1 / The refund flow; strategyll-ecbcff9c68 §§8.1–8.3, 16.2; strategyll-70f21f1bd2 §5"
+    },
+    {
+      "rule": "Do not introduce bulk-refund machinery, new webhook handling or a new scheduled recovery job for this per-request story. The bulk runner, new-webhook worker rule, scheduled-job registration/lifecycle/sizing rules and sub-hourly platform consultation are not triggered; the existing recovery job is unchanged.",
+      "per": "design-16997fc8c9 Story A1 / The refund flow; strategyll-ecbcff9c68 §§8.4–8.5, 14, 16.5; strategyll-57ba44c849 §2"
+    },
+    {
+      "rule": "Do not impose archival legal-hold checks, archive verification/deletion batches, a retention kill switch, production archival dry run, finance/privacy rollout sign-off, archive credentials or archive-store tests on A1. Those govern archival, not ordinary refund creation. Do not omit the Flagpole flag by borrowing the retention-job exception.",
+      "per": "strategyll-f55a783865 §§2–7, 10; strategyll-2a4568e35a §1; design-16997fc8c9 Stories A1 and A3"
+    },
+    {
+      "rule": "Do not require a PR-7 for A1's ordinary refund/journal creation or a SEC-REQ for using the existing gateway client. A1 neither deletes/redacts/archives customer data nor introduces a secret. Existing secrets must remain in Vault and be read through the approved helper; never put secrets in code, config, environment files, fixtures, CI variables or logs. If a leak is discovered, notify on-call and let platform rotate it rather than rewriting history.",
+      "per": "strategyll-ecbcff9c68 §§9.1–9.3, 10.2; design-16997fc8c9 §3 and Story A1"
+    },
+    {
+      "rule": "Do not write business events as EVENT: INFO lines or introduce snake_case event names. Do not rename existing events merely for the naming update. Do not use print, another logging library or custom standard-library handlers, log raw gateway payloads/request bodies/secrets, or bypass redaction.",
+      "per": "strategyll-57ba44c849 §§Precedence, 2, 6, Update 2026-01-19; strategyll-ecbcff9c68 §§11.1, 11.3, 16.9"
+    },
+    {
+      "rule": "Do not apply retention-job customer-id suppression or 400-day logging to this endpoint: its customer-specific logs require customer_id and normal request retention applies. Never use customer/payment ids or other unbounded identifiers as metric labels. The changed GET does not independently require a new panel; the new POST does.",
+      "per": "strategyll-57ba44c849 §§1, 3–5, 7; strategyll-f55a783865 §6"
+    },
+    {
+      "rule": "Do not turn the feature on during deployment or before its dashboard and alert are live. Do not use the superseded 30-day cleanup interval.",
+      "per": "strategyll-2a4568e35a §1 and Update 2026-02-23; strategyll-57ba44c849 §4"
+    },
+    {
+      "rule": "Do not use the old A1: Summary commit format, merge commits, release branches, the superseded 80% coverage gate, or follow-up-only tests. Do not track the generated clients/ output; api/openapi.yaml remains hand-written and contract tests are committed.",
+      "per": "strategyll-ecbcff9c68 §§4, 6.2, Updates 2026-03-02 and 2026-04-01; strategyll-70f21f1bd2 §§3–4"
+    },
+    {
+      "rule": "Do not use real gateway or sandbox calls in unit/integration tests, real customer data, or de-anonymise/export the seed snapshot. The automated pre-release smoke run is the sandbox exception; do not substitute it for main-suite tests or require ordinary-feature smoke-suite extensions.",
+      "per": "strategyll-ecbcff9c68 §§3.2, 6.3, 6.5, 16.3; strategyll-2a4568e35a §6"
+    },
+    {
+      "rule": "Do not impose Console checks/screenshots/accessibility review, invoice-render benchmarks, Money-helper property-test changes, dependency licence approvals or a new-top-level-package discussion on this scoped implementation: none of those areas is being changed. Using Money.allocate() is not changing money.py.",
+      "per": "design-16997fc8c9 §3 and Story A1; strategyll-ecbcff9c68 §§3.4, 6.6–6.7, 12.1, 13"
+    },
+    {
+      "rule": "Do not request a second approval merely because a PR concerns the ledger. It is required for A1's posting-code PR, but not for standalone migration/backfill or other non-posting PRs. Do not turn PR-template guidance, suggested PR size, reviewer thinking aids or onboarding suggestions into additional gates.",
+      "per": "strategyll-ecbcff9c68 §§5.2–5.6, 16.4, Appendices A, F, N, Update 2026-06-15"
+    },
+    {
+      "rule": "Do not run or require the retired QA guild release checklist/sign-off. Do not label ordinary A1 feature work a hotfix to bypass freezes or the posting approval rule. Do not plan around a Thursday/Friday freeze; only the documented month-end and year-end freezes apply.",
+      "per": "strategyll-ecbcff9c68 §§2.3–2.4, 15.3, 16.4, Appendix D; strategyll-2a4568e35a §§5, 7"
+    }
+  ],
+  "criteria_checks": [
+    {
+      "criterion": "A1-c1",
+      "how": "With the flag on, use valid authorization and distinct idempotency keys to submit several partial refunds against one captured payment. Verify each accepted POST returns 201/pending, amounts up to the remaining value are accepted, and records and allocations match each request."
+    },
+    {
+      "criterion": "A1-c2",
+      "how": "Use concurrent Postgres-backed requests whose combined amounts exceed captured funds. Verify payment-row locking and re-summing pending plus succeeded refunds prevent over-reservation, the over-limit request returns 422 refund_exceeds_captured_amount, and persisted refundable totals never exceed captured funds."
+    },
+    {
+      "criterion": "A1-c3",
+      "how": "Drive success, failure, duplicate/retry and recovery paths with GatewayFake. Verify each succeeded refund has exactly one refund_paid journal, debits and credits sum to zero per currency, failures have no paid journal, and proportional refund_lines sum exactly to the refund with deterministic remainder allocation."
+    },
+    {
+      "criterion": "A1-c4",
+      "how": "Run the backfill twice on historical refund fixtures, verify all receive full and the second run changes nothing, and verify production backfill completion before dependent release. Exercise GET for historical full refunds, new partial refunds and refunds exhausting the remaining amount; assert kind is always full or partial and never null."
+    },
+    {
+      "criterion": "A1-c5",
+      "how": "With tallyline-refunds-partial off, verify the POST returns 404 as if absent and performs no refund work. With it on, verify the operation becomes available; retain off-by-default production configuration until the separate post-deployment enablement."
+    }
+  ],
+  "complete": true
+}

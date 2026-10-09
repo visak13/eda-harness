@@ -13,6 +13,13 @@ def head(*lines, target="/"):
     return (f"GET {target} HTTP/1.1\r\n" + "".join(l + "\r\n" for l in lines) + "\r\n").encode()
 
 
+def login(host, form, *lines):
+    """RC2 F5: the guard login is one POSTed form, never a token in a URL."""
+    body = form.encode()
+    return (f"POST /__edp/login HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/x-www-form-urlencoded\r\n"
+            + "".join(l + "\r\n" for l in lines) + f"Content-Length: {len(body)}\r\n\r\n").encode() + body
+
+
 WS = ("Upgrade: websocket", "Connection: Upgrade", "Sec-WebSocket-Version: 13", "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==")
 
 
@@ -321,14 +328,29 @@ def test_gate_healthz_passes_without_session():
         assert e.value.status == 401
 
 
-def test_gate_login_route_host_checked_and_plain_get():
-    _, facts = check_head(head("Host: 127.0.0.1:9410", target="/__edp/login?t=x&next=/"), 9410, ORIGINS, "s3cret", GATE)
-    assert facts["login"] == "t=x&next=/"
+def _login_head(raw: bytes) -> bytes:
+    return raw.split(b"\r\n\r\n", 1)[0] + b"\r\n\r\n"
+
+
+def test_gate_login_route_host_checked_and_a_posted_form_only():
+    _, facts = check_head(_login_head(login("127.0.0.1:9410", "t=x&next=/")), 9410, ORIGINS, "s3cret", GATE)
+    assert facts["login"] == "" and facts["length"] == len("t=x&next=/")
     with pytest.raises(Refused) as e:
-        check_head(head("Host: evil.invalid:9410", target="/__edp/login?t=x"), 9410, ORIGINS, "s3cret", GATE)
+        check_head(_login_head(login("evil.invalid:9410", "t=x")), 9410, ORIGINS, "s3cret", GATE)
     assert e.value.status == 421
+    # RC2 F5 (architect m-e26cf15b4f): a token in a URL is refused, whatever the method
     with pytest.raises(Refused) as e:
-        check_head(head("Host: 127.0.0.1:9410", *WS, target="/__edp/login?t=x"), 9410, ORIGINS, "s3cret", GATE)
+        check_head(head("Host: 127.0.0.1:9410", target="/__edp/login?t=x&next=/"), 9410, ORIGINS, "s3cret", GATE)
+    assert e.value.status == 405 and "never rides a URL" in e.value.detail
+    raw = _login_head(login("127.0.0.1:9410", "t=x")).replace(b"POST /__edp/login ", b"POST /__edp/login?t=x ")
+    with pytest.raises(Refused) as e:
+        check_head(raw, 9410, ORIGINS, "s3cret", GATE)
+    assert e.value.status == 400
+    with pytest.raises(Refused) as e:
+        check_head(_login_head(login("127.0.0.1:9410", "")), 9410, ORIGINS, "s3cret", GATE)
+    assert e.value.status == 400
+    with pytest.raises(Refused) as e:
+        check_head(_login_head(login("127.0.0.1:9410", "t=" + "x" * 3000)), 9410, ORIGINS, "s3cret", GATE)
     assert e.value.status == 400
 
 
@@ -364,12 +386,12 @@ def test_e2e_gate_login_sets_cookie_then_relays_and_refuses_replay():
             assert out.startswith(b"HTTP/1.1 200") and b"s3cret" not in seen[-1]; w.close()
             # login with a board-minted token: 302 to next + the cookie
             tok, _ = mint_token(KEY)
-            _, w, out = await _roundtrip(port, head(f"Host: 127.0.0.1:{port}", target=f"/__edp/login?t={tok}&next=%2F%3Ffolder%3D%2Fc%3A%2Fx"))
+            _, w, out = await _roundtrip(port, login(f"127.0.0.1:{port}", f"t={tok}&next=%2F%3Ffolder%3D%2Fc%3A%2Fx"))
             assert out.startswith(b"HTTP/1.1 302") and b"Location: /?folder=/c:/x\r\n" in out
             assert _set_cookie(out) == f"{GUARD_COOKIE}={g.gate}; Path=/; HttpOnly; SameSite=Strict"
             w.close()
             # replayed: 401, no cookie
-            _, w, out = await _roundtrip(port, head(f"Host: 127.0.0.1:{port}", target=f"/__edp/login?t={tok}&next=/"))
+            _, w, out = await _roundtrip(port, login(f"127.0.0.1:{port}", f"t={tok}&next=/"))
             assert out.startswith(b"HTTP/1.1 401") and b"Set-Cookie" not in out; w.close()
             # with the cookie: relayed, session injected, guard cookie stripped
             n = len(seen)
@@ -400,11 +422,11 @@ def test_e2e_gate_mid_connection_closes_unanswered_and_keeps_the_token():
             assert len(seen) == 1
             r, w, out = await _roundtrip(port, head(f"Host: 127.0.0.1:{port}", f"Cookie: {GUARD_COOKIE}={g.gate}"))
             tok, _ = mint_token(KEY)
-            w.write(head(f"Host: 127.0.0.1:{port}", target=f"/__edp/login?t={tok}"))
+            w.write(login(f"127.0.0.1:{port}", f"t={tok}"))
             await w.drain()
             assert await asyncio.wait_for(r.read(4096), 5) == b""
             # the retry on a fresh connection still signs in: the token was not spent
-            _, w, out = await _roundtrip(port, head(f"Host: 127.0.0.1:{port}", target=f"/__edp/login?t={tok}"))
+            _, w, out = await _roundtrip(port, login(f"127.0.0.1:{port}", f"t={tok}"))
             assert out.startswith(b"HTTP/1.1 302")
         finally:
             task.cancel(); up.close()

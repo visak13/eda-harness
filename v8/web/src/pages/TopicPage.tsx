@@ -9,7 +9,9 @@ import { parseTags } from "./KnowledgeDetail";
 import { errText, when } from "./Topics";
 import { TopicExperts, TopicThread } from "./TopicPanels";
 import { FixCards } from "../components/FixCards";
+import { TicketSurface } from "./Ticket";
 import { helpPhaseText } from "../components/HelpRequests";
+import { modelLabel } from "../api/seats";
 import styles from "./Topics.module.css";
 
 // S-SME-SURFACE (s-698224fca8): one Library topic — docs, thread, experts, seat and tags. The same page
@@ -33,14 +35,13 @@ export function TopicPage(): React.JSX.Element {
   const isOpen = p.topic.status === "open";
   // S19: a help thread (tag `help`) has a resident Help seat, not an sme, and carries its fix cards
   const help = p.topic.tags.includes("help");
-  return (
-    <div data-testid="topic-page">
-      <PageHeader title="Library" subtitle={owner ? "A topic you keep, with its resident sme." : `You are an expert on this topic (${p.viewer.id}).`} />
-      {owner ? <p><Link to={`/library/topics${suffix}`} className={styles.muted}>← All topics</Link></p> : null}
+  const body = (
+    <>
       <div className={styles.head}>
-        <h2 className={styles.headTitle}>{p.topic.title}</h2>
-        <span className={ui.tag} data-testid="topic-status">{p.topic.status}</span>
-        <span className={styles.muted} data-testid="topic-seat">{help ? "Help seat" : "sme seat"} {p.seat.participant} · {help ? helpPhaseText(p.seat) : p.seat.state}{p.seat.model ? ` · ${p.seat.model}${p.seat.effort ? ` at ${p.seat.effort}` : ""}` : ""}</span>
+        {owner ? null : <h2 className={styles.headTitle}>{p.topic.title}</h2>}
+        {/* S12-ui2 (qa m-da89ef8294 m5): the owner's page header already shows the ticket's status; one status only */}
+        {owner ? null : <span className={ui.tag} data-testid="topic-status">{p.topic.status}</span>}
+        <span className={styles.muted} data-testid="topic-seat">{help ? "Help seat" : "sme seat"} {p.seat.participant} · {help ? helpPhaseText(p.seat) : p.seat.state}{p.seat.model ? ` · ${modelLabel(p.seat.model)}${p.seat.effort ? ` at ${p.seat.effort}` : ""}` : ""}</span>
         {owner && isOpen ? (
           <button type="button" className={ui.button} disabled={close.isPending} data-testid="topic-close"
             onClick={() => { if (window.confirm("Close this topic? Its sme seat is released.")) close.mutate(); }}>
@@ -50,20 +51,48 @@ export function TopicPage(): React.JSX.Element {
       </div>
       {close.isError ? <p className={ui.banner} role="alert">{errText(close.error)}</p> : null}
       {p.topic.words ? <p className={styles.words} data-testid="topic-words">{p.topic.words}</p> : null}
-      {p.seed_url ? <p className={styles.muted}>Seed <a href={p.seed_url} target="_blank" rel="noreferrer">{p.seed_url}</a></p> : null}
       <div className={styles.layout}>
         <div className={styles.col}>
+          <TopicSource page={p} />
           <TopicTags page={p} canEdit={owner && isOpen} />
           <TopicDocs page={p} />
           {help ? <FixCards topicId={p.topic.id} /> : null}
-          <TopicThread page={p} />
+          {owner ? null : <TopicThread page={p} />}
         </div>
         <div className={styles.col}>
           {owner ? <TopicExperts page={p} /> : null}
           <TopicFetches page={p} />
         </div>
       </div>
+    </>
+  );
+  // S16 c-320d037cb8: an owner (or teammate) reads the topic through the ticket page's own header and Work drawer —
+  // criteria and sign-off, gates under Actions, Files & evidence, History, the lifecycle — with the topic panels in
+  // the conversation's place. An expert's scoped token is refused on /v1/tickets/*, so that view stays the topic routes only.
+  return (
+    <div data-testid="topic-page">
+      {owner ? <TicketSurface id={p.topic.id} home={{ label: "Library", to: `/library/topics${suffix}` }}><div className={styles.panelsAbove} data-testid="topic-panels">{body}</div></TicketSurface> : (
+        <>
+          <PageHeader title="Library" subtitle={`You are an expert on this topic (${p.viewer.id}).`} />
+          {body}
+        </>
+      )}
     </div>
+  );
+}
+
+function TopicSource({ page }: { page: TopicPageData }): React.JSX.Element {
+  const hosts = page.allowlist ?? [];
+  return (
+    <section className={styles.panel} aria-label="Source" data-testid="topic-source">
+      <span className={ui.sectionLabel}>Seed URL</span>
+      {page.seed_url ? <p><a href={page.seed_url} target="_blank" rel="noreferrer" data-testid="topic-seed">{page.seed_url}</a></p> : <p className={styles.muted} data-testid="topic-seed">none: the sme starts from skills.sh and GitHub.</p>}
+      <span className={ui.sectionLabel}>Allowlist</span>
+      <div className={styles.inline} data-testid="topic-allowlist">
+        {hosts.length ? hosts.map((h) => <span key={h} className={ui.tag}>{h}</span>) : <span className={styles.muted}>not served by this board</span>}
+      </div>
+      <p className={styles.muted}>The only hosts the sme may fetch from; the seed URL's host joins the board's defaults.</p>
+    </section>
   );
 }
 

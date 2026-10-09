@@ -23,17 +23,15 @@ import nh3
 from .avatar_preferences import avatar_preferences_path, load_avatar_preferences
 from .avatars import avatar_id_for
 from . import seat_choice
-from .board import Board, BoardError, is_quick
+from .board import Board, BoardError
 from .schemas import (
     EventKind,
-    Gate,
     MessageKind,
     Participant,
     Role,
     TicketKind,
     TicketStatus,
     Verdict,
-    WorkType,
 )
 
 _TERMINAL = (TicketStatus.done, TicketStatus.partial, TicketStatus.dropped)
@@ -196,13 +194,19 @@ def search_ticket_ids(board: Board, q: str, *, types: set[str] | None = None,
     return [h["id"] for h in board.store.fts_search(q, types=types or {"ticket"}, limit=limit)]
 
 
-def unresolved_mentions(board: Board, text: str, quotes: list[Any] | None = None) -> list[str]:
+def unresolved_mentions(board: Board, text: str, quotes: list[Any] | None = None,
+                        viewer: Participant | None = None) -> list[str]:
     """@handles in text (and, C23, in the quotes' notes) that match no participant — the message
     posts, but nobody is woken for these. De-duped, order preserved (parity with ui.py's _MENTION_RX check)."""
     from .board import _mention_handles
 
-    bad = [h for src in Board.mention_sources(text, quotes) for h in _mention_handles(src)
-           if not _participant_by_handle(board, h)]
+    from . import guest_scope
+    scope = guest_scope.scope_for(board, viewer) if viewer is not None else None
+
+    def known(h: str) -> bool:  # e0cec S5: for a guest, a handle outside its people reads as unknown (no oracle)
+        p = _participant_by_handle(board, h)
+        return p is not None and (scope is None or p.id in scope.people)
+    bad = [h for src in Board.mention_sources(text, quotes) for h in _mention_handles(src) if not known(h)]
     return list(dict.fromkeys(bad))
 
 
@@ -253,27 +257,6 @@ def avatar_for(board: Board, pid: str | None) -> dict[str, Any]:
 
 
 # ------------------------------------------------------------------ sign-off / verdict
-
-
-def pending_signoffs(board: Board, viewer: Participant) -> list[tuple[Any, Any, Any]]:
-    """(criterion, ticket, evidence_doc|None) for every owner-checked pending criterion with
-    evidence, inside the viewer's owner scope. Empty for a non-owner. The doc awaiting the
-    human's sign-off (design §14) — was ui.py's inline _V.pending scan."""
-    if viewer.role != Role.owner:
-        return []
-    out: list[tuple[Any, Any, Any]] = []
-    for c in board.store.query("criterion", {"verdict": Verdict.pending}, limit=300):
-        if c.checked_by != "owner" or not c.evidence_ref:
-            continue
-        tk = board.store.get("ticket", c.ticket_id)
-        if tk is None or tk.status in _TERMINAL:
-            continue
-        if is_quick(tk) and tk.status != TicketStatus.in_review:
-            continue  # S-QUICK: the owner rules a quick task once its engineer hands it off, not mid-work
-        if not board._owner_scope(viewer, tk.id):
-            continue
-        out.append((c, tk, board.store.get("doc", c.evidence_ref)))
-    return out
 
 
 def signoff_criteria_for_doc(board: Board, viewer: Participant, doc: Any) -> list[Any]:
@@ -399,8 +382,9 @@ def _latest_seat_status(board: Board, pid: str) -> dict[str, Any] | None:
     if note.startswith("[") and "] " in note:  # strip the "[status] " prefix record_status adds
         note = note.split("] ", 1)[1]
     p = _participant(board, pid)
-    return {"text": note, "status": (m.status.value if getattr(m, "status", None) else None),
-            "role": p.role.value if p else None, "at": m.created_at.isoformat()}
+    return {"text": note, "html": render_message_markdown(note),  # S12-ui2: the Seats cell renders it, not raw **md**
+            "status": (m.status.value if getattr(m, "status", None) else None),
+            "role": p.role.value if p else None, "at": m.created_at.isoformat(), "ticket_id": m.ticket_id}
 
 
 def seats_for(board: Board, viewer: Participant) -> dict[str, Any]:
@@ -445,7 +429,19 @@ def seats_for(board: Board, viewer: Participant) -> dict[str, Any]:
     # Alive first, then parked, stalled, closed/dead, unknown; ties by handle (folio-seats order).
     rank = {"alive": 0, "parked": 1, "stalled": 2, "dead": 3}
     seats.sort(key=lambda r: (rank.get(r["state"], 4), r["handle"]))
+    from . import guest_scope
+    scope = guest_scope.scope_for(board, viewer)
+    if scope is not None:  # e0cec S5 (review #6): fail closed: only seats working a ticket in scope, own status
+        seats = [{**r, "latest_status": (r["latest_status"] if _status_in(r["latest_status"], scope) else None)}
+                 for r in seats if r["ticket_id"] in scope.tickets]
+        people = [p for p in people if p["id"] in scope.people]
+        retired = []
     return {"seats": seats, "people": people, "retired": retired}
+
+
+def _status_in(status: Any, scope: Any) -> bool:
+    tid = status.get("ticket_id") if isinstance(status, dict) else None
+    return tid in scope.tickets
 
 
 def conversations_for(board: Board, viewer: Participant) -> list[dict[str, Any]]:
@@ -472,7 +468,9 @@ def conversations_for(board: Board, viewer: Participant) -> list[dict[str, Any]]
                      "unread": tid in ask_tids,
                      "last": ({"by": lm.created_by, "text": lm.text[:120],
                                "at": lm.created_at.isoformat()} if lm else None)})
-    return rows
+    from . import guest_scope
+    scope = guest_scope.scope_for(board, viewer)
+    return rows if scope is None else [r for r in rows if r["ticket_id"] in scope.tickets]  # e0cec S5: count too
 
 
 def replies_for(board: Board, viewer: Participant, limit: int = 30) -> list[dict[str, Any]]:
@@ -494,8 +492,12 @@ def replies_for(board: Board, viewer: Participant, limit: int = 30) -> list[dict
             if m.created_by not in mine_ids:
                 seen[m.id] = m
     rows: list[dict[str, Any]] = []
+    from . import guest_scope
+    scope = guest_scope.scope_for(board, viewer)
     for m in sorted(seen.values(), key=lambda x: x.created_at, reverse=True)[:limit]:
         parent = board.store.get("message", m.reply_to) if m.reply_to else None
+        if parent is not None and scope is not None and not scope.has(parent.id):
+            parent = None  # e0cec S5 review #4: a reply to another epic's message never quotes it to a guest
         tk = board.store.get("ticket", m.ticket_id)
         rows.append({"id": m.id, "ticket_id": m.ticket_id, "epic_id": board.epic_of(tk).id if tk else None, "ticket_title": tk.title if tk else m.ticket_id,
                      "created_by": m.created_by, "kind": m.kind.value, "text": m.text,
@@ -525,91 +527,6 @@ def _gate_note(board: Board, ticket_id: str, ev: Any) -> str:
     return note or board.gate_question(ticket_id, ev.data.get("gate") or "")
 
 
-def _owner_gates(board: Board, viewer: Participant) -> list[tuple[str, Any]]:
-    """(ticket_id, gate_event) open gates the owner viewer can answer, across their owned epics'
-    subtrees. Empty for a non-owner (design §4.1 owner scoping)."""
-    if viewer.role != Role.owner:
-        return []
-    out: list[tuple[str, Any]] = []
-    from .board import is_quick
-    roots = board.store.query("ticket", {"kind": TicketKind.epic}, limit=200)
-    # a quick task is its own root: its design_signoff gate is the owner's too (Astra finding 8)
-    roots += [t for t in board.store.query("ticket", {"kind": TicketKind.story}, limit=5000)
-              if t.parent_id is None and is_quick(t)]
-    for t in roots:
-        if t.status in _TERMINAL or not board._owner_scope(viewer, t.id):
-            continue
-        for sub in (t, *board._descendants(t.id)):
-            for ev in board.open_gates(sub.id):
-                # S16 (pain p-77ab1bf1): never offer a gate the board would refuse this viewer's answer on
-                if board.gate_answer_refusal(viewer, sub.id, Gate(ev.data.get("gate"))) is None:
-                    out.append((sub.id, ev))
-    return out
-
-
-_CRAFT_TITLE = re.compile(r"^\s*(hl|ll)-craft\b", re.I)
-
-
-def signoff_ask(tk: Any) -> str:
-    """S16 (owner m-cc3a6656ee): the featured sign-off card says in plain words what the owner decides, e.g.
-    "Accept the hl-craft strategy?" — the criterion text alone reads as a spec line, not a question."""
-    title = (getattr(tk, "title", "") or "").strip()
-    short = title.split(":", 1)[-1].strip() if ":" in title else title
-    craft = _CRAFT_TITLE.match(title)
-    if craft:
-        kind = craft.group(1).lower()
-        return f"Accept the {kind}-craft {'strategy' if kind == 'hl' else 'domain research'}?"
-    if getattr(tk, "work_type", None) == WorkType.knowledge:
-        return f"Accept the research on “{short}”?"
-    if is_quick(tk):
-        return f"Accept the quick task “{short}” as done?"
-    return f"Accept “{short}” as meeting this criterion?"
-
-
-def decisions_for(board: Board, viewer: Participant) -> dict[str, Any]:
-    """The Decisions home (design §4.1): sign-offs the viewer must rule, questions in their
-    inbox, and open gates. A non-owner gets empty signoffs and gates. S20: every row is an attention item
-    (attention.items), so this read, the VS Code inbox and the SPA's dots can never disagree."""
-    from . import attention
-    rows = attention.items(board, viewer)
-    signoffs = []
-    for c, tk, doc in (r["_src"] for r in rows if r["kind"] == "signoff"):
-        epic = board.epic_of(tk)
-        signoffs.append({
-            "criterion": {"id": c.id, "text": c.text, "check": c.check.value,
-                          "checked_by": c.checked_by, "verdict": c.verdict.value,
-                          "evidence_ref": c.evidence_ref,
-                          "evidence_version": getattr(c, "evidence_version", None)},
-            "ticket": {"id": tk.id, "title": tk.title, "epic_id": epic.id,
-                       "epic_title": epic.title, "assignee": tk.assignee, "quick": is_quick(tk)},
-            "ask": signoff_ask(tk),
-            "doc": ({"id": doc.id, "title": doc.title, "doc_type": doc.doc_type.value,
-                     "version": doc.version} if doc else None),
-            "excerpt": (getattr(doc, "body_md", "") or "")[:300].strip()})
-    questions = []
-    for m in (r["_src"] for r in rows if r["kind"] == "ask"):
-        asker = _participant(board, m["created_by"])
-        questions.append({**m, "why": _why_in_inbox(board, viewer, m), "epic_id": _epic_id_of(board, m.get("ticket_id")), "asker": {
-            "type": getattr(asker, "type", "agent") if asker else "agent",
-            "role": getattr(getattr(asker, "role", None), "value", "unknown") if asker else "unknown",
-            "seat_state": seat_state(board, m["created_by"]),
-            "note": _asker_note(board, m["created_by"])}})
-    gates = []
-    for tid, ev in (r["_src"] for r in rows if r["kind"] == "gate"):
-        gates.append({"event_id": ev.id, "ticket_id": tid, "gate": ev.data.get("gate"), "by": ev.data.get("by"),
-                      "note": _gate_note(board, tid, ev), "opened_at": ev.created_at.isoformat(),
-                      "epic": board.epic_of(board.ticket(tid)).id})
-    return {"signoffs": signoffs, "questions": questions, "gates": gates,
-            "counts": {"signoffs": len(signoffs), "questions": len(questions), "gates": len(gates)}}
-
-
-def _epic_id_of(board: Board, ticket_id: str | None) -> str | None:
-    """The root epic of a ticket (a quick story is its own root); None when it is gone. S-UI: the
-    Decisions page filters every row by epic."""
-    t = board.store.get("ticket", ticket_id) if ticket_id else None
-    return board.epic_of(t).id if t else None
-
-
 def _why_in_inbox(board: Board, viewer: Participant, m: dict[str, Any]) -> str:
     """Why this ask is in the viewer's inbox (design §16.2 "why you see it"), derived from the
     SAME routing board.inbox uses — never re-parsed from prose: addressed to the viewer's id or
@@ -636,30 +553,6 @@ def _asker_note(board: Board, pid: str) -> str:
     if state in ("alive", "parked"):
         return f"Its shell is {state}; your answer wakes it."
     return "Its shell has closed; your answer stays with the project for the next shell."
-
-
-def resolved_for(board: Board, viewer: Participant, limit: int = 30) -> list[dict[str, Any]]:
-    """The viewer's recent rulings — criterion verdicts, gate answers and answers they posted —
-    newest first, so a decision made is visible after it leaves the inbox (design §4.1)."""
-    # The viewer's OWN acts, read from the event log by kind — never through the feed's relevance
-    # filter (board.replay): a person's ruling is theirs whether or not the feed would have delivered
-    # the event to them, and on a board where the owner subscribes to nothing, replay() returned []
-    # and the Resolved tab stayed empty right after an approve (acceptance finding 2026-09-08).
-    out: list[dict[str, Any]] = []
-    events = board.store.query("event", {"kind": [EventKind.criterion_checked, EventKind.gate_answered]}, limit=5000)
-    for e in events:
-        d = e.data
-        if e.kind == EventKind.criterion_checked and d.get("by") == viewer.id:
-            out.append({"at": e.created_at.isoformat(), "kind": "verdict", "ticket_id": e.subject_id,
-                        "criterion": d.get("criterion"), "verdict": d.get("verdict")})
-        elif e.kind == EventKind.gate_answered and d.get("by") == viewer.id:
-            out.append({"at": e.created_at.isoformat(), "kind": "gate", "ticket_id": e.subject_id,
-                        "gate": d.get("gate"), "answer": d.get("answer")})
-    out.sort(key=lambda r: r["at"], reverse=True)
-    out = out[:limit]
-    for r in out:  # S-UI: the Decisions page filters by epic
-        r["epic_id"] = _epic_id_of(board, r["ticket_id"])
-    return out
 
 
 # ------------------------------------------------------------------ waiting_reason
@@ -744,6 +637,10 @@ def epics_summary(board: Board, viewer: Participant | None = None, *, status: st
     rows = board.store.query("ticket", {"kind": TicketKind.epic}, limit=5000)
     rows += [t for t in board.store.query("ticket", {"kind": TicketKind.story}, limit=5000)
              if t.parent_id is None and is_quick(t)]
+    from . import guest_scope
+    scope = guest_scope.scope_for(board, viewer) if viewer is not None else None
+    if scope is not None:  # e0cec S5: member epics only, before any filter
+        rows = [t for t in rows if t.id in scope.tickets]
     if epic_id:  # S22: one epic's row (the epic page), before any per-row work
         rows = [t for t in rows if t.id == epic_id]
     if status == "open":
@@ -779,11 +676,13 @@ def epics_summary(board: Board, viewer: Participant | None = None, *, status: st
 
 def tickets_table(board: Board, *, epic: str | None = None, status: str | None = None,
                   kind: str | None = None, work_type: str | None = None, assignee: str | None = None,
-                  tag: str | None = None, q: str | None = None) -> dict[str, Any]:
+                  tag: str | None = None, q: str | None = None, only: Any = None) -> dict[str, Any]:
     """The cross-epic tickets table with the seven legacy filters, criteria counts and
     blocked-by, matching /ui/tickets ordering and default open-only behaviour (design §4.1)."""
     rows = board.store.query("ticket", {"epic_id": epic or None, "status": status or None,
                                         "kind": kind or None, "work_type": work_type or None}, limit=5000)
+    if only is not None:  # e0cec S5: a guest's closure BEFORE any filter or count (no content oracle)
+        rows = [t for t in rows if t.id in only]
     if assignee:
         rows = [t for t in rows if (t.assignee or "").find(assignee) >= 0]
     if tag:
@@ -868,6 +767,13 @@ def epic_page(board: Board, epic_id: str, include: str | None = None) -> dict[st
             "role_models": seat_choice.role_models_for(epic.tags, seat_choice.agent_home()),
             # S-UI: the effort each catalog role runs at (`seat-effort:<role>=`, else the epic-wide tag)
             "role_efforts": seat_choice.role_efforts_for(epic.tags, seat_choice.agent_home()),
+            # S7: each role's ORDERED option list (first = default) and the per-story `seat:` picks
+            "role_options": seat_choice.role_options_for(epic.tags, seat_choice.agent_home()),
+            "story_picks": {
+                s.id: {r: {"model": m, "effort": e}
+                       for r, (m, e) in seat_choice.story_picks_from_tags(s.tags).items()}
+                for s in board.store.query("ticket", {"parent_id": epic_id}, limit=-1)
+                if seat_choice.story_picks_from_tags(s.tags)},
             # who the live resident architect is (t-cf353a4051): {id, state}
             "architect": bd.get("architect"),
             "counts": bd.get("counts"),
@@ -941,15 +847,34 @@ def _attachments(board: Board, ids: list[str]) -> list[dict[str, Any]]:
 
 
 def doc_page(board: Board, doc_id: str, viewer: Participant | None = None, *,
-             version: int | None = None) -> dict[str, Any]:
+             version: int | None = None, head_only: bool = False) -> dict[str, Any]:
     """A document rendered for reading (design §4.1/§14): sanitised HTML, the version list, and
-    the viewer's pending sign-off criterion when one references this doc."""
+    the viewer's pending sign-off criterion when one references this doc. `head_only` (an agent, S18-3) renders
+    the first page that doc_read's head returns, with the same continuation."""
+    from . import guest_scope, secret_screen
+    from .doc_tools import HEAD_CHARS, MAP_LEVELS, _page_end, heading_map, legacy_note
     d = board.doc(doc_id, version)
+    body, title = d.body_md, d.title
+    if viewer is not None and guest_scope.is_guest(viewer):
+        # S18-1: screen the canonical source before rendering; escaping (`<` -> `&lt;`) hides a value from a
+        # screen that runs on the HTML afterwards
+        body, title = secret_screen.withhold([body, title])
     crits = signoff_criteria_for_doc(board, viewer, d) if viewer else []
     rows = [{"id": c.id, "text": c.text, "ticket_id": c.ticket_id, "checked_by": c.checked_by} for c in crits]
-    return {"id": d.id, "title": d.title, "doc_type": d.doc_type.value, "scope": d.scope,
+    # S17 (ruling m-639da0243d): a human view shows the legacy banner and the heading map, then the whole body
+    sections = heading_map(body)
+    smap = [{"h": s["h"], "level": s["level"], "chars": s["chars"]} for s in sections if s["level"] <= MAP_LEVELS]
+    total, more = len(body), {}
+    if head_only:
+        stop = _page_end(body, HEAD_CHARS, sections)
+        if stop < total:
+            body = body[:stop]
+            more = {"complete": False, "continuation": {"page": {"id": d.id, "version": d.version, "offset": stop},
+                                                        "section": f"doc_read(id={d.id!r}, section=<an h from map>)"}}
+    return {"id": d.id, "title": title, "doc_type": d.doc_type.value, "scope": d.scope,
             "owner_role": d.owner_role.value, "version": d.version,
-            "versions": board.store.doc_versions(doc_id), "html": render_markdown(d.body_md),
+            "layout": d.layout, **legacy_note(d), "map": smap, "total_chars": total, **more,
+            "versions": board.store.doc_versions(doc_id), "html": render_markdown(body),
             "signoff_criterion": rows[0] if rows else None,  # first card (back-compat)
             "signoff_criteria": rows}  # every card the viewer must rule (finding #8)
 

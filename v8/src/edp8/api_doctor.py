@@ -121,7 +121,7 @@ def doctor_router(board: Board, actor: Callable[..., Participant], admin_actor: 
 
     @r.get("/v1/doctor/pains")
     def d_pains(a: Participant = Depends(reader)):
-        return _call(doctor.pains)
+        return _call(lambda: doctor.pains(board))
 
     @r.get("/v1/doctor/logs/{service:path}")
     def d_logs(service: str, lines: int = 100, a: Participant = Depends(reader)):

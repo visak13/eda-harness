@@ -45,19 +45,25 @@ def test_baseline_no_backlog_and_server_recipient_filter(rig):
     assert attention(b, owner, since=value["cursor"])["requests"] == []
 
 
-def test_click_revalidates_answered_and_gate_owner(rig):
+def test_click_revalidates_answered_and_owner(rig):
     b, owner, other, _, epic = rig
     baseline = attention(b, owner)["cursor"]
     message = send(rig)
-    gate = b.gate_open(epic.id, Gate.demo)
     rows = attention(b, owner, since=baseline)["requests"]
-    assert len(rows) == 2
-    assert attention(b, other, request=gate.id)["requests"] == []
+    assert len(rows) == 1
+    assert attention(b, other, request=rows[0]["request"])["requests"] == []
     send(rig, MessageKind.answer, reply_to=message.id)
     assert attention(b, owner, request=rows[0]["request"])["requests"] == []
     assert attention(b, owner, request="ev-missing")["requests"] == []
-    b.gate_answer(owner, epic.id, Gate.demo, "approved")
-    assert attention(b, owner, request=gate.id)["requests"] == []
+
+
+def test_a_gate_is_no_bell_item_of_its_own(rig):
+    """s-aa76c83998: the bell lists asks only; a gate reaches the owner as the board's chat message (an ask)."""
+    b, owner, _, _, epic = rig
+    baseline = attention(b, owner)["cursor"]
+    gate = b.gate_open(epic.id, Gate.scope)
+    rows = attention(b, owner, since=baseline)["requests"]
+    assert gate.id not in {r["request"] for r in rows}
 
 
 def test_pagination_keeps_unrelated_burst_from_dropping_request(rig):

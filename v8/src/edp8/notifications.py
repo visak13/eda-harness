@@ -24,8 +24,8 @@ def attention(board: Board, actor: Participant, *, since: int = -1,
         cursor = board.store.max_seq()
         if request is None and since < 0:
             return {"participant": actor.id, "cursor": cursor, "requests": []}
-        # message id / gate event id -> the attention item it raised (S20: no rule of its own here)
-        live = {it["id"]: it for it in _attention.items(board, actor) if it["kind"] in ("ask", "gate")}
+        # message id -> the attention item it raised (S20: no rule of its own here)
+        live = {it["id"]: it for it in _attention.items(board, actor) if it["kind"] == "ask"}
         if request is not None:
             event = board.store.get("event", request)
             events = [event] if event else []
@@ -35,12 +35,7 @@ def attention(board: Board, actor: Participant, *, since: int = -1,
             cursor = batch[-1][0] if batch else cursor
         rows = []
         for event in events:
-            if event.kind == EventKind.message_sent:
-                item = live.get(event.data.get("message"))
-            elif event.kind == EventKind.gate_opened:
-                item = live.get(event.id)
-            else:
-                item = None
+            item = live.get(event.data.get("message")) if event.kind == EventKind.message_sent else None
             if item is not None:
                 rows.append({"request": event.id, "url": _landing(item["url"], event.id)})
         return {"participant": actor.id, "cursor": cursor, "requests": rows}

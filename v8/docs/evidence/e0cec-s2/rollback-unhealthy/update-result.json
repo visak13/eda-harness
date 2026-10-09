@@ -1,0 +1,23 @@
+{
+ "from": "0.9.1",
+ "to": "0.9.2.dev0",
+ "state": "rolled_back",
+ "reason": "the new version did not answer its health check (forced: fault=unhealthy)",
+ "timings": {
+  "parked": 0.6,
+  "stopped": 5.8,
+  "holders_checked": 22.4,
+  "installed": 115.8,
+  "relaunched": 115.8,
+  "rolled_back": 215.9
+ },
+ "parked": [
+  "engineer.s2-drill"
+ ],
+ "resumed": [
+  "engineer.s2-drill"
+ ],
+ "installed": "0.9.1",
+ "health_version": "0.9.1",
+ "finished_at": "2026-10-02T00:17:52+00:00"
+}

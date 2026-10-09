@@ -105,5 +105,18 @@
   color: var(--muted);
 }
 
+@media (max-width: 640px) {
+  .head { gap: 8px; margin-bottom: 12px; }
+  .newEpic { margin-top: 0; }
+  .filters { margin-top: 0; }
+}
+
+/* Phone: the 200px meta column left the title column no room (width 0, qa fail 5). Stack the meta under the title. */
+@media (max-width: 640px) {
+  .row { flex-direction: column; gap: 12px; padding: 16px; }
+  .main { width: 100%; }
+  .meta { width: 100%; text-align: left; align-items: flex-start; }
+}
+
 /* S20: the one-line reason an epic waits on the viewer (the dot beside the title carries the count) */
 .needs { font-size: 13px; font-weight: 650; color: var(--accentink); overflow-wrap: anywhere; }

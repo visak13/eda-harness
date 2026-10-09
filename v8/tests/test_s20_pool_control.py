@@ -309,8 +309,9 @@ def test_resume_always_uses_pool_resume_even_with_historical_done_row(client, ri
         "ok": True, "value": [{"handle": seat, "state": "done", "session_id": "old"}]})
     hit = {}
 
-    def _resume(pid):
+    def _resume(pid, env=None):
         hit["resume"] = pid
+        hit["env"] = env  # trusted mode (no tokens file): no token to refresh
         return {"ok": True, "value": {"resumed": True, "session_id": "new",
                                        "message": "continued old"}}
 
@@ -318,7 +319,7 @@ def test_resume_always_uses_pool_resume_even_with_historical_done_row(client, ri
     r = client.post("/v1/sessions/resume", json={"participant_id": seat, "ticket_id": rig["story"]},
                     headers={"X-Participant": "owner"})
     assert r.status_code == 200, r.text
-    assert hit == {"resume": seat}
+    assert hit == {"resume": seat, "env": None}
     assert r.json()["hint"] == "continued old"
 
 
@@ -328,7 +329,7 @@ def test_resume_uses_normal_resume_when_parked(client, rig, monkeypatch):
         "ok": True, "value": [{"handle": seat, "state": "parked", "session_id": "p"}]})
     hit = {}
 
-    def _parked(pid):
+    def _parked(pid, env=None):
         hit["parked"] = pid
         return {"ok": True, "value": {"resumed": True, "session_id": "r",
                                        "message": "continued p"}}
@@ -342,7 +343,7 @@ def test_resume_uses_normal_resume_when_parked(client, rig, monkeypatch):
 
 def test_resume_result_names_explicit_fresh_start(client, rig, monkeypatch):
     seat = f"engineer.{rig['story']}"
-    monkeypatch.setattr(pool_adapter, "resume", lambda _pid: {
+    monkeypatch.setattr(pool_adapter, "resume", lambda _pid, env=None: {
         "ok": True, "value": {"resumed": True, "message":
                              "started fresh: no stored session"}})
     r = client.post("/v1/sessions/resume", json={"participant_id": seat,

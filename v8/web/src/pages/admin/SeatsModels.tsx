@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getHarnesses, putHarnessSelection } from "../../api/admin";
 import ui from "../../components/ui.module.css";
 import styles from "./Admin.module.css";
-import { AdminError, Done } from "./shared";
+import { AdminError, Done, errorText } from "./shared";
 import { ModelsEditor } from "./Models";
 
 // Seats & models (design §4.11): which harnesses seats run on — claude and codex both optional, at least one
@@ -25,8 +25,13 @@ export function HarnessSelection({ onSaved, onRestartRequired, installedOnly = f
     mutationFn: () => putHarnessSelection(picked, ack),
     onSuccess: ({ value }) => { onRestartRequired?.(value.restart_required); void qc.invalidateQueries({ queryKey: ["admin", "harnesses"] }); onSaved?.(); },
   });
-  const noCodex = !picked.includes("codex");
-  const neither = !picked.includes("claude") && !picked.includes("codex");
+  // RC2 F1: until the saved selection arrives (1.6 s on the installed board: it probes each CLI) nothing is
+  // known, so the boxes are not "unticked" and the "select one" alert is not shown
+  // D9: an errored load (the board timed out probing a CLI) is not a selection either: Save stays off until a
+  // Retry brings one back
+  const loading = !q.data || q.isError;
+  const noCodex = !loading && !picked.includes("codex");
+  const neither = !loading && !picked.includes("claude") && !picked.includes("codex");
   const acked = Boolean(q.data?.fable_ack);
   const detected = new Map((q.data?.harnesses ?? []).map((h) => [h.harness, h]));
   // the board's own words (edp8.harness.FABLE_RISK_NOTICE); GET omits them while codex is selected
@@ -34,7 +39,14 @@ export function HarnessSelection({ onSaved, onRestartRequired, installedOnly = f
   return (
     <section className={styles.card} data-testid="harness-selection">
       <h2 className={styles.cardTitle}>Seat harnesses</h2>
-      <AdminError error={q.error} testid="harness-selection-error" />
+      {q.isError ? (
+        <div className={ui.banner} role="alert" data-testid="harness-selection-error">
+          <span>Could not load the harnesses: {errorText(q.error)}</span>{" "}
+          <button type="button" className={`${ui.button} ${styles.small}`} data-testid="harness-retry"
+            disabled={q.isFetching} onClick={() => void q.refetch()}>{q.isFetching ? "Retrying…" : "Retry"}</button>
+        </div>
+      ) : null}
+      {q.isPending && !q.isError ? <p className={ui.empty} data-testid="harness-loading">Loading the selected harnesses…</p> : null}
       <div className={styles.row}>
         {HARNESSES.map((h) => {
           const d = detected.get(h);
@@ -42,7 +54,7 @@ export function HarnessSelection({ onSaved, onRestartRequired, installedOnly = f
           const locked = installedOnly && Boolean(d) && !d?.installed && !picked.includes(h);
           return (
             <label key={h} className={styles.row} data-testid={`pick-${h}`}>
-              <input type="checkbox" checked={picked.includes(h)} disabled={locked} data-testid={`pick-${h}-input`}
+              <input type="checkbox" checked={picked.includes(h)} disabled={locked || loading} data-testid={`pick-${h}-input`}
                 onChange={(e) => setPicked((p) => (e.target.checked ? [...p, h] : p.filter((x) => x !== h)))} />
               <strong>{h}</strong>
               <span className={styles.usage} data-testid={`pick-${h}-state`}>{d ? (d.installed ? `installed ${d.version ?? ""}`.trim()
@@ -63,7 +75,7 @@ export function HarnessSelection({ onSaved, onRestartRequired, installedOnly = f
       ) : null}
       <div className={styles.row}>
         <button type="button" className={`${ui.button} ${ui.buttonPrimary}`} data-testid="harness-selection-save"
-          disabled={save.isPending || neither || (noCodex && !acked && !ack)} onClick={() => save.mutate()}>
+          disabled={loading || save.isPending || neither || (noCodex && !acked && !ack)} onClick={() => save.mutate()}>
           {save.isPending ? "Saving…" : "Save harnesses"}
         </button>
       </div>

@@ -63,5 +63,9 @@ export function defaultFraming(pathname: string): string {
   if (pathname.startsWith("/ticket/")) return "One story: review its criteria, read its evidence, and move it forward.";
   if (pathname.startsWith("/doc/")) return "Read a document and record your sign-off on its criteria.";
   if (pathname.startsWith("/library")) return "Browse the board's tickets, documents, artifacts, links and history.";
-  return "Decisions collects requests that need your action. Read the ask, then answer or review its evidence.";
+  if (pathname.startsWith("/admin")) return "Run this board: teammates, access, models, integrations, services and releases.";
+  if (pathname.startsWith("/design")) return "The workflows epics run on: roles, status flow, gates and caps.";
+  if (pathname.startsWith("/records")) return "The board's recorded decisions, claims, lessons and pains, with their evidence.";
+  if (pathname.startsWith("/artifact/")) return "One produced file or link, with the work it belongs to.";
+  return "Read this page, then use its controls to act on the board.";
 }

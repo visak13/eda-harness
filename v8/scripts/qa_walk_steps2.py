@@ -22,13 +22,14 @@ def run_steps2(base: str, home: Path, log: Callable, verdict: Callable, ui: Call
         tr = c.ticket_read(story)
         log(f"  ticket_read({story}) keys={list((tr.get('value') or {}).keys())[:12]} parent_id={(tr.get('value') or {}).get('parent_id')}")
         log(f"  link_query(from_id={epic}, uses_strategy)={c.link_query(from_id=epic, relation='uses_strategy')}")
-        out = tool("owner", "assemble_ruleset", ticket_id=story)
-        if not out["ok"] and "no strategy/domain docs" in json.dumps(out):
-            return [], []
-        assert out["ok"], out
-        v = out["value"]
-        enforced = [x.get("text") for x in v.get("enforced") or []]
-        index = [x.get("id") for x in (v.get("index") or v.get("docs") or [])]
+        # S17: the ruleset tool is gone; the brief is the epic's linked active docs, read whole
+        links = (c.link_query(from_id=epic, relation="uses_strategy").get("value") or [])
+        index, enforced = [], []
+        for lk in links:
+            got = c.doc_read(lk["to_id"], all=True)
+            if got["ok"] and (got["value"].get("status") or "active") == "active":
+                index.append(lk["to_id"])
+                enforced += [ln[2:] for ln in got["value"]["body_md"].splitlines() if ln.startswith("- ")]
         return enforced, index
 
     # seed the Library: an active strategy (tag web), a domain (tag python), a lesson, two proposals
@@ -54,9 +55,9 @@ def run_steps2(base: str, home: Path, log: Callable, verdict: Callable, ui: Call
                                    "newBody": "How we build components (edited by the owner).\n\n## Enforced\n- every component ships a vitest [required]\n",
                                    "epic": epic, "good": good["id"], "bad": bad["id"],
                                    "goodTitle": "craft: web components", "badTitle": "craft: web components"})
-        s_after = call("owner", "GET", f"/v1/docs/{strat['id']}")
-        g = call("owner", "GET", f"/v1/docs/{good['id']}")
-        b = call("owner", "GET", f"/v1/docs/{bad['id']}")
+        s_after = call("owner", "GET", f"/v1/docs/{strat['id']}?all=true")
+        g = call("owner", "GET", f"/v1/docs/{good['id']}?all=true")
+        b = call("owner", "GET", f"/v1/docs/{bad['id']}?all=true")
         kinds = {k.lower() for k in out.get("kinds") or []}
         conds = {"nav": out.get("navIcon", 0) >= 1, "rows": (out.get("rowsAll") or 0) >= 4,
                  "search": (out.get("rowsSearch") or 0) < (out.get("rowsAll") or 0), "tag": (out.get("rowsTag") or 0) < (out.get("rowsAll") or 0),

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import pytest
 
+from asks_support import serve
 from edp8.board import Board, BoardError
 from edp8.schemas import (
     DESCRIBE,
@@ -60,7 +61,7 @@ def advance_to_designed(board, rig, ticket, doc, checked_by="qa"):
 
 def test_checker_derivation_per_ticket_kind(board, rig):
     """qa checks every story/review-story/epic, review_required or not (S-ROLES: qa is the one checker);
-    owner for a knowledge ticket."""
+    the epic's sme for a knowledge ticket (e0cec S6)."""
     epic = make_epic(board, rig)
     assert board.checker_for(epic) == "qa"
     story = make_story(board, rig, epic)
@@ -76,9 +77,9 @@ def test_checker_derivation_per_ticket_kind(board, rig):
     kn = board.ticket_create(rig["architect"], kind=TicketKind.story, work_type=WorkType.knowledge,
                              title="kn", parent_id=epic.id)
     assert board.criterion_create(rig["architect"], ticket_id=kn.id, text="a",
-                                  check=Check.look).checked_by == "owner"
+                                  check=Check.look).checked_by == "sme"  # e0cec S6: the epic's sme (the owner may override)
     task = board.ticket_create(rig["engineer"], kind=TicketKind.task, work_type=WorkType.feature,
-                               title="t", parent_id=story.id)
+                               title="t", parent_id=story.id, serves=serve(board, story.id))
     assert board.criterion_create(rig["engineer"], ticket_id=task.id, text="a",
                                   check=Check.command).checked_by == "engineer"  # §24.1(d): task → its doer
 
@@ -90,7 +91,7 @@ def test_task_criterion_is_self_verdicted_by_its_engineer(board, rig):
     epic = make_epic(board, rig)
     story = make_story(board, rig, epic)
     task = board.ticket_create(rig["engineer"], kind=TicketKind.task, work_type=WorkType.feature,
-                               title="t", parent_id=story.id)
+                               title="t", parent_id=story.id, serves=serve(board, story.id))
     c = board.criterion_create(rig["engineer"], ticket_id=task.id, text="a", check=Check.command)
     assert c.checked_by == "engineer"
     board.ticket_update(rig["architect"], task.id, status=TicketStatus.designed)
@@ -274,56 +275,59 @@ def test_story_cap_ninth_refused_with_scope_code_and_hint(board, rig):
     with pytest.raises(BoardError) as ei:
         make_story(board, rig, epic)
     assert ei.value.code == "scope" and "8 open stories" in ei.value.message
-    assert "scope`" in ei.value.hint and "split the epic" in ei.value.hint
+    assert "ask the owner in chat" in ei.value.hint and "cap_lift_message" in ei.value.hint  # design-63db8a7d42 J
 
 
-def test_task_cap_sixth_refused(board, rig):
+def test_task_cap_sixth_goes_ahead_with_advice(board, rig):
+    from edp8 import advice
     epic = make_epic(board, rig)
     story = make_story(board, rig, epic)
     for i in range(5):
         board.ticket_create(rig["engineer"], kind=TicketKind.task, work_type=WorkType.feature,
-                            title=f"t{i}", parent_id=story.id)
-    with pytest.raises(BoardError) as ei:
-        board.ticket_create(rig["engineer"], kind=TicketKind.task, work_type=WorkType.feature,
-                            title="t6", parent_id=story.id)
-    assert ei.value.code == "scope" and "at most 5 tasks" in ei.value.message
+                            title=f"t{i}", parent_id=story.id, serves=serve(board, story.id))
+    advice.take()
+    t6 = board.ticket_create(rig["engineer"], kind=TicketKind.task, work_type=WorkType.feature,
+                             title="t6", parent_id=story.id, serves=serve(board, story.id))
+    assert t6.parent_id == story.id  # design-63db8a7d42 I: the cap is advice, the story cap is the hard one
+    assert any("at most 5 tasks" in said for said in advice.take())
 
 
 def test_task_without_criterion_cannot_leave_drafted(board, rig):
     epic = make_epic(board, rig)
     story = make_story(board, rig, epic)
     task = board.ticket_create(rig["engineer"], kind=TicketKind.task, work_type=WorkType.feature,
-                               title="t", parent_id=story.id)
+                               title="t", parent_id=story.id, serves=serve(board, story.id))
     with pytest.raises(BoardError) as ei:
         board.ticket_update(rig["engineer"], task.id, status=TicketStatus.designed)
     assert ei.value.code == "transition" and "criterion" in ei.value.message
 
 
-def test_criteria_cap_seventh_refused_on_unfolded_story_folded_exempt(board, rig):
+def test_criteria_cap_seventh_goes_ahead_with_advice_on_every_story(board, rig):
+    from edp8 import advice
     epic = make_epic(board, rig)
     story = make_story(board, rig, epic)
     for i in range(6):
         board.criterion_create(rig["architect"], ticket_id=story.id, text=f"c{i}", check=Check.command)
-    with pytest.raises(BoardError) as ei:
-        board.criterion_create(rig["architect"], ticket_id=story.id, text="c7", check=Check.command)
-    assert ei.value.code == "scope" and "at most 6" in ei.value.message
-    # #37(b) (Astra, 2026-09-10): a folded story is NOT exempt — its fresh lines are still capped,
-    # and fresh + inherited is bounded by 2×cap.
+    advice.take()
+    board.criterion_create(rig["architect"], ticket_id=story.id, text="c7", check=Check.command)
+    assert any("at most 6" in said for said in advice.take())
+    # #37(b) (Astra, 2026-09-10): a folded story is NOT exempt — its fresh lines are still counted,
+    # and fresh + inherited is counted against 2×cap.
     folded = make_story(board, rig, epic)
     board.criterion_create(rig["architect"], ticket_id=folded.id, text="(from S1) inherited a",
                            check=Check.command)
     for i in range(6):
         board.criterion_create(rig["architect"], ticket_id=folded.id, text=f"f{i}", check=Check.command)
-    with pytest.raises(BoardError) as ei:
-        board.criterion_create(rig["architect"], ticket_id=folded.id, text="f7", check=Check.command)
-    assert ei.value.code == "scope" and "at most 6" in ei.value.message
-    for i in range(5):  # inherited lines still land until the total ceiling (12)
+    advice.take()
+    board.criterion_create(rig["architect"], ticket_id=folded.id, text="f7", check=Check.command)
+    assert any("at most 6" in said for said in advice.take())
+    for i in range(4):  # inherited lines never say the fresh cap; the total ceiling (12) is reached on the next
         board.criterion_create(rig["architect"], ticket_id=folded.id, text=f"(from S{i + 2}) inherited",
                                check=Check.command)
-    with pytest.raises(BoardError) as ei:
-        board.criterion_create(rig["architect"], ticket_id=folded.id, text="(from S9) one too many",
-                               check=Check.command)
-    assert ei.value.code == "scope" and "at most 12" in ei.value.message
+    advice.take()
+    board.criterion_create(rig["architect"], ticket_id=folded.id, text="(from S9) one too many",
+                           check=Check.command)
+    assert any("at most 12" in said for said in advice.take())
 
 
 def test_design_signoff_allowed_over_the_cap_once_the_owner_answered_scope(board, rig):
@@ -345,7 +349,7 @@ def test_design_signoff_refused_over_the_cap_without_a_scope_answer(board, rig, 
     epic = make_epic(board, rig)
     for _ in range(8):
         make_story(board, rig, epic)
-    monkeypatch.setattr(board, "_enforce_story_cap", lambda _e: None)  # e.g. stories re-parented in
+    monkeypatch.setattr(board, "_enforce_story_cap", lambda _e, *_: None)  # e.g. stories re-parented in
     make_story(board, rig, epic)
     with pytest.raises(BoardError) as ei:
         board.gate_open(epic.id, Gate.design_signoff, by="architect")

@@ -74,15 +74,24 @@ def test_only_real_asks_wait_on_a_human(rig):
 # ------------------------------------------------------------------ item 2: a human's later message clears
 
 def test_a_later_human_message_to_the_asker_clears_without_reply_to(rig):
-    # the S8 case: m-584a1c342d answered by m-f5f30e92bb, addressed to the engineer, no reply_to
+    # the S8 case: m-584a1c342d answered by m-f5f30e92bb, addressed to the engineer, no reply_to.
+    # e0cec S3 (owner R3, m-45367b2531) widens it: ANY later owner message on the same ticket settles the ask,
+    # whoever it is addressed to; another ticket's message still does not.
     b, owner, arch, eng, epic, story = rig
     q = b.message_send(eng, ticket_id=story.id, to="owner", kind=MessageKind.question, text="step 6?")
     b.message_send(owner, ticket_id=epic.id, to=eng.id, kind=MessageKind.note, text="other ticket")
-    b.message_send(owner, ticket_id=story.id, to=arch.id, kind=MessageKind.note, text="someone else")
-    assert waiting(b, owner) == [q.id]  # another ticket, or another addressee, does not clear it
+    assert waiting(b, owner) == [q.id]  # another ticket does not clear it
     b.message_send(owner, ticket_id=story.id, to=eng.id, kind=MessageKind.note, text="done, all ok")
     assert waiting(b, owner) == []
     assert attention.items(b, owner) == []
+
+
+def test_a_later_owner_message_to_a_third_party_also_clears(rig):
+    b, owner, arch, eng, epic, story = rig
+    q = b.message_send(eng, ticket_id=story.id, to="owner", kind=MessageKind.question, text="step 6?")
+    b.message_send(owner, ticket_id=story.id, to=arch.id, kind=MessageKind.note, text="someone else")
+    assert waiting(b, owner) == []
+    assert b.ask_resolution(q.id)["reason"] == "owner_message"
 
 
 def test_a_human_message_before_the_ask_does_not_clear_it(rig):

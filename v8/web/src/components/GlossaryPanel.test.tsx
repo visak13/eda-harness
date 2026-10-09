@@ -42,7 +42,7 @@ describe("page framing landmark", () => {
     renderShell("/me");
     const main = screen.getByRole("main");
     const framing = within(main).getByTestId("page-framing");
-    expect(framing).toHaveTextContent("Decisions collects requests that need your action.");
+    expect(framing).toHaveTextContent("Read this page, then use its controls to act on the board.");
   });
 
   it("uses the page's own framing when a page declares one", () => {

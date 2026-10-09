@@ -58,7 +58,7 @@ export function AttentionAsks({ asks }: { asks: Ask[] }): React.JSX.Element {
   return <>
     <button ref={anchor} type="button" className={styles.badge} data-testid="attention-asks"
       aria-haspopup={asks.length > 1 ? "dialog" : undefined} aria-expanded={asks.length > 1 ? open : undefined}
-      title={asks.length === 1 ? "Show the request in the conversation" : "List the requests"}
+      title={asks.length === 1 ? (asks[0].why ? `${asks[0].why}. Show the request in the conversation` : "Show the request in the conversation") : "List the requests"}
       onClick={() => (asks.length === 1 ? jump(asks[0].id) : setOpen((o) => !o))}>
       {label}
     </button>
@@ -70,6 +70,7 @@ export function AttentionAsks({ asks }: { asks: Ask[] }): React.JSX.Element {
               <span className={styles.meta}><Icon name="review-request" size={16} />
                 {a.kind} to {a.to}{a.by ? ` · from ${a.by}` : ""}{a.at ? ` · ${ago(a.at)}` : ""}</span>
               {a.text ? <span className={styles.text}>{a.text}</span> : null}
+              {a.why ? <span className={styles.why} data-testid="attention-ask-why">{a.why}</span> : null}
             </button>
           </li>
         ))}

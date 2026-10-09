@@ -1,0 +1,78 @@
+﻿=== Verbose logging started: 02-10-2026  05:46:28  Build type: SHIP UNICODE 5.00.10011.00  Calling process: C:\Windows\SYSTEM32\msiexec.exe ===
+           ******* Product: C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\.data\updates\0.9.1\Heronry S2 Spike-0.9.1.msi
+           ******* Product: C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\.data\updates\0.9.1\Heronry S2 Spike-0.9.1.msi
+MSI (s) (BC:64) [05:46:29:242]: Command Line: MSIINSTALLPERUSER=1 ALLUSERS=2 INSTALLFOLDER=C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\install REBOOT=ReallySuppress REBOOT=ReallySuppress CURRENTDIRECTORY=C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\update CLIENTUILEVEL=3 CLIENTPROCESSID=35040 
+MSI (s) (BC:64) [05:46:29:242]: PROPERTY CHANGE: Deleting ALLUSERS property. Its current value is '2'.
+MSI (s) (BC:64) [05:46:29:246]: PROPERTY CHANGE: Adding ALLUSERS property. Its value is '2'.
+MSI (s) (BC:64) [05:46:29:248]: PROPERTY CHANGE: Deleting ALLUSERS property. Its current value is '2'.
+Action start 05:46:29: INSTALL.
+Action start 05:46:29: FindRelatedProducts.
+Action ended 05:46:29: FindRelatedProducts. Return value 1.
+Action start 05:46:29: AppSearch.
+Action ended 05:46:29: AppSearch. Return value 1.
+Action start 05:46:29: LaunchConditions.
+Action ended 05:46:29: LaunchConditions. Return value 1.
+Action start 05:46:29: ValidateProductID.
+Action ended 05:46:29: ValidateProductID. Return value 1.
+Action start 05:46:29: CostInitialize.
+Action ended 05:46:29: CostInitialize. Return value 1.
+Action start 05:46:29: FileCost.
+Action ended 05:46:29: FileCost. Return value 1.
+Action start 05:46:29: CostFinalize.
+MSI (s) (BC:64) [05:46:43:359]: Skipping action: SetOPTION_ALLUSERS (condition is false)
+Action ended 05:46:43: CostFinalize. Return value 1.
+Action start 05:46:43: SetINSTALL_UNATTENDED.
+Action ended 05:46:43: SetINSTALL_UNATTENDED. Return value 1.
+Action start 05:46:43: MigrateFeatureStates.
+Action ended 05:46:43: MigrateFeatureStates. Return value 0.
+Action start 05:46:43: InstallValidate.
+Action ended 05:46:55: InstallValidate. Return value 1.
+Action start 05:46:55: InstallInitialize.
+MSI (s) (BC:64) [05:46:55:623]: Doing action: RemoveExistingProducts
+Action ended 05:46:55: InstallInitialize. Return value 1.
+Action start 05:46:55: RemoveExistingProducts.
+Action ended 05:46:55: RemoveExistingProducts. Return value 1.
+Action start 05:46:55: ProcessComponents.
+Action ended 05:46:56: ProcessComponents. Return value 1.
+Action start 05:46:56: UnpublishFeatures.
+Action ended 05:46:56: UnpublishFeatures. Return value 1.
+Action start 05:46:56: RemoveRegistryValues.
+Action ended 05:46:56: RemoveRegistryValues. Return value 1.
+Action start 05:46:56: RemoveShortcuts.
+Action ended 05:46:56: RemoveShortcuts. Return value 1.
+Action start 05:46:56: RemoveFiles.
+Action ended 05:46:56: RemoveFiles. Return value 1.
+Action start 05:46:56: RemoveFolders.
+Action ended 05:46:56: RemoveFolders. Return value 1.
+Action start 05:46:56: CreateFolders.
+Action ended 05:46:56: CreateFolders. Return value 1.
+Action start 05:46:56: InstallFiles.
+Action ended 05:47:07: InstallFiles. Return value 1.
+Action start 05:47:07: CreateShortcuts.
+Action ended 05:47:07: CreateShortcuts. Return value 1.
+Action start 05:47:07: WriteRegistryValues.
+Action ended 05:47:07: WriteRegistryValues. Return value 1.
+Action start 05:47:07: RegisterUser.
+Action ended 05:47:07: RegisterUser. Return value 1.
+Action start 05:47:07: RegisterProduct.
+Action ended 05:47:07: RegisterProduct. Return value 1.
+Action start 05:47:07: PublishFeatures.
+Action ended 05:47:08: PublishFeatures. Return value 1.
+Action start 05:47:08: PublishProduct.
+Action ended 05:47:08: PublishProduct. Return value 1.
+Action start 05:47:08: InstallFinalize.
+MSI (s) (BC:64) [05:47:31:389]: Note: 1: 1321 2: C:\Config.Msi\ 3: 5 
+Action ended 05:47:31: InstallFinalize. Return value 1.
+Action ended 05:47:31: INSTALL. Return value 1.
+Property(S): MSIINSTALLPERUSER = 1
+Property(S): INSTALLFOLDER = C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\install\
+Property(S): OPTION_ALLUSERS = 0
+Property(S): ProductVersion = 0.9.1
+Property(S): UpgradeCode = {41C17ED3-4788-5F2A-812B-7C2DA17661FF}
+MSI (s) (BC:64) [05:47:31:573]: Note: 1: 1707 
+MSI (s) (BC:64) [05:47:31:573]: Product: Heronry S2 Spike -- Installation completed successfully.
+MSI (s) (BC:64) [05:47:31:573]: Windows Installer installed the product. Product Name: Heronry S2 Spike. Product Version: 0.9.1. Product Language: 1033. Manufacturer: Heronry contributors. Installation success or error status: 0.
+MSI (s) (BC:64) [05:47:31:593]: MainEngineThread is returning 0
+=== Logging stopped: 02-10-2026  05:47:31 ===
+MSI (c) (E0:60) [05:47:31:602]: MainEngineThread is returning 0
+=== Verbose logging stopped: 02-10-2026  05:47:31 ===

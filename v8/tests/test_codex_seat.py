@@ -23,7 +23,7 @@ from edp8.codex_seat.tools import (CRON_EXPIRE_MS, LINE_MAX, PREAMBLE_IDLE, Cloc
 V8 = Path(__file__).resolve().parents[1]
 HERE = Path(__file__).resolve().parent / "codex_seat"
 JITI = V8.parent / "edp-pool" / ".pi-harness" / "node_modules" / "@earendil-works" / "pi-coding-agent" / "node_modules" / "jiti" / "lib" / "jiti-cli.mjs"
-DESC = V8 / "guides" / "harness-parity" / "descriptions.ours.json"
+DESC = V8 / "src" / "edp8" / "codex_seat" / "descriptions.ours.json"
 
 
 class FakeHost:
@@ -303,7 +303,8 @@ def test_containment_fails_closed_on_discovery_error():
 
 def test_token_never_on_argv_and_board_headers_by_env_name(tmp_path):
     s = seat_mod.CodexSeat(cwd=V8, role="adversary", handle="adversary.t", log_dir=tmp_path, codex_bin="codex",
-                           env={"EDP8_TOKEN": "tok-SECRET-123", "EDP_HANDLE": "adversary.t"},
+                           env={"EDP8_TOKEN": "tok-SECRET-123", "EDP_HANDLE": "adversary.t",
+                                "EDP8_MCP_URL": "http://127.0.0.1:9402"},  # not this host's EDP8_MCP_PORT
                            discover=lambda _c: (FAKE_SERVERS, None))
     argv = s.argv()
     assert not any("tok-SECRET-123" in a for a in argv)

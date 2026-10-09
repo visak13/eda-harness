@@ -19,6 +19,7 @@ returns the envelope as JSON text.
 from __future__ import annotations
 
 import contextlib
+import hmac
 import inspect
 import json
 import sys
@@ -44,7 +45,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from . import __version__, run_state, settings
+from . import __version__, browser_proxy, run_state, settings
 from .bundles import (ALL_TOOLS, ToolDef, bind_request, invoke, is_human_role, set_client, standard_roles,
                       tools_for_role)
 from .workflow import KERNEL_TOOLS
@@ -80,6 +81,19 @@ def _identity_from(ctx: Context | None) -> tuple[str | None, str | None, str | N
     return (settings.get("EDP8_PARTICIPANT") or None,
             settings.get("EDP_SPAWN_SESSION_ID") or None,
             settings.get("EDP8_TOKEN") or None)
+
+
+def _wake_mod_from(ctx: Context | None) -> str | None:
+    """The seat's `X-Wake-Mod` header: its CLAUDE_CODE_PLUGIN_DIRS, sent by `.mcp.json` (s-e60c3d42ad). The shared
+    service cannot read that from its own environment."""
+    try:
+        headers = ctx.headers if ctx is not None else None
+    except Exception:  # noqa: BLE001 — no request context (stdio)
+        return None
+    for k, v in (headers or {}).items():
+        if k.lower() == "x-wake-mod":
+            return (v or "").strip() or None
+    return None
 
 
 # t-3e246b5e32 (a): the tools a caller gets are bound to its BOARD role (whoami), never to the
@@ -143,9 +157,13 @@ def allowed_tool_names(path_role: str, caller_role: str | None, caller_bundle: l
     if not is_human_role(caller_role):
         mine |= set(KERNEL_TOOLS)
     mine &= set(ALL_TOOLS)
-    if path_role in (CUSTOM_PATH, caller_role):
-        return mine
-    return mine & {t.name for t in tools_for_role(path_role)}
+    if path_role not in (CUSTOM_PATH, caller_role):
+        mine &= {t.name for t in tools_for_role(path_role)}
+    # t-732cf1dd92: the proxied browser tools go to every agent role on every path (owner m-abc28b19b2 "for all
+    # agents"); `tools.browser_mcp` off removes them
+    if caller_role and not is_human_role(caller_role) and browser_proxy.enabled():  # (an unverified caller
+        mine |= browser_proxy.TOOL_NAMES                                               # returned set() above)
+    return mine
 
 
 def _refused(tool_name: str, path_role: str, caller_role: str | None, workflow: str | None = None) -> str:
@@ -207,7 +225,7 @@ def _wrap(tool: ToolDef, *, board_url: str, admin_token: str | None, workspace_r
             except (AttributeError, ValueError):
                 peer = None
             request_tool = replace(tool, handler=lambda a: http_upload_policy.upload(client, a.path, a.note, peer))
-        with bind_request(client, session_id=session, server_version=VERSION):
+        with bind_request(client, session_id=session, server_version=VERSION, wake_mod=_wake_mod_from(ctx)):
             # invoke() validates args → envelope on a bad enum (naming field + allowed values),
             # carries the deprecation hint, and counts consecutive failures per seat (§19).
             result = invoke(request_tool, kwargs, seat=participant)
@@ -227,12 +245,55 @@ def _wrap(tool: ToolDef, *, board_url: str, admin_token: str | None, workspace_r
     return call
 
 
+def _wrap_browser(spec: dict[str, Any], *, board_url: str, admin_token: str | None, path_role: str | None):
+    """A proxied `browser_*` tool (t-732cf1dd92): the same identity gates as a board tool, then the call goes to
+    this seat session's own upstream session on the shared service (edp8.browser_proxy); its content blocks,
+    screenshots included, come back as MCP content unchanged."""
+    name = spec["name"]
+
+    def call(ctx: Context, **kwargs: Any) -> Any:
+        participant, session, token = _identity_from(ctx)
+        refused = _agent_shell_as_human(board_url, admin_token, participant, session, token, name)
+        if refused:
+            return refused
+        # the board verifies X-Participant against X-Token here (whoami); a caller it refuses gets no browser at all
+        caller_role = _caller_role(board_url, admin_token, participant, token)
+        path = path_role if path_role is not None else (caller_role or "")
+        if not caller_role or is_human_role(caller_role):  # refused by the board, or a person: never a browser
+            return _refused(name, path, caller_role)
+        if name not in allowed_tool_names(path, caller_role, _caller_bundle(board_url, participant, token)):
+            return _refused(name, path, caller_role, _workflow_cache.get((board_url, participant, token)))
+        # keyed by the VERIFIED participant and the session (architect m-b397a2b7d9): a seat that sends another
+        # seat's X-Session gets a context of its own, never that seat's page and the token in its storage
+        key = browser_proxy.session_key(participant, session)
+        try:
+            res = browser_proxy.proxy().call(key, name, kwargs, handle=participant, token=token)
+        except Exception as e:  # noqa: BLE001 - the step that failed goes back to the model, never a bare 500
+            return json.dumps({"ok": False, "error": {"code": "unavailable", "message": f"{name}: {e}"},
+                               "hint": "the browser tool is a shared service; doctor shows its install and state"})
+        blocks: list[Any] = []
+        for c in res.get("content") or []:
+            if c.get("type") == "image" and c.get("data"):
+                blocks.append(ImageContent(type="image", data=c["data"], mime_type=c.get("mimeType") or "image/png"))
+            elif c.get("type") == "text":
+                blocks.append(TextContent(type="text", text=c.get("text") or ""))
+            else:
+                blocks.append(TextContent(type="text", text=json.dumps(c)))
+        return CallToolResult(content=blocks or [TextContent(type="text", text="")], is_error=bool(res.get("isError")))
+
+    call.__signature__ = inspect.Signature(
+        [inspect.Parameter("ctx", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=Context)])
+    call.__name__ = name
+    call.__annotations__ = {"ctx": Context, "return": Any}
+    return call
+
+
 def _as_content(result: dict[str, Any]) -> Any:
     """The JSON envelope as text; an artifact_read image (value.content.base64, S23) also goes out as an MCP
     image block, so the model sees the pixels. The base64 never sits in the text or structured copy."""
     content = (result.get("value") or {}).get("content") if isinstance(result.get("value"), dict) else None
     data = content.pop("base64", None) if isinstance(content, dict) else None
-    text = json.dumps(result, default=str)
+    text = json.dumps(result, default=str, ensure_ascii=False)  # non-ASCII text goes out as itself, not \uXXXX
     if not data:
         return text
     return CallToolResult(content=[TextContent(type="text", text=text),
@@ -275,6 +336,14 @@ def build_role_server(role: str, *, board_url: str, admin_token: str | None,
         registered = server._tool_manager.get_tool(tool.name)
         registered.parameters = tool.input_schema
         registered.fn_metadata.arg_model = _RawArgs
+    if browser_proxy.enabled():
+        # t-732cf1dd92: the shared browser service's tools, its own schemas, the arguments passed through as given
+        for spec in browser_proxy.TOOLS:
+            server.add_tool(_wrap_browser(spec, board_url=board_url, admin_token=admin_token, path_role=role),
+                            name=spec["name"], description=spec.get("description") or "")
+            registered = server._tool_manager.get_tool(spec["name"])
+            registered.parameters = spec["inputSchema"]
+            registered.fn_metadata.arg_model = _RawArgs
     return server
 
 
@@ -328,12 +397,32 @@ def build_http_app(roles: list[str] | None = None) -> Starlette:
     routes.append(Route("/mcp/{role}", endpoint=StreamableHTTPASGIApp(managers["custom"])))
     routes.append(Route("/healthz", endpoint=healthz))
 
+    # the board's own admin token (its secrets-file fallback included), never handed to the seat-facing clients
+    release_token = browser_proxy.admin_token()
+
+    async def browser_release(request: Request) -> JSONResponse:
+        """Ruling 1a: the board, on a seat session's dead transition, closes that seat's browser session."""
+        given = request.headers.get("x-admin") or ""
+        if not release_token or not hmac.compare_digest(given.encode(), str(release_token).encode()):
+            return JSONResponse({"ok": False, "error": {"code": "forbidden", "message": "X-Admin token invalid"}},
+                                status_code=403)
+        sid = request.path_params["session"]
+        released = await anyio.to_thread.run_sync(browser_proxy.proxy().release_session, sid)
+        return JSONResponse({"ok": True, "value": {"session": sid, "released": released}})
+
+    routes.append(Route("/browser/release/{session}", endpoint=browser_release, methods=["POST"]))
+
     @contextlib.asynccontextmanager
     async def lifespan(_: Starlette) -> AsyncIterator[None]:
         async with contextlib.AsyncExitStack() as stack:
             for mgr in managers.values():
                 await stack.enter_async_context(mgr.run())
-            yield
+            if browser_proxy.enabled():
+                browser_proxy.proxy().start_reaper()  # ruling 1b: an idle seat's browser session is closed
+            try:
+                yield
+            finally:
+                await anyio.to_thread.run_sync(browser_proxy.shutdown)  # the shared service stops with us
 
     return Starlette(routes=routes, lifespan=lifespan)
 

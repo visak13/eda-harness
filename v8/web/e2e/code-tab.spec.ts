@@ -6,7 +6,7 @@ import { ADMIN, REPO_DIR } from "./board";
 // epic-91fcd3b370 S3 (c-8c3e157cc2, c-15095a23a0): the Code tab against the REAL code service.
 //  - up: /ui/code embeds code-server full-bleed (rail collapsed, no page scrollbar) and the VS Code
 //    workbench renders inside the frame; a deep link …&line=10-20 opens the file with the cursor on
-//    line 10 and lines 10–20 on screen; the header's FAQ link opens guides/code-tab-faq.md.
+//    line 10 and lines 10–20 on screen; the header's FAQ link opens docs/operator/code-tab-faq.md.
 // The down-state (a board whose EDP_CODE_PORT answers nothing) is code-tab-down.spec.ts: a worker
 // option such as boardEnv is per FILE, so it needs its own board.
 // Needs the code service up: `.\edp.ps1 start code` (it is by-name only).
@@ -14,6 +14,8 @@ import { ADMIN, REPO_DIR } from "./board";
 // frame's one-time login with the live service's mint key (its .run/code.json is copied into the
 // spec board's run dir), so the frame first loads /__edp/login and the workbench after the redirect;
 // "Open in new window" mints its own; an agent seat gets the no-session state, never a frame.
+// RC2 F5 (architect m-e26cf15b4f): the login is a POSTed form, so the token is never in a URL: the frame
+// has no src, the POST body carries t and next, and the page's HTML never holds the token.
 
 const CODE_PORT = process.env.EDP_CODE_PORT ?? "9410";
 const SHOTS = path.join(REPO_DIR, "web", "e2e", "evidence", "code-tab");
@@ -30,7 +32,9 @@ async function codeServiceUp(): Promise<boolean> {
   }
 }
 
-test.use({ boardFile: "code-tab", boardEnv: { EDP_CODE_PORT: CODE_PORT } });
+// the guard reports its home id (the code service's data dir): the spec board shares REPO_DIR's, whose run
+// record it copies, or it reads the guard as another Heronry's ("foreign")
+test.use({ boardFile: "code-tab", boardEnv: { EDP_CODE_PORT: CODE_PORT, EDP8_DATA: path.join(REPO_DIR, ".data") } });
 
 test.describe("code service up", () => {
   test.setTimeout(120_000);
@@ -39,8 +43,8 @@ test.describe("code service up", () => {
     fs.mkdirSync(SHOTS, { recursive: true });
     // The spec board's EDP8_HOME is a temp dir: give it the real FAQ so the header link resolves.
     const home = process.env.EDP8_E2E_HOME!;
-    fs.mkdirSync(path.join(home, "guides"), { recursive: true });
-    fs.copyFileSync(path.join(REPO_DIR, "guides", "code-tab-faq.md"), path.join(home, "guides", "code-tab-faq.md"));
+    fs.mkdirSync(path.join(home, "docs", "operator"), { recursive: true });
+    fs.copyFileSync(path.join(REPO_DIR, "docs", "operator", "code-tab-faq.md"), path.join(home, "docs", "operator", "code-tab-faq.md"));
     // the live code service's record (mint key): the spec board mints its owner's guard login with it
     fs.mkdirSync(path.join(home, ".run"), { recursive: true });
     fs.copyFileSync(path.join(REPO_DIR, ".run", "code.json"), path.join(home, ".run", "code.json"));
@@ -53,13 +57,21 @@ test.describe("code service up", () => {
   });
 
   test("the workbench renders full-bleed with the rail collapsed and no page scrollbar", async ({ page }) => {
+    const logins: { method: string; url: string; body: string }[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/__edp/login")) logins.push({ method: r.method(), url: r.url(), body: r.postData() ?? "" });
+    });
     await page.goto(`/ui/code?${as}&folder=${encodeURIComponent(REPO_DIR)}`, { waitUntil: "load" });
     const frameEl = page.getByTestId("code-frame");
     await expect(frameEl).toBeVisible();
-    const login = new URL((await frameEl.getAttribute("src"))!);
-    expect(`${login.origin}${login.pathname}`).toBe(`http://127.0.0.1:${CODE_PORT}/__edp/login`);
-    expect(login.searchParams.get("t")).toMatch(/^\d+\.[0-9a-f]{32}\.[0-9a-f]{64}$/);
-    expect(login.searchParams.get("next")).toMatch(/^\/\?folder=\/[a-z]:\//);
+    expect(await frameEl.getAttribute("src")).toBeNull(); // RC2 F5: no login URL in the page
+    await expect.poll(() => logins.length).toBeGreaterThan(0);
+    expect(logins[0].method).toBe("POST");
+    expect(logins[0].url).toBe(`http://127.0.0.1:${CODE_PORT}/__edp/login`);
+    const form = new URLSearchParams(logins[0].body);
+    expect(form.get("t")).toMatch(/^\d+\.[0-9a-f]{32}\.[0-9a-f]{64}$/);
+    expect(form.get("next")).toMatch(/^\/\?folder=\/[a-z]:\//);
+    expect(await page.content()).not.toContain(form.get("t")!);
     await expect(page.locator("[data-rail]")).toHaveAttribute("data-rail", "collapsed");
     await expect(page.getByTestId("code-state")).toContainText("running");
 
@@ -107,6 +119,7 @@ test.describe("code service up", () => {
     const [win] = await Promise.all([context.waitForEvent("page"), page.getByTestId("code-newwindow").click()]);
     await expect(win.locator(".monaco-workbench")).toBeVisible({ timeout: 60_000 });
     expect(new URL(win.url()).pathname).not.toBe("/__edp/login"); // redirected past the login
+    expect(new URL(win.url()).searchParams.get("t")).toBeNull(); // RC2 F5: the token was POSTed, never in a URL
     await win.screenshot({ path: path.join(SHOTS, "code-tab-newwindow.png") });
   });
 

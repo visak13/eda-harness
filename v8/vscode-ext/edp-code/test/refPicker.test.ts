@@ -10,6 +10,7 @@ import { parseReaderInbound } from '../src/core/reader';
 import { noteToken, refRows } from '../src/core/noteCompletion';
 import { RefSource, type RefBoard } from '../src/core/refSource';
 import type { RefRow } from '../src/core/boardRefs';
+import { boardArtifactUrl } from '../src/core/boardLinks';
 
 Element.prototype.scrollIntoView ??= function () {}; // jsdom has no layout
 type Sent = { type: string; [k: string]: unknown };
@@ -91,6 +92,51 @@ describe('RefPicker (the composer)', () => {
     p.onRefs({ type: 'refs', v: 1, seq: sent[0].seq as number, items: [{ id: 'm-0f44bb36dd', kind: 'story', title: 'x', group: 'scope' }] as never });
     expect(p.isOpen).toBe(false);
     expect(status.textContent).toBe('No matching board objects');
+  });
+});
+
+describe('S16: artifacts in the $ picker and as chips', () => {
+  const art: RefRow[] = [
+    { id: 'art-aaaaaaaaaa', kind: 'artifact', title: 'alpha-shot.png', group: 'scope', epic: 'EDP chat in VS Code' },
+    { id: 'art-bbbbbbbbbb', kind: 'artifact', title: 'Bravo report page', group: 'board', epic: 'Code tab' },
+    { id: 'art-cccccccccc', kind: 'artifact', title: 'loose link', group: 'board', epic: null },
+  ];
+  beforeEach(() => { document.body.replaceChildren(); });
+
+  it("'$art' lists each artifact with the epic it is linked to; Enter inserts '$art-<id> (<title>) '", () => {
+    const sent: Sent[] = [];
+    const ta = field('proof $art');
+    const p = new RefPicker(ta, m => sent.push(m), document.createElement('div'), () => {});
+    p.update();
+    p.onRefs({ type: 'refs', v: 1, seq: sent[0].seq as number, items: art });
+    const opts = [...p.list.querySelectorAll('[role=option]')] as HTMLElement[];
+    expect(opts.map(o => o.dataset.ref)).toEqual(['art-aaaaaaaaaa', 'art-bbbbbbbbbb', 'art-cccccccccc']);
+    expect(opts.map(o => o.dataset.group)).toEqual(['scope', 'board', 'board']);
+    expect(opts[0].textContent).toBe('artifact $art-aaaaaaaaaaalpha-shot.png · EDP chat in VS Code');
+    expect(opts[2].textContent).toContain('loose link · no epic');
+    expect(opts[1].getAttribute('aria-label')).toBe('artifact art-bbbbbbbbbb Bravo report page in Code tab (other work)');
+    expect(p.onKey(key('ArrowDown'))).toBe(true);
+    expect(p.onKey(key('Enter'))).toBe(true);
+    expect(ta.value).toBe('proof $art-bbbbbbbbbb (Bravo report page) ');
+  });
+
+  it("the host's cleaned rows keep the epic an artifact names, and '$art-<id> (label)' renders as one chip that opens it", () => {
+    const sent: Sent[] = [];
+    const p = new RefPicker(field('$x'), m => sent.push(m), document.createElement('div'), () => {});
+    p.update();
+    p.onRefs({ type: 'refs', v: 1, seq: sent[0].seq as number, items: art });
+    expect((p.list.querySelectorAll('[role=option]')[0] as HTMLElement).textContent).toContain('EDP chat in VS Code');
+    const root = document.createElement('div');
+    root.append(refFragment(document, 'see $art-aaaaaaaaaa (alpha-shot.png) now'));
+    const chip = root.querySelector('.ref-chip') as HTMLElement;
+    expect(chip.dataset.ref).toBe('art-aaaaaaaaaa');
+    expect(chip.textContent).toBe('artifact · alpha-shot.png');
+    const posted: unknown[] = [];
+    onRefClick(root, m => posted.push(m));
+    chip.click();
+    expect(posted).toEqual([{ type: 'openRef', id: 'art-aaaaaaaaaa' }]);
+    expect(parseInbound({ v: 1, type: 'openRef', id: 'art-aaaaaaaaaa' })).toEqual({ v: 1, type: 'openRef', id: 'art-aaaaaaaaaa' });
+    expect(parseReaderInbound({ v: 1, type: 'openRef', id: 'art-aaaaaaaaaa' })).toEqual({ v: 1, type: 'openRef', id: 'art-aaaaaaaaaa' });
   });
 });
 
@@ -223,6 +269,7 @@ describe('RefSource (the host rows)', () => {
       scopeDecisions: async s => { calls.push(`decisions ${s}`); return { scope: s, epic: s, decisions: [{ id: 'dec-bf6aab8b73', text: 'C2 ruling', status: 'live' }] } as never; },
       find: async q => { calls.push(`find ${q}`); return [{ type: 'ticket', id: 's-0000000001', title: 'C2 elsewhere', status: 'ready' }, { type: 'ticket', id: 's-5d1b171d57', title: 'dup', status: 'ready' }]; },
       epics: async () => { calls.push('epics'); return [{ id: 'epic-91fcd3b370', title: 'Code tab C2', status: 'in_progress' }]; },
+      artifactSearch: async () => [],
       ...over,
     };
     return { b, calls };
@@ -252,5 +299,38 @@ describe('RefSource (the host rows)', () => {
     const out = await src.rows(EPIC, 'C2');
     expect(out.map(r => r.id)).toEqual(['s-5d1b171d57', 's-93ddb7fd1a', 'epic-91fcd3b370']);
     expect((await src.rows(null, 'Code')).map(r => r.id)).toEqual(['epic-91fcd3b370']);
+  });
+
+  const ART = [
+    { id: 'art-aaaaaaaaaa', title: 'alpha-shot.png', group: 'scope', epic_title: 'EDP chat in VS Code' },
+    { id: 'art-bbbbbbbbbb', title: 'Bravo report page', group: 'board', epic_title: 'Code tab C2' },
+    { id: 'art-cccccccccc', title: 'loose link', group: 'board', epic_title: null },
+  ];
+
+  it('S16: every readable artifact comes from the board route, the open epic first and each row naming its epic', async () => {
+    const seen: [string, string | null][] = [];
+    const { b } = fake({ artifactSearch: async (q, epic) => { seen.push([q, epic]); return ART; } });
+    const out = await new RefSource(() => b).rows(EPIC, 'art');
+    expect(seen).toEqual([['art', EPIC]]);
+    expect(out.map(r => [r.id, r.group, r.epic ?? null])).toEqual([
+      ['art-aaaaaaaaaa', 'scope', 'EDP chat in VS Code'], ['art-bbbbbbbbbb', 'board', 'Code tab C2'], ['art-cccccccccc', 'board', null]]);
+    expect(refRows(out)[0]).toMatchObject({ label: '$art-aaaaaaaaaa', insert: '$art-aaaaaaaaaa (alpha-shot.png) ' });
+    expect(refRows(out)[1].detail).toBe('artifact · Bravo report page · Code tab C2 (other work)');
+    expect(refRows(out)[2].detail).toBe('artifact · loose link · no epic (other work)');
+  });
+
+  it('S16: a one-letter query still asks for artifacts; a refused or malformed artifact answer leaves the other rows', async () => {
+    const asked: string[] = [];
+    const { b } = fake({ artifactSearch: async q => { asked.push(q); return ART; } });
+    await new RefSource(() => b).rows(EPIC, 'a');
+    expect(asked).toEqual(['a']);
+    for (const bad of [async () => { throw new Error('403 forbidden'); }, async () => ({ not: 'rows' }), async () => [{ id: 's-1111111111', title: 'x', group: 'scope' }]]) {
+      const out = await new RefSource(() => fake({ artifactSearch: bad as never }).b).rows(EPIC, 'C2');
+      expect(out.map(r => r.id)).toEqual(['s-5d1b171d57', 's-93ddb7fd1a', 'dec-bf6aab8b73', 's-0000000001', 'epic-91fcd3b370']);
+    }
+  });
+
+  it('S16: an artifact chip opens the board artifact page', () => {
+    expect(boardArtifactUrl('http://127.0.0.1:19400/', 'art-aaaaaaaaaa')).toBe('http://127.0.0.1:19400/ui/artifact/art-aaaaaaaaaa');
   });
 });

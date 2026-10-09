@@ -21,6 +21,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from . import doc_mirror
 from .schemas import OBJECT_TYPES, Doc, Event, Obj
 
 # S18 T2: sha256 of the source this process executed, taken as the module loads (edp8.rsi reads it)
@@ -30,7 +31,7 @@ _INDEXED: dict[str, list[str]] = {
     "participant": ["role", "handle"],
     "ticket": ["kind", "work_type", "parent_id", "status", "assignee", "created_by", "epic_id"],
     "criterion": ["ticket_id", "verdict", "checked_by"],
-    "doc": ["doc_type", "scope", "owner_role"],
+    "doc": ["doc_type", "scope", "owner_role", "layout"],
     "link": ["from_id", "to_id", "relation"],
     "message": ["ticket_id", "to", "kind", "reply_to", "created_by"],
     "event": ["subject_id", "kind"],
@@ -39,6 +40,7 @@ _INDEXED: dict[str, list[str]] = {
     "decision": ["scope", "status", "source"],
     "claim": ["scope", "status", "basis"],
     "lesson": ["domain", "topic", "status"],
+    "pain": ["status", "area", "severity"],
     "kglink": ["from_id", "to_id", "kind"],
     # RSI phase 1 (report-9a85d0418e §7): written only by edp8.rsi
     "policy": ["status", "parent"],
@@ -48,6 +50,10 @@ _INDEXED: dict[str, list[str]] = {
     "fix": ["topic_id", "status"],
     # t-882e4d2eeb: sign-in page access requests (edp8.admin.access), decided by an admin
     "access_request": ["status"],
+    # e0cec S4: the asks ledger (edp8.asks), one row per human message on an epic's tree
+    "ask": ["epic_id", "state", "source"],
+    # s-aa76c83998: marked requirements (edp8.requirements), open until the architect links them
+    "requirement": ["epic_id", "state", "source"],
 }
 
 
@@ -59,12 +65,19 @@ def _dump(m: BaseModel) -> str:
     return m.model_dump_json()
 
 
+#: S13 F12: the fts `sec` format; a stored mark that differs (or none) rebuilds the index once at open
+FTS_SEC_FORMAT = "heading-path-selectors-3"  # -3: S18-4 occurrence suffix `path ⟨n⟩`
+
+
 class Store:
     def __init__(self, path: str | Path = ":memory:"):
         self.path = str(path)
         self._lock = threading.RLock()
         self._transaction_depth = 0
         self._after_commit: list[Callable[[], None]] = []
+        self._after_rollback: list[Callable[[], None]] = []
+        self.mirror_pending: set[str] = set()  # docs whose mirror file is behind the database (doc_mirror.publish failed)
+        self.mirror_root: Path | None = None  # set by the board service: <agent-home>/docs (see doc_mirror)
         self._conn = sqlite3.connect(self.path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL") if self.path != ":memory:" else None
@@ -88,15 +101,27 @@ class Store:
                 if outer:
                     self._conn.rollback()
                     self._after_commit.clear()
+                    undo, self._after_rollback = self._after_rollback, []
+                    for callback in undo:
+                        callback()
                 raise
             finally:
                 self._transaction_depth -= 1
             callbacks = []
             if outer:
                 callbacks, self._after_commit = self._after_commit, []
+                self._after_rollback.clear()
+                if self.mirror_pending:  # any commit, doc or not, retries a mirror file that did not land
+                    callbacks.append(self._retry_mirror_pending)
         # Board callbacks take the Board lock. Never invert Board -> Store ordering.
         for callback in callbacks:
             callback()
+
+    def after_rollback(self, callback: Callable[[], None]) -> None:
+        """Run `callback` if the outermost transaction rolls back (undo for side effects staged inside it)."""
+        with self._lock:
+            if self._transaction_depth:
+                self._after_rollback.append(callback)
 
     def after_commit(self, callback: Callable[[], None]) -> None:
         with self._lock:
@@ -118,6 +143,8 @@ class Store:
                 # checked_by) — MUST land before any index on them: SQLite silently accepts
                 # CREATE INDEX ON t("missing") as an index on a string constant, and the later
                 # ALTER ADD COLUMN then corrupts the file ("database disk image is malformed")
+                if t == "doc":
+                    self._migrate_doc_layout_locked()
                 self._migrate_columns(t, cols)
                 for c in cols:
                     self._conn.execute(f'CREATE INDEX IF NOT EXISTS ix_{t}_{c} ON {t}("{c}")')
@@ -132,9 +159,20 @@ class Store:
             # RSI §7: at most one incumbent policy, enforced by the DB (not only by edp8.rsi)
             self._conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS ux_policy_incumbent ON policy("status") '
                                "WHERE status='incumbent'")
-            self._conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(type UNINDEXED, id UNINDEXED, text)")
-            if self._conn.execute("SELECT count(*) FROM fts").fetchone()[0] == 0:
+            # S17 decision 4: a doc is one row per section (`sec` = its heading line); an older table is rebuilt
+            cur = self._conn.execute("SELECT name FROM sqlite_master WHERE name='fts'").fetchone()
+            if cur and "sec" not in [c[0] for c in self._conn.execute("SELECT * FROM fts LIMIT 0").description]:
+                self._conn.execute("DROP TABLE fts")
+            self._conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(type UNINDEXED, id UNINDEXED, "
+                               "sec UNINDEXED, text)")
+            # S13 F12 residual (architect m-10b64902e7): `sec` holds the section selector (a heading path for a
+            # repeated heading); an index written before that holds bare headings, so it is rebuilt once
+            self._conn.execute("CREATE TABLE IF NOT EXISTS store_meta (k TEXT PRIMARY KEY, v TEXT)")
+            mark = self._conn.execute("SELECT v FROM store_meta WHERE k='fts_sec'").fetchone()
+            if (mark is None or mark[0] != FTS_SEC_FORMAT
+                    or self._conn.execute("SELECT count(*) FROM fts").fetchone()[0] == 0):
                 self._fts_rebuild_locked()
+                self._conn.execute("INSERT OR REPLACE INTO store_meta (k, v) VALUES ('fts_sec', ?)", (FTS_SEC_FORMAT,))
             # S22: a thread's per-author lookup (Board.ask_resolved (d)) — one index for both columns
             self._conn.execute('CREATE INDEX IF NOT EXISTS ix_message_ticket_created ON message("ticket_id", "created_by")')
             # and a thread's asks to one addressee (views._pending_owner_request): stat1 averages ~90 rows per
@@ -197,6 +235,18 @@ class Store:
                 "'$.retired_owner_role', ?) WHERE json_extract(body, '$.owner_role')=?", (old, old))
         return ids
 
+    def _migrate_doc_layout_locked(self) -> int:
+        """S17 (design-f39cf0db7d decision 2, owner m-ee0717d276/m-ca6967f91c): every doc that predates the
+        `layout` column is flagged `legacy`, body and every stored version alike; a new doc defaults to
+        `summary_first`. Runs once, when the column is missing. No body is parsed: the flag is the only signal."""
+        have = {r["name"] for r in self._conn.execute("PRAGMA table_info(doc)")}
+        if "layout" in have:
+            return 0
+        self._conn.execute("ALTER TABLE doc ADD COLUMN \"layout\" TEXT NOT NULL DEFAULT 'summary_first'")
+        n = self._conn.execute("UPDATE doc SET \"layout\"='legacy', body=json_set(body, '$.layout', 'legacy')").rowcount
+        self._conn.execute("UPDATE doc_versions SET body=json_set(body, '$.layout', 'legacy')")
+        return n
+
     def _migrate_columns(self, t: str, cols: list[str]) -> None:
         """A new indexed column on an existing table: ALTER + backfill from the JSON body,
         so old boards keep working unchanged."""
@@ -232,17 +282,26 @@ class Store:
             return "\n".join([d.get("text") or "", d.get("topic") or "", d.get("domain") or ""])
         return None
 
-    def _fts_put_locked(self, type_: str, id_: str, text: str) -> None:
+    @staticmethod
+    def doc_units(d: dict[str, Any]) -> list[tuple[str | None, str]]:
+        """A doc's search units (S17 decision 4): (heading line or None, text) per section."""
+        from .doc_tools import doc_units
+        return doc_units(d.get("title") or "", d.get("body_md") or "")
+
+    def _fts_put_locked(self, type_: str, id_: str, text: str, data: dict[str, Any] | None = None) -> None:
         self._conn.execute("DELETE FROM fts WHERE type=? AND id=?", (type_, id_))
-        self._conn.execute("INSERT INTO fts(type, id, text) VALUES (?,?,?)", (type_, id_, text))
+        rows = self.doc_units(data) if type_ == "doc" and data is not None else [(None, text)]
+        self._conn.executemany("INSERT INTO fts(type, id, sec, text) VALUES (?,?,?,?)",
+                               [(type_, id_, sec, txt) for sec, txt in rows])
 
     def _fts_rebuild_locked(self) -> None:
         self._conn.execute("DELETE FROM fts")
         for t in ("ticket", "doc", "message", "criterion", "decision", "claim", "lesson"):
             for r in self._conn.execute(f"SELECT id, body FROM {t}"):
-                text = self._fts_text(t, json.loads(r["body"]))
+                d = json.loads(r["body"])
+                text = self._fts_text(t, d)
                 if text:
-                    self._conn.execute("INSERT INTO fts(type, id, text) VALUES (?,?,?)", (t, r["id"], text))
+                    self._fts_put_locked(t, r["id"], text, d)
 
     @staticmethod
     def fts_query(q: str) -> str:
@@ -251,21 +310,40 @@ class Store:
         toks = [t for t in re.findall(r"[\w\-]+", q or "") if t]
         return " OR ".join(f'"{t}"' for t in toks)
 
-    def fts_search(self, q: str, *, types: set[str] | None = None, limit: int = 20) -> list[dict[str, Any]]:
-        """Exact-word hits: [{type, id, snippet, rank}] best first."""
+    def fts_search(self, q: str, *, types: set[str] | None = None, limit: int = 20,
+                   ids: set[str] | None = None) -> list[dict[str, Any]]:
+        """Exact-word hits: [{type, id, snippet, rank}] best first; a doc hit names its best `section` (S17). `ids`
+        restricts the hits to those ids (a guest's scope, e0cec S5: foreign rows are never ranked, so a guest still
+        gets `limit` hits)."""
         match = self.fts_query(q)
         if not match:
             return []
-        sql = "SELECT type, id, snippet(fts, 2, '[', ']', '…', 12) AS snip, bm25(fts) AS r FROM fts WHERE fts MATCH ?"
+        sql = ("SELECT type, id, sec, snippet(fts, 3, '[', ']', '…', 12) AS snip, bm25(fts) AS r FROM fts "
+               "WHERE fts MATCH ?")
         args: list[Any] = [match]
         if types:
             sql += f" AND type IN ({','.join('?' for _ in types)})"
             args += sorted(types)
+        if ids is not None:
+            sql += " AND id IN (SELECT value FROM json_each(?))"
+            args.append(json.dumps(sorted(ids)))
         sql += " ORDER BY r LIMIT ?"
-        args.append(limit)
+        args.append(limit * 4)  # a doc's sections are rows of their own; one hit per doc, its best section
         with self._lock:
             rows = self._conn.execute(sql, args).fetchall()
-        return [{"type": r["type"], "id": r["id"], "snippet": r["snip"], "rank": i + 1} for i, r in enumerate(rows)]
+        out: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for r in rows:
+            if (r["type"], r["id"]) in seen:
+                continue
+            seen.add((r["type"], r["id"]))
+            hit = {"type": r["type"], "id": r["id"], "snippet": r["snip"], "rank": len(out) + 1}
+            if r["type"] == "doc":
+                hit["section"] = r["sec"]
+            out.append(hit)
+            if len(out) >= limit:
+                break
+        return out
 
     def _next_seq(self) -> int:
         row = self._conn.execute("SELECT n FROM seq WHERE name='global'").fetchone()
@@ -303,10 +381,37 @@ class Store:
                     "INSERT OR REPLACE INTO doc_versions(doc_id,version,body) VALUES(?,?,?)",
                     (obj.id, obj.version, _dump(obj)),
                 )
+                if self.mirror_root is not None:
+                    # the mirror file is part of the same step: staged here (a failure rolls the row back), renamed
+                    # into place once the transaction commits
+                    tmp, final = doc_mirror.stage(self.mirror_root, obj)
+                    self.after_rollback(lambda: doc_mirror.discard(tmp))
+                    self.after_commit(lambda: self._publish_mirror(obj.id, tmp, final))
             text = self._fts_text(type_, data)
             if text is not None:
-                self._fts_put_locked(type_, obj.id, text)
+                self._fts_put_locked(type_, obj.id, text, data)
         return obj
+
+    def _publish_mirror(self, doc_id: str, tmp: Path, final: Path) -> None:
+        """After a doc's commit: publish its file; a file that did not land is queued, and every queued doc is
+        retried now (bounded: once each) so a reader that released its handle is caught up by the next write."""
+        if doc_mirror.publish(tmp, final):
+            self.mirror_pending.discard(doc_id)
+        else:
+            self.mirror_pending.add(doc_id)
+        self._retry_mirror_pending(skip=doc_id)
+
+    def _retry_mirror_pending(self, skip: str | None = None) -> None:
+        """Re-publish every queued doc once from its committed row (after any commit, doc or not)."""
+        for other in [d for d in self.mirror_pending if d != skip]:
+            try:
+                doc = self.get("doc", other)
+                if doc is None or self.mirror_root is None:
+                    self.mirror_pending.discard(other)
+                elif doc_mirror.publish(*doc_mirror.stage(self.mirror_root, doc)):
+                    self.mirror_pending.discard(other)
+            except Exception:  # noqa: BLE001 - the repair is best effort; the queue keeps the doc
+                pass
 
     def query_seq(self, type_: str, filters: dict[str, Any] | None = None, *, since_seq: int | None = None,
                   limit: int = 500, newest_first: bool = False, before_seq: int | None = None) -> list[tuple[int, Obj]]:
@@ -341,13 +446,16 @@ class Store:
         model = OBJECT_TYPES[type_]
         return [(r["seq"], model.model_validate_json(r["body"])) for r in rows]
 
-    def query_body_like(self, type_: str, needle: str, limit: int = 100000) -> list[tuple[int, Obj]]:
-        """(seq, row) of `type_` whose JSON body contains `needle` literally, oldest first: a cheap
-        prefilter for a field no column indexes (C18 doc comments); the caller filters exactly."""
+    def query_body_like(self, type_: str, needle: str, limit: int = 100000, *,
+                        newest_first: bool = False) -> list[tuple[int, Obj]]:
+        """(seq, row) of `type_` whose JSON body contains `needle` literally, oldest first (newest first
+        when asked, keeping the LAST `limit`): a cheap prefilter for a field no column indexes (C18 doc
+        comments, S16 artifact search); the caller filters exactly."""
         esc = needle.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+        order = "DESC" if newest_first else ""
         with self._lock:
             rows = self._conn.execute(f"SELECT seq, body FROM {type_} WHERE body LIKE ? ESCAPE '!' "
-                                      "ORDER BY seq LIMIT ?", (f"%{esc}%", limit)).fetchall()
+                                      f"ORDER BY seq {order} LIMIT ?", (f"%{esc}%", limit)).fetchall()
         model = OBJECT_TYPES[type_]
         return [(r["seq"], model.model_validate_json(r["body"])) for r in rows]
 
@@ -355,6 +463,12 @@ class Store:
         """Full direct-source total without fetching/deserializing message bodies."""
         with self._lock:
             return self._conn.execute("SELECT COUNT(*) FROM message WHERE ticket_id=?", (ticket_id,)).fetchone()[0]
+
+    def stamp(self, type_: str) -> tuple[int, int]:
+        """(row count, newest seq) of a table: a cheap change marker for a reader that caches by it."""
+        with self._lock:
+            row = self._conn.execute(f"SELECT COUNT(*), COALESCE(MAX(seq), 0) FROM {type_}").fetchone()
+        return int(row[0]), int(row[1])
 
     def get(self, type_: str, id_: str) -> Obj | None:
         with self._lock:
@@ -400,9 +514,14 @@ class Store:
         model = OBJECT_TYPES[type_]
         return [model.model_validate_json(r["body"]) for r in rows]
 
+    #: deletes since open: a delete moves no seq, so a cache keyed on max_seq (guest scope) also keys on this
+    deletes = 0
+
     def delete(self, type_: str, id_: str) -> bool:
         with self.transaction():
             cur = self._conn.execute(f"DELETE FROM {type_} WHERE id=?", (id_,))
+        if cur.rowcount > 0:
+            self.deletes += 1
         return cur.rowcount > 0
 
     def seq_of(self, type_: str, id_: str) -> int | None:
@@ -447,13 +566,13 @@ class Store:
             ).fetchall()
         return [(r["seq"], Event.model_validate_json(r["body"])) for r in rows]
 
-    def all_text_units(self) -> list[tuple[str, str, str]]:
-        """(type, id, text) for search indexing: docs (title+body), tickets (title), messages (text)."""
-        out: list[tuple[str, str, str]] = []
+    def all_text_units(self) -> list[tuple[str, ...]]:
+        """(type, id, text) for search indexing: docs as (type, id, text, section) per section (S17), tickets
+        (title), messages (text)."""
+        out: list[tuple[str, ...]] = []
         with self._lock:
             for r in self._conn.execute("SELECT id, body FROM doc"):
-                d = json.loads(r["body"])
-                out.append(("doc", r["id"], f"{d['title']}\n{d['body_md']}"))
+                out += [("doc", r["id"], txt, sec) for sec, txt in self.doc_units(json.loads(r["body"]))]
             for r in self._conn.execute("SELECT id, body FROM ticket"):
                 d = json.loads(r["body"])
                 out.append(("ticket", r["id"], self._fts_text("ticket", d) or d["title"]))

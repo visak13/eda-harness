@@ -24,6 +24,7 @@ from pathlib import Path
 
 from edp_contracts import settings
 from edp_contracts.proc import ProcId, assign_job, job_name, kill_tree
+from edp_contracts.seats import ONE_M_SUFFIX, wants_one_m
 from edp_contracts.toolpath import find_tool, probe_version, tool_argv
 
 from .pty import PtyClosed, harness_env, inject, spawn_pty
@@ -244,7 +245,8 @@ def repair_claude_install(claude_bin: str) -> str:
         raise ClaudeInstallError(_refusal_message(
             claude_bin,
             f"no healthy claude binary found in the versions cache (looked "
-            f"under ${_VERSIONS_CACHE_ENV} and the npm platform package)"))
+            f"under ${_VERSIONS_CACHE_ENV} and the npm platform package); a Claude Code "
+            f"auto-update may be in flight: retry in a minute"))
     dest = Path(claude_bin)
     try:
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -284,23 +286,76 @@ def ensure_claude_runs(claude_bin: str) -> str:
     return claude_bin
 
 
-def ensure_claude_healthy(claude_bin: str) -> str:
+_UPDATE_WAIT_S = 45.0  # e0cec S9 G3: wait for an auto-update in flight; with wait_ready (30 s) stays under the board's 90 s pool timeout
+_UPDATE_STEP_S = 2.0
+
+
+def _wait_for_update(claude_bin: str, wait_s: float, step_s: float, sleep) -> bool:
+    """Poll while an auto-update in flight may finish the bin; True once it is healthy."""
+    waited = 0.0
+    while waited < wait_s:
+        sleep(step_s)
+        waited += step_s
+        if not claude_bin_needs_repair(claude_bin):
+            return True
+    return False
+
+
+def ensure_claude_healthy(claude_bin: str, *, wait_s: float | None = None, step_s: float = _UPDATE_STEP_S,
+                          sleep=time.sleep) -> str:
     """Pre-spawn gate (W14): if the resolved binary is a broken auto-update
     stub, attempt the encoded repair; on repair failure REFUSE the spawn
     with a self-healing message (ClaudeInstallError) — never silently
-    proceed. Returns the (healthy) bin path."""
+    proceed. With no healthy source to repair from, first wait up to
+    _UPDATE_WAIT_S (45 s) for an auto-update in flight to finish.
+    Returns the (healthy) bin path."""
     if not claude_bin_needs_repair(claude_bin):
         return claude_bin
+    if _first_healthy_source(claude_bin) is None:
+        wait = _UPDATE_WAIT_S if wait_s is None else wait_s
+        if _wait_for_update(claude_bin, wait, step_s, sleep):
+            return claude_bin
     logger.warning(
         "W14: claude binary at %s looks stubbed/incomplete — attempting "
         "auto-repair", claude_bin)
     return repair_claude_install(claude_bin)
 
 
+def claude_model_id(agent_home: str | None, model: str | None) -> str | None:
+    """The id a Claude seat launches with (`--model`). A catalog row of the Claude harness whose
+    `context_window` is at least 1,000,000 gets `[1m]` appended, because without the suffix Claude Code runs
+    the ~200K window and the row's auto_compact is a lie (les-fc5068b78a). An id that already carries it is
+    never doubled; a non-Claude row, a smaller window or an id with no catalog row is returned unchanged.
+    The row is looked up by the id as given, else without its `[1m]`."""
+    if not model:
+        return model
+    if model.lower().endswith(ONE_M_SUFFIX):
+        return model
+    if not agent_home:
+        return model
+    try:
+        from edp_contracts.seats import model_entry
+        row = model_entry(agent_home, model)
+    except Exception:  # noqa: BLE001 — registry trouble never blocks a spawn
+        return model
+    return f"{model}{ONE_M_SUFFIX}" if wants_one_m(model, row) else model
+
+
+def claude_launch_choice(agent_home: str | None, model: str | None,
+                         extra_env: dict | None) -> tuple[str | None, str]:
+    """(argv model, effort) for one Claude seat: the `[1m]`-suffixed id (claude_model_id) and the effort
+    from EDP_SEAT_EFFORT (else medium), clamped to the model's catalog cap and never above high. The cap
+    is enforced here as well as at the pool's spawn, so no launch path can exceed it."""
+    from edp_contracts.seats import launch_effort
+    effort, _ = launch_effort(agent_home, model, (extra_env or {}).get("EDP_SEAT_EFFORT"))
+    return claude_model_id(agent_home, model), effort
+
+
 def build_argv(claude_bin: str, extra: list[str] | None,
                skip_permissions: bool = False,
                model: str | None = None,
-               defaults: dict | None = None) -> list[str]:
+               defaults: dict | None = None,
+               effort: str | None = None) -> list[str]:
     """claude argv. `--dangerously-skip-permissions` is added ONLY when
     `skip_permissions=True`.
 
@@ -329,19 +384,21 @@ def build_argv(claude_bin: str, extra: list[str] | None,
     caller that explicitly opts into a CANDIDATE tier. Everything else resolves
     to Opus and passes nothing.
 
-    `--model` IS THE WHOLE OF WHAT THIS EMITS. There is no `--effort` flag and
-    no thinking control here: both models think adaptively at CLI defaults, and
-    `d53`'s `effort = medium` is wired through `.claude/settings.json`
-    (`effortLevel`), not through argv. Do not add an inert field to a tier table
-    to express one — model/effort/thinking belong to the Claude Code
-    settings+env surface."""
+    EFFORT (epic-0cec8d1c31 S7): `effort` adds `--effort <low|medium|high>`, Claude Code's own per-session
+    flag (2.1.283: low, medium, high, xhigh, max). It beats `effortLevel` in any settings file — measured:
+    a settings pin of low plus `--effort high` thinks like high — so the fleet-wide pin is gone from the
+    pool template and every seat's effort comes from the spawn. Only low/medium/high are ever emitted
+    (an xhigh/max would pass the CLI but break the owner's cap); a caller clamps to the catalog cap first
+    (claude_launch_choice). None emits nothing."""
     from .spawn_defaults import load_spawn_defaults
     d = load_spawn_defaults() if defaults is None else defaults
     flag = ["--dangerously-skip-permissions"] if skip_permissions else []
     model = model or d.get("model")
     model_flag = ["--model", model] if model else []
+    effort = (effort or "").strip().lower()
+    effort_flag = ["--effort", effort] if effort in ("low", "medium", "high") else []
     # tool_argv: a .cmd shim runs through COMSPEC and a .js under node, never through a shell (S2)
-    return [*tool_argv(claude_bin), *flag, *model_flag, *(extra or [])]
+    return [*tool_argv(claude_bin), *flag, *model_flag, *effort_flag, *(extra or [])]
 
 
 #: claude flags whose value is variadic (`<x...>` in `claude --help`, 2.1.280). As two tokens they eat every

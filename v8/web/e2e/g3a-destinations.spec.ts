@@ -21,7 +21,7 @@ test.describe("epics list", () => {
     // words stay verbatim on the epic page.
     await expect(list).toContainText(fx.title);
     // The story carries 2 criteria (0 passed) → a tally, never a bare bar.
-    await expect(list).toContainText(/of\s+\d+\s+passed|None defined/);
+    await expect(list).toContainText(/\d+\/\d+ criteria passed|No criteria yet/);
 
     // Typing a search term updates the URL (?q=) and re-filters without a reload. No epic matches
     // the nonsense term, so the seeded row leaves the page (the list may drop to the empty state).

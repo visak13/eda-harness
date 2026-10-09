@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnchoredPanel } from "./AnchoredPanel";
 import { Drawer } from "./Drawer";
 import { Icon } from "./Icon";
+import { ActionDirtyContext } from "./actionDirty";
 import { AttentionDot, attentionMark } from "./AttentionDot";
 import styles from "./ActionsMenu.module.css";
 
@@ -9,10 +10,15 @@ import styles from "./ActionsMenu.module.css";
 // opens it in the right drawer, so the reading surface never carries seven cards of forms (owner
 // defect: "7 ambiguous cards moved down"). Each item carries its copy-contract gloss.
 
+/** S12-ui (owner m-839aa76c90): a menu label's "…" says "opens a dialog"; the dialog's own title drops it. */
+export const dialogTitle = (label: string): string => label.replace(/\s*(…|\.\.\.)$/, "");
+/** A gloss is a full sentence (copy/pages.ts ACTION_GLOSS); this keeps a stray lower-case one readable in the dialog. */
+export const sentence = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+
 export interface ActionItem {
   key: string;
   label: string;
-  /** One line: what it does and who is woken (from copy/pages.ts). */
+  /** One plain sentence: what it does (ACTION_GLOSS in copy/pages.ts). */
   gloss: string;
   /** The control, rendered inside the drawer when picked. */
   render: () => React.ReactNode;
@@ -39,6 +45,13 @@ export function ActionsMenu({ items, subject, openKey = null }: { items: ActionI
   const waiting = items.reduce((n, i) => n + (i.attention ?? 0), 0);
   const anchor = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => setOpen(false), []);
+  const dirty = useRef(false);
+  const setDirty = useCallback((d: boolean) => { dirty.current = d; }, []);
+  const closeDrawer = () => {
+    if (dirty.current && !window.confirm("Discard your unsaved changes?")) return;
+    dirty.current = false;
+    setPicked(null);
+  };
   const active = items.find((i) => i.key === picked) ?? null;
   return <>
     <button ref={anchor} type="button" className={`${styles.trigger} ${waiting ? attentionMark : ""}`} aria-haspopup="menu" aria-expanded={open}
@@ -58,10 +71,10 @@ export function ActionsMenu({ items, subject, openKey = null }: { items: ActionI
         </li>)}
       </ul>
     </AnchoredPanel> : null}
-    <Drawer open={active !== null} title={active?.label ?? ""} width={640} onClose={() => setPicked(null)} returnFocusTo={anchor.current}>
+    <Drawer open={active !== null} title={active ? dialogTitle(active.label) : ""} width={640} onClose={closeDrawer} returnFocusTo={anchor.current}>
       {active ? <div className={styles.body} data-testid={`action-drawer-${active.key}`}>
-        <p className={styles.drawerGloss}>{active.gloss}</p>
-        {active.render()}
+        <p className={styles.drawerGloss} data-testid="action-drawer-gloss">{sentence(active.gloss)}</p>
+        <ActionDirtyContext.Provider value={setDirty}>{active.render()}</ActionDirtyContext.Provider>
       </div> : null}
     </Drawer>
   </>;

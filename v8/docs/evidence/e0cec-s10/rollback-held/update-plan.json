@@ -1,0 +1,32 @@
+{
+ "kind": "msi",
+ "caller_pid": 38708,
+ "from_version": "0.9.1",
+ "to_version": "0.9.2.dev0",
+ "msi": "<repo>\\v8\\.data\\s2-spike\\home\\.data\\updates\\0.9.2.dev0\\Heronry S2 Spike-0.9.2.dev0.msi",
+ "previous_msi": "<repo>\\v8\\.data\\s2-spike\\home\\.data\\updates\\0.9.1\\Heronry S2 Spike-0.9.1.msi",
+ "upgrade_code": "{41C17ED3-4788-5F2A-812B-7C2DA17661FF}",
+ "install_dir": "<repo>\\v8\\.data\\s2-spike\\install",
+ "pool_url": "http://127.0.0.1:55588",
+ "stop_argv": [
+  "<repo>\\v8\\.data\\s2-spike\\install\\heronry.exe",
+  "stop",
+  "--force"
+ ],
+ "start_argv": [
+  "<repo>\\v8\\.data\\s2-spike\\install\\heronry.exe",
+  "start",
+  "--no-browser"
+ ],
+ "app_pids": [],
+ "app_argv": null,
+ "health_url": "http://127.0.0.1:55585/v1/health",
+ "board_url": "http://127.0.0.1:55585",
+ "admin_token_file": "<repo>\\v8\\.data\\s2-spike\\home\\admin.token",
+ "db": "<repo>\\v8\\.data\\s2-spike\\home\\.data\\edp8.db",
+ "backup": "<repo>\\v8\\.data\\s2-spike\\home\\.data\\backups\\edp8-0.9.1-20261002T032504Z.db",
+ "log": "<repo>\\v8\\.data\\s2-spike\\home\\.data\\logs\\update.log",
+ "result": "<repo>\\v8\\.data\\s2-spike\\home\\update\\update-result.json",
+ "recover_hint": "reinstall 0.9.1 from its cached installer: msiexec /i \"<repo>\\v8\\.data\\s2-spike\\home\\.data\\updates\\0.9.1\\Heronry S2 Spike-0.9.1.msi\" MSIINSTALLPERUSER=1, then `heronry start`",
+ "fault": ""
+}

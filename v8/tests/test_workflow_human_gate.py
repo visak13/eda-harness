@@ -18,7 +18,7 @@ def _robot_def(b: Board, new_id: str) -> dict:
     d['roles'].append({'id': 'robot', 'human': True, 'spawnable': True, 'capacity_class': 'checker',
                        'card_md': '# robot\nReview.', 'bundle': ['gate_answer'], 'gate_answerer': True})
     next(r for r in d['roles'] if r['id'] == 'architect')['may_spawn'].append('robot')
-    next(g for g in d['gates'] if g['id'] == 'adversarial')['answerers'].append('robot')
+    next(g for g in d['gates'] if g['id'] == 'scope')['answerers'].append('robot')
     return d
 
 
@@ -39,7 +39,7 @@ def test_lint_refuses_human_spawnable_role_and_publish_fails():
 def test_lint_refuses_agent_role_among_gate_answerers():
     b = Board(Store(':memory:'))
     d = wf.dump(b.workflows.duplicate('standard@1', new_id='f2answer', by='owner'))
-    next(g for g in d['gates'] if g['id'] == 'adversarial')['answerers'].append('qa')
+    next(g for g in d['gates'] if g['id'] == 'scope')['answerers'].append('qa')
     assert 'agent_answerer' in _codes(d)  # the owner still answers it, but an agent role must not
 
 
@@ -52,7 +52,7 @@ def test_custom_human_role_gets_the_escalation_checks():
     assert {'escalation', 'self_check'} <= codes
     # a non-spawnable human role answering gates is what a human role is for
     d['roles'][-1] = {'id': 'lead', 'human': True, 'gate_answerer': True, 'bundle': ['gate_answer']}
-    next(g for g in d['gates'] if g['id'] == 'adversarial')['answerers'].append('lead')
+    next(g for g in d['gates'] if g['id'] == 'scope')['answerers'].append('lead')
     assert not _codes(d) & {'escalation', 'self_check', 'human_spawnable', 'agent_answerer'}
 
 
@@ -88,14 +88,14 @@ def test_agent_cannot_answer_a_gate_on_a_definition_that_skipped_lint():
     epic = b.ticket_create(owner, kind=TicketKind.epic, work_type=WorkType.feature,
                            title='F2 probe', workflow=ref)
     robot = _legacy_agent_robot(b)
-    b.gate_open(epic.id, Gate.adversarial, by=arch.id)
+    b.gate_open(epic.id, Gate.scope, by=arch.id)
     with pytest.raises(BoardError) as e:
-        b.gate_answer(robot, epic.id, Gate.adversarial, 'approved by agent')
+        b.gate_answer(robot, epic.id, Gate.scope, 'approved by agent')
     assert e.value.code == 'scope'
-    assert b.open_gates(epic.id, Gate.adversarial)
+    assert b.open_gates(epic.id, Gate.scope)
     # the rule is the participant's type: a person holding the same role answers it
     person = b.participant_create('human', 'robot', 'rhuman', id_='rhuman')
-    assert b.gate_answer_refusal(person, epic.id, Gate.adversarial) is None
+    assert b.gate_answer_refusal(person, epic.id, Gate.scope) is None
 
 
 def test_agent_in_custom_human_role_never_passes_a_role_check():

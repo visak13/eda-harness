@@ -17,6 +17,15 @@ import { GLOSSARY, REQUIRED_COVERAGE, term, label, meaning } from "./glossary";
 // value of every board enum in api/types.ts has a label AND a one-line meaning, and dropping one
 // turns this red NAMING the missing key.
 
+describe("glossary wording (0.10.5)", () => {
+  it("has no Acceptance gate, defines Requirement, and Scope lifts the epic's story cap", () => {
+    expect(term("gate", "acceptance")).toBeUndefined();
+    expect(meaning("concept", "requirement")).toMatch(/owner or a guest marked.*holds the epic open until it is linked/);
+    expect(meaning("gate", "scope")).toMatch(/limit on how many stories this epic may hold/);
+    expect(meaning("gate", "scope")).not.toMatch(/per-story|a story may take/);
+  });
+});
+
 describe("glossary coverage", () => {
   // One row per (category, enum array). If REQUIRED_COVERAGE drifts from the enum arrays this
   // itself fails, so the test cannot silently stop covering a category.

@@ -1,0 +1,120 @@
+{
+ "must": {
+  "B3-m1": {
+   "v": "present",
+   "why": "Step 22 says 'Ship the list and actions together, enabled and unflagged'. A must_not says 'Do not create or read devices.revocation or any other flag ... on server or client'."
+  },
+  "B3-m2": {
+   "v": "present",
+   "why": "Step 2: 'Open a security-review ticket before B3's first PR ... Link the B3 design section and add each PR ... recorded sign-off before any B3 PR merges'. Step 17 requires Threat model sections covering 'assets, network attacker, stolen-device holder, malicious other user'."
+  },
+  "B3-m3": {
+   "v": "present",
+   "why": "Step 18: 'Obtain CODEOWNERS approval and a second security-champion approval for rookery/auth/ changes'."
+  },
+  "B3-m4": {
+   "v": "present",
+   "why": "Step 3 covers the runbooks/secrets/WIPE_SIGNING_KEY.md zero-downtime runbook and the inventory.yaml entry with owner, reading services and rotation of at most 90 days. A must_not and c2 require 'obviously fake' test keys."
+  },
+  "B3-m5": {
+   "v": "present",
+   "why": "Step 11 requires the 'rookery/crypto's HKDF helper with a feature-unique context', reviewed server/client primitives and constant-time comparisons. A must_not forbids sending the service secret to a client and using third-party crypto."
+  },
+  "B3-m6": {
+   "v": "present",
+   "why": "Step 12 covers revocation and wipe requests, the actor device/user, target, action, outcome and time, the same transaction, and actions.go. c3 checks that audit data 'contains no tokens or secrets'."
+  },
+  "B3-m7": {
+   "v": "present",
+   "why": "A must_not forbids logging tokens, signatures, MACs and key material, or hashes/prefixes/suffixes of them, plus emails, display names and device names. Step 13 requires security logs to be unsampled with the ordinary logger and fields in snake_case."
+  },
+  "B3-m8": {
+   "v": "present",
+   "why": "Step 16 lists bypass tests for 'revoked tokens, revoked-device refresh, forged/tampered signatures ... attempts to act on another user's device'."
+  },
+  "B3-m9": {
+   "v": "present",
+   "why": "Step 16: 'Repeat identical revoke requests ... checking equivalent responses and no duplicate wipe rows or audit events'."
+  },
+  "B3-m10": {
+   "v": "present",
+   "why": "Steps 5\u20137 cover a schema-only PR with one up/down pair, nullable columns, wipe_commands with a PK and created_at, and SET lock_timeout = '5s'. They also cover green migration-check, a retention class in db/retention/wipe_commands.yaml, locks/runtime, and linking dependent code PRs."
+  },
+  "B3-m11": {
+   "v": "present",
+   "why": "Step 15 requires the OpenAPI update in the same PR, including device_revoked, plus runbook entries for the new endpoints and alerts. Step 20 requires 'explicit device_revoked handling in quill-sync'."
+  },
+  "B3-m12": {
+   "v": "present",
+   "why": "Step 14 requires RED metrics and trace spans, and a must_not forbids IDs as metric labels. Step 15 says 'Before production server deployment, create a collapsible B3 row on Sync Overview ... error-rate alert ... with a runbook link'."
+  },
+  "B3-m13": {
+   "v": "present",
+   "why": "Steps 22\u201323 cover accessibility labels, the largest font size, screenshots on both platforms, strings/source.yaml, Notebook UI review, and passing both device jobs."
+  },
+  "B3-m14": {
+   "v": "present",
+   "why": "Step 18 sets 85% coverage, and steps 7 and 16 require integration tests. Step 17 covers CHANGELOG Unreleased and Rollback. Step 4 covers the design link, B3/<short-slug> branches and the Refs: B3 footer. Step 24 covers commits that build on their own and rebase-merge by 17:00 on the second working day before the cut. Step 23 covers release-notes/<train>.md."
+  },
+  "B3-m15": {
+   "v": "present",
+   "why": "Step 6 says 'document in Rollback when the down migration is safe'. Steps 17 and 25 say 'safe rollback or a corrective deployment' and 'use rollback or a fix', with no flag-off option."
+  },
+  "B3-m16": {
+   "v": "present",
+   "why": "Step 12: 'including revocation, wipe request and token-refresh failure, in audit_events'."
+  },
+  "B3-m17": {
+   "v": "present",
+   "why": "A must_not says 'do require it for POST revoke and any other changed POST/PUT endpoint', which covers the changed refresh endpoint. This is borderline because refresh is never named explicitly."
+  },
+  "B3-m18": {
+   "v": "present",
+   "why": "Step 16 lists bypass tests for 'expired artifacts'. Step 20 says 'Reject forged, tampered and expired artifacts'."
+  }
+ },
+ "must_not": {
+  "B3-n1": {
+   "v": "ok",
+   "why": "Flags, default-OFF and percentage ramps are explicitly forbidden."
+  },
+  "B3-n2": {
+   "v": "ok",
+   "why": "Must_not: 'Do not add defaults, NOT NULL constraints, a backfill job or an expand/backfill/contract sequence'."
+  },
+  "B3-n3": {
+   "v": "ok",
+   "why": "Must_not: 'Do not schedule the withdrawn external penetration test unless security champions request one'."
+  },
+  "B3-n4": {
+   "v": "ok",
+   "why": "Must_nots forbid protocol bumps, fixture/spec changes and sync-e2e. Only the ordinary contract job is kept."
+  },
+  "B3-n5": {
+   "v": "ok",
+   "why": "Logging token prefixes and hashes and device names is forbidden. Step 13 allows payload_sha256 only where it does not hash tokens."
+  }
+ },
+ "order": {
+  "B3-o1": {
+   "v": "kept",
+   "why": "Step 3 provisions the key first. Step 18 and a must_not say 'secret is provisioned before deployment to each environment'."
+  },
+  "B3-o2": {
+   "v": "kept",
+   "why": "Step 8: 'Confirm migrate status reports it applied ... before any dependent code PR merges'. Step 19 then merges the server code."
+  },
+  "B3-o3": {
+   "v": "kept",
+   "why": "Step 19 says 'Confirm full-fleet deployment ... before the matching train cut'. Step 24 says 'Verify dependent server behavior is deployed across the full fleet before the cut'."
+  }
+ },
+ "extras": [
+  "Include payload_sha256 on request/message errors only where the payload hash does not reveal a hash of tokens, signatures, MACs or key material",
+  "Throughout implementation, investigate a CI job that fails twice rather than retrying further; quarantine any flaky test with @flaky and a ticket within one working day, then fix or delete it within two weeks",
+  "During rollout, if a page affects sync for more than 1% of devices for more than ten minutes, follow the documented incident declaration, coordination and post-incident review within five working days",
+  "Use contextual Go errors where applicable, prefer Result at Kotlin module boundaries, and cap any retry loops with jittered backoff",
+  "Review the non-blocking perf report against the documented cold-start and bundle-size budgets",
+  "Have on-call check the migration's lock/runtime estimate against current production load ... Allow up to one working day after merge"
+ ]
+}

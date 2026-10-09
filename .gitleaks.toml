@@ -44,6 +44,6 @@ regexes = [
 description = "env assignment in the Astra seat guide"
 targetRules = ["generic-api-key"]
 condition = "AND"
-paths = ['''^v8/guides/astra-seat\.md$''']
+paths = ['''^v8/docs/evidence/astra-seat\.md$''']
 regexTarget = "secret"
 regexes = ['''^EDP_HARNESS=pi$''']

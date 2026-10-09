@@ -7,6 +7,7 @@ import os
 
 os.environ.setdefault("EDP8_EMBEDDER", "none")
 
+from asks_support import serve_rest
 import pytest
 from fastapi.testclient import TestClient
 
@@ -44,7 +45,8 @@ def rig(client):
                                           "parent_id": epic["id"], "description": "build the selection sheet from Astra concepts",
                                           "tags": ["assets", "astra"]}, headers={"X-Participant": "arch"}).json()["value"]
     t1 = client.post("/v1/tickets", json={"kind": "task", "work_type": "feature", "title": "T1 capture renders",
-                                          "parent_id": s1["id"], "assignee": "eng"},
+                                          "parent_id": s1["id"], "assignee": "eng",
+                                          "serves": serve_rest(client, epic["id"], H)},
                        headers={"X-Participant": "arch"}).json()["value"]
     c = client.post("/v1/criteria", json={"ticket_id": s1["id"], "text": "the selection sheet renders four ships",
                                           "check": "look", "checked_by": "qa"},
@@ -130,6 +132,29 @@ def test_tool_layer_accepts_ticket_id_alias_and_describe_lists_tools(client, rig
     d = ALL_TOOLS["describe"]
     out = d.handler(d.args_model(type="ticket"))
     assert "ticket_read" in out["value"]["tools"] and "find" in out["value"]["tools"]
+
+
+def test_s13_f8_compact_ticket_read_counts_each_cut_and_more_is_the_full_read(client, rig):
+    """S13 F8: the MCP default is record + criteria + doc heads + words header + 3 newest messages + counts;
+    `more` returns everything the old default returned. The HTTP read is unchanged."""
+    sid = rig["s1"]["id"]
+    for n in range(5):
+        client.post("/v1/messages", json={"ticket_id": sid, "kind": "note", "text": f"m{n}"}, headers=H)
+    set_client(BoardClient(participant="owner", admin_token="t", client=client))
+    t = ALL_TOOLS["ticket_read"]
+    v = t.handler(t.args_model(ticket_id=sid))["value"]
+    assert v["criteria"][0]["id"] == rig["crit"]["id"] and v["docs"][0]["id"] == rig["doc"]["id"]
+    assert "words_header" in v and "words" not in v
+    assert [m["text"] for m in v["thread"]] == ["m2", "m3", "m4"] and v["thread_total"] == 5
+    assert not {"chain", "children", "links"} & set(v)
+    assert v["omitted"]["chain"] == 2 and v["omitted"]["children"] == 1 and v["omitted"]["links"] >= 1
+    assert v["omitted"]["thread"] == "3 of 5 shown" and v["omitted"]["words"].endswith("chars")
+    more = {k: x for k, x in v["more"].items() if k != "tool"}
+    full = t.handler(t.args_model(**more))["value"]
+    old = client.get(f"/v1/tickets/{sid}", headers=H).json()["value"]
+    assert full == old
+    five = t.handler(t.args_model(ticket_id=sid, thread_limit=5))["value"]
+    assert len(five["thread"]) == 5 and "omitted" in five
 
 
 def test_old_board_migrates_columns_and_fts(tmp_path):

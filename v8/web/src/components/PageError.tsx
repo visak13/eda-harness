@@ -1,5 +1,5 @@
 import { Link, useRouteError } from "react-router";
-import { useBoardBehind } from "../live/boardVersion";
+import { useBoardSkew } from "../live/boardVersion";
 import ui from "./ui.module.css";
 
 // t-b2f8859d30 (owner art-678346d6e2): a render error on one page used to replace the whole app with the router's
@@ -15,7 +15,7 @@ function messageOf(err: unknown): string {
 
 export function PageError(): React.JSX.Element {
   const err = useRouteError();
-  const behind = useBoardBehind();
+  const { behind } = useBoardSkew();
   return (
     <section className={ui.card} role="alert" data-testid="page-error">
       <h1 style={{ margin: "0 0 8px", fontSize: 20 }}>This page hit an error</h1>

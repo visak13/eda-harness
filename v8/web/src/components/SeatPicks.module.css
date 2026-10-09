@@ -1,12 +1,21 @@
-/* S-UI: role · model · effort on one row; the cap note sits last so the selects line up. */
+/* S-UI: role · model · effort on one row, then the row's add button (S12-ui2); the cap note and the greyed reason
+   sit under the row, full width, so the selects line up. */
 .row,
 .head {
   display: grid;
-  grid-template-columns: minmax(110px, 0.9fr) minmax(0, 1.6fr) minmax(88px, 0.7fr) minmax(0, 0.9fr);
+  grid-template-columns: minmax(96px, 0.8fr) minmax(0, 1.9fr) minmax(96px, 0.8fr) 36px;
   align-items: center;
-  gap: 10px;
+  column-gap: 10px;
 }
+/* S12-ui2 (qa m-da89ef8294 b): the column header stays in view while the rows scroll; a host sets
+   --seat-head-top to its scroller's top padding, negated */
 .head {
+  position: sticky;
+  top: var(--seat-head-top, 0px);
+  z-index: 2;
+  padding: 6px 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -21,7 +30,7 @@
   font-size: 14px;
   color: var(--ink);
 }
-.roleName { text-transform: capitalize; white-space: nowrap; }
+.roleName { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .model,
 .effort {
   display: flex;
@@ -31,14 +40,22 @@
 }
 .model select,
 .effort select { width: 100%; min-width: 0; }
+/* S12-ui2: compact rows on a wide screen (a phone keeps 44px touch targets) */
+@media (min-width: 561px) {
+  .row .model select,
+  .row .effort select { min-height: 34px; padding: 4px 8px; }
+}
 /* a host dialog's column-label rule (NewEpicDialog .roleModels label) must not stack the glyph over the select */
 .row .model,
 .row .effort { flex-direction: row; }
+.extra { display: flex; justify-content: center; min-width: 0; }
 .cap {
+  grid-column: 1 / -1;
   font-size: 12px;
   line-height: 16px;
   color: var(--muted);
 }
+.cap:empty { display: none; }
 /* t-20f0718990: why the row is greyed, in words, under the row */
 .why {
   grid-column: 1 / -1;
@@ -54,8 +71,14 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+/* S12-ui2 (qa m-da89ef8294): a phone gets the role and its add button on one line, then the model select across
+   the whole width, so its name is never cut. qa m13: the effort comes after the model, as on a wide screen
+   (role, model, effort), under it and the same width */
 @media (max-width: 560px) {
-  .row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .row { grid-template-columns: minmax(0, 1fr) 44px; row-gap: 6px; }
   .head { display: none; }
-  .role, .cap { grid-column: 1 / -1; }
+  .row .role { grid-row: 1; grid-column: 1; }
+  .row .extra { grid-row: 1; grid-column: 2; }
+  .row .model { grid-row: 2; grid-column: 1 / -1; }
+  .row .effort { grid-row: 3; grid-column: 1 / -1; }
 }

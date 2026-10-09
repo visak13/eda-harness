@@ -1,5 +1,5 @@
 """epic-91fcd3b370 S3: GET /v1/code tells the SPA where code-server is and whether it is up; the FAQ
-route renders guides/code-tab-faq.md through the sanitised markdown path."""
+route renders docs/operator/code-tab-faq.md through the sanitised markdown path."""
 import json
 import os
 import socket
@@ -216,18 +216,31 @@ def test_garbage_run_file_and_bad_port_env(board_env):
     assert v["port"] == 9410 and v["version"] is None
 
 
-def test_faq_rendered_and_sanitised(board_env):
+def test_faq_rendered_and_sanitised(board_env, monkeypatch):
+    from edp8 import operator_docs
     client, tmp, _ = board_env
+    monkeypatch.setattr(operator_docs, "_shipped_dirs", lambda: [])
     assert client.get("/v1/code/faq", headers=AUTH).status_code == 404
-    (tmp / "guides").mkdir()
-    (tmp / "guides" / "code-tab-faq.md").write_text("# FAQ\n\n## Shared tree\n\n<script>alert(1)</script>ok\n", encoding="utf-8")
+    (tmp / "docs" / "operator").mkdir(parents=True)
+    (tmp / "docs" / "operator" / "code-tab-faq.md").write_text("# FAQ\n\n## Shared tree\n\n<script>alert(1)</script>ok\n", encoding="utf-8")
     v = client.get("/v1/code/faq", headers=AUTH).json()["value"]
     assert "<h2>Shared tree</h2>" in v["html"] and "<script>" not in v["html"]
-    assert v["path"] == "guides/code-tab-faq.md"
+    assert v["path"] == "docs/operator/code-tab-faq.md"
+
+
+def test_faq_names_this_installs_code_port(board_env, monkeypatch):
+    from edp8 import operator_docs
+    client, tmp, _ = board_env
+    monkeypatch.setattr(operator_docs, "_shipped_dirs", lambda: [])
+    monkeypatch.setenv("EDP_CODE_PORT", "19410")
+    (tmp / "docs" / "operator").mkdir(parents=True)
+    (tmp / "docs" / "operator" / "code-tab-faq.md").write_text("on `127.0.0.1:9410` and :9410, not 94100\n", encoding="utf-8")
+    html = client.get("/v1/code/faq", headers=AUTH).json()["value"]["html"]
+    assert "127.0.0.1:19410" in html and ":9410" not in html.replace(":19410", "") and "94100" in html
 
 
 def test_repo_faq_covers_the_five_story_topics():
-    body = (Path(__file__).resolve().parents[1] / "guides" / "code-tab-faq.md").read_text(encoding="utf-8").lower()
+    body = (Path(__file__).resolve().parents[1] / "docs" / "operator" / "code-tab-faq.md").read_text(encoding="utf-8").lower()
     for topic in ("shared tree", "worktree", "pylance", "tag", "not guarded"):
         assert topic in body, topic
 

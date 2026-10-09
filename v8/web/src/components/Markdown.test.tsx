@@ -1,6 +1,6 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { demoteHeadings, Markdown } from "./Markdown";
+import { demoteHeadings, keepTokensWhole, Markdown } from "./Markdown";
 
 describe("Markdown heading demotion (acceptance finding: Library/Doc rendered two h1)", () => {
   it("shifts every body heading one level so the doc title stays the only h1", () => {
@@ -30,6 +30,22 @@ describe("message Markdown", () => {
     expect(doc.querySelector("code")?.innerHTML).toBe("https://in.code");
   });
 
+  it("keeps an attachment id the author wrote inside a sentence, linked, and strips only the trailing one", async () => {
+    const { linkifyMessageHtml } = await import("./Markdown");
+    const out = linkifyMessageHtml("<p>attachment id art-abc1234, and the rest art-dead0001</p>", ["art-abc1234", "art-dead0001"]);
+    const doc = new DOMParser().parseFromString(out, "text/html");
+    expect(doc.querySelector("p")?.textContent).toBe("attachment id art-abc1234, and the rest");
+    expect(Array.from(doc.querySelectorAll("a")).map((a) => a.getAttribute("href"))).toEqual(["/artifact/art-abc1234"]);
+  });
+
+  it("stripTokens drops only the run of attachment ids that ends a plain message", async () => {
+    const { stripTokens } = await import("./Conversation");
+    const a = (id: string) => ({ id }) as never;
+    expect(stripTokens("attachment id art-abc1234, and more art-abc1234 art-dead0001", [a("art-abc1234"), a("art-dead0001")]))
+      .toBe("attachment id art-abc1234, and more");
+    expect(stripTokens("no tokens here", [a("art-abc1234")])).toBe("no tokens here");
+  });
+
   it("renders a table and a code fence and drops a script the server would never send", async () => {
     const { MessageMarkdown } = await import("./Markdown");
     const { MemoryRouter } = await import("react-router");
@@ -55,5 +71,17 @@ describe("document Markdown fits its column", () => {
     expect(md).toMatch(/:global\(td\) \{[^}]*overflow-wrap:\s*anywhere/);
     expect(rule("img")).toMatch(/max-width:\s*100%/);
     for (const css of [md, review]) expect(css).not.toMatch(/overflow-x:\s*(auto|scroll)/);
+  });
+});
+
+// architect m-7ae758c02c: a token must not break at its hyphen or slash.
+describe("keepTokensWhole", () => {
+  it("keeps one short code token and a slash command on one line, and leaves long or spaced code alone", () => {
+    const out = keepTokensWhole('<p>run <code>your-pc.tail1234.ts.net</code> or /doc-write now; <code>two words-here</code> <code>plain</code> <a href="/x-y">l</a></p>');
+    expect(out).toContain('<code style="white-space:nowrap">your-pc.tail1234.ts.net</code>');
+    expect(out).toContain('<span style="white-space:nowrap">/doc-write</span>');
+    expect(out).toContain("<code>two words-here</code>");
+    expect(out).toContain("<code>plain</code>");
+    expect(out).toContain('<a href="/x-y">');
   });
 });

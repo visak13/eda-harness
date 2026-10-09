@@ -32,7 +32,17 @@ HERE = Path(__file__).resolve().parent
 FACTS = json.loads((HERE / "data" / "s23_tool_facts_before.json").read_text(encoding="utf-8"))["tools"]
 FLEET_DB = HERE.parent / ".data" / "edp8.db"
 # enum values the owner removed on purpose after the pre-S23 snapshot: not information loss
-RULED_REMOVALS = {("spawn", "role"): {"owner"}}  # a596308, owner m-da9a2ae62f: a person's role is never a seat
+RULED_REMOVALS = {("spawn", "role"): {"owner"},  # a596308, owner m-da9a2ae62f: a person's role is never a seat
+                  # astra F2 (architect m-bbd09fc118): edp8.topics refuses every non-knowledge type a topic proposes
+                  ("topic_propose", "doc_type"): {"design", "report", "note"},
+                  # design-63db8a7d42 O (owner m-85520c3bd1): the poc, demo, adversarial and budget gates are removed
+                  **{(t, "gate"): {"poc", "demo", "adversarial", "budget"} for t in ("gate_open", "gate_answer")}}
+# words removed on purpose: S8 (s-60c63f2d8e) moved the heartbeat from a seat-armed cron into the feed driver
+RULED_WORD_REMOVALS = {"subscribe": {"cron"}, "resume_self": {"cron"},
+                       # astra F4 (architect m-bbd09fc118): /harvest is qa's alone, bound on its card; the tool points at /learn
+                       "record_lesson": {"harvest"}}
+# tools removed by a ruled design: S17 (design-f39cf0db7d decision 5) removed the ruleset tool; test_s17 pins it
+RULED_TOOL_REMOVALS = {n for n in FACTS if n.endswith("_ruleset")}
 _STOP = set("the a an and or of to for in on by with its it is be as at from your you this that when what then "
             "not no one each any".split())
 
@@ -55,9 +65,13 @@ def _corpus(name: str) -> set[str]:
 @pytest.mark.parametrize("name", sorted(FACTS))
 def test_every_pre_s23_fact_survives(name):
     before = FACTS[name]
+    if name in RULED_TOOL_REMOVALS:
+        assert name not in ALL_TOOLS
+        return
     assert name in ALL_TOOLS, f"{name} was removed"
     tool = ALL_TOOLS[name]
-    lost = _words(" ".join((before["what"], before["when"], before["returns"]))) - _corpus(name)
+    lost = (_words(" ".join((before["what"], before["when"], before["returns"]))) - _corpus(name)
+            - RULED_WORD_REMOVALS.get(name, set()))
     assert not lost, f"{name}: description facts deleted: {sorted(lost)}"
     fields = set(tool.args_model.model_fields)
     assert set(before["fields"]) <= fields, f"{name}: fields dropped {set(before['fields']) - fields}"
@@ -90,6 +104,8 @@ def fleet(tmp_path_factory):
     mp.setenv("EDP_DEV", "1")  # module scope runs before conftest's per-test EDP_DEV: else installed-mode ACL check
     mp.delenv("EDP_POOL_URL", raising=False)
     mp.delenv("EDP8_PUBLIC_URL", raising=False)  # a seat shell carries the fleet's; this board is local
+    # ...and the shell's config.toml may set it too (env > config.toml > default): read an empty config dir instead
+    mp.setenv("EDP_CONFIG_DIR", str(copy.parent))
     tokens = copy.parent / "tokens.json"  # private: the fleet token file is never read or written
     tokens.write_text(json.dumps({"parity.owner": "parity-secret", "agents": {}}), encoding="utf-8")
     mp.setenv("EDP8_TOKENS", str(tokens))

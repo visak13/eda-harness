@@ -114,11 +114,28 @@ export function guardBase(base: string, pageHostname: string): string {
   return url.toString();
 }
 
-/** The guard's login URL for an embed URL (s-17c13096e5): the guard spends the one-time token,
- *  sets its cookie and redirects to the embed's own path and query (a bare `/` stays `/`). */
-export function loginUrl(src: string, token: string): string {
+/** The guard's login for an embed URL (s-17c13096e5): the guard spends the one-time token, sets its cookie
+ *  and redirects to the embed's own path and query (a bare `/` stays `/`). RC2 F5 (architect m-e26cf15b4f):
+ *  it is a POSTed form, so the token never sits in a URL the page renders (an iframe src, a history entry). */
+export type LoginForm = { action: string; fields: { t: string; next: string } };
+export function loginForm(src: string, token: string): LoginForm {
   const u = new URL(src);
-  return `${u.origin}/__edp/login?t=${encodeURIComponent(token)}&next=${encodeURIComponent(u.pathname + u.search)}`;
+  return { action: `${u.origin}/__edp/login`, fields: { t: token, next: u.pathname + u.search } };
+}
+
+/** Navigate `win` (a fresh about:blank frame or window, same-origin with this page) by POSTing the login form. */
+export function postLogin(win: Window, form: LoginForm): void {
+  const d = win.document;
+  const f = d.createElement("form");
+  f.method = "post";
+  f.action = form.action;
+  for (const [name, value] of Object.entries(form.fields)) {
+    const i = d.createElement("input");
+    i.type = "hidden"; i.name = name; i.value = value;
+    f.appendChild(i);
+  }
+  (d.body ?? d.documentElement).appendChild(f);
+  f.submit();
 }
 
 /** Is the board page itself served from loopback? The iframe points at the board HOST's loopback,

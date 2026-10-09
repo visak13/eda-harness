@@ -7,6 +7,11 @@ export function isEpicId(id: string, kind?: string | null): boolean {
   return kind ? kind === 'epic' : id.startsWith('epic-');
 }
 
+/** S16: `<base>/ui/artifact/<id>`, the board's artifact page (a `$art-…` chip opens it). */
+export function boardArtifactUrl(base: string, id: string): string {
+  return `${base.replace(/\/+$/, '')}/ui/artifact/${encodeURIComponent(id)}`;
+}
+
 /** `<base>/ui/epic/<id>` for an epic, `<base>/ui/ticket/<id>` otherwise, with an optional `#<messageId>` anchor. */
 export function boardTicketUrl(base: string, id: string, messageId?: string | null, kind?: string | null): string {
   const page = isEpicId(id, kind) ? 'epic' : 'ticket';

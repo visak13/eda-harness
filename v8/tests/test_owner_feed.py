@@ -22,9 +22,10 @@ def ev(kind, data):
     return Event(id="ev-x", subject_id="t-x", kind=kind, data=data)
 
 
-def test_owner_sees_shell_death_and_stall(board, owner):
-    assert board.relevant(ev(EventKind.shell_dead, {"participant": "architect.e1"}), owner)
-    assert board.relevant(ev(EventKind.shell_stalled, {"participant": "engineer.s1"}), owner)
+def test_owner_is_not_paged_for_shell_death_and_stall(board, owner):
+    # design-63db8a7d42 F: pool events go to the epic's architect (test_relevance_matrix), not the owner
+    assert not board.relevant(ev(EventKind.shell_dead, {"participant": "architect.e1"}), owner)
+    assert not board.relevant(ev(EventKind.shell_stalled, {"participant": "engineer.s1"}), owner)
 
 
 def test_owner_sees_phase_boundaries_not_design_noise(board, owner):

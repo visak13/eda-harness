@@ -51,9 +51,12 @@ Progress goes to the update log in your logs folder. `heronry status` shows the 
 update is done.
 
 !!! note "Desktop app"
-    Where Heronry runs as the installed desktop bundle, it updates through its installer instead.
-    **Check for update** offers to open the release page; download the new `.msi`, `.dmg` or `.deb`
-    (see the [download page](../download.md)) and run it. Your board data and settings stay.
+    On Windows the installed desktop app updates the same way: `heronry update`, or the tray's **Install update**,
+    runs the new `.msi` in place. On macOS and Linux, **Check for update** offers to open the release page;
+    download the new `.dmg` or `.deb` (see the [download page](../download.md)) and run it. Your board data and
+    settings stay. Coming from 0.9.x on Windows, upgrade once by hand:
+    `heronry stop all --force`, run the new `.msi`, then `heronry start`
+    ([Upgrading from 0.9.x](../download.md#upgrading-from-09x)).
 
 ### `heronry update`
 

@@ -108,3 +108,7 @@
 .md-typeset .language-powershell pre > code, .md-typeset .language-console pre > code {
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
+
+/* Using Heronry screenshots (s-bcc0c06de7): framed like the hero and the video player, so a light app screen
+   stays distinct from the light page. */
+.md-typeset img[src*="assets/guide/"] { border: 1px solid var(--hy-border); border-radius: 12px; }

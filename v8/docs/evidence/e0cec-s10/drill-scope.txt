@@ -1,0 +1,13 @@
+   fleet before: board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up seats=2:5980,9472
+PASS  pre-check: every record in <repo>\v8\.data\s2-spike\home\.run names a private (or dead) pid
+   ports board=55585 pool=55588 mcp=55586 broker=55589; home <repo>\v8\.data\s2-spike\home
+== 09:25:48 the scope pin and the MajorUpgrade in the built MSI (read-only)
+PASS  the generated heronry.wxs carries the scope pin, the MajorUpgrade and the per-user scope
+   LaunchCondition rows: NOT WIX_DOWNGRADE_DETECTED | Installed OR NOT (ALLUSERS = 1) | Installed OR (VersionNT64 AND (WINDOWSBUILDNUMBER >= 10240))
+PASS  the built MSI has the launch condition that refuses ALLUSERS=1
+PASS  the built MSI has an Upgrade table (MajorUpgrade: FindRelatedProducts + RemoveExistingProducts)
+PASS  RemoveExistingProducts is in the install sequence (the old version is removed inside the install transaction)
+   fleet after:  board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up seats=2:5980,9472
+PASS  fleet pids unchanged
+elapsed 2s
+RESULT: all checks passed

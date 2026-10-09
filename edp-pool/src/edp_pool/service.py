@@ -109,6 +109,21 @@ def _row_matches_recipe(row: dict, recipe_id: str) -> bool:
     return handle.startswith(f"{recipe_id}-") or handle.startswith(f"{recipe_id}:")
 
 
+# Env keys a resume caller may refresh. p-451a2390: the board can rotate a seat's secret after the spawn, so a
+# resume that re-injects only the stored spawn env hands the shell a stale EDP8_TOKEN and its MCP client lists
+# no tools. The caller passes the current secret; it also replaces the stored one for the next resume.
+_RESUME_ENV_KEYS = ("EDP8_TOKEN",)
+
+
+def _resume_env(row: dict, settings: dict, override: dict | None) -> dict | None:
+    """The env a resumed shell launches with: the spawn env, with `override`'s refreshable keys on top."""
+    fresh = {k: str(v) for k, v in (override or {}).items() if k in _RESUME_ENV_KEYS and v}
+    env = {**(settings.get("env") or {}), **fresh}
+    if fresh:
+        row.setdefault("spawn_settings", {})["env"] = env
+    return env or None
+
+
 def _proc_fingerprint(pid: int | None) -> dict | None:
     """Reuse-proof identity (`edp_contracts.proc.ProcId`: pid, create_time,
     name) of a spawned shell's process, persisted with the session so
@@ -119,6 +134,20 @@ def _proc_fingerprint(pid: int | None) -> dict | None:
         return None
     ident = ProcId.try_of(pid)
     return ident.to_json() if ident else {"pid": pid, "create_time": None}
+
+
+def _update_lock_held() -> bool:
+    """A live updater holds the update lock file named by EDP_UPDATE_LOCK (set by the launcher): any of its pids
+    is alive. An unset, missing or unreadable lock is not held."""
+    path = os.environ.get("EDP_UPDATE_LOCK")
+    if not path:
+        return False
+    try:
+        pids = json.loads(Path(path).read_text(encoding="utf-8")).get("pids") or []
+        import psutil
+        return any(psutil.pid_exists(int(p)) for p in pids)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
 
 
 def _proc_alive(fp: dict | None) -> bool | None:
@@ -719,8 +748,13 @@ class PoolService(Microservice):
         # lifecycle (mount() wires startup/shutdown to the app), not of the
         # constructor — unit tests that build a PoolService directly get no
         # background thread polling a broker that isn't there.
+        try:  # before the watchdog can look at a row: a stop that took the shells down resumes none of them
+            self.mark_interrupted()
+        except Exception as e:  # noqa: BLE001 — a bad row must not stop the pool starting
+            _log.warning("mark_interrupted_failed", str(e))
         self._start_resume_watchdog()
         self._seed_claude_settings()
+        threading.Thread(target=self.resume_updater_parked, name="edp-pool.updater-resume", daemon=True).start()
         # v7: external-neuron drivers are standing operator intent — put
         # them back after a pool restart (their processes died with us).
         try:
@@ -728,6 +762,58 @@ class PoolService(Microservice):
         except Exception as e:  # noqa: BLE001 — cadence loss is loud, not fatal
             _log.warning("neuron_driver_respawn_failed", str(e))
         return None
+
+    INTERRUPTED_REASON = ("interrupted: the pool stopped while this seat was live (app force-quit or crash); "
+                          "resume it to continue")
+
+    def mark_interrupted(self) -> list[str]:
+        """Pool start (owner m-e2edc8d256): a seat that was live when the pool stopped has a dead process now.
+        Nothing launches a shell for it — the row becomes `dead` with an `interrupted` reason and flag, which the
+        board shows with its Resume action, and which the watchdog (parked rows only) never touches. The one
+        exception is a row parked with `park_for_update` (the updater parked it on purpose; see
+        resume_updater_parked). A row whose process cannot be probed is left alone, as reconcile does."""
+        marked: list[str] = []
+        for sid, s in self.sessions.items():
+            if s.get("state") not in ("active", "starting", "resuming", "parked"):
+                continue
+            if s.get("state") == "parked" and s.get("park_for_update"):
+                continue
+            if _proc_alive(s.get("proc")) is not False:
+                continue
+            s["state"] = "dead"
+            s["dead_reason"] = self.INTERRUPTED_REASON
+            s["interrupted"] = True
+            marked.append(sid)
+            _log.info("seat_interrupted", s.get("handle") or sid, sid=sid, handle=s.get("handle"))
+        if marked:
+            self._persist()
+        return marked
+
+    def resume_updater_parked(self, delay: float = 3.0) -> list[str]:
+        """The only automatic relaunch after a pool start: rows the updater parked with `park_for_update`
+        whose process is gone are fork-resumed once, then the flag is cleared (so a second force quit
+        interrupts them like any other seat). Runs a few seconds after startup, off the request path.
+        Not while an update holds the update lock (s-4d93970c9f): the updater resumes each seat once, after the
+        final version (new or rolled back) answers health; a pool started mid-update would resume them too."""
+        time.sleep(delay)
+        resumed: list[str] = []
+        if _update_lock_held():
+            _log.info("updater_resume_deferred", "an update holds the update lock; the updater resumes the parked seats")
+            return resumed
+        for sid, s in list(self.sessions.items()):
+            if s.get("state") != "parked" or not s.get("park_for_update"):
+                continue
+            handle = s.get("handle")
+            if not handle or _proc_alive(s.get("proc")) is not False:
+                continue
+            s.pop("park_for_update", None)
+            self._persist()
+            try:
+                self.resume(handle)
+                resumed.append(handle)
+            except Exception as e:  # noqa: BLE001 — one seat failing must not block the rest
+                _log.warning("updater_resume_failed", handle, handle=handle, err=repr(e))
+        return resumed
 
     async def shutdown(self) -> None:
         if self._resume_watchdog is not None:
@@ -752,14 +838,19 @@ class PoolService(Microservice):
 
     def _seed_claude_settings(self) -> None:
         """Seed the pool config dir's settings.json from the shipped template when it is missing (the dir is
-        gitignored, so a clone or an install has none): hooks, outputStyle, effort. Never over an edit."""
-        from .pool_config import seed_settings
+        gitignored, so a clone or an install has none): hooks, outputStyle. Never over an edit. After an upgrade
+        changed the template, merge it in once (S12, m-07507eb2cb: the compact SessionStart hook arrives and the
+        retired effortLevel pin leaves an existing install)."""
+        from .pool_config import seed_settings, upgrade_settings
         from .pty_launcher import claude_pool_config_dir
         try:
             cfg = claude_pool_config_dir()
             home = self._spawner_agent_home() or str(edp_settings.agent_home())
             if seed_settings(cfg, Path(home)):
                 _log.info("claude_settings_seeded", str(cfg))
+            changed = upgrade_settings(cfg, Path(home))
+            if changed:
+                _log.info("claude_settings_upgraded", f"{cfg}: {'; '.join(changed)}")
         except Exception as e:  # noqa: BLE001 — doctor reports a missing file; a spawn still runs
             _log.warning("claude_settings_seed_failed", str(e))
 
@@ -864,6 +955,15 @@ class PoolService(Microservice):
         if sess is None or sess.get("state") not in ("active", "resuming"):
             return False   # already released/closed — don't resurrect
         return _proc_alive(sess.get("proc"))
+
+    def _parked_shell_alive(self, sid: str, s: dict) -> bool | None:
+        """Is a PARKED row's shell still running? `_session_alive` answers False for every parked row this
+        spawner did not launch, which is every parked row after a pool restart; park leaves the shell alive, so
+        resume then forked a second shell on the handle (t-fb8b63874e: the update's park, stop and resume gave
+        the architect and an engineer two live shells each). A parked row's own fingerprint is probed instead."""
+        if self.spawner.knows(sid):
+            return self._session_alive(sid)  # this pool launched it: the PTY handle answers
+        return _proc_alive(s.get("proc"))
 
     def _kill_session(self, sid: str) -> str:
         """Kill `sid`'s shell: through the PTY handle when this spawner
@@ -993,13 +1093,50 @@ class PoolService(Microservice):
     def _spawner_agent_home(self) -> str | None:
         """The agent home the spawner will actually launch against —
         SubprocessSpawner pins it as `cwd`; ShadowSpawner exposes it via
-        `legacy`. Provenance must resolve seats from the SAME pin the
-        launch uses, or the ledger lies about the model."""
-        for obj in (self.spawner, getattr(self.spawner, "legacy", None)):
-            cwd = getattr(obj, "cwd", None)
+        `legacy`; the codex and Pi backends keep it as `_agent_home` (S13 F4).
+        Provenance must resolve seats from the SAME pin the launch uses, or
+        the ledger lies about the model.
+        0.10.0 (owner m-4d9de28491): the codex-by-model CompositeSpawner wraps the claude
+        backend as `_primary`, so a walk that stopped at `legacy` found no home, and the effort
+        clamp read no catalog and capped every claude seat at medium. Walk the whole wrapper chain."""
+        todo, seen = [self.spawner], set()
+        while todo:
+            obj = todo.pop(0)
+            if obj is None or id(obj) in seen:
+                continue
+            seen.add(id(obj))
+            cwd = getattr(obj, "cwd", None) or getattr(obj, "_agent_home", None)
             if cwd:
                 return str(cwd)
+            todo += [getattr(obj, a, None) for a in ("legacy", "_primary", "_second")]
         return None
+
+    def _clamp_seat_effort(self, role: str, handle: str, model: str | None, env: dict | None) -> dict | None:
+        """S7 (owner §6 words, "max effort high"): no spawn runs above its model's catalog effort cap, whoever asks. The board clamps
+        too (seat_choice.resolve); this is the pool's own line, so a direct POST /v1/spawn, an MCP pool
+        call or a replayed env cannot exceed it. A requested `EDP_SEAT_EFFORT` is lowered to the cap of the
+        model the seat will run on (the spawn's, else the registry's for the role; no catalog row = medium)
+        or dropped when it is not low/medium/high; the recorded spawn_settings.env carries the clamped one.
+        S13 F4: a harness-specific level (EDP_CODEX_EFFORT, EDP_PI_THINKING) is lowered to the same cap; the
+        launchers clamp once more right before each launch and resume, after their own defaults."""
+        from edp_contracts.seats import HARNESS_EFFORT_VARS, cap_env_effort, clamp_effort, effort_cap_of, model_entry
+        if not any((env or {}).get(v) for v in HARNESS_EFFORT_VARS):
+            return env
+        asked = (env or {}).get("EDP_SEAT_EFFORT")
+
+        from .spawner import seat_model_for
+        home = self._spawner_agent_home() or edp_settings.env_raw("EDP_AGENT_HOME")
+        resolved = model or seat_model_for(role, home)
+        cap = effort_cap_of(model_entry(home, resolved) if home and resolved else None)
+        out = {k: v for k, v in (env or {}).items() if k != "EDP_SEAT_EFFORT"}
+        clamped, note = clamp_effort(str(asked), cap) if asked else (None, None)
+        if clamped:
+            out["EDP_SEAT_EFFORT"] = clamped
+        note = "; ".join([*([note] if note else []), *cap_env_effort(out, cap)]) or None
+        if note or (asked and not clamped):
+            _log.info("effort_clamped", handle, role=role, handle=handle, asked=str(asked),
+                      effort=clamped, model=resolved, cap=cap)
+        return out
 
     def spawn(
         self, role: str, handle: str, parent: str | None,
@@ -1020,6 +1157,7 @@ class PoolService(Microservice):
         why = non_agent_refusal(role, handle)
         if why:
             return Tool.propagate(source="edp-pool", code=ErrorCode.POOL_ROLE_REFUSED, message=why)
+        env = self._clamp_seat_effort(role, handle, model, env)
         # ── DESIGN-v7 1.2 capacity model ───────────────────────────────────
         # Per-role throughput caps first (workers, planners), then the
         # all-roles EDP_MAX_TOTAL_SHELLS resource guard. A checker (qa) is
@@ -1714,6 +1852,7 @@ class PoolService(Microservice):
     def park_session(
         self, sid: str, *,
         flush_timeout: float = 20.0, flush_quiesce: float = 2.0,
+        for_update: bool = False,
     ) -> dict:
         """Park `sid`: watermark → state="parked". THE SHELL IS LEFT ALIVE.
 
@@ -1787,6 +1926,8 @@ class PoolService(Microservice):
             except Exception:  # noqa: BLE001 — baselines are best-effort
                 pass
             s["state"] = "parked"
+            if for_update:  # the updater parks a seat on purpose: the next pool start resumes it (owner m-e2edc8d256)
+                s["park_for_update"] = True
             s["parked"] = {
                 "parked_at": _utc_now_iso(),
                 "inbox_watermark": watermark,
@@ -1819,7 +1960,7 @@ class PoolService(Microservice):
                     "reason": f"no lock held for {handle!r}"}
         return self.park_session(sid, **kw)
 
-    def resume(self, handle: str) -> dict:
+    def resume(self, handle: str, env: dict | None = None) -> dict:
         """Resume the parked shell holding `handle`'s lock via fork-resume.
 
         Transition parked → resuming happens under the transition lock, so
@@ -1833,7 +1974,7 @@ class PoolService(Microservice):
             return refused
         sid = self.locks.get(handle)
         if sid is None:
-            return self.resume_closed(handle)
+            return self.resume_closed(handle, env=env)
         with self._transition_lock:
             s = self.sessions.get(sid)
             if s is None:
@@ -1893,8 +2034,9 @@ class PoolService(Microservice):
             # point of not killing it. Waking it is the broker's job, not a
             # respawn. So flip it back to active and STOP — the mail that
             # triggered this resume is already in the inbox it is watching.
-            if self._session_alive(sid) is True:
+            if self._parked_shell_alive(sid, s) is True:
                 s["state"] = "active"
+                s.pop("park_for_update", None)
                 self._persist()
                 token = s.get("claude_session_id")
                 if not token:
@@ -1926,6 +2068,7 @@ class PoolService(Microservice):
                         "reason": refusal}
             base = self._base_or_fresh(harness, base, sid, handle)
             s["state"] = "resuming"
+            s.pop("park_for_update", None)  # any resume consumes the updater's mark: a later pool start never repeats it
             self._resuming_inflight.add(sid)  # finding 15: mark the in-flight fork (cleared at every exit)
             settings = s.get("spawn_settings") or {}
         # S9: settings win over the bare row so a resumed seat keeps the shape
@@ -1940,7 +2083,7 @@ class PoolService(Microservice):
                 or edp_settings.get("EDP_SPAWN_MODE"))
         model = settings.get("model") or s.get("model")
         parent = settings.get("parent") or s.get("parent")
-        extra_env = settings.get("env") or None
+        extra_env = _resume_env(s, settings, env)
         fork = str(uuid.uuid4())
         _log.info("resume_start", handle, handle=handle, sid=sid,
                   base=base, fork=fork, harness=harness)
@@ -2026,7 +2169,7 @@ class PoolService(Microservice):
         why = next((w for w in (non_agent_refusal(r, handle) for r in roles or {None}) if w), None)
         return {"resumed": False, "handle": handle, "reason": why} if why else None
 
-    def resume_closed(self, handle: str) -> dict:
+    def resume_closed(self, handle: str, env: dict | None = None) -> dict:
         """S20 / design §18.3 (owner m-6ffe756cf7) — fork-resume a CLOSED (`done`) seat from its
         stored claude_session_id with the role/cwd/env/model/mode recorded at spawn
         (`spawn_settings`), so a seat closed days ago comes back with the same context and shape.
@@ -2071,7 +2214,7 @@ class PoolService(Microservice):
         mode = settings.get("mode") or s.get("mode") or edp_settings.get("EDP_SPAWN_MODE")
         model = settings.get("model") or s.get("model")
         parent = settings.get("parent") or s.get("parent")
-        extra_env = settings.get("env") or None
+        extra_env = _resume_env(s, settings, env)
         fork = str(uuid.uuid4())
         _log.info("resume_closed_start", handle, handle=handle, sid=sid, base=base, fork=fork,
                   harness=harness)
@@ -2571,9 +2714,9 @@ def create_app(
             "spawn_mode") or edp_settings.get("EDP_SPAWN_MODE")
         # epic-6a8a6020fd seat-choice (owner m-2d7ef9243d): optional `effort` (low|medium|high)
         # rides the shell env as EDP_SEAT_EFFORT — so it is recorded in spawn_settings.env and a
-        # resume-from-closed re-applies it. The Pi backend maps it to the thinking level
-        # (pi_launcher); the Claude backend leaves it informational (effort is not an argv/env
-        # knob of a Claude shell, and the fleet cap is medium anyway).
+        # resume-from-closed re-applies it. Every backend acts on it: Pi/Codex map it to their thinking
+        # level, a Claude seat launches with `--effort` (pty_launcher.build_argv). svc.spawn clamps it to
+        # the model's catalog cap (never above high) before it is recorded.
         env = b.get("env")
         effort = b.get("effort")
         if effort:
@@ -2677,28 +2820,29 @@ def create_app(
         return {"ok": True}
 
     @app.post("/v1/park/{handle}")
-    async def park(handle: str):
+    async def park(handle: str, body: dict | None = None):
         """DESIGN-v7 1.5.2: immediate park of the shell holding `handle`'s
-        lock (operator/MCP surface)."""
+        lock (operator/MCP surface). `{"for_update": true}` (the updater, S2/S10) marks the row
+        park_for_update: the only parked state the next pool start relaunches on its own."""
         _log.info("POST /v1/park", handle, handle=handle)
-        return await asyncio.to_thread(svc.park, handle)
+        return await asyncio.to_thread(svc.park, handle, for_update=bool((body or {}).get("for_update")))
 
     @app.post("/v1/resume/{handle}")
-    async def resume_parked(handle: str):
+    async def resume_parked(handle: str, body: dict | None = None):
         """DESIGN-v7 1.5.3: fork-resume a parked handle. The MCP-side
         backstop (`pool_resume_planner`) and the pool's own resume watchdog
         both land here-or-equivalent; the parked→resuming transition makes
         the second caller a no-op."""
         _log.info("POST /v1/resume", handle, handle=handle)
-        return await asyncio.to_thread(svc.resume, handle)
+        return await asyncio.to_thread(svc.resume, handle, env=(body or {}).get("env"))
 
     @app.post("/v1/resume_closed/{handle}")
-    async def resume_closed(handle: str):
+    async def resume_closed(handle: str, body: dict | None = None):
         """S20 (v8) / design §18.3: fork-resume a CLOSED (`done`) seat from its stored
         claude_session_id + spawn_settings, re-taking the freed handle lock. The board's
         /v1/sessions/resume routes here when the pool row for a handle is `done`."""
         _log.info("POST /v1/resume_closed", handle, handle=handle)
-        return await asyncio.to_thread(svc.resume_closed, handle)
+        return await asyncio.to_thread(svc.resume_closed, handle, env=(body or {}).get("env"))
 
     @app.get("/v1/pool/capabilities")
     async def pool_capabilities():

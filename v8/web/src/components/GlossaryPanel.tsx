@@ -20,8 +20,8 @@ const HEADINGS: Record<GlossaryCategory, string> = {
   ticket_kind: "Ticket kinds",
   work_type: "Work types",
   verdict: "Verdicts",
-  session_state: "Seat shell states",
-  concept: "Words",
+  session_state: "Seat states",
+  concept: "Terms",
 };
 // Column/plate order (folio-glossary): stages, gates, checks on the left; message kinds, roles right.
 const ORDER: GlossaryCategory[] = [
@@ -100,6 +100,7 @@ export function GlossaryPanel({
 
         {copy ? (
           <div className={styles.copy} data-testid="page-copy">
+            {copy.items.some((i) => !i.control) ? (
             <section className={styles.group}>
               <h3 className={styles.groupLabel}>On this page</h3>
               <dl className={styles.defs}>
@@ -111,6 +112,8 @@ export function GlossaryPanel({
                 ))}
               </dl>
             </section>
+            ) : null}
+            {copy.items.some((i) => i.control) ? (
             <section className={styles.group}>
               <h3 className={styles.groupLabel}>What each control does, and who it wakes</h3>
               <dl className={styles.defs}>
@@ -122,6 +125,7 @@ export function GlossaryPanel({
                 ))}
               </dl>
             </section>
+            ) : null}
             <section className={styles.group}>
               <h3 className={styles.groupLabel}>{SIDEBAR.title}</h3>
               <dl className={styles.defs}>
@@ -134,7 +138,7 @@ export function GlossaryPanel({
               </dl>
             </section>
             <section className={styles.group}>
-              <h3 className={styles.groupLabel}>Rules the copy states once</h3>
+              <h3 className={styles.groupLabel}>Who gets notified</h3>
               <dl className={styles.defs}>
                 {RULES.map((i) => (
                   <div key={i.key} className={styles.def}>
@@ -165,14 +169,17 @@ export function GlossaryPanel({
         </div>
 
         {conceptValues.length > 0 ? (
-          <p className={styles.footer}>
-            {conceptValues.map((v, i) => (
-              <span key={v}>
-                {i > 0 ? " · " : ""}
-                <strong>{GLOSSARY.concept[v].label}</strong> = {GLOSSARY.concept[v].meaning}
-              </span>
-            ))}
-          </p>
+          <section className={styles.group} data-testid="glossary-terms">
+            <h3 className={styles.groupLabel}>{HEADINGS.concept}</h3>
+            <dl className={styles.defs}>
+              {conceptValues.map((v) => (
+                <div key={v} className={styles.def}>
+                  <dt className={styles.dt}>{GLOSSARY.concept[v].label}</dt>
+                  <dd className={styles.dd}>{GLOSSARY.concept[v].meaning}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
         ) : null}
       </div>
     </>

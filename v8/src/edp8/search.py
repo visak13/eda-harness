@@ -334,6 +334,9 @@ class Index:
         self._lock = threading.RLock()
         self._bm25 = BM25()
         self._units: dict[str, tuple[str, str, str]] = {}
+        # S17 decision 4: a doc is one unit per section; its keys and each key's heading line
+        self._parts: dict[str, list[str]] = {}
+        self._section: dict[str, str | None] = {}
         self._dense_keys: list[str] = []
         self._dense_matrix: np.ndarray | None = None
         self._vecs: dict[str, tuple[str, list[float]]] = {}  # key -> (text it was embedded from, vec)
@@ -367,16 +370,61 @@ class Index:
             self._dirty = True
         return True
 
-    def rebuild(self, units: list[tuple[str, str, str]]) -> None:
+    def rebuild(self, units: list[tuple[str, ...]]) -> None:
+        """`units` are (type, id, text), or (type, id, text, section) for one section of a sectioned object."""
         with self._lock:
-            self._units = {_key(t, i): (t, i, txt) for t, i, txt in units}
+            self._units, self._parts, self._section = {}, {}, {}
+            for u in units:
+                if len(u) == 4:
+                    self._add_part(u[0], u[1], u[2], u[3])
+                else:
+                    self._units[_key(u[0], u[1])] = (u[0], u[1], u[2])
             self._dirty = True
             self._reindex()
+
+    def _add_part(self, type_: str, id_: str, text: str, section: str | None) -> None:
+        keys = self._parts.setdefault(_key(type_, id_), [])
+        key = f"{_key(type_, id_)}#{len(keys)}"
+        keys.append(key)
+        self._units[key] = (type_, id_, text)
+        self._section[key] = section
 
     def upsert(self, type_: str, id_: str, text: str) -> None:
         with self._lock:
             self._units[_key(type_, id_)] = (type_, id_, text)
             self._dirty = True
+
+    def upsert_sections(self, type_: str, id_: str, parts: list[tuple[str | None, str]]) -> None:
+        """Replace an object's section units with `parts` [(heading line or None, text)]."""
+        with self._lock:
+            self._units.pop(_key(type_, id_), None)
+            for key in self._parts.pop(_key(type_, id_), []):
+                self._units.pop(key, None)
+                self._section.pop(key, None)
+            for section, text in parts:
+                self._add_part(type_, id_, text, section)
+            self._dirty = True
+
+    def _hits(self, ranked: list[tuple[str, float]], query: str, k: int) -> list[dict]:
+        """One hit per object, at its best-ranked unit; a sectioned hit names its section."""
+        results: list[dict] = []
+        seen: set[str] = set()
+        for key, score in ranked:
+            t, i, text = self._units[key]
+            if _key(t, i) in seen:
+                continue
+            seen.add(_key(t, i))
+            hit = {"type": t, "id": i, "score": score, "snippet": _snippet(text, query)}
+            if key in self._section:
+                hit["section"] = self._section[key]
+            results.append(hit)
+            if len(results) >= k:
+                break
+        return results
+
+    def unit_count(self) -> int:
+        with self._lock:
+            return len(self._units)
 
     def status(self) -> dict:
         """R2-6: which seeding backend is live, why (if it fell back), and the model's footprint."""
@@ -595,13 +643,8 @@ class Index:
             for key, rank in dense_rank.items():
                 fused[key] = fused.get(key, 0.0) + 1.0 / (self._rrf_k + rank)
 
-            ranked = sorted(fused.items(), key=lambda kv: kv[1], reverse=True)[:k]
-            results = []
-            for key, score in ranked:
-                t, i, text = self._units[key]
-                snippet = _snippet(text, query)
-                results.append({"type": t, "id": i, "score": score, "snippet": snippet})
-            return results
+            ranked = sorted(fused.items(), key=lambda kv: kv[1], reverse=True)
+            return self._hits(ranked, query, k)
 
     def dense_search(
         self,
@@ -639,8 +682,4 @@ class Index:
             scored = [(key, float(sims[idx])) for idx, key in enumerate(self._dense_keys)
                       if key in candidates]
             scored.sort(key=lambda kv: kv[1], reverse=True)
-            results = []
-            for key, score in scored[:k]:
-                t, i, text = self._units[key]
-                results.append({"type": t, "id": i, "score": score, "snippet": _snippet(text, query)})
-            return results
+            return self._hits(scored, query, k)

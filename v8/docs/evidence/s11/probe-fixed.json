@@ -1,0 +1,24 @@
+{
+ "mode": "edp8.desktop.make_window",
+ "origin": "http://127.0.0.1:57232",
+ "bridge_notify_type": "function",
+ "body_user_select": "auto",
+ "drag_selection": "Select this sentence to quote it from the desktop window.",
+ "drag_selection_len": 57,
+ "link_ext": {
+  "system_browser": [
+   "https://example.com/ext-blank"
+  ],
+  "window_url_still_board": true
+ },
+ "link_ext2": {
+  "system_browser": [
+   "https://example.com/ext-plain"
+  ],
+  "window_url_still_board": true
+ },
+ "link_inapp_loaded_in_window": true,
+ "link_inapp_system_browser": [],
+ "bridge_notify_result": "{\"ok\":true}",
+ "toast_shot": "toast-corner.png"
+}

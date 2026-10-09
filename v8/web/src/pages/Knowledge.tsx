@@ -3,10 +3,11 @@ import { useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { getKnowledge } from "../api/endpoints";
 import type { DocStatus, KnowledgeDoc, KnowledgeLesson } from "../api/types";
-import { KIND_LABEL, KNOWLEDGE_KINDS, STATUS_WORD, StatusWord } from "./knowledgeShared";
+import { docTitle, KIND_LABEL, KNOWLEDGE_KINDS, STATUS_WORD, StatusWord } from "./knowledgeShared";
 import ui from "../components/ui.module.css";
 import { ImportSkillDialog, NewKnowledgeDialog } from "./KnowledgeDialogs";
 import { KnowledgeDetail } from "./KnowledgeDetail";
+import { LessonDetail, lessonScope } from "./LessonDetail";
 import styles from "./Knowledge.module.css";
 
 // S-LIBRARY (design-34bf11cc07 §4.3, owner m-5b3db5cb0d "sme tab? sure"): the Library's knowledge —
@@ -39,7 +40,7 @@ export function KnowledgeSection(): React.JSX.Element {
     (!kind || d.doc_type === kind) && (!tag || d.tags.includes(tag)) && (!status || d.status === status) &&
     matchesText(needle, d.title, d.id, d.summary, d.tags.join(" "))), [query.data, kind, tag, status, needle]);
   const lessons = useMemo<KnowledgeLesson[]>(() => (query.data?.lessons ?? []).filter((l) =>
-    (!kind || kind === "lesson") && !tag && (!status || status === "active") &&
+    (!kind || kind === "lesson") && !tag && (!status || status === (l.status === "retired" ? "retired" : "active")) &&
     matchesText(needle, l.text, l.topic, l.domain)), [query.data, kind, tag, status, needle]);
 
   if (query.isPending) return <p className={ui.empty}>Loading…</p>;
@@ -47,6 +48,7 @@ export function KnowledgeSection(): React.JSX.Element {
   const data = query.data;
   const proposed = data.docs.filter((d) => d.status === "proposed").length;
   const selected = data.docs.find((d) => d.id === selectedId) ?? null;
+  const selectedLesson = selected ? null : data.lessons.find((l) => l.id === selectedId) ?? null;
 
   return (
     <section data-testid="knowledge">
@@ -91,7 +93,7 @@ export function KnowledgeSection(): React.JSX.Element {
                 <button type="button" className={`${styles.row} ${d.id === selectedId ? styles.rowSelected : ""}`}
                   aria-pressed={d.id === selectedId} onClick={() => select(d.id)} data-testid="knowledge-row">
                   <span className={ui.tag}>{KIND_LABEL[d.doc_type] ?? d.doc_type}</span>
-                  <span className={styles.rowTitle}>{d.title}</span>
+                  <span className={styles.rowTitle}>{docTitle(d.title)}</span>
                   <StatusWord status={d.status} />
                   <span className={styles.rowMeta}>
                     <span>v{d.version}</span>
@@ -102,16 +104,23 @@ export function KnowledgeSection(): React.JSX.Element {
               </li>
             ))}
             {lessons.map((l) => (
-              <li key={l.id} className={styles.lesson} data-testid="knowledge-lesson">
-                <span className={ui.tag}>lesson</span> <strong>{l.domain} · {l.topic}</strong> — {l.text}
+              <li key={l.id} className={`${styles.lesson} ${l.id === selectedId ? styles.lessonSelected : ""}`} data-testid="knowledge-lesson">
+                <button type="button" className={`${styles.lessonRow} ${l.status === "retired" ? styles.lessonRetired : ""}`}
+                  aria-pressed={l.id === selectedId} onClick={() => select(l.id)} data-testid="knowledge-lesson-open">
+                  <span><span className={ui.tag}>lesson</span> <span className={ui.tag} data-testid="lesson-scope-tag">{lessonScope(l)}</span>{" "}
+                    <span className={styles.status}>{l.status === "retired" ? "Retired" : "Active"}</span></span>
+                  <span><strong>{l.domain} · {l.topic}</strong> — {l.text}</span>
+                </button>
               </li>
             ))}
           </ul>
         </div>
         {selected ? (
           <KnowledgeDetail key={selected.id} doc={selected} epics={data.epics} onClose={() => select(null)} />
+        ) : selectedLesson ? (
+          <LessonDetail key={selectedLesson.id} lesson={selectedLesson} onClose={() => select(null)} />
         ) : (
-          <p className={ui.empty}>Pick a doc to read, edit, rule on or link it.</p>
+          <p className={ui.empty}>Pick a doc to read, edit, rule on or link it, or a lesson to read or retire it.</p>
         )}
       </div>
       <NewKnowledgeDialog open={dialog === "new"} onClose={() => setDialog(null)} onCreated={(id) => select(id)} />

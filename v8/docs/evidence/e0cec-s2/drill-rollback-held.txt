@@ -1,0 +1,53 @@
+﻿   fleet before: board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+PASS  pre-check: every record in C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\.run names a private (or dead) pid
+   ports board=58703 pool=58707 mcp=58706 broker=58708; home C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home
+== 05:35:31 rollback-held from {FD382D81-51CD-4D23-A249-5FB643FE861A}=0.9.1
+   health 0.9.1; seat engineer.s2-drill row active pid 17076 liveness alive
+   holder pid 25764 opened C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\install\app\heronry\__main__.py with read-only sharing (the app can still load it; nothing can replace it)
+   05:35:33 heronry update --release-url C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\release-0.9.2.dev0 --previous-url C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\release-0.9.1
+   | current 0.9.1, release 0.9.2.dev0
+   | verified Heronry S2 Spike-0.9.2.dev0.msi against SHA256SUMS (0.3s)
+   | the installed 0.9.1's MSI is cached for a rollback (C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\.data\updates\0.9.1\Heronry S2 Spike-0.9.1.msi)
+   | WARNING: the compatibility check is not run for an MSI update yet (S10)
+   | backed up the DB to C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\.data\backups\edp8-0.9.1-20261002T000534Z.db
+   | installing 0.9.2.dev0 from C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\update (outside the install folder); progress in C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\.data\logs\update.log, outcome in C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\update\update-result.json
+   cli exit 0 after 2s
+   05:36:29 outcome after 56.2s
+   log 2026-10-02T00:05:35+00:00 helper up (pid 29624): 0.9.1 -> 0.9.2.dev0
+   log 2026-10-02T00:05:35+00:00 park engineer.s2-drill: {"parked": true, "session_id": "engineer:b2854d5b-3455-4ccd-96f8-ddc32685a722", "handle": "engineer.s2-drill", "inbox_watermark": 0, "claude_session_id": "528c37d3-fdcb-4c43-b482-93e892120c1b"}
+   log 2026-10-02T00:05:36+00:00 stop: C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\install\heronry.exe stop --force
+   log 2026-10-02T00:05:40+00:00   | pool stop takes these 1 seat(s) offline:
+   log 2026-10-02T00:05:40+00:00   |   - engineer.s2-drill (pid 17076, parked)
+   log 2026-10-02T00:05:40+00:00   | supervisor stopped
+   log 2026-10-02T00:05:40+00:00   | bridge     not running
+   log 2026-10-02T00:05:40+00:00   | mcp        stopped
+   log 2026-10-02T00:05:41+00:00   | pool       stopped
+   log 2026-10-02T00:05:41+00:00   | broker     stopped
+   log 2026-10-02T00:05:41+00:00   | board      stopped
+   log 2026-10-02T00:05:41+00:00 stop exit 0
+   log 2026-10-02T00:06:08+00:00 holders in C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\install: ['Windows PowerShell (pid 25764)']
+   log 2026-10-02T00:06:08+00:00 rolling back: files in the install folder are held by Windows PowerShell (pid 25764); nothing was installed
+   log 2026-10-02T00:06:08+00:00 start: C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\install\heronry.exe start --no-browser
+   log 2026-10-02T00:06:25+00:00   | board      started          pid 22152  http://127.0.0.1:58703
+   log 2026-10-02T00:06:25+00:00   | broker     started          pid 27952  http://127.0.0.1:58708
+   log 2026-10-02T00:06:25+00:00   | pool       started          pid 26816  http://127.0.0.1:58707
+   log 2026-10-02T00:06:25+00:00   | mcp        started          pid 34232  http://127.0.0.1:58706
+   log 2026-10-02T00:06:25+00:00   | bridge     skipped          (no slack map configured)
+   log 2026-10-02T00:06:25+00:00   | supervisor started          pid 33196
+   log 2026-10-02T00:06:25+00:00   | setup      first run: finish setup at http://127.0.0.1:58703/ui/setup?code=<redacted>  (the link signs you in once, within 24 h)
+   log 2026-10-02T00:06:25+00:00 start exit 0
+   log 2026-10-02T00:06:25+00:00 health after start: '0.9.1' (want 0.9.1)
+   log 2026-10-02T00:06:28+00:00 resume engineer.s2-drill: {"resumed": true, "handle": "engineer.s2-drill", "session_id": "engineer:b2854d5b-3455-4ccd-96f8-ddc32685a722", "via": "started-fresh", "claude_session_id": "915f3e6e-e3f5-4688-a659-ad30ce74d73e", "message": "started fresh: no stored session", "released_after_resume": false}
+   log 2026-10-02T00:06:28+00:00 result rolled_back files in the install folder are held by Windows PowerShell (pid 25764); nothing was installed
+   result: {"from":"0.9.1","to":"0.9.2.dev0","state":"rolled_back","reason":"files in the install folder are held by Windows PowerShell (pid 25764); nothing was installed","timings":{"parked":0.5,"stopped":5.6,"holders_checked":33.1,"rolled_back":50.1},"parked":["engineer.s2-drill"],"resumed":["engineer.s2-drill"],"installed":"0.9.1","health_version":"0.9.1","finished_at":"2026-10-02T00:06:28+00:00"}
+   installed after: {FD382D81-51CD-4D23-A249-5FB643FE861A}=0.9.1; health 0.9.1; seat engineer.s2-drill row active liveness alive
+PASS  outcome rolled_back
+PASS  a plain reason: files in the install folder are held by Windows PowerShell (pid 25764); nothing was installed
+PASS  the previous version is installed ({FD382D81-51CD-4D23-A249-5FB643FE861A}=0.9.1)
+PASS  board healthy at 0.9.1 (0.9.1)
+PASS  the seat is live again
+PASS  the runner ran from C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\update, outside C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\install
+   fleet after:  board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+PASS  fleet pids unchanged
+elapsed 60s
+RESULT: all checks passed

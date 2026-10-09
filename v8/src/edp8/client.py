@@ -127,14 +127,18 @@ class BoardClient:
     # ------------------------------------------------------------------ tickets
     def ticket_create(self, kind: str, work_type: str, title: str, parent_id: str | None = None,
                       assignee: str | None = None, description: str = "",
-                      tags: list[str] | None = None, words: str | None = None) -> dict[str, Any]:
+                      tags: list[str] | None = None, words: str | None = None,
+                      serves: list[str] | None = None, cap_lift_message: str | None = None) -> dict[str, Any]:
         return self._request("POST", "/v1/tickets",
                              json={"kind": kind, "work_type": work_type, "title": title,
                                    "parent_id": parent_id, "assignee": assignee, "description": description,
-                                   "tags": tags, "words": words})
+                                   "tags": tags, "words": words, "serves": serves,
+                                   "cap_lift_message": cap_lift_message})
 
-    def ticket_read(self, id_: str, include: str | None = None, thread_limit: int = 20) -> dict[str, Any]:
-        return self._request("GET", f"/v1/tickets/{id_}", params={"include": include, "thread_limit": thread_limit})
+    def ticket_read(self, id_: str, include: str | None = None, thread_limit: int = 20,
+                    before_seq: int | None = None) -> dict[str, Any]:
+        return self._request("GET", f"/v1/tickets/{id_}", params={"include": include, "thread_limit": thread_limit,
+                                                                  "before_seq": before_seq})
 
     def ticket_query(self, kind: str | None = None, work_type: str | None = None, parent_id: str | None = None,
                      status: str | None = None, assignee: str | None = None, epic_id: str | None = None,
@@ -146,10 +150,12 @@ class BoardClient:
 
     def ticket_update(self, id_: str, status: str | None = None, assignee: str | None = None,
                       design_ref: str | None = None, description: str | None = None,
-                      tags: list[str] | None = None, title: str | None = None) -> dict[str, Any]:
+                      tags: list[str] | None = None, title: str | None = None,
+                      work_type: str | None = None) -> dict[str, Any]:
         return self._request("PATCH", f"/v1/tickets/{id_}",
                              json={"status": status, "assignee": assignee, "design_ref": design_ref,
-                                   "description": description, "tags": tags, "title": title})
+                                   "description": description, "tags": tags, "title": title,
+                                   "work_type": work_type})
 
     # ------------------------------------------------------------------ criteria
     def criterion_create(self, ticket_id: str, text: str, check: str, checked_by: str | None = None,
@@ -169,12 +175,27 @@ class BoardClient:
                              json={"evidence_ref": evidence_ref, "verdict": verdict, "text": text,
                                    "evidence_version": evidence_version, "stale_ok": stale_ok, "note": note})
 
+    # ------------------------------------------------------------------ requirements (s-aa76c83998)
+    def requirements(self, epic: str, state: str | None = None) -> dict[str, Any]:
+        return self._request("GET", f"/v1/epics/{epic}/requirements", params={"state": state} if state else None)
+
+    def requirement_mark(self, message_id: str, char_start: int | None = None,
+                         char_end: int | None = None, text: str | None = None) -> dict[str, Any]:
+        return self._request("POST", "/v1/requirements",
+                             json={"message_id": message_id, "char_start": char_start, "char_end": char_end,
+                                   "text": text})
+
+    def requirement_link(self, id_: str, criterion: str | None = None, doc: str | None = None,
+                         version: int | None = None, heading: str | None = None) -> dict[str, Any]:
+        return self._request("POST", f"/v1/requirements/{id_}/link",
+                             json={"criterion": criterion, "doc": doc, "version": version, "heading": heading})
+
     # ------------------------------------------------------------------ docs / links / artifacts
     def doc_create(self, doc_type: str, title: str, body_md: str, scope: str, tags: list[str] | None = None,
                    status: str | None = None, proposes: str | None = None,
-                   ticket_id: str | None = None) -> dict[str, Any]:
+                   ticket_id: str | None = None, layout: str | None = None) -> dict[str, Any]:
         body: dict[str, Any] = {"doc_type": doc_type, "title": title, "body_md": body_md, "scope": scope}
-        extra = {"tags": tags, "status": status, "proposes": proposes, "ticket_id": ticket_id}
+        extra = {"tags": tags, "status": status, "proposes": proposes, "ticket_id": ticket_id, "layout": layout}
         return self._request("POST", "/v1/docs", json={**body, **{k: v for k, v in extra.items() if v is not None}})
 
     # S-SME-SURFACE: a Library topic's sme browses (bounded, receipted) and files proposals
@@ -197,11 +218,18 @@ class BoardClient:
                                    "tags": tags or [], "proposes": proposes})
 
     def doc_read(self, id_: str, version: int | None = None, offset: int | None = None,
-                 limit: int | None = None, section: str | None = None) -> dict[str, Any]:
+                 limit: int | None = None, section: str | None = None, all: bool = False,
+                 include_children: bool = False, fresh: bool = False) -> dict[str, Any]:
         return self._request("GET", f"/v1/docs/{id_}", params={"version": version, "offset": offset,
-                             "limit": limit, "section": section})
+                             "limit": limit, "section": section, "all": "true" if all else None,
+                             "include_children": "true" if include_children else None,
+                             "fresh": "true" if fresh else None})
 
-    def doc_edit(self, id_: str, expected_version: int, edits: list[dict], title: str | None = None) -> dict[str, Any]:
+    def doc_reads_reset(self) -> dict[str, Any]:
+        return self._request("POST", "/v1/docs/reads/reset")
+
+    def doc_edit(self, id_: str, expected_version: int | None, edits: list[dict],
+                 title: str | None = None) -> dict[str, Any]:
         return self._request("POST", f"/v1/docs/{id_}/edit",
                              json={"expected_version": expected_version, "edits": edits, "title": title})
 
@@ -211,9 +239,10 @@ class BoardClient:
                                                          "owner_role": owner_role, "tag": tag, "status": status})
 
     def doc_update(self, id_: str, body_md: str | None = None, title: str | None = None,
-                   compact: bool = False, tags: list[str] | None = None) -> dict[str, Any]:
+                   compact: bool = False, tags: list[str] | None = None, layout: str | None = None) -> dict[str, Any]:
         return self._request("PATCH", f"/v1/docs/{id_}",
-                             json={"body_md": body_md, "title": title, "compact": compact, "tags": tags})
+                             json={"body_md": body_md, "title": title, "compact": compact, "tags": tags,
+                                   **({"layout": layout} if layout else {})})
 
     def link_create(self, from_id: str, to_id: str, relation: str) -> dict[str, Any]:
         return self._request("POST", "/v1/links", json={"from_id": from_id, "to_id": to_id, "relation": relation})
@@ -258,20 +287,25 @@ class BoardClient:
     def message_send(self, ticket_id: str, kind: str, text: str, to: str | None = None,
                      reply_to: str | None = None, artifacts: list[str] | None = None,
                      code_context: dict[str, Any] | None = None,
-                     quotes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+                     quotes: list[dict[str, Any]] | None = None,
+                     resolves: list[str] | None = None) -> dict[str, Any]:
         body = {"ticket_id": ticket_id, "to": to, "kind": kind, "text": text,
                 "reply_to": reply_to, "artifacts": artifacts or []}
         if code_context is not None:  # omitted when absent, so an older board never sees the key
             body["code_context"] = code_context
         if quotes:  # C18: likewise omitted when absent
             body["quotes"] = quotes
+        if resolves:  # e0cec S3: likewise
+            body["resolves"] = resolves
         return self._request("POST", "/v1/messages", json=body)
 
     def message_query(self, ticket_id: str | None = None, to: str | None = None, kind: str | None = None,
-                      limit: int = 50, since_seq: int | None = None, created_by: str | None = None) -> dict[str, Any]:
+                      limit: int = 50, since_seq: int | None = None, created_by: str | None = None,
+                      around: str | None = None, window: int | None = None) -> dict[str, Any]:
         return self._request("GET", "/v1/messages", params={"ticket_id": ticket_id, "to": to, "kind": kind,
                                                              "limit": limit, "since_seq": since_seq,
-                                                             "created_by": created_by})
+                                                             "created_by": created_by, "around": around,
+                                                             "window": window})
 
     def message_read(self, id_: str) -> dict[str, Any]:
         return self._request("GET", f"/v1/messages/{id_}")
@@ -309,10 +343,18 @@ class BoardClient:
             "scope": scope, "text": text, "basis": basis, "evidence": evidence or [],
             "source": source, "status": status})
 
-    def record_lesson(self, domain: str, topic: str, text: str,
-                      evidence: list[str] | None = None) -> dict[str, Any]:
+    def record_lesson(self, domain: str, topic: str, text: str, evidence: list[str] | None = None,
+                      project: str | None = None, domains: list[str] | None = None,
+                      ticket_id: str | None = None, scope_kind: str | None = None) -> dict[str, Any]:
         return self._request("POST", "/v1/lessons", json={
-            "domain": domain, "topic": topic, "text": text, "evidence": evidence or []})
+            "domain": domain, "topic": topic, "text": text, "evidence": evidence or [],
+            "project": project, "domains": domains or [], "ticket_id": ticket_id, "scope_kind": scope_kind})
+
+    def retire_lesson(self, lesson_id: str, reason: str = "") -> dict[str, Any]:
+        return self._request("POST", f"/v1/lessons/{lesson_id}/retire", json={"reason": reason})
+
+    def backfill_lessons(self, dry_run: bool = False) -> dict[str, Any]:
+        return self._request("POST", "/v1/lessons/backfill", json={"dry_run": dry_run})
 
     def withdraw_decision(self, decision_id: str, reason: str = "") -> dict[str, Any]:
         return self._request("POST", f"/v1/decisions/{decision_id}/withdraw",
@@ -385,8 +427,11 @@ class BoardClient:
     def pain_file(self, record: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/v1/pains", json=record)
 
-    def pain_resolve(self, id_: str, status: str, by: str = "", note: str = "") -> dict[str, Any]:
-        return self._request("POST", f"/v1/pains/{id_}/resolve", json={"status": status, "by": by, "note": note})
+    def pain_resolve(self, id_: str, status: str, by: str = "", note: str = "", commit: str = "",
+                     ticket_id: str = "", dup_of: str = "") -> dict[str, Any]:
+        return self._request("POST", f"/v1/pains/{id_}/resolve",
+                             json={"status": status, "by": by, "note": note, "commit": commit,
+                                   "ticket_id": ticket_id, "dup_of": dup_of})
 
     def services_status(self) -> dict[str, Any]:
         return self._request("GET", "/v1/services/status")
@@ -398,7 +443,7 @@ class BoardClient:
     def teammates(self) -> dict[str, Any]:
         return self._request("GET", "/v1/admin/teammates")
 
-    def teammate_create(self, handle: str, role: str = "owner", admin: bool = False) -> dict[str, Any]:
+    def teammate_create(self, handle: str, role: str = "guest", admin: bool = False) -> dict[str, Any]:
         return self._request("POST", "/v1/admin/teammates", json={"handle": handle, "role": role, "admin": admin})
 
     def teammate_action(self, handle: str, action: str) -> dict[str, Any]:

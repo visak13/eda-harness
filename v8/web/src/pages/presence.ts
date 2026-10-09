@@ -4,7 +4,7 @@ import type { SeatRow, PoolCapabilities } from "../api/types";
 // tested off the clock, not eyeballed. The cardinal rule: silence is NEVER rendered as death — a
 // seat we last heard from long ago reads "Presence not refreshed" with its last-known state, never
 // "Closed". A seat only reads Closed when the board actually recorded it closed (state dead + a
-// reason). A seat with no session mirrored here is a remote seat: "Availability unknown".
+// reason). A seat with no session mirrored here is a remote seat: "Not visible here".
 
 export const STALE_MS = 60_000; // 60s without a fresh heartbeat → presence not refreshed
 
@@ -20,6 +20,9 @@ export interface Presence {
   detail?: string;
   /** Whether a Resume action is offered, given what the pool reports it can do. */
   showResume: boolean;
+  /** Whether a Close action is offered: the seat is running (working, stale, parked or stalled) and the board
+   *  answered the pool capabilities, which it refuses to a guest (design-63db8a7d42 G: only owner and architect close). */
+  showClose: boolean;
 }
 
 function ageMs(iso: string | null, now: number): number | null {
@@ -33,6 +36,12 @@ export function presenceOf(
   caps: PoolCapabilities | undefined,
   now: number = Date.now(),
 ): Presence {
+  const p = presenceBase(seat, caps, now);
+  const live = p.kind === "working" || p.kind === "stale" || p.kind === "parked" || p.kind === "stalled";
+  return { ...p, showClose: live && caps != null };
+}
+
+function presenceBase(seat: SeatRow, caps: PoolCapabilities | undefined, now: number): Omit<Presence, "showClose"> {
   const canResumeClosed = caps?.resume_closed === true;
   // Never assumed (c-3831aad362): Resume shows only when the pool has REPORTED it can resume — so a
   // parked seat offers no Resume while capabilities are still loading or the pool is silent.
@@ -40,7 +49,7 @@ export function presenceOf(
 
   // No mirrored session: a remote seat we cannot see. Never a death.
   if (seat.state == null) {
-    return { kind: "unknown", word: "Availability unknown", dot: "muted", showResume: false };
+    return { kind: "unknown", word: "Not visible here", dot: "muted", detail: "Runs elsewhere; this board cannot see its state", showResume: false };
   }
 
   if (seat.state === "dead") {

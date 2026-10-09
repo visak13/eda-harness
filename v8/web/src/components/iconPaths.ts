@@ -96,10 +96,11 @@ export const ROLE_ICONS = {
   "sme": "role-sme",
   "doctor": "role-doctor"
 } as const satisfies Record<string, IconName>;
-/** t-20f0718990: the words a role shows as; a role not listed shows its id. The doctor seat is "Help". */
-export const ROLE_LABELS: Partial<Record<string, string>> = { doctor: "Help" };
+/** t-20f0718990: the words a role shows as. The doctor seat is "Help"; S12-ui (owner m-839aa76c90): an acronym role
+ *  keeps its capitals ("QA", not "Qa"), and any other role id shows in title case. The one helper every role name goes through. */
+export const ROLE_LABELS: Partial<Record<string, string>> = { doctor: "Help", qa: "QA", sme: "SME" };
 export function roleLabel(role: string): string {
-  return ROLE_LABELS[role] ?? role;
+  return ROLE_LABELS[role.toLowerCase()] ?? role.replace(/(^|[\s_-])([a-z])/g, (_m, sep: string, c: string) => `${sep === "_" || sep === "-" ? " " : sep}${c.toUpperCase()}`);
 }
 export type SeatRole = keyof typeof ROLE_ICONS;
 /** The role of an AGENT seat id (`engineer.s-…`, `architect.epic-…`, or a bare role); null for a person. */

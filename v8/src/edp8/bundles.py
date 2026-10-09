@@ -17,11 +17,14 @@ import contextlib
 import difflib
 import copy
 import functools
+import hashlib
 import contextvars
 import enum as _enum
 import json
+import os
 import sys
 import threading
+import types
 import typing
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -29,17 +32,20 @@ from pathlib import Path
 from typing import Any, Callable, Literal
 
 from edp_contracts.roles import non_agent_refusal
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationError
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from . import seat_choice, settings
+from . import epic_policy, seat_choice, settings
 from .client import BoardClient
 from .doc_tools import DocEdit
+from .fix_actions import Action
 from . import tool_idem, tool_paging
-from .tool_contracts import LOCAL_OBJECTS, link_clause, tool_objects, tools_by_object
+from .tool_contracts import LOCAL_OBJECTS, tool_objects, tools_by_object
 from .schemas import (
     ParticipantType,
     ENUMS,
+    DocLayout,
     ArtifactForm,
+    RequirementState,
     Check,
     CheckedBy,
     ClaimBasis,
@@ -51,6 +57,7 @@ from .schemas import (
     SeatRole,
     SeatTicketKind,
     SpawnRole,
+    TopicDocType,
     Role,
     StatusValue,
     SessionState,
@@ -73,6 +80,7 @@ _client: BoardClient | None = None
 # stdio and tests keep the module global. get_client() prefers the request-scoped one.
 _req_client: contextvars.ContextVar[BoardClient | None] = contextvars.ContextVar("edp8_req_client", default=None)
 _req_session: contextvars.ContextVar[str | None] = contextvars.ContextVar("edp8_req_session", default=None)
+_req_wake_mod: contextvars.ContextVar[str | None] = contextvars.ContextVar("edp8_req_wake_mod", default=None)
 _server_version: str = "stdio"
 
 
@@ -92,18 +100,22 @@ def get_client() -> BoardClient:
 
 @contextlib.contextmanager
 def bind_request(client: BoardClient, *, session_id: str | None = None,
-                 server_version: str | None = None) -> Iterator[None]:
-    """Scope one tool call to a request identity (the shared server calls this per request)."""
+                 server_version: str | None = None, wake_mod: str | None = None) -> Iterator[None]:
+    """Scope one tool call to a request identity (the shared server calls this per request). `wake_mod` is the
+    seat's own `X-Wake-Mod` header (its CLAUDE_CODE_PLUGIN_DIRS): the shared service's environment says nothing
+    about one seat's mod."""
     global _server_version
     if server_version:
         _server_version = server_version
     t1 = _req_client.set(client)
     t2 = _req_session.set(session_id)
+    t3 = _req_wake_mod.set(wake_mod)
     try:
         yield
     finally:
         _req_client.reset(t1)
         _req_session.reset(t2)
+        _req_wake_mod.reset(t3)
 
 
 def my_session_id() -> str | None:
@@ -180,29 +192,37 @@ def _literal_values(annotation: Any) -> list[str]:
 
 
 def _type_name(annotation: Any) -> str:
+    """The type as the third-failure hint spells it: Optional unwrapped, containers kept (`list[str]`,
+    `list[EditPair]`, `dict[str, Any]`), so the inline schema never contradicts the advertised one (astra F1)."""
     origin = typing.get_origin(annotation)
     if origin is None:
         return getattr(annotation, "__name__", str(annotation))
-    args = [a for a in typing.get_args(annotation) if a is not type(None)]
-    return "|".join(_type_name(a) for a in args) or str(annotation)
+    if origin is typing.Annotated:
+        return _type_name(typing.get_args(annotation)[0])
+    args = typing.get_args(annotation)
+    if origin is typing.Union or origin is types.UnionType:
+        return "|".join(_type_name(a) for a in args if a is not type(None)) or str(annotation)
+    inner = ", ".join("..." if a is Ellipsis else _type_name(a) for a in args)
+    name = getattr(origin, "__name__", str(origin))
+    return f"{name}[{inner}]" if inner else name
 
 
 def _enum_clause(args_model: type[BaseModel]) -> str:
     ef = enum_fields(args_model)
     if not ef:
         return ""
-    # names only: the advertised schema carries every value (architect ruling m-fbd6ae40d3 — no duplicate)
-    return f"Enums: {', '.join(ef)} (describe('enums')). "
+    # names only: the advertised schema carries every value; a bad value is refused with the list
+    return f"Enums: {', '.join(ef)}. "
 
 
 def compose_description(what: str, when: str, returns: str, args_model: type[BaseModel], name: str = "") -> str:
-    """what · when · objects/skills (tool_contracts metadata) · enums (from the schema) · returns."""
+    """what · when · enums (from the schema) · returns. The linked objects and skills live in describe_objects()/describe()."""
     what = what.strip().rstrip(".") + "."
     when = when.strip().rstrip(".") + "."
     if when[:5].lower() == "when ":  # "When: when …" says it twice
         when = when[5:]
     returns = returns.strip().rstrip(".") + "."
-    return f"{what} When: {when} {link_clause(name)}{_enum_clause(args_model)}Returns {returns}"
+    return f"{what} When: {when} {_enum_clause(args_model)}Returns {returns}"
 
 
 @dataclass
@@ -290,6 +310,33 @@ _FAIL_LOCK = threading.Lock()
 _RENAMED_ID: dict[str, str] = {"ticket_update": "ticket_id", "ticket_read": "ticket_id"}
 
 
+# note-e6ddb85977 §4: wrong argument names that mean one thing only. alias -> (the argument it stands for, the tool
+# name prefixes it is unambiguous on; None = every tool). Applied by invoke() for every tool, never per tool.
+ARG_ALIASES: dict[str, tuple[str, tuple[str, ...] | None]] = {
+    "doc_id": ("id", ("doc_",)),
+    "criterion_id": ("id", ("criterion_",)),
+    "message_id": ("id", ("message_",)),
+    "artifact_id": ("id", ("artifact_",)),
+    "link_id": ("id", ("link_",)),
+    "ticket": ("ticket_id", None),
+}
+
+
+def _alias_args(tool: ToolDef, kwargs: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Rename each alias in kwargs to its argument when the tool takes that argument, does not take the alias
+    and was not also given the argument; returns the kwargs and the renames made."""
+    fields = tool.args_model.model_fields
+    out, notes = dict(kwargs), []
+    for alias, (target, prefixes) in ARG_ALIASES.items():
+        if alias not in out or alias in fields or target not in fields or target in out:
+            continue
+        if prefixes is not None and not tool.name.startswith(prefixes):
+            continue
+        out[target] = out.pop(alias)
+        notes.append(f"{alias!r} read as {target!r}")
+    return out, notes
+
+
 def _bump_failure(seat: str, name: str) -> int:
     with _FAIL_LOCK:
         key = (seat, name)
@@ -327,7 +374,11 @@ def _validation_envelope(tool: ToolDef, exc: ValidationError) -> dict[str, Any]:
     error: dict[str, Any] = {"code": "schema", "field": field}
     if err.get("type") == "extra_forbidden":
         near = difflib.get_close_matches(field, accepted, n=1, cutoff=0.5)
-        error["message"] = f"{tool.name}: unknown arg {field!r}" + (f" — did you mean {near[0]!r}?" if near else "")
+        gone = [".".join(str(x) for x in e.get("loc", ())) for e in errs if e.get("type") == "missing"]
+        if not near and len(gone) == 1 and sum(e.get("type") == "extra_forbidden" for e in errs) == 1:
+            near = gone  # one wrong name and one required name missing: the missing one is what was meant
+        error["message"] = f"{tool.name}: unknown arg {field!r}" + (
+            f" — did you mean {near[0]!r}?" if near else f" — it takes: {', '.join(accepted)}")
         if near:
             error["nearest"] = near[0]
     else:
@@ -338,9 +389,11 @@ def _validation_envelope(tool: ToolDef, exc: ValidationError) -> dict[str, Any]:
     if allowed:
         error["allowed"] = allowed
     error["accepted"] = accepted
-    hint = (f"pass a valid {field}" + (f" — one of: {'|'.join(allowed)}" if allowed else "")
-            + (f"; required: {', '.join(required)}" if required else "")
-            + "; describe('enums') lists enum values")
+    if err.get("type") == "extra_forbidden":
+        hint = f"drop {field!r}; accepted: {', '.join(accepted)}" + (f"; required: {', '.join(required)}" if required else "")
+    else:
+        hint = (f"pass a valid {field}" + (f" — one of: {'|'.join(allowed)}" if allowed else "")
+                + (f"; required: {', '.join(required)}" if required else ""))
     return {"ok": False, "error": error, "hint": hint}
 
 
@@ -365,12 +418,14 @@ def _apply_tripwire(tool: ToolDef, seat: str, env: dict[str, Any]) -> dict[str, 
 def invoke(tool: ToolDef, kwargs: dict[str, Any] | None, *, seat: str | None = None) -> dict[str, Any]:
     """Validate → dispatch → count. The one entry the MCP server uses for every call."""
     seat = seat or "?"
-    kwargs = kwargs or {}
+    kwargs, renamed = _alias_args(tool, kwargs or {})
     try:
         args = tool.args_model(**kwargs)
     except ValidationError as e:
         return _apply_tripwire(tool, seat, _validation_envelope(tool, e))
     dep = _deprecation_note(tool, kwargs)
+    if renamed:
+        dep = (dep or "") + f" | note: {tool.name}: {', '.join(renamed)}; use the argument name next time"
     result = tool.handler(args)
     if not isinstance(result, dict):
         result = {"ok": False, "error": {"code": "internal", "message": "handler returned a non-envelope"},
@@ -453,7 +508,7 @@ class DescribeArgs(Args):
 
 
 class GetGuideArgs(Args):
-    name: str = Field(description='guide name without .md')
+    name: str | None = Field(default=None, description='guide name without .md; omit for the index')
 
 
 class WhoamiArgs(Args):
@@ -550,26 +605,76 @@ def _lineage(me: str) -> dict[str, Any]:
     return out
 
 
-_LISTENING_ROLES = {"architect", "owner"}
+def _reset_reads(client: Any) -> str:
+    """A booting or resumed seat no longer holds the docs it read: the board's already-read record starts over.
+    Never blocks the boot; a failure is said in the result, not swallowed."""
+    try:
+        got = client.doc_reads_reset()
+    except Exception as e:  # noqa: BLE001 — reported as reads_reset below
+        return f"failed: {e}"
+    return "cleared" if got.get("ok") else f"failed: {(got.get('error') or {}).get('message', got)}"
 
 
-def _heartbeat_prompt(participant: str) -> str:
-    """The cron fallback text is role-aware: a listening seat idles on a quiet board, a doing
-    seat resumes its plan. (2026-09-08: a role-blind "act only if new" prompt made an engineer
-    with an unbuilt plan end every idle wake — m-0743c493b2.)"""
-    role = participant.split(".", 1)[0]
-    choice = ("edp8 heartbeat: choose context_delta(cursor=your last valid cursor) for changes since your last read. "
-              "Use context() at boot, after compaction if you lack sufficient context/a valid cursor, or when a delta "
-              "explicitly requires resynchronization. Do not call both routinely. ")
-    if role in _LISTENING_ROLES:
-        return choice + "Act only on new actionable information; otherwise end silently."
-    return (choice + "Answer anything new, then RESUME THE NEXT UNBUILT ITEM of "
-            "your plan doc — a quiet board is not a reason to stop. End the turn silently only when your "
-            "ticket is in_review/done or you are blocked (record_status(status=blocked) and a deviation first).")
+def _has_wake_mod(dirs: str) -> bool:
+    return any((Path(d) / "edp-wake" / ".claude-plugin" / "plugin.json").is_file()
+               for d in dirs.replace(";", os.pathsep).split(os.pathsep) if d.strip())
+
+
+def wake_mod_configured() -> bool:
+    """True for a Claude seat launched with the edp-wake mod configured (e0cec s-e60c3d42ad). On the shared HTTP
+    service the seat says so itself, in the `X-Wake-Mod` header of its `.mcp.json` (its CLAUDE_CODE_PLUGIN_DIRS):
+    this process's own environment is the service's, not the seat's. Without the header (stdio, tests) the
+    environment decides: the mod folder is on CLAUDE_CODE_PLUGIN_DIRS and `EDP8_FEED_PY` names the listener
+    interpreter. `EDP_WAKE_MOD=0` is the kill switch. This is configuration, not health: see `wake_mod_active`.
+    A seat on another harness (Codex, Pi) or launched before the pool restart has neither and keeps the Monitor."""
+    if os.environ.get("EDP_WAKE_MOD", "1") == "0":
+        return False
+    header = _req_wake_mod.get()
+    if header:
+        return _has_wake_mod(header)
+    return bool(os.environ.get("EDP8_FEED_PY")) and _has_wake_mod(os.environ.get("CLAUDE_CODE_PLUGIN_DIRS", ""))
+
+
+def wake_mod_active(participant: str, wait_s: float = 0.0) -> bool:
+    """True only when the mod's own listener proved itself: a fresh readiness file owned by the mod whose pid is
+    alive (`feed_driver.listener_ready`; a Monitor-run driver's file does not count). A seat that is already up
+    is caught by that file alone, whatever the service can see of its configuration; a seat the header says is
+    configured gets `wait_s` for a booting mod to start its listener. `EDP_WAKE_MOD=0` wins over both."""
+    if os.environ.get("EDP_WAKE_MOD", "1") == "0":
+        return False
+    from edp8 import feed_driver
+    if feed_driver.listener_ready(participant, owner="mod"):
+        return True
+    return wake_mod_configured() and wait_s > 0 and feed_driver.listener_ready(participant, wait_s=wait_s, owner="mod")
+
+
+def _wake_ready_wait_s() -> float:
+    try:
+        return max(0.0, float(os.environ.get("EDP8_WAKE_READY_WAIT_S", "8")))
+    except ValueError:
+        return 8.0
 
 
 def _subscribe(_: SubscribeArgs) -> dict[str, Any]:
+    """S8: the 30-minute heartbeat is the feed driver's own tick (edp8.feed_driver.Heartbeat), so there
+    is no cron to arm: a quiet board costs no model turn, a doing seat mid-plan still gets its ping.
+    With the edp-wake mod loaded there is no Monitor either: the mod already runs the listener and the tick."""
     client = get_client()
+    reads_reset = _reset_reads(client)
+    if wake_mod_active(client.participant, _wake_ready_wait_s()):
+        listening: dict[str, Any] = {}
+        try:
+            got = client.listening()
+            if got.get("ok"):
+                listening = got["value"]
+        except Exception:  # noqa: BLE001 — the contract text is a courtesy
+            pass
+        return {
+            "ok": True,
+            "value": {"monitor_cmd": None, "wake": "mod", "listening": listening, "reads_reset": reads_reset},
+            "hint": "your wake plane is the edp-wake mod, already running: do NOT start a Monitor. Each line it "
+                    "sends is one turn (an event, a message with its full text, or the 30-minute heartbeat).",
+        }
     py = sys.executable.replace("\\", "/")  # bash-safe: the Monitor tool runs bash, which eats backslashes
     monitor_cmd = f'"{py}" -m edp8.feed_driver --participant {client.participant} --board {client.base_url}'
     broker = settings.get("EDP_BROKER_URL") if settings.is_set("EDP_BROKER_URL") else None
@@ -587,13 +692,14 @@ def _subscribe(_: SubscribeArgs) -> dict[str, Any]:
         "value": {
             "monitor_cmd": monitor_cmd,
             "listening": listening,
-            "cron": {
-                "expr": "*/30 * * * *",
-                "prompt": _heartbeat_prompt(client.participant),
-            },
+            "reads_reset": reads_reset,
         },
-        "hint": "run monitor_cmd under the Monitor tool once — it is your wake plane, and its first line "
-                "prints `listening` (what wakes you); CronCreate the cron once as the fallback if a wake is missed",
+        "hint": "run monitor_cmd under the Monitor tool (persistent:true where offered) — it is your wake plane "
+                "and heartbeat, no cron: its first line prints `listening`, a `heartbeat` line is a missed change "
+                "or a mid-plan ping. Monitor timed out/ended → re-arm monitor_cmd at once. A seat with the "
+                "edp-wake mod never arms a Monitor: its subscribe() returns wake=mod and no monitor_cmd, so if "
+                "your mod is loaded and this still has a monitor_cmd, its listener is not up yet — call "
+                "subscribe() again before arming",
     }
 
 
@@ -813,13 +919,14 @@ def _session_is_fresh_spawn() -> bool:
 
 def _resume_self(_: ResumeSelfArgs) -> dict[str, Any]:
     """The seat-side resume command (owner m-268fc869f5, 2026-09-18). A resumed shell holds a
-    transcript whose Monitor and cron died with the old process and that may end in a hand-off;
+    transcript whose Monitor died with the old process and that may end in a hand-off;
     nothing in it can be trusted as "current". This tool regenerates, from the board, everything
     the seat must do next, in order, and records the resume on the seat's thread so the spawner
     and the owner see it happened. Guide: get_guide('resume')."""
     client = get_client()
     who = client.whoami()
     armed = _subscribe(SubscribeArgs())
+    mod_wake = (armed.get("value") or {}).get("wake") == "mod"   # proven by the listener's readiness file
     asks = client.inbox()
     rows = (asks.get("value") or []) if asks.get("ok") else []
     identity = who.get("value") if who.get("ok") else {"id": client.participant}
@@ -834,22 +941,24 @@ def _resume_self(_: ResumeSelfArgs) -> dict[str, Any]:
                 "steps": [
                     "fresh spawn: boot normally, nothing to resume. Your earlier sessions' work is history "
                     "on the board, not a conversation to continue.",
-                    "1. Arm your wake plane if you have not: `monitor_cmd` under Monitor once, `cron` via "
-                    "CronCreate once (both below).",
+                    ("1. Your wake plane is the edp-wake mod, already running: start no Monitor." if mod_wake
+                     else "1. Arm your wake plane if you have not: `monitor_cmd` under Monitor once (below)."),
                     f"2. Do the {len(rows)} open ask(s) below first (a steer from your spawner is listed first), "
                     "each with its answer_with call.",
                     "3. Continue your role card's boot: context() and the card's protocol.",
                 ],
                 "monitor_cmd": (armed.get("value") or {}).get("monitor_cmd"),
-                "cron": (armed.get("value") or {}).get("cron"),
                 "listening": (armed.get("value") or {}).get("listening"),
+                "reads_reset": (armed.get("value") or {}).get("reads_reset"),
                 "open_asks": rows,
             },
             "hint": "this session was spawned fresh (the pool row was never resumed); no [resumed] note posted",
         }
     steps = [
-        "1. Arm your wake plane NOW: run `monitor_cmd` under the Monitor tool once, then CronCreate the "
-        "`cron` once (both below). Without them nothing wakes you; the old ones died with the old process.",
+        ("1. Your wake plane is the edp-wake mod, restarted with this session: start no Monitor."
+         if mod_wake else
+         "1. Arm your wake plane NOW: run `monitor_cmd` under the Monitor tool once (below). Without it nothing "
+         "wakes you; the old one died with the old process."),
         f"2. Answer the {len(rows)} open ask(s) below, oldest first, each with its answer_with call; a steer "
         "changes your plan, a human message is a person waiting.",
         "3. context(ticket_id=<your ticket>) to reload the current state of your work (this is your resync; "
@@ -868,8 +977,8 @@ def _resume_self(_: ResumeSelfArgs) -> dict[str, Any]:
             "identity": identity,
             "steps": steps,
             "monitor_cmd": (armed.get("value") or {}).get("monitor_cmd"),
-            "cron": (armed.get("value") or {}).get("cron"),
             "listening": (armed.get("value") or {}).get("listening"),
+            "reads_reset": (armed.get("value") or {}).get("reads_reset"),
             "open_asks": rows,
         },
         "hint": "follow `steps` in order; get_guide('resume') is the full contract. resume_self is idempotent: "
@@ -895,7 +1004,8 @@ def _describe_objects(args: DescribeObjectsArgs) -> dict[str, Any]:
 
 def _links_for(t: str) -> dict[str, Any]:
     from .tool_contracts import OBJECT_SKILLS
-    return {"tools": tools_by_object().get(t, []), "skills": list(OBJECT_SKILLS.get(t, ()))}
+    # astra F5 (architect ruling): a discovery index, not a per-role binding; the card's SKILLS line is the binding
+    return {"tools": tools_by_object().get(t, []), "related_skills": list(OBJECT_SKILLS.get(t, ()))}
 
 
 def _lean_schema(node: Any) -> Any:
@@ -960,11 +1070,20 @@ def _edp8_home() -> Path:
 
 
 def _get_guide(args: GetGuideArgs) -> dict[str, Any]:
-    p = _edp8_home() / "guides" / f"{args.name}.md"
-    if not p.is_file():
-        return {"ok": False, "error": {"code": "not_found", "message": f"guide {args.name!r} does not exist"},
-                "hint": f"guides live under {p.parent}"}
-    return {"ok": True, "value": {"name": args.name, "body": p.read_text(encoding="utf-8")}, "hint": ""}
+    from . import guides
+
+    if args.name is None:
+        return {"ok": True, "value": {"guides": guides.index()}, "hint": "get_guide(name=<name>) reads one"}
+    if not guides.valid_name(args.name):
+        return {"ok": False, "error": {"code": "invalid_name", "message": f"guide name {args.name!r} must be letters, "
+                "digits, '-' or '_' only: no '/', '\\', '..', drive letter or '.md'"},
+                "hint": "get_guide() lists the guide names"}
+    body = guides.read(args.name)
+    if body is None:
+        return {"ok": False, "error": {"code": "not_found", "message": f"guide {args.name!r} does not exist",
+                                       "allowed": [g["name"] for g in guides.index()]},
+                "hint": "pick a name from allowed"}
+    return {"ok": True, "value": {"name": args.name, "body": body}, "hint": ""}
 
 
 IDENTITY_TOOLS = [
@@ -989,12 +1108,12 @@ IDENTITY_TOOLS = [
     ToolDef("subscribe",
             'Arm your event feed (once per session)',
             'at boot, right after whoami',
-            'the monitor command and heartbeat cron to arm',
+            'the monitor command to arm (it carries the heartbeat)',
             SubscribeArgs, _subscribe, "identity"),
     ToolDef("resume_self",
             'Resume after a park, reap, crash or respawn: re-arm wakes, list open asks and steps',
-            'first call of a resumed shell, after compaction, or when unsure Monitor/cron are alive',
-            "identity, ordered steps, monitor_cmd + cron, open asks; see get_guide('resume')",
+            'first call of a resumed shell, after compaction, or when unsure Monitor is alive',
+            "identity, ordered steps, monitor_cmd, open asks; see get_guide('resume')",
             ResumeSelfArgs, _resume_self, "identity"),
     ToolDef("context",
             'Load your ticket(s): chain, criteria, docs, thread, open asks; byte-capped unless verbose',
@@ -1004,12 +1123,12 @@ IDENTITY_TOOLS = [
     ToolDef("describe",
             "An object type's fields and contract, or an enum's values ('enums' = all, 'enum:<Name>' = one)",
             "unsure of a type's fields or an argument's allowed values",
-            'the schema and contract, or the enum values',
+            "the schema and contract, or the enum values; related_skills index, your card's SKILLS line binds",
             DescribeArgs, _describe, "identity"),
     ToolDef("get_guide",
-            'Fetch one reference guide by name',
-            'when a card or task names a guide',
-            "the guide's markdown, or not_found",
+            'Fetch one guide, or list them (no name)',
+            'when a card or task names a guide; to list them',
+            "the guide's markdown, or the index (name, purpose, KB); not_found names the allowed names",
             GetGuideArgs, _get_guide, "identity"),
 ]
 
@@ -1018,20 +1137,23 @@ IDENTITY_TOOLS = [
 
 class TicketCreateArgs(CreateArgs):
     kind: SeatTicketKind = Field(description='ticket level')
-    work_type: WorkType = Field(description='kind of work')
+    work_type: WorkType
     title: str = Field(description="epic: the owner's words verbatim (a short title is derived); story/task: the slice name")
     words: str | None = Field(default=None, description="epic or quick task: the owner's verbatim request; immutable")
     parent_id: str | None = None  # story/task: required, except the owner's quick task (the tool description says so)
     assignee: str | None = Field(default=None)
     description: str = Field(default="", description='scope, intent, pointers to files/docs')
     tags: list[str] | None = Field(default=None)
+    serves: list[str] | None = Field(default=None, description='requirement or finding ids this task serves')
+    cap_lift_message: str | None = Field(default=None, description="owner's reply id: lifts the story cap")
 
 
 class TicketReadArgs(Args):
-    ticket_id: str = Field(validation_alias=AliasChoices("ticket_id", "id"), description='ticket id')
-    include: str | None = Field(default=None, description='comma list of chain,criteria,docs,children,blockers,gates,thread,links; omit for all; lifecycle (only when named) = the pinned workflow\'s lifecycle table')
+    ticket_id: str = Field(validation_alias=AliasChoices("ticket_id", "id"))
+    include: str | None = Field(default=None, description='comma list of chain,criteria,docs,children,blockers,gates,thread,links; omit=compact; lifecycle (only when named) = the pinned workflow\'s lifecycle table')
     thread_limit: int = Field(default=20, ge=0, le=200,
-                              description='newest thread messages to include (0-200)')
+                              description='newest thread messages (0-200; compact: 3)')
+    before_seq: int | None = Field(default=None, description='thread seq to page back from')
 
 
 class TicketQueryArgs(PageArgs):
@@ -1047,17 +1169,18 @@ class TicketQueryArgs(PageArgs):
 
 
 class TicketUpdateArgs(Args):
-    ticket_id: str = Field(validation_alias=AliasChoices("ticket_id", "id"), description='ticket id')
+    ticket_id: str = Field(validation_alias=AliasChoices("ticket_id", "id"))
     status: TicketStatus | None = Field(default=None, description='next legal status')
     assignee: str | None = Field(default=None)
     design_ref: str | None = Field(default=None, description='design/plan doc id')
     description: str | None = Field(default=None, description='replaces the description')
     tags: list[str] | None = Field(default=None, description='replaces the tag list')
     title: str | None = Field(default=None, description='short title, <=80 chars (architect/owner)')
+    work_type: WorkType | None = Field(default=None, description='retype (architect/owner)')
 
 
 class CriterionCreateArgs(CreateArgs):
-    ticket_id: str = Field(description='ticket id')
+    ticket_id: str
     text: str = Field(description='the checkable fact')
     check: Check = Field(description='how it is checked')
     checked_by: CheckedBy | None = None  # the tool description: needs the owner's override_reason
@@ -1065,13 +1188,13 @@ class CriterionCreateArgs(CreateArgs):
 
 
 class CriterionQueryArgs(Args):
-    ticket_id: str = Field(description='ticket id')
+    ticket_id: str
 
 
 class CriterionUpdateArgs(Args):
     model_config = {"extra": "forbid"}  # an unknown kwarg is an ERROR, never a silent drop
-    id: str = Field(description='criterion id')
-    evidence_ref: str | None = None  # the report doc id proving the check
+    id: str
+    evidence_ref: str | None = Field(default=None, description='report doc id proving the check')
     verdict: Verdict | None = Field(default=None, description='set after evidence_ref (checker only)')
     text: str | None = Field(default=None, description='reword (author, while pending)')
     evidence_version: int | None = Field(default=None,
@@ -1108,7 +1231,7 @@ def _receipt(resp: dict[str, Any], fields: tuple[str, ...], read: Callable[[dict
 
 
 def _doc_ref(d: dict[str, Any]) -> str:
-    return f"doc_read(id='{d.get('id')}')"
+    return f"doc_read(id='{d.get('id')}')"  # S17: the head, then sections or pages
 
 
 def _msg_ref(m: dict[str, Any]) -> str:
@@ -1126,11 +1249,45 @@ def _record_ref(r: dict[str, Any]) -> str:
 def _ticket_create(a: TicketCreateArgs) -> dict[str, Any]:
     return _receipt(_once("ticket_create", a, lambda: get_client().ticket_create(
         kind=a.kind, work_type=a.work_type, title=a.title, parent_id=a.parent_id, assignee=a.assignee,
-        description=a.description, tags=a.tags, words=a.words)), ("description", "words"), _ticket_ref)
+        description=a.description, tags=a.tags, words=a.words, serves=a.serves,
+        cap_lift_message=a.cap_lift_message)),
+        ("description", "words"), _ticket_ref)
+
+
+#: S13 F8: the sections a compact ticket_read leaves to `include`, and the include that returns the full read
+_TICKET_CUTS = (("chain", "chain"), ("children", "children"), ("blockers", "blockers"), ("open_gates", "gates"),
+                ("links", "links"))
+TICKET_FULL_INCLUDE = "chain,criteria,docs,children,blockers,gates,thread,links"
+COMPACT_THREAD = 3
 
 
 def _ticket_read(a: TicketReadArgs) -> dict[str, Any]:
-    return get_client().ticket_read(a.ticket_id, include=a.include, thread_limit=a.thread_limit)
+    """S13 F8 (architect pick, lossless): with no `include` the read is compact: the record, criteria, doc heads,
+    the words header, the newest COMPACT_THREAD messages and a count per cut section. `more` is the one call that
+    returns the old full read (the epic words come with any include)."""
+    if a.include is not None:
+        return get_client().ticket_read(a.ticket_id, include=a.include, thread_limit=a.thread_limit,
+                                        before_seq=a.before_seq)
+    n = a.thread_limit if "thread_limit" in a.model_fields_set else COMPACT_THREAD
+    resp = get_client().ticket_read(a.ticket_id, include=None, thread_limit=n, before_seq=a.before_seq)
+    if not resp.get("ok") or not isinstance(resp.get("value"), dict):
+        return resp
+    v = dict(resp["value"])
+    cut: dict[str, Any] = {}
+    words = v.pop("words", None)
+    if words:
+        cut["words"] = f"{len(words)} chars"
+    for key, _ in _TICKET_CUTS:
+        rows = v.pop(key, None)
+        if rows:
+            cut[key] = len(rows)
+    shown, total = len(v.get("thread") or []), v.get("thread_total", 0)
+    if total > shown:
+        cut["thread"] = f"{shown} of {total} shown"
+    v["omitted"] = cut
+    v["more"] = {"tool": "ticket_read", "ticket_id": v.get("id", a.ticket_id), "include": TICKET_FULL_INCLUDE,
+                 "thread_limit": 20}
+    return {**resp, "value": v, "hint": "compact read: `omitted` counts each cut section; `more` is the full read"}
 
 
 def _filters(a: PageArgs) -> dict[str, Any]:
@@ -1167,7 +1324,8 @@ def _ticket_query(a: TicketQueryArgs) -> dict[str, Any]:
 def _ticket_update(a: TicketUpdateArgs) -> dict[str, Any]:
     return _receipt(get_client().ticket_update(a.ticket_id, status=a.status, assignee=a.assignee,
                                                design_ref=a.design_ref, description=a.description, tags=a.tags,
-                                               title=a.title), ("description", "words"), _ticket_ref)
+                                               title=a.title, work_type=a.work_type),
+                    ("description", "words"), _ticket_ref)
 
 
 def _criterion_create(a: CriterionCreateArgs) -> dict[str, Any]:
@@ -1181,6 +1339,27 @@ def _criterion_query(a: CriterionQueryArgs) -> dict[str, Any]:
     return get_client().criterion_query(a.ticket_id)
 
 
+class RequirementsArgs(Args):
+    epic: str
+    state: RequirementState | None = None
+
+
+class RequirementLinkArgs(Args):
+    id: str
+    criterion: str | None = None
+    doc: str | None = Field(default=None, description='with version + heading')
+    version: int | None = None
+    heading: str | None = None
+
+
+def _requirements(a: RequirementsArgs) -> dict[str, Any]:
+    return get_client().requirements(a.epic, state=a.state.value if a.state else None)
+
+
+def _requirement_link(a: RequirementLinkArgs) -> dict[str, Any]:
+    return get_client().requirement_link(a.id, criterion=a.criterion, doc=a.doc, version=a.version, heading=a.heading)
+
+
 def _criterion_update(a: CriterionUpdateArgs) -> dict[str, Any]:
     return get_client().criterion_update(a.id, evidence_ref=a.evidence_ref, verdict=a.verdict, text=a.text,
                                          evidence_version=a.evidence_version, stale_ok=a.stale_ok, note=a.note)
@@ -1188,14 +1367,14 @@ def _criterion_update(a: CriterionUpdateArgs) -> dict[str, Any]:
 
 TICKET_TOOLS = [
     ToolDef("ticket_create",
-            'Create an epic (owner), story (architect; owner: a quick task, tag quick, no parent) or task. At most 8 open stories per epic (raised via a scope gate), at most 5 tasks per story',
+            'Create an epic (owner), story (architect; owner: a quick task, tag quick, no parent) or task. Caps: 8 open stories per epic, 5 tasks per story',
             'when you own a new slice of work',
-            'the ticket, or a scope error at a cap',
+            'the ticket',
             TicketCreateArgs, _ticket_create, "ticket"),
     ToolDef("ticket_read",
-            'One read of a ticket: record, chain, criteria, docs, children, blockers, gates, newest thread (thread_seq), links',
+            'One read of a ticket: record, criteria, docs, words header, newest thread (thread_seq), counts of the rest',
             "when you need a ticket's full state",
-            'the ticket record',
+            'the ticket record; `more` = full read',
             TicketReadArgs, _ticket_read, "ticket"),
     ToolDef("ticket_query",
             'List tickets matching the filter args',
@@ -1208,7 +1387,7 @@ TICKET_TOOLS = [
             'the ticket, or an error naming what is missing',
             TicketUpdateArgs, _ticket_update, "ticket"),
     ToolDef("criterion_create",
-            "Add a checkable done-fact. Checker derived: qa (story/epic), engineer (task), owner (knowledge ticket); checked_by needs owner override_reason. Max 6 fresh per story",
+            "Add a checkable done-fact. Checker derived: qa (story/epic), engineer (task), owner (knowledge ticket); checked_by needs owner override_reason. Cap: 6 fresh per story",
             'before work starts, one per checkable fact',
             'the criterion with its derived checker',
             CriterionCreateArgs, _criterion_create, "ticket"),
@@ -1224,13 +1403,37 @@ TICKET_TOOLS = [
             CriterionUpdateArgs, _criterion_update, "ticket"),
 ]
 
+ASK_TOOLS = [
+    ToolDef("requirements",
+            "The epic's marked requirements, open or linked, with story digests",
+            'at boot and when a requirement wakes you',
+            'requirements and what holds the epic open',
+            RequirementsArgs, _requirements, "ticket"),
+    ToolDef("requirement_link",
+            "Close a requirement: criterion=<id> | doc+version+heading (architect). Design changed: doc_edit, link the new version",
+            'for every open requirement',
+            'the requirement row',
+            RequirementLinkArgs, _requirement_link, "ticket"),
+]
+
 # ============================================================================= doc
+
+
+def _body_alias(v: Any) -> Any:
+    """`body` is accepted as `body_md` (69% of the doc-call errors were the wrong argument shape)."""
+    if isinstance(v, dict) and v.get("body") is not None:
+        v = dict(v)
+        if v.get("body_md") is not None:
+            raise ValueError("pass body or body_md, not both")
+        v["body_md"] = v.pop("body")
+    return v
 
 
 class DocCreateArgs(CreateArgs):
     doc_type: DocType = Field(description='design: architect; strategy_*/domain: sme; report: engineer/adversary/qa; note: any')
-    title: str = Field(description='doc title')
-    body_md: str = Field(description='markdown body')
+    title: str
+    body_md: str | None = Field(default=None, description='markdown body (required; or its alias body)')
+    body: str | None = Field(default=None, description='alias of body_md')
     scope: str = Field(description='epic id | domain:<name> | global')
     tags: list[str] | None = Field(default=None, description='knowledge tags')
     status: Literal["active", "proposed"] | None = Field(
@@ -1238,18 +1441,36 @@ class DocCreateArgs(CreateArgs):
     proposes: str | None = Field(default=None, description='active doc id it revises')
     ticket_id: str | None = Field(default=None, description='source ticket')
 
+    @model_validator(mode="before")
+    @classmethod
+    def _alias(cls, v):
+        return _body_alias(v)
+
+    @model_validator(mode="after")
+    def _need_body(self):
+        if self.body_md is None:
+            raise ValueError("body_md (or its alias body) is required")
+        return self
+
 
 class DocReadArgs(Args):
-    id: str = Field(description='doc id')
-    version: int | None = Field(default=None, description='omit for latest; reuse the returned one to continue')
-    offset: int | None = Field(default=None, ge=0, description='char offset; opts into bounded output')
-    limit: int | None = Field(default=None, ge=1, le=32768, description='chars, default 8192 when bounded')
-    section: str | None = Field(default=None, description='exact heading line; offset is relative to it')
+    id: str
+    version: int | None = Field(default=None, description='omit for latest')
+    offset: int | None = Field(default=None, ge=0, description='char offset')
+    limit: int | None = Field(default=None, ge=1, le=32768, description='chars, default 8192')
+    section: str | None = Field(default=None, description='a heading line from the map; offset is relative to it')
+    include_children: bool = False
+    fresh: bool = False
 
 
 class DocEditArgs(DocEdit):
+    """Native Edit shape: old_string/new_string/replace_all at the top level, or `edits` of those. These are
+    declared only so the tool schema lists them; DocEdit folds them into `edits` before validation."""
     model_config = ConfigDict(extra="forbid")
-    id: str = Field(description='doc id')
+    id: str
+    old_string: str | None = None
+    new_string: str | None = None
+    replace_all: bool | None = None
 
 
 class DocQueryArgs(PageArgs):
@@ -1261,11 +1482,18 @@ class DocQueryArgs(PageArgs):
 
 
 class DocUpdateArgs(Args):
-    id: str = Field(description='doc id')
+    id: str
     body_md: str | None = None
+    body: str | None = Field(default=None, description='alias of body_md')
     title: str | None = None
     tags: list[str] | None = Field(default=None, description='replaces the tag list')
+    layout: DocLayout | None = None  # S17: summary_first clears the legacy warning
     compact: bool = True  # T6 N2 (m-44ae9118d1): a receipt by default; false returns the doc (doc_read does too)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _alias(cls, v):
+        return _body_alias(v)
 
 
 class LinkCreateArgs(Args):
@@ -1291,12 +1519,15 @@ def _doc_create(a: DocCreateArgs) -> dict[str, Any]:
 
 
 def _doc_read(a: DocReadArgs) -> dict[str, Any]:
-    return get_client().doc_read(a.id, version=a.version, offset=a.offset, limit=a.limit, section=a.section)
+    # S17 (architect m-c6cdb0602c): agents read head-first, then sections or pages; the whole-body read (all=true)
+    # is HTTP-only, for humans and editors
+    return get_client().doc_read(a.id, version=a.version, offset=a.offset, limit=a.limit, section=a.section,
+                                 include_children=a.include_children, fresh=a.fresh)
 
 
 def _doc_row(r: dict[str, Any]) -> dict[str, Any]:
-    return tool_paging.pick(r, ("id", "doc_type", "title", "version", "scope", "status", "owner_role", "tags"),
-                            {"title": 90})
+    return tool_paging.pick(r, ("id", "doc_type", "title", "version", "scope", "status", "owner_role", "tags",
+                                "layout", "warning"), {"title": 90})  # S13 F10: the legacy warning survives
 
 
 def _doc_query(a: DocQueryArgs) -> dict[str, Any]:
@@ -1306,7 +1537,8 @@ def _doc_query(a: DocQueryArgs) -> dict[str, Any]:
 
 
 def _doc_update(a: DocUpdateArgs) -> dict[str, Any]:
-    return get_client().doc_update(a.id, body_md=a.body_md, title=a.title, compact=a.compact, tags=a.tags)
+    return get_client().doc_update(a.id, body_md=a.body_md, title=a.title, compact=a.compact, tags=a.tags,
+                                   layout=a.layout)
 
 
 def _doc_edit(a: DocEditArgs) -> dict[str, Any]:
@@ -1327,29 +1559,33 @@ def _link_delete(a: LinkDeleteArgs) -> dict[str, Any]:
     return get_client().link_delete(a.id)
 
 
+# S17 decision 1 (owner m-ee0717d276): every doc write names /doc-write in one terse clause; descriptions carry no
+# Skills slot since S23, so the clause is the slot (architect m-04ea10d572); no write is checked for layout
+DOC_WRITE_SKILL = "(/doc-write)"
+
 DOC_TOOLS = [
-    ToolDef("doc_edit", 'Apply exact, unique, non-overlapping edits to one doc version atomically',
-            'for small revisions after doc_read; match old_text against the original',
+    ToolDef("doc_edit", 'Like Edit: exact unique old_string->new_string or non-overlapping edits; apply atomically against 1 version',
+            f'for small revisions after doc_read; expected_version defaults to your last read {DOC_WRITE_SKILL}',
             'a compact receipt, or a conflict/match error (re-read)',
             DocEditArgs, _doc_edit, "doc"),
     ToolDef("doc_create",
             'Author a versioned markdown doc',
-            'to record a design, strategy, domain guide, report or note',
-            'the doc; link it to its ticket',
+            f'to record a design, strategy, domain guide, report or note {DOC_WRITE_SKILL}',
+            'a receipt; link it to its ticket',
             DocCreateArgs, _doc_create, "doc"),
     ToolDef("doc_read",
-            'Read a doc (latest or a version), whole or a bounded range',
-            'when a ticket or link points at a doc',
-            'the doc; offset/limit/section: a version-pinned range',
+            "Read a doc head-first: page 1 is the writer's unchecked summary; obligations may sit in sections",
+            'when a ticket or link points at a doc; head first, then whole or sections (/doc-read)',
+            'page 1 + heading map; section=<heading>: own text + child map; offset: a bounded, version-pinned range paging the whole',
             DocReadArgs, _doc_read, "doc"),
     ToolDef("doc_query",
-            'List docs by doc_type/scope/owner_role',
+            'List docs by filter',
             'to find docs without an id',
             'doc summaries as a ≤8 KB page + next_cursor; verbose=full rows',
             DocQueryArgs, _doc_query, "doc"),
     ToolDef("doc_update",
             "Replace a doc's body/title as a new version",
-            'to amend a doc you own',
+            f'to amend a doc you own {DOC_WRITE_SKILL}',
             'a receipt; compact=false: the doc',
             DocUpdateArgs, _doc_update, "doc"),
     ToolDef("link_create",
@@ -1358,7 +1594,7 @@ DOC_TOOLS = [
             'the link',
             LinkCreateArgs, _link_create, "doc"),
     ToolDef("link_query",
-            'List links by from_id/to_id/relation',
+            'List links by filter',
             'to see what something is linked to',
             'the links as a ≤8 KB page + next_cursor; verbose=full rows',
             LinkQueryArgs, _link_query, "doc"),
@@ -1374,15 +1610,16 @@ DOC_TOOLS = [
 
 class MessageSendArgs(CreateArgs):
     ticket_id: str = Field(description='thread ticket')
-    kind: MessageKind = Field(description='message kind')
-    text: str = Field(description='message body')
+    kind: MessageKind
+    text: str
     to: str | None = Field(default=None, description='id/@handle/role; omit=note')
     reply_to: str | None = Field(default=None, description='id answered')
+    resolves: list[str] | None = Field(default=None, description='ask ids settled')
     artifacts: list[str] | None = Field(default=None, description='staged artifact ids')
     # S4 code anchor; the board validates it (a 400 names the field), rules in describe('message'). No
     # description: the S20 surface budget (test_s20_token_cost) had 6 B of headroom on the architect.
-    code_context: dict | None = None
-    quotes: list[dict] | None = None  # C18: rules in describe('message'); no description (S20 budget)
+    code_context: dict | None = Field(default=None, description='file/line context')
+    quotes: list[dict] | None = Field(default=None, description='quoted spans')
 
 
 class MessageQueryArgs(PageArgs):
@@ -1391,33 +1628,35 @@ class MessageQueryArgs(PageArgs):
     kind: MessageKind | None = Field(default=None)
     created_by: str | None = Field(default=None)
     since_seq: int | None = Field(default=None, description='newer than this seq; 0 = from the start')
+    around: str | None = None  # e0cec S3: no description (S20 budget); the Returns clause says it
+    window: int | None = None
 
 
 class MessageReadArgs(Args):
-    id: str = Field(validation_alias=AliasChoices("id", "message_id"), description='message id')
+    id: str = Field(validation_alias=AliasChoices("id", "message_id"))
 
 
 class GateOpenArgs(Args):
-    ticket_id: str = Field(description='ticket id')
-    gate: Gate = Field(description='gate kind')
-    note: str = Field("", description="the answerer's question, plain words; blank note refused "
-                                      "unless the workflow gate declares one")
+    ticket_id: str
+    gate: Gate
+    note: str = Field("", description="the answerer's question, plain words; a blank note gets the "
+                                      "default question")
 
 
 class GateAnswerArgs(Args):
-    ticket_id: str = Field(description='ticket id')
-    gate: Gate = Field(description='gate kind')
+    ticket_id: str
+    gate: Gate
     answer: str = Field(description='the decision')
 
 
 class GatesArgs(Args):
-    ticket_id: str = Field(description='ticket id')
+    ticket_id: str
 
 
 def _message_send(a: MessageSendArgs) -> dict[str, Any]:
     return _receipt(_once("message_send", a, lambda: get_client().message_send(
         ticket_id=a.ticket_id, kind=a.kind, text=a.text, to=a.to, reply_to=a.reply_to, artifacts=a.artifacts,
-        code_context=a.code_context, quotes=a.quotes)), ("text",), _msg_ref)
+        code_context=a.code_context, quotes=a.quotes, resolves=a.resolves)), ("text",), _msg_ref)
 
 
 def _message_row(r: dict[str, Any]) -> dict[str, Any]:
@@ -1426,7 +1665,20 @@ def _message_row(r: dict[str, Any]) -> dict[str, Any]:
                             {"text": 240, "quoted": 960, "code_anchor": 400})
 
 
+def _message_around(a: MessageQueryArgs) -> dict[str, Any]:
+    resp = get_client().message_query(ticket_id=a.ticket_id, around=a.around, window=a.window)
+    if not resp.get("ok"):
+        return resp
+    rows = resp.get("value") or []
+    items = [tool_paging.pick(r, ("id", "seq", "kind", "created_by", "to", "reply_to", "created_at", "quoted", "text",
+                                  "target"), {"quoted": 960} if r.get("target") else {"text": 240, "quoted": 960})
+             for r in rows]
+    return {**resp, "value": {"items": items, "target": a.around}}
+
+
 def _message_query(a: MessageQueryArgs) -> dict[str, Any]:
+    if a.around:
+        return _message_around(a)
     filters = _filters(a)
     try:
         since = tool_paging.decode_cursor(a.cursor, filters).get("s", a.since_seq)
@@ -1471,7 +1723,7 @@ THREAD_TOOLS = [
     ToolDef("message_query",
             'List thread messages oldest first with seq; since_seq returns only newer ones',
             'to read or poll a thread',
-            'the newest page (since_seq pages forward): items with text clipped to 240 chars, last_seq, next_cursor (a hint names older pages)',
+            'the newest page (since_seq pages forward): items with text clipped to 240 chars, last_seq, next_cursor hint; around=<id> window=N (5, max 25): N before, the target whole, N after',
             MessageQueryArgs, _message_query, "thread"),
     ToolDef("message_read",
             'Read one message with its seq, parent and replies',
@@ -1593,18 +1845,19 @@ def _spawnable_roles() -> set[str]:
 
 
 class SpawnArgs(Args):
-    role: SpawnRole = Field(description='seat role')
+    role: SpawnRole
     ticket_id: str | None = Field(default=None, description="registers and assigns '<role>.<ticket_id>'")
     participant_id: str | None = Field(default=None, description='explicit pool handle; omit with ticket_id')
     parent_session: str | None = Field(default=None, description='spawning session id')
     assign: bool | None = Field(default=None, description='default: only if unassigned/dead; false = checker; true = take over')
     model: str | None = Field(default=None, description="seat or model id; default: epic tag")
-    effort: SeatEffort | None = Field(default=None, description="default: epic tag; Claude caps at medium")
+    effort: SeatEffort | None = Field(default=None, description="story pick, else epic option; catalog cap")
     mode: SpawnMode | None = None
+    steer: str | None = Field(default=None, description="first instruction, posted before launch")
 
 
 class ResumeArgs(Args):
-    participant_id: str = Field(description='seat id')
+    participant_id: str
 
 
 class InboxArgs(Args):
@@ -1623,7 +1876,7 @@ class CloseSelfArgs(Args):
 
 
 class ReapArgs(Args):
-    participant_id: str = Field(description='seat id')
+    participant_id: str
 
 
 class SessionQueryArgs(PageArgs):
@@ -1683,7 +1936,7 @@ def _pool_caller_check(c: BoardClient, tk: dict[str, Any] | None, pid: str | Non
     return None
 
 
-SPAWN_TICKET_ENV = "EDP_SPAWN_TICKET"
+from .pool_adapter import SPAWN_TICKET_ENV  # noqa: E402 - one name for the MCP and REST spawn paths
 
 
 def spawn_ticket_of(c: BoardClient, pid: str) -> list[str]:
@@ -1716,6 +1969,15 @@ def spawn_ticket_of(c: BoardClient, pid: str) -> list[str]:
     return out
 
 
+def _staffed_conflict(pid: str, state: str) -> dict[str, Any]:
+    if state == "parked":  # e0cec S9 G4: a parked seat is resumable, not stuck
+        return {"ok": False, "error": {"code": "conflict", "message": f"{pid} is parked (resumable)"},
+                "hint": f"resume(participant_id={pid!r}) continues it; or reap it, then spawn again with a "
+                        "steer stating what the dead seat finished"}
+    return {"ok": False, "error": {"code": "conflict", "message": f"{pid} is already staffed (shell {state})"},
+            "hint": "message the seat instead of spawning; reap it first if it is truly stuck"}
+
+
 def _spawn(a: SpawnArgs) -> dict[str, Any]:
     args = a.model_dump()
     ticket_id = args.pop("ticket_id", None)
@@ -1725,6 +1987,7 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
                 "hint": "spawn(role=engineer, ticket_id=<story>) registers engineer.<story> and assigns it"}
     c = get_client()
     assign_flag = args.pop("assign", None)
+    steer = args.pop("steer", None)
     if not pid:
         pid = f"{a.role.value}.{ticket_id}"
     why = non_agent_refusal(a.role.value, pid)
@@ -1736,6 +1999,7 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
         return {"ok": False, "error": {"code": "scope", "message": f"a {a.role.value} seat is not spawned"},
                 "hint": f"spawnable roles: {sorted(spawnable)}"}
     tk = None
+    notes: list[str] = []  # design-63db8a7d42 I: advice the spawn carries to its reply instead of refusing
     if ticket_id:
         got_t = c.ticket_read(ticket_id)
         if not got_t.get("ok"):
@@ -1744,6 +2008,27 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
     refused = _pool_caller_check(c, tk, pid)
     if refused:
         return refused
+    if a.role.value == "sme":  # e0cec S6: SMEs are opt-in per epic (tag sme:on); refused before any seat exists
+        scope_t = tk
+        if scope_t is None and pid and "." in pid:
+            got_p = c.ticket_read(pid.split(".", 1)[1])
+            if got_p.get("ok") and isinstance(got_p["value"], dict):
+                scope_t = got_p["value"].get("ticket", got_p["value"])
+        if scope_t is not None:
+            epic_t = scope_t
+            if scope_t.get("kind") != "epic":
+                eid = _epic_id(c, scope_t)
+                got_e = c.ticket_read(eid) if eid else None
+                epic_t = (got_e["value"].get("ticket", got_e["value"])
+                          if got_e and got_e.get("ok") and isinstance(got_e["value"], dict) else None)
+            if epic_t is not None:
+                from types import SimpleNamespace
+                off = epic_policy.sme_refusal("sme", SimpleNamespace(
+                    id=epic_t.get("id"), kind=epic_t.get("kind"), tags=epic_t.get("tags") or []))
+                if off:
+                    return {"ok": False, "error": {"code": "scope", "message": off},
+                            "hint": "ask the owner or this epic's architect to switch the epic's SMEs on "
+                                    "(tag sme:on); until then the architect does the knowledge work"}
     # the architect is RESIDENT per epic: while architect.<epic> is up, a second architect seat on one
     # of its stories only steals the assignment — message the resident instead (the owner included;
     # qa full run on bb17851 caught this check indented under the architect-only branch)
@@ -1753,10 +2038,9 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
         if resident and resident != pid:
             live = c.session_query(participant_id=resident)
             if live.get("ok") and any(r.get("state") in ("alive", "parked") for r in live.get("value") or []):
-                return {"ok": False, "error": {"code": "conflict",
-                                               "message": f"resident architect {resident} is up"},
-                        "hint": f"message_send(ticket_id={ticket_id!r}, to='architect', kind='question') "
-                                "reaches it; it answers without taking the ticket over"}
+                notes.append(f"resident architect {resident} is up: a second architect on a story only steals the "
+                             f"assignment; message_send(ticket_id={ticket_id!r}, to='architect', kind='question') "
+                             "reaches the resident without taking the ticket over; spawned anyway")
     got = c.participant_get(pid)
     if not got.get("ok"):
         made = c.participant_create("agent", a.role.value, pid, id=pid)
@@ -1792,6 +2076,12 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
         elif current and current != pid:
             assignee_kept = current
     args["participant_id"] = pid
+    steer_thread = None
+    if steer:  # e0cec S9 G6: posted right before launch (after every check), so the first context() carries it
+        steer_thread = ticket_id or (pid.split(".", 1)[1] if "." in pid else None)
+        if not steer_thread:
+            return {"ok": False, "error": {"code": "schema", "message": "steer needs ticket_id (or a '<role>.<ticket>' participant_id)"},
+                    "hint": "pass ticket_id so the steer has a thread"}
     if not args.get("parent_session"):  # lineage: the pool records who spawned this shell
         args["parent_session"] = my_session_id()
     # owner m-2d7ef9243d: a spawn without its own model/effort inherits the EPIC's seat choice
@@ -1806,7 +2096,8 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
             epic_tk = (v.get("ticket", v) if isinstance(v, dict) else {}) or {}
         epic_tags = list(epic_tk.get("tags") or [])
     choice = seat_choice.resolve(args.get("model"), args.get("effort"), epic_tags, _edp8_home(),
-                                 role=str(args.get("role") or "") or None)
+                                 role=str(args.get("role") or "") or None,
+                                 story_tags=list((tk or {}).get("tags") or []))
     why = seat_choice.unknown_model(str(args.get("role") or ""), choice.model, _edp8_home())
     if why:  # S-ADV finding 10
         return {"ok": False, "error": {"code": "invalid", "message": why},
@@ -1817,11 +2108,21 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
     minted = c.seat_token(pid, ticket_id, model=choice.model)
     if not minted.get("ok"):
         return minted
+    notes.extend((minted.get("value") or {}).get("advised") or [])
     args["env"] = dict((minted.get("value") or {}).get("env") or {})
     if ticket_id:  # the spawn ticket rides on the pool session, so reap resolves a custom id's epic
         args["env"][SPAWN_TICKET_ENV] = ticket_id
     if not args["env"]:
         args.pop("env")
+    if steer_thread:
+        state = (_pool_call("liveness", {"participant_id": pid}).get("value") or {}).get("state")
+        if state in ("alive", "parked"):  # the pool would refuse this spawn: leave no steer behind
+            return _staffed_conflict(pid, state)
+        from .client import idempotency_key  # a retried spawn re-posts the same steer once, not twice
+        with idempotency_key("spawn-steer-" + hashlib.sha256(f"{pid}|{steer_thread}|{steer}".encode()).hexdigest()[:24]):
+            sent = c.message_send(ticket_id=steer_thread, kind="steer", text=steer, to=pid)
+        if not sent.get("ok"):
+            return sent
     out = _pool_call("spawn", args)
     if not out.get("ok") and "lock" in str(out.get("error", "")).lower():
         # board said dead, pool lock says staffed (pain 2026-09-01 11:19) — resolve with the
@@ -1832,10 +2133,8 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
         if state == "dead":
             _pool_call("reap", {"participant_id": pid})
             out = _pool_call("spawn", args)
-        elif state in ("alive", "parked"):
-            return {"ok": False, "error": {"code": "conflict",
-                                           "message": f"{pid} is already staffed (shell {state})"},
-                    "hint": "message the seat instead of spawning; reap it first if it is truly stuck"}
+        elif state in ("parked", "alive"):
+            return _staffed_conflict(pid, state)
     if out.get("ok") and isinstance(out.get("value"), dict):
         out["value"]["participant_id"] = pid
         out["value"]["seat_choice"] = choice.as_dict()
@@ -1844,6 +2143,8 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
             out["value"]["assignee_kept"] = assignee_kept
             out["hint"] = (out.get("hint") or "") + f"; {ticket_id} stays assigned to {assignee_kept} " \
                           "(pass assign=true to take it over)"
+    if out.get("ok") and notes:
+        out["hint"] = "; ".join(x for x in (out.get("hint"), *notes) if x)
     return out
 
 
@@ -1901,24 +2202,30 @@ def _close_self(_: CloseSelfArgs) -> dict[str, Any]:
     inbox = chk["value"].get("inbox") or []
     status = chk["value"].get("status")
     owed: list[str] = []
-    if inbox:
-        owed.append(f"{len(inbox)} message(s) await you: " + "; ".join(
-            f"{m.get('id')} ({m.get('kind')} from {m.get('created_by')}): {(m.get('text') or '')[:80]}"
-            for m in inbox))
-    if not status:
-        owed.append("no status recorded yet")
     if chk["value"].get("resident"):  # S-SME-SURFACE: a topic's sme is resident until the owner closes it
         owed.append(chk["value"]["resident"])
     if owed:
         return {"ok": False,
                 "error": {"code": "precondition", "message": " | ".join(owed)},
                 "value": {"inbox": inbox, "status": status},
-                "hint": "sequence: inbox() → answer/act on each → record_status(status=...) → close_self()"}
-    reason = f"closed by self: {status.get('status')}"
+                "hint": "the owner closes a topic; end your turn"}
+    # design-63db8a7d42 I: unread messages and a missing status are advice: the shell still closes, and the reply says
+    # what was left, so the architect can read it
+    left: list[str] = []
+    if inbox:
+        left.append(f"{len(inbox)} message(s) still awaited you: " + "; ".join(
+            f"{m.get('id')} ({m.get('kind')} from {m.get('created_by')}): {(m.get('text') or '')[:80]}"
+            for m in inbox))
+    if not status:
+        left.append("no status was recorded")
+    reason = f"closed by self: {status.get('status') if status else 'no status'}"
     out = _pool_call("release_self", {"participant_id": me, "reason": reason})
     if not out.get("ok"):
         out["hint"] = (out.get("hint") or "") + " | fallback: end your turn and stop calling tools; " \
                       "the SessionEnd hook releases your pool session, and the owner can reap you"
+    elif left:
+        out["hint"] = "; ".join(x for x in (out.get("hint"), *left, "sequence next time: inbox() → act on each → "
+                                            "record_status(...) → close_self()") if x)
     return out
 
 
@@ -1981,7 +2288,7 @@ POOL_TOOLS = [
             'the message and who was told',
             RecordStatusArgs, _record_status, "pool"),
     ToolDef("close_self",
-            'End your own shell now; refused while inbox is non-empty or no status is recorded',
+            'End your own shell now. While the inbox is non-empty or no status is recorded it still closes and names what was left; never refused',
             'step 3 of closing',
             'the release result; then stop calling tools',
             CloseSelfArgs, _close_self, "pool"),
@@ -2001,7 +2308,7 @@ POOL_TOOLS = [
             'confirmation, or running/unavailable',
             ReapArgs, _reap_bounded, "pool"),
     ToolDef("session_query",
-            'List sessions by participant/ticket/state',
+            'List sessions by filter',
             'to check a seat is live',
             'matching sessions, newest first, a ≤8 KB page + next_cursor; verbose=full rows',
             SessionQueryArgs, _session_query, "pool"),
@@ -2060,6 +2367,14 @@ class RecordLessonArgs(CreateArgs):
     topic: str = Field(description='short topic')
     text: str = Field(description='one sentence')
     evidence: list[str] = Field(default_factory=list)
+    ticket_id: str | None = None
+    project: str | None = None
+    domains: list[str] = Field(default_factory=list)
+
+
+class RetireLessonArgs(Args):
+    lesson_id: str
+    reason: str = Field(default="", description='one line, <=240 chars')
 
 
 class LookupArgs(Args):
@@ -2076,9 +2391,13 @@ def _record_decision(a: RecordDecisionArgs) -> dict[str, Any]:
 
 
 def _record_lesson(a: RecordLessonArgs) -> dict[str, Any]:
-    return _receipt(_once("record_lesson", a, lambda: get_client().record_lesson(a.domain, a.topic, a.text,
-                                                                               evidence=a.evidence)),
-                    ("text",), _record_ref)
+    return _receipt(_once("record_lesson", a, lambda: get_client().record_lesson(
+        a.domain, a.topic, a.text, evidence=a.evidence, project=a.project, domains=a.domains,
+        ticket_id=a.ticket_id)), ("text",), _record_ref)
+
+
+def _retire_lesson(a: RetireLessonArgs) -> dict[str, Any]:
+    return get_client().retire_lesson(a.lesson_id, reason=a.reason)
 
 
 def _record_claim(a: RecordClaimArgs) -> dict[str, Any]:
@@ -2087,12 +2406,12 @@ def _record_claim(a: RecordClaimArgs) -> dict[str, Any]:
 
 
 class WithdrawDecisionArgs(Args):
-    decision_id: str = Field(description='decision id')
+    decision_id: str
     reason: str = Field(default="", description='one line, <=240 chars')
 
 
 class WithdrawClaimArgs(Args):
-    claim_id: str = Field(description='claim id')
+    claim_id: str
     reason: str = Field(default="", description='one line, <=240 chars')
 
 
@@ -2132,15 +2451,15 @@ class TopicResearchArgs(Args):
     topic_id: str = Field(description='Library topic id')
     query: str | None = Field(default=None, description="search skills.sh")
     url: str | None = None  # one page to read; the description names its hosts (T6: bytes for `offset`, S20)
-    offset: int | None = None  # with url: reads on from the kept page text (the reply's `next` names it)
+    offset: int | None = Field(default=None, description='continue a long page')
 
 
 class TopicProposeArgs(CreateArgs):
     topic_id: str = Field(description='Library topic id')
-    title: str = Field(description='doc title')
+    title: str
     body_md: str = Field(description="what you distilled; the board prepends Source + fetched-at")
     source_url: str = Field(description="a URL topic_research fetched")
-    doc_type: DocType = DocType.strategy_hl
+    doc_type: TopicDocType = TopicDocType.strategy_hl
     tags: list[str] | None = None
     proposes: str | None = Field(default=None, description="active doc id this is the next version of")
 
@@ -2193,9 +2512,9 @@ class DoctorLogsArgs(Args):
 
 class ProposeFixArgs(CreateArgs):
     topic_id: str = Field(description="your help thread (the topic in your context)")
-    action: dict[str, Any] = Field(description="{kind: service.restart|service.start|service.stop|pool.set_limits|"
-                                               "gate.open|gate.answer|teammate.rotate_token|agent_token.revoke, "
-                                               "...its fields}")
+    # audit R3 (report-8dbe7c91c9): the published schema is the union the board validates, so a missing gate
+    # field or a wrong service is refused at the call, naming the field
+    action: Action = Field(description="one action; `kind` picks its fields (see this field's schema)")
     effect: str = Field(description="what the fix will do, in one or two plain sentences")
 
 
@@ -2232,7 +2551,7 @@ DOCTOR_TOOLS = [
             "until an admin approves, then the result is posted on your thread",
             "after the evidence names a root cause a listed action fixes", "the proposal and its card",
             ProposeFixArgs, lambda a: _once("propose_fix", a, lambda: get_client().propose_fix(
-                a.topic_id, a.action, a.effect)), "doctor"),
+                a.topic_id, a.action.model_dump(exclude_defaults=True), a.effect)), "doctor"),
 ]
 
 KNOWLEDGE_TOOLS = [
@@ -2247,10 +2566,16 @@ KNOWLEDGE_TOOLS = [
             'the claim',
             RecordClaimArgs, _record_claim, "knowledge"),
     ToolDef("record_lesson",
-            'Record a lesson: domain, topic, one sentence, evidence ids',
-            '/learn or /harvest',
+            'Record a lesson: domain, topic, one sentence, evidence ids; ticket_id or project scopes it to that '
+            'project, none = a framework lesson',
+            '/learn',
             'the lesson',
             RecordLessonArgs, _record_lesson, "knowledge"),
+    ToolDef("retire_lesson",
+            'Retire a lesson with no successor; lookup and recall never return it again (architect/owner)',
+            'when a lesson cites a deleted tool or proved wrong',
+            'the retired lesson',
+            RetireLessonArgs, _retire_lesson, "knowledge"),
     ToolDef("lookup",
             'Current decisions, claims and lessons for a question, id or path in one epic (binding ones always)',
             'on resume or before acting, instead of trusting memory',
@@ -2278,128 +2603,39 @@ KNOWLEDGE_TOOLS = [
             DenseSearchArgs, _dense_search, "knowledge"),
 ]
 
-# ============================================================================= ruleset
-
-
-class AssembleRulesetArgs(Args):
-    ticket_id: str | None = Field(default=None, description='use its linked strategy/domain docs (inherited up the chain)')
-    doc_ids: list[str] | None = Field(default=None, description='explicit leaf doc ids instead')
-    full: bool = Field(default=False, description='also inline constructive lines')
-
-
-def _ruleset_leaves_for_ticket(c: BoardClient, ticket_id: str) -> list[str]:
-    """Strategy/domain docs linked to the ticket, walking UP the parent chain
-    (epic-level strategies serve every story) — epic-first so the general
-    layers land before the story-specific ones."""
-    chain: list[str] = []
-    tid: str | None = ticket_id
-    while tid:
-        chain.append(tid)
-        got = c.ticket_read(tid)
-        tid = (got.get("value") or {}).get("parent_id") if got.get("ok") else None
-    leaves: list[str] = []
-    for t in reversed(chain):  # epic first
-        for rel in (Relation.uses_strategy.value, Relation.uses_domain.value):
-            links = c.link_query(from_id=t, relation=rel)
-            for lk in links.get("value") or []:
-                if lk["to_id"] not in leaves:
-                    leaves.append(lk["to_id"])
-    return leaves
-
-
-def _assemble_ruleset(a: AssembleRulesetArgs) -> dict[str, Any]:
-    from .ruleset import AssembleError, LayerDoc, assemble_ruleset
-
-    c = get_client()
-    leaves = list(a.doc_ids or [])
-    if not leaves and a.ticket_id:
-        leaves = _ruleset_leaves_for_ticket(c, a.ticket_id)
-    if not leaves:
-        return {"ok": False, "error": {"code": "not_found", "message": "no strategy/domain docs to assemble"},
-                "hint": "link docs to the ticket (relation=uses_strategy|uses_domain) or pass doc_ids"}
-
-    skipped: list[str] = []
-
-    def load(doc_id: str) -> LayerDoc | None:
-        got = c.doc_read(doc_id)
-        if not got.get("ok"):
-            return None
-        v = got["value"]
-        return LayerDoc(id=v["id"], title=v["title"], doc_type=v["doc_type"], body_md=v["body_md"],
-                        tags=v.get("tags") or [])
-
-    def readable(doc_id: str) -> bool:
-        # S-LIBRARY: only an active doc is a layer — a proposed one is unapproved, a retired one out of
-        # use; both are skipped like a dangling layer and named in skipped_layers
-        got = c.doc_read(doc_id)
-        return bool(got.get("ok")) and (got["value"].get("status") or "active") == "active"
-
-    def extends_of(doc_id: str) -> list[str]:
-        links = c.link_query(from_id=doc_id, relation=Relation.extends.value)
-        out: list[str] = []
-        for lk in links.get("value") or []:
-            # a dangling/non-doc layer (legacy extends pointing at a ticket) is SKIPPED
-            # loudly, never a hard failure that strips the checker of its whole brief
-            if readable(lk["to_id"]):
-                out.append(lk["to_id"])
-            else:
-                skipped.append(lk["to_id"])
-        return out
-
-    leaves2 = [x for x in leaves if readable(x)]
-    skipped += [x for x in leaves if x not in leaves2]
-    if not leaves2:
-        return {"ok": False, "error": {"code": "not_found", "message": f"no readable leaf docs (skipped: {skipped})"},
-                "hint": "re-link the ticket's uses_strategy/uses_domain to existing docs"}
-    try:
-        out = assemble_ruleset(load, extends_of, leaves2, full=a.full)
-    except AssembleError as e:
-        return {"ok": False, "error": {"code": "precondition", "message": e.instruction}, "hint": ""}
-    hint = ("enforced is inlined (the adherence view a checker verifies); `index` lists each linked doc — "
-            "doc_read(id) the ones your work touches for the constructive craft")
-    if out.oversize:
-        hint = f"OVERSIZE (~{out.approx_tokens} inlined tokens): the layering is a scoping defect — split it, don't truncate"
-    value = out.model_dump(exclude_none=True)
-    if a.ticket_id:  # S-IMPLICIT: the brief carries the ticket's recall hits (board-side, no model call)
-        got = c.recall(a.ticket_id)
-        if got.get("ok"):
-            value["recall"] = got["value"]
-    if skipped:
-        value["skipped_layers"] = skipped
-        hint += f"; NOTE: {len(skipped)} dangling layer(s) skipped: {skipped}"
-    return {"ok": True, "value": value, "hint": hint}
-
-
-RULESET_TOOLS = [
-    ToolDef("assemble_ruleset",
-            "Compose a ticket's layered ruleset from its strategy/domain docs: enforced lines inlined, each doc one index line",
-            'at the start of a story/task, for your working brief',
-            'enforced lines + a doc index (full adds constructive), or a cycle/missing-layer error',
-            AssembleRulesetArgs, _assemble_ruleset, "ruleset"),
-]
-
 # ============================================================================= artifact
 
 
 class ArtifactCreateArgs(CreateArgs):
     form: ArtifactForm = Field(description='artifact form')
     uri: str = Field(description='a uri, never a machine path')
-    note: str = ""
+    note: str = Field(default='', description='caption')
     ticket_id: str | None = Field(default=None, description='link as produced')
 
 
 class ArtifactUploadArgs(Args):
     path: str = Field(description='workspace file (HTTP policy: absolute, inside configured roots)')
-    note: str = ""
+    note: str = Field(default='', description='caption')
 
 
 class ArtifactReadArgs(Args):
     id: str = Field(description='artifact id')
-    offset: int = 0  # text continuation: the next_offset a previous read returned
+    offset: int = Field(default=0, description='next_offset of the last read')
 
 
 IMAGE_CAP_B = 3_750_000   # an inline image block at most this size (the model's per-image limit is ~5 MB)
 TEXT_CAP_B = 6_000        # inline text per call; next_offset continues
+
+
+def _utf8_whole(b: bytes) -> bytes:
+    """`b` without a multi-byte UTF-8 character cut at its end, so a page edge never drops it (audit R1: '€'
+    split across next_offset was lost by errors='ignore'); the cut bytes start the next page."""
+    for k in range(1, min(4, len(b)) + 1):
+        c = b[-k]
+        if c & 0xC0 != 0x80:  # ASCII or a lead byte
+            need = 2 if c >> 5 == 0b110 else 3 if c >> 4 == 0b1110 else 4 if c >> 3 == 0b11110 else 1
+            return b if need <= k else b[:-k]
+    return b
 _TEXT_TYPES = ("text/", "application/json", "application/xml", "application/x-yaml", "application/yaml",
                "image/svg+xml")  # an SVG is markup: read as text, never an image block
 _IMAGE_TYPES = ("image/png", "image/jpeg", "image/gif", "image/webp")
@@ -2440,7 +2676,7 @@ def _artifact_read(a: ArtifactReadArgs) -> dict[str, Any]:
         elif status not in (200, 206):
             return {**meta, "hint": f"metadata only: content read answered {status}"}
         more = len(body) > TEXT_CAP_B
-        chunk = body[:TEXT_CAP_B]
+        chunk = _utf8_whole(body[:TEXT_CAP_B]) if more else body
         text = chunk.decode("utf-8", errors="ignore")
         v["content"] = {"kind": "text", "mime": (got_type or ctype).split(";")[0], "offset": a.offset,
                         "text": text, **({"next_offset": a.offset + len(chunk)} if more else {})}
@@ -2485,19 +2721,21 @@ ALL_TOOLS_OBJECT = {"pain": "pain", "workflow": "workflow", "teammate": "teammat
 
 
 class PainArgs(Args):
-    action: PainAction = Field(description='what to do')
+    action: PainAction
     id: str | None = None
     q: str | None = None
     area: str | None = None
-    status: str | None = None
+    status: Literal["all", "open", "fixed", "ticket", "duplicate", "invalid"] | None = None
     severity: PainSeverity | None = None
     symptom: str | None = None
     expected: str | None = None
     evidence: str | None = None
-    workaround: str | None = None
+    workaround: str | None = Field(default=None, description='what you did instead')
     dup_of: str | None = None
-    supersedes: str | None = None
-    note: str | None = None
+    supersedes: str | None = Field(default=None, description='your earlier pain id')
+    note: str | None = Field(default=None, description='resolution note')
+    commit: str | None = None
+    ticket_id: str | None = None
     cursor: str | None = None
 
 
@@ -2524,14 +2762,15 @@ def _pain(a: PainArgs) -> dict[str, Any]:
         return c.pain_file({k: (v.value if hasattr(v, "value") else v) for k, v in a.model_dump().items()
                             if k in ("severity", "area", "symptom", "expected", "evidence", "workaround",
                                      "dup_of", "supersedes") and v not in (None, "")})
-    return _need("pain", "resolve", a, "id", "status") or c.pain_resolve(a.id or "", a.status or "",
-                                                                        note=a.note or "")
+    return _need("pain", "resolve", a, "id", "status") or c.pain_resolve(
+        a.id or "", a.status or "", note=a.note or "", commit=a.commit or "", ticket_id=a.ticket_id or "",
+        dup_of=a.dup_of or "")
 
 
 class WorkflowArgs(Args):
-    action: WorkflowAction = Field(description='what to do')
+    action: WorkflowAction
     ref: str | None = None
-    new_id: str | None = None
+    new_id: str | None = Field(default=None, description='id for the copy')
     definition: dict | None = None
     full: bool = False
     cursor: str | None = None
@@ -2595,9 +2834,9 @@ def _wf_compact(resp: dict[str, Any]) -> dict[str, Any]:
 
 
 class TeammateArgs(Args):
-    action: TeammateAction = Field(description='what to do')
+    action: TeammateAction
     handle: str | None = None
-    role: str | None = None
+    role: str | None = Field(default=None, description='role to grant; default guest')
     admin: bool = False
 
 
@@ -2617,7 +2856,7 @@ def _teammate(a: TeammateArgs) -> dict[str, Any]:
         return miss
     handle = (a.handle or "").lstrip("@")
     if a.action == TeammateAction.create:
-        return c.teammate_create(handle, role=a.role or "owner", admin=a.admin)
+        return c.teammate_create(handle, role=a.role or "guest", admin=a.admin)
     if a.action == TeammateAction.mint:
         out = c.teammate_action(handle, "rotate")
         if out.get("ok"):
@@ -2628,16 +2867,17 @@ def _teammate(a: TeammateArgs) -> dict[str, Any]:
 
 
 class HarvestCostArgs(Args):
-    participant_id: str = Field(description='the seat')
-    since: str | None = None
-    until: str | None = None
+    participant_id: str
+    since: str | None = Field(default=None, description='ISO time from')
+    until: str | None = Field(default=None, description='ISO time to')
 
 
 FRAMEWORK_TOOLS = [
     ToolDef("pain",
-            "Pain log: query (q, area, status=all), read (id), file (severity, area, symptom, expected, "
-            "evidence; dup_of), resolve (id, status)",
-            "a tool or guide is wrong versus reality; query first",
+            "Pain store: query (q, area, status), read (id), file "
+            "(severity, area, symptom, expected, evidence; dup_of), resolve (id, status; fixed+commit, "
+            "ticket+ticket_id, duplicate+dup_of)",
+            "a tool or guide is wrong versus reality",
             'rows or the record',
             PainArgs, _pain, "framework"),
     ToolDef("workflow",
@@ -2666,7 +2906,7 @@ FRAMEWORK_TOOLS = [
 
 
 class CloseArgs(Args):
-    epic_id: str = Field(description='epic id')
+    epic_id: str
 
 
 def _close(a: CloseArgs) -> dict[str, Any]:
@@ -2699,129 +2939,145 @@ CLOSE_TOOLS = [
 
 ALL_TOOLS: dict[str, ToolDef] = {
     t.name: t for t in (
-        IDENTITY_TOOLS + TICKET_TOOLS + DOC_TOOLS + THREAD_TOOLS + BOARD_TOOLS + POOL_TOOLS
-        + SEARCH_TOOLS + KNOWLEDGE_TOOLS + TOPIC_TOOLS + RULESET_TOOLS + ARTIFACT_TOOLS + CLOSE_TOOLS
+        IDENTITY_TOOLS + TICKET_TOOLS + ASK_TOOLS + DOC_TOOLS + THREAD_TOOLS + BOARD_TOOLS + POOL_TOOLS
+        + SEARCH_TOOLS + KNOWLEDGE_TOOLS + TOPIC_TOOLS + ARTIFACT_TOOLS + CLOSE_TOOLS
         + DOCTOR_TOOLS + FRAMEWORK_TOOLS
     )
 }
 
 _IDENTITY = ["whoami", "preflight", "subscribe", "resume_self", "context", "context_delta", "describe", "describe_objects", "get_guide"]
-_TICKET_RW = ["ticket_create", "ticket_read", "ticket_query", "ticket_update", "criterion_create",
-              "criterion_query", "criterion_update"]
-_TICKET_RO = ["ticket_read", "ticket_query", "ticket_update"]  # owner: sign-off only, guarded by the board
-_CHECK = ["criterion_query", "criterion_update"]  # checkers record verdicts (board guards who may)
-_DOC_RW = ["doc_create", "doc_read", "doc_query", "doc_update", "doc_edit", "link_create", "link_query", "link_delete"]
-_DOC_RO = ["doc_read", "doc_query"]
-_THREAD = ["message_send", "message_query", "message_read", "gate_open", "gate_answer", "gates"]
-_BOARD = ["board", "events_query", "participants"]
-_CLOSING = ["inbox", "record_status", "close_self"]
+# K (design-63db8a7d42, owner m-4b4bd9b35e): each role's tools are listed here by what its job needs. The past-usage
+# pruning (S20 `_S20_UNUSED`) is gone: it cut tools a role does need (sme lost doc_edit and artifact_upload, qa lost
+# artifact_upload) because a transcript window had not called them yet. A role that needs a tool gets it by a line
+# in this table with its reason in `_TOOL_WHY`; tests/test_role_tools.py pins every list.
+#
+# Invariants (tests): the identity set leads every list; record_decision/record_claim/lookup are in every writing
+# role; a doing seat's list ends inbox -> record_status -> close_self; the architect and owner never get close_self.
+_ROLE_JOB: dict[str, str] = {
+    Role.owner.value: "the person: reads, answers gates and chat, signs off, spawns and recovers every seat",
+    Role.architect.value: "designs the epic: stories, criteria, docs, requirement links; spawns and heals its seats",
+    Role.sme.value: "knowledge: researches, writes and edits docs, files topic proposals, checks knowledge lines",
+    Role.engineer.value: "builds one story: plan doc, tasks, criteria, evidence, artifacts, hand-off",
+    Role.adversary.value: "reviews adversarially: findings as tickets and docs, with evidence",
+    Role.qa.value: "checks every criterion and requirement: reads, rules, writes the verdict doc, uploads the screenshots",
+    Role.doctor.value: "read-only Help seat: reads state, answers, proposes fixes an admin approves",
+}
 
+_TOOL_WHY: dict[str, str] = {
+    # every seat
+    **{n: "identity and boot: who I am, what I own, what changed, how tools work" for n in _IDENTITY},
+    "message_send": "say anything on the board (status, ask, answer, deviation)",
+    "message_query": "find earlier thread messages",
+    "message_read": "read a clipped message in full",
+    "find": "search the board when no id is known",
+    "participants": "see who is on the team before addressing someone",
+    "record_decision": "record a ruling or choice any seat makes",
+    "record_claim": "record a checked fact any seat finds",
+    "record_lesson": "record something reusable beyond the ticket",
+    "lookup": "recall decisions, claims and lessons",
+    "withdraw_decision": "take back a decision this seat recorded wrongly",
+    "pain": "report a tool or guide that is wrong against reality",
+    "inbox": "closing step 1: read what waits before closing",
+    "record_status": "closing step 2: record the outcome",
+    "close_self": "closing step 3: end the shell",
+    # tickets and criteria
+    "ticket_create": "cut stories (architect), tasks (engineer, adversary findings), epics and quick tasks (owner)",
+    "ticket_read": "read a ticket and its criteria",
+    "ticket_query": "list tickets without an id",
+    "ticket_update": "move status, assign, set the design ref",
+    "criterion_create": "add a checkable done-fact",
+    "criterion_query": "see which criteria are pending",
+    "criterion_update": "record evidence (doer) or a verdict (checker)",
+    # docs and links
+    "doc_create": "write a plan, report, design or note",
+    "doc_read": "read a doc by id and section",
+    "doc_query": "find docs by filter",
+    "doc_update": "replace a doc body or status",
+    "doc_edit": "edit one section of a doc in place",
+    "link_create": "link docs and tickets",
+    "link_query": "read the links of a doc or ticket",
+    "link_delete": "remove a wrong link",
+    # gates, asks, board
+    "gate_open": "ask for a sign-off (architect; the quick-task engineer opens its design_signoff)",
+    "gate_answer": "answer a gate (owner)",
+    "gates": "list open gates",
+    "requirements": "read the epic's marked requirements (architect links them, qa checks them)",
+    "requirement_link": "close a requirement by linking a criterion or design section (architect)",
+    "board": "board-wide state for the architect, qa and owner",
+    "events_query": "read the event log",
+    "set_binding": "make a decision binding or not",
+    # artifacts
+    "artifact_create": "record a produced thing by uri",
+    "artifact_read": "read a produced artifact",
+    "artifact_upload": "stage a file or screenshot as evidence (qa look-criteria need it)",
+    # pool and recovery
+    "spawn": "start a seat",
+    "resume": "resume a closed seat",
+    "reap": "retire a seat",
+    "session_query": "see which seats are alive",
+    "close": "owner closes an idle shell",
+    "service_status": "check shared services",
+    "harvest_cost": "read cost figures",
+    "workflow": "owner edits workflows",
+    "teammate": "owner manages teammates",
+    "retire_lesson": "curate lessons (architect, owner)",
+    "topic_research": "bounded web research for a topic",
+    "topic_propose": "propose a topic doc",
+}
+
+_CLOSING_TRIPLE = ["inbox", "record_status", "close_self"]
 ROLE_BUNDLES: dict[str, list[str]] = {
-    # The owner shell is the orchestrator: it spawns every seat (except SMEs —
-    # the architect spawns those) and recovers dead ones. No coordinator seat.
-    # Closing is a self-assertion (inbox → record_status → close_self). The owner (a human
-    # shell) and the architect (RESIDENT for the epic's life; the owner reaps it at close)
-    # never get close_self — every other seat does.
-    Role.owner.value: _IDENTITY + _THREAD + _BOARD + _DOC_RO + _TICKET_RO + _CHECK
-        + ["find", "ticket_create", "inbox", "spawn", "resume", "reap", "session_query", "close"],
-    Role.architect.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD + _BOARD
-        + ["find", "artifact_create", "artifact_read", "spawn", "inbox", "record_status",
-           # owner m-268fc869f5 / m-faf46d284a (2026-09-18): the spawner decides and executes recovery of its
-           # own seats (the board already scopes these to the architect's own epic, service._authorize_pool_op)
-           "reap", "resume", "session_query"],
-    Role.sme.value: _IDENTITY + _TICKET_RO + _DOC_RW + _THREAD
-        + ["find", "participants", "assemble_ruleset", "criterion_query", "criterion_update",
-           "artifact_create", "artifact_read", "topic_research", "topic_propose"] + _CLOSING,
-    Role.engineer.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD
-        + ["find", "participants", "assemble_ruleset", "artifact_create", "artifact_read"] + _CLOSING,
-    Role.adversary.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD
-        + ["find", "participants", "assemble_ruleset", "artifact_create", "artifact_read"] + _CLOSING,
-    Role.qa.value: _IDENTITY + _TICKET_RO + _CHECK + _DOC_RW + _THREAD + _BOARD
-        + ["find", "assemble_ruleset", "artifact_create", "artifact_read"] + _CLOSING,
-    # S19: the Help seat is read-only — reads, its thread's messages, propose_fix (an inert proposal an admin
+    # The owner shell is the orchestrator: it spawns every seat (except SMEs, the architect spawns those) and
+    # recovers dead ones. The owner (a human shell) and the architect (RESIDENT for the epic's life) never get
+    # close_self; every other seat does.
+    Role.owner.value: _IDENTITY + [
+        "message_send", "message_query", "message_read", "gate_answer", "gates", "board", "events_query",
+        "participants", "doc_read", "doc_query", "ticket_read", "ticket_query", "ticket_update",
+        "criterion_query", "criterion_update", "find", "ticket_create", "spawn", "resume", "reap",
+        "session_query", "close", "record_decision", "record_claim", "lookup", "pain", "workflow", "teammate",
+        "service_status", "harvest_cost", "retire_lesson"],
+    Role.architect.value: _IDENTITY + [
+        "ticket_create", "ticket_read", "ticket_query", "ticket_update", "criterion_create", "criterion_query",
+        "criterion_update", "requirements", "requirement_link", "doc_create", "doc_read", "doc_query", "doc_update", "doc_edit",
+        "link_create", "link_query", "link_delete", "message_send", "message_query", "message_read", "gate_open",
+        "gates", "board", "events_query", "participants", "find", "artifact_create", "spawn", "inbox",
+        "record_status",
+        # owner m-268fc869f5 / m-faf46d284a (2026-09-18): the spawner decides and executes recovery of its own seats
+        # (the board scopes these to the architect's own epic, service._authorize_pool_op)
+        "reap", "resume", "session_query", "artifact_upload", "record_decision", "record_claim", "record_lesson",
+        "lookup", "set_binding", "pain", "service_status", "retire_lesson"],
+    Role.sme.value: _IDENTITY + [
+        "ticket_read", "ticket_query", "ticket_update", "doc_create", "doc_read", "doc_query", "doc_update",
+        "doc_edit", "link_create", "link_query", "message_send", "message_query", "message_read", "find",
+        "participants", "criterion_query", "criterion_update", "topic_research", "topic_propose",
+        "artifact_upload", "record_decision", "record_claim", "record_lesson", "lookup", "pain"] + _CLOSING_TRIPLE,
+    Role.engineer.value: _IDENTITY + [
+        "ticket_create", "ticket_read", "ticket_query", "ticket_update", "criterion_create", "criterion_query",
+        "criterion_update", "doc_create", "doc_read", "doc_query", "doc_update", "doc_edit", "link_create",
+        "link_query", "message_send", "message_query", "message_read", "gate_open", "find", "participants",
+        "artifact_create", "artifact_read", "artifact_upload", "record_decision", "record_claim", "record_lesson",
+        "lookup", "withdraw_decision", "pain"] + _CLOSING_TRIPLE,
+    Role.adversary.value: _IDENTITY + [
+        "ticket_create", "ticket_read", "ticket_query", "ticket_update", "criterion_create", "criterion_query",
+        "criterion_update", "doc_create", "doc_read", "doc_query", "doc_update", "doc_edit", "link_create",
+        "link_query", "message_send", "message_query", "message_read", "gate_open", "gates", "find",
+        "participants", "artifact_create", "artifact_read", "artifact_upload", "record_decision", "record_claim",
+        "record_lesson", "lookup", "pain"] + _CLOSING_TRIPLE,
+    Role.qa.value: _IDENTITY + [
+        "ticket_read", "ticket_update", "criterion_query", "criterion_update", "requirements",
+        "doc_create", "doc_read", "doc_update", "doc_edit", "link_create", "message_send", "message_query",
+        "message_read", "gates", "board", "participants", "find", "artifact_read", "artifact_upload",
+        "record_decision", "record_claim", "record_lesson", "lookup", "pain", "harvest_cost"] + _CLOSING_TRIPLE,
+    # S19: the Help seat is read-only: reads, its thread's messages, propose_fix (an inert proposal an admin
     # approves) and the kernel's communication tools; no ticket/doc/criterion/decision/gate/spawn write
     Role.doctor.value: _IDENTITY + ["ticket_read", "ticket_query", "criterion_query", "doc_read", "doc_query",
                                     "message_send", "message_query", "message_read", "gates", "participants",
                                     "events_query", "board", "find", "lookup"]
-        + [t.name for t in DOCTOR_TOOLS] + _CLOSING,
+        + [t.name for t in DOCTOR_TOOLS] + ["pain", "service_status"] + _CLOSING_TRIPLE,
 }
 
-#: S19: roles whose bundle is read-only; the loops below never add a write tool to them
+#: S19: roles whose bundle is read-only; no write tool is ever added to them
 READ_ONLY_ROLES = frozenset({Role.doctor.value})
-
-
-for _role_tools in ROLE_BUNDLES.values():
-    if "artifact_create" in _role_tools and "artifact_upload" not in _role_tools:
-        # close_self must stay last: a doer's bundle ends inbox → record_status → close_self
-        # (test_lifecycle_fixes.py::test_architect_and_owner_have_no_close_self). Insert
-        # artifact_upload just before the closing triplet, never after close_self.
-        if "close_self" in _role_tools:
-            _role_tools.insert(_role_tools.index("inbox"), "artifact_upload")
-        else:
-            _role_tools.append("artifact_upload")
-
-# S-ROLES: the retired coordinator and consultant roles have NO bundle (deleted, not aliased); a
-# participant of a role without a bundle gets identity tools only (tools_for_role).
-
-# record_decision/record_claim/lookup are available to EVERY role (design-d2c4f39fc6 §2: the tools
-# any seat calls). Insert before the closing triplet where a doer has one — close_self stays last
-# (test_lifecycle_fixes.py). A role that already has a name (none do) is not duplicated.
-for _role, _role_tools in ROLE_BUNDLES.items():
-    if _role in READ_ONLY_ROLES:  # S19: lookup is already there; the record_*/withdraw_*/set_binding writes are not
-        continue
-    _at = _role_tools.index("inbox") if "close_self" in _role_tools else len(_role_tools)
-    for _kt in ("record_decision", "record_claim", "record_lesson", "lookup", "withdraw_decision", "withdraw_claim",
-                "set_binding", "dense_search"):
-        if _kt not in _role_tools:
-            _role_tools.insert(_at, _kt)
-            _at += 1
-
-
-# S20 (s-b123a91d3f) token-cost trim: tools a role never invoked in 30 days of seat transcripts
-# (scripts/measure_token_cost.py invoked) and that no role card or skill names. Every tool is still
-# served to some role; a role that needs one back re-adds it here. The invariants above stay: the
-# identity set, record_decision/record_claim/lookup everywhere, close_self last.
-# preflight stays in every bundle (the advisory host check is every seat's)
-_S20_UNUSED: dict[str, tuple[str, ...]] = {
-    Role.owner.value: ("gate_open", "inbox", "dense_search", "record_lesson", "withdraw_decision",
-                       "withdraw_claim", "set_binding"),
-    Role.architect.value: ("artifact_read", "dense_search", "gate_answer", "withdraw_claim",
-                           "withdraw_decision"),
-    # gate_open stays: the quick-task engineer opens its design_signoff (s-ccdafcb229)
-    Role.engineer.value: ("dense_search", "gate_answer", "gates", "link_delete",
-                          "set_binding", "withdraw_claim"),
-    Role.adversary.value: ("dense_search", "gate_answer", "link_delete",
-                           "set_binding", "withdraw_claim", "withdraw_decision"),
-    Role.qa.value: ("artifact_create", "artifact_upload", "dense_search", "doc_query", "events_query", "gate_answer",
-                    "gate_open", "link_delete", "link_query", "set_binding", "ticket_query",
-                    "withdraw_claim", "withdraw_decision"),
-    Role.sme.value: ("artifact_create", "artifact_read", "artifact_upload", "dense_search", "doc_edit", "find",
-                     "gate_answer", "gate_open", "gates", "link_delete", "set_binding",
-                     "withdraw_claim", "withdraw_decision"),
-}
-for _role, _unused in _S20_UNUSED.items():
-    ROLE_BUNDLES[_role] = [n for n in ROLE_BUNDLES[_role] if n not in _unused]
-
-
-# S23 framework tools (architect ruling m-fbd6ae40d3): pain for every role (resolve is enforced by the board
-# for the owner and the doctor); workflow + teammate owner only; service_status for owner/architect/doctor;
-# harvest_cost for qa and the owner. close_self stays last.
-_S23_FRAMEWORK: dict[str, tuple[str, ...]] = {
-    Role.owner.value: ("pain", "workflow", "teammate", "service_status", "harvest_cost"),
-    Role.architect.value: ("pain", "service_status"),
-    Role.engineer.value: ("pain",),
-    Role.adversary.value: ("pain",),
-    Role.qa.value: ("pain", "harvest_cost"),
-    Role.sme.value: ("pain",),
-    Role.doctor.value: ("pain", "service_status"),
-}
-for _role, _add in _S23_FRAMEWORK.items():
-    _role_tools = ROLE_BUNDLES[_role]
-    _at = _role_tools.index("inbox") if "close_self" in _role_tools else len(_role_tools)
-    for _kt in _add:
-        if _kt not in _role_tools:
-            _role_tools.insert(_at, _kt)
-            _at += 1
 
 
 from .workflow import KERNEL_TOOLS  # noqa: E402 - S13 §4.14(e).1: every spawned role carries these

@@ -7,6 +7,28 @@ your user profile, so a reinstall or an update never touches it.
 
 <!-- heronry:downloads -->
 
+## Upgrading from 0.9.x
+
+The desktop app's 0.9.x updater refuses the `.msi`, so the step to 0.10 is by hand, once. From 0.10 on,
+`{{ brand.cli_name }} update` and the tray's **Check for update** install the new `.msi` themselves.
+
+=== "Desktop app (.msi)"
+
+    1. `{{ brand.cli_name }} stop all --force`: stops every service and takes the seats offline. Running codex
+       seats are processes of the installed app and would lock its install folder.
+    2. Run the new `Heronry Desktop-<version>.msi`: double-click it, or
+       `msiexec /i "Heronry Desktop-<version>.msi"`. It upgrades in place; your board data and settings stay.
+       If Windows still shows a "files in use" dialog naming Heronry, keep its default,
+       **Automatically close applications**: it is safe.
+    3. `{{ brand.cli_name }} start`, or open {{ brand.desktop_app_name }}.
+
+=== "Command line"
+
+    `{{ brand.cli_name }} update`
+
+The first start of the new version refreshes the agent home (role cards, skills, hooks, guides) and merges the new
+model catalog into yours. A file you edited is kept, with the new version beside it as `<file>.new`.
+
 ## The installers are unsigned
 
 The first release is **unsigned**, so your operating system warns you once. Here is what to click.

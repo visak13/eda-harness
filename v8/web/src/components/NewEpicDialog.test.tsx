@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { http, HttpResponse } from "msw";
@@ -140,6 +140,32 @@ describe("NewEpicDialog (human #22)", () => {
     });
   });
 
+  it("S7: a role may carry an ordered option list; the epic tag lists every option, the default first", async () => {
+    let ticketBody: Record<string, unknown> | null = null;
+    server.use(
+      http.post("/v1/tickets", async ({ request }) => {
+        ticketBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ ok: true, value: { id: "epic-opts", kind: "epic", title: "t" }, hint: "epic created" });
+      }),
+    );
+    mount();
+    await screen.findByRole("dialog", { name: "New epic" });
+    fireEvent.click(await screen.findByTestId("new-epic-addopt-engineer"));
+    const second = screen.getByTestId("new-epic-opt1-model-engineer") as HTMLSelectElement;
+    expect(second.value).toBe("gpt-6-sol");
+    fireEvent.change(screen.getByTestId("new-epic-opt1-effort-engineer"), { target: { value: "high" } });
+    // a role with no extra option keeps the single pair
+    expect(screen.queryByTestId("new-epic-opt1-model-qa")).toBeNull();
+    fireEvent.change(screen.getByTestId("new-epic-title"), { target: { value: "Options" } });
+    fireEvent.change(screen.getByTestId("new-epic-words"), { target: { value: "Offer two engineers." } });
+    fireEvent.click(screen.getByTestId("new-epic-create"));
+    await waitFor(() => expect(ticketBody).not.toBeNull());
+    const tags = (ticketBody as unknown as Record<string, unknown>).tags as string[];
+    expect(tags).toContain("model:engineer=claude-opus-5-5@medium|gpt-6-sol@high");
+    expect(tags).toContain("model:qa=claude-fable-5-1");
+    expect(tags.some((t) => t.startsWith("seat-effort:engineer"))).toBe(false);
+  });
+
   it("without spawning: one POST, the preview says no seat is woken; a refused create shows the hint", async () => {
     let spawns = 0;
     server.use(
@@ -215,7 +241,8 @@ describe("NewEpicDialog (human #22)", () => {
     mount({ resume_parked: false, resume_closed: false, park: false, spawn: false, reason: "pool offline" } as never);
     await screen.findByRole("dialog", { name: "New epic" });
     await waitFor(() => expect(screen.getByTestId("new-epic-spawn")).toBeDisabled());
-    expect(screen.getByText(/pool offline/)).toBeInTheDocument();
+    // m12: the capabilities read waits for whoami (a guest never sends it), so the reason arrives a beat later
+    expect(await screen.findByText(/pool offline/)).toBeInTheDocument();
   });
 
   it("t-683d0033bb: the Tags input sends plain words ahead of the seat tags, so the Library auto-link can match", async () => {
@@ -264,5 +291,86 @@ describe("NewEpicDialog (human #22)", () => {
     fireEvent.click(screen.getByTestId("new-epic-create"));
     await waitFor(() => expect(ticketBody).not.toBeNull());
     expect(ticketBody!.workflow).toBe("team@2");
+  });
+
+  it("e0cec S6: the SMEs switch is off by default (no tag) and sends sme:on, with an optional project key, when set", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    server.use(http.post("/v1/tickets", async ({ request }) => {
+      bodies.push((await request.json()) as Record<string, unknown>);
+      return HttpResponse.json({ ok: true, value: { id: `epic-sme${bodies.length}`, kind: "epic" }, hint: "" });
+    }));
+    mount();
+    await screen.findByRole("dialog", { name: "New epic" });
+    expect(screen.getByTestId("new-epic-smes")).toHaveValue("off");
+    expect(screen.getByTestId("new-epic-smes-help")).toHaveTextContent("no SME seat is spawned");
+    fireEvent.change(screen.getByTestId("new-epic-title"), { target: { value: "No SMEs" } });
+    fireEvent.change(screen.getByTestId("new-epic-words"), { target: { value: "words" } });
+    await waitFor(() => expect(screen.getByTestId("new-epic-role-models").querySelectorAll("select").length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByTestId("new-epic-create"));
+    expect(await screen.findByTestId("landed")).toBeInTheDocument();
+    const off = bodies[0].tags as string[];
+    expect(off.some((t) => t.startsWith("sme:") || t.startsWith("project:"))).toBe(false);
+  });
+
+  it("e0cec S6: switching SMEs on sends sme:on and the project key as tags", async () => {
+    let ticketBody: Record<string, unknown> | null = null;
+    server.use(http.post("/v1/tickets", async ({ request }) => {
+      ticketBody = (await request.json()) as Record<string, unknown>;
+      return HttpResponse.json({ ok: true, value: { id: "epic-sme-on", kind: "epic" }, hint: "" });
+    }));
+    mount();
+    await screen.findByRole("dialog", { name: "New epic" });
+    fireEvent.change(screen.getByTestId("new-epic-smes"), { target: { value: "on" } });
+    fireEvent.change(screen.getByTestId("new-epic-project"), { target: { value: " blender " } });
+    expect(screen.getByTestId("new-epic-smes-help")).toHaveTextContent("sme:on");
+    expect(screen.getByTestId("new-epic-project-help")).toHaveTextContent("project:blender");
+    fireEvent.change(screen.getByTestId("new-epic-title"), { target: { value: "With SMEs" } });
+    fireEvent.change(screen.getByTestId("new-epic-words"), { target: { value: "words" } });
+    await waitFor(() => expect(screen.getByTestId("new-epic-role-models").querySelectorAll("select").length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByTestId("new-epic-create"));
+    expect(await screen.findByTestId("landed")).toBeInTheDocument();
+    const tags = (ticketBody as Record<string, unknown> | null)?.tags as string[];
+    expect(tags).toContain("sme:on");
+    expect(tags).toContain("project:blender");
+    expect(tags.indexOf("project:blender")).toBeLessThan(tags.findIndex((t) => t.startsWith("model:")));
+  });
+});
+
+// S12-ui (owner m-839aa76c90): the dialog opened scrolled to "Model and effort per role", its heading out of view.
+describe("NewEpicDialog layout (S12-ui)", () => {
+  it("pins the heading and the Cancel/Create row outside the one scrolling body, which opens at its top", async () => {
+    mount();
+    const dialog = await screen.findByRole("dialog", { name: "New epic" });
+    const body = screen.getByTestId("new-epic-body");
+    const heading = screen.getByTestId("new-epic-heading");
+    const actions = screen.getByTestId("new-epic-actions");
+    expect(heading.parentElement).toBe(dialog);
+    expect(actions.parentElement).toBe(dialog);
+    expect(body.contains(heading)).toBe(false);
+    expect(body.contains(actions)).toBe(false);
+    expect(body.contains(screen.getByTestId("new-epic-title"))).toBe(true);
+    expect(body.contains(screen.getByTestId("new-epic-role-models"))).toBe(true);
+    expect(body.scrollTop).toBe(0);
+  });
+});
+
+// S12-ui2 (qa m-da89ef8294): the add button rides the role's row; the form is compact, each label beside its input.
+describe("NewEpicDialog compact table (S12-ui2)", () => {
+  it("puts each role's add button on its row", async () => {
+    mount();
+    const row = await screen.findByTestId("new-epic-row-engineer");
+    expect(within(row).getByTestId("new-epic-addopt-engineer")).toHaveAccessibleName("Add an option for Engineer");
+  });
+});
+
+// S12-ui3 (architect m-3264e7edf9): labels a person reads, no dev jargon.
+describe("NewEpicDialog wording (S12-ui3)", () => {
+  it("names SME seats and Project plainly", async () => {
+    mount();
+    await screen.findByRole("dialog", { name: "New epic" });
+    expect(screen.getByLabelText("SME seats")).toBe(screen.getByTestId("new-epic-smes"));
+    expect(screen.getByLabelText("Project")).toBe(screen.getByTestId("new-epic-project"));
+    expect(screen.getByTestId("new-epic-project-help")).toHaveTextContent("Leave blank for Heronry's own work.");
+    expect(screen.getByTestId("new-epic-project-help")).not.toHaveTextContent(/framework/);
   });
 });

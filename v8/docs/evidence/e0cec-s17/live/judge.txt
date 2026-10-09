@@ -1,0 +1,6 @@
+s17live-codex-real-A-pyr     A1 PASS must 18/18 not 7/7 order 3/3 extras 1 | miss [] viol [] ord []
+s17live-codex-real-A-pyr     A2 PASS must 16/16 not 7/7 order 3/3 extras 0 | miss [] viol [] ord []
+s17live-codex-real-A-pyr     A3 PASS must 14/14 not 8/8 order 3/3 extras 4 | miss [] viol [] ord []
+s17live-codex-real-B-pyr     B1 PASS must 16/16 not 6/6 order 3/3 extras 6 | miss [] viol [] ord []
+s17live-codex-real-B-pyr     B2 PASS must 15/15 not 6/6 order 2/2 extras 7 | miss [] viol [] ord []
+s17live-codex-real-B-pyr     B3 PASS must 18/18 not 5/5 order 3/3 extras 6 | miss [] viol [] ord []

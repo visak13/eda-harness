@@ -11,7 +11,7 @@ import { ICON_PATHS, ROLE_ICONS, roleLabel, seatRole } from "./iconPaths";
 // icon, never the board's unknown "?" template. Agent roles draw their illustrated avatar and have a stroke
 // glyph; the two human-only roles (owner, expert) are people and keep their picture avatar.
 
-const HUMAN_ROLES = new Set(["owner", "expert"]);
+const HUMAN_ROLES = new Set(["owner", "expert", "guest"]); // e0cec S5: a guest is a person
 
 /** The board's Role enum members, read from edp8/schemas.py so a new board role fails here first. */
 function boardRoleEnum(): string[] {
@@ -49,6 +49,6 @@ describe("every board role has an icon", () => {
   it("the doctor seat is called Help", () => {
     expect(roleLabel("doctor")).toBe("Help");
     expect(glossLabel("role", "doctor")).toBe("Help");
-    expect(roleLabel("engineer")).toBe("engineer");
+    expect(roleLabel("engineer")).toBe("Engineer"); // S12-ui: title case through the one helper
   });
 });

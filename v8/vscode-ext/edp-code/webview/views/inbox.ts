@@ -154,7 +154,9 @@ function questionRow(q: InboxQuestion, ctx: TabCtx, rerender: () => void): HTMLE
   const { row, err } = rowShell(q, q.kind, q.ticketTitle ?? q.ticketId);
   row.title = `${q.ticketId} · ${q.id}`;
   const meta = el('div', 'ib-meta');
-  meta.append(el('span', 'by', q.by), el('span', 'ib-role', q.byHuman ? 'person' : q.byRole));
+  const role = q.byRole !== 'unknown' ? q.byRole : q.byHuman ? 'person' : 'unknown';
+  meta.append(el('span', 'by', q.by));
+  if (role !== q.by) meta.append(el('span', 'ib-role', role));
   if (q.at) { const t = el('time', 'at', fmtTime(q.at)); t.dateTime = q.at; meta.append(t); }
   const open = el('button', 'board-link', '↗');
   open.type = 'button';

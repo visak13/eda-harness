@@ -43,7 +43,7 @@ def clip(s: Any, n: int) -> Any:
 def _qhash(filters: dict[str, Any]) -> str:
     raw = json.dumps({k: (v.value if hasattr(v, "value") else v) for k, v in sorted(filters.items())},
                      default=str, sort_keys=True)
-    return hashlib.sha1(raw.encode()).hexdigest()[:10]
+    return hashlib.sha1(raw.encode(), usedforsecurity=False).hexdigest()[:10]
 
 
 def encode_cursor(filters: dict[str, Any], **pos: Any) -> str:
@@ -73,10 +73,32 @@ def cursor_error(tool: str, e: CursorError) -> dict[str, Any]:
             "hint": "pass next_cursor from the previous page with the same filters; omit cursor for page 1"}
 
 
+def _shrink(row: dict[str, Any], budget: int) -> dict[str, Any]:
+    """A compact row cut down to `budget` bytes by halving its largest field, each cut marked "(+N …)" so the
+    page's full_rows receipt applies (audit R2: one row with 150 long tags made a 13.9 KB default page)."""
+    row = dict(row)
+    while nbytes(row) > budget:
+        key = max(row, key=lambda k: nbytes(row[k]))
+        v = row[key]
+        if isinstance(v, list) and len(v) > 1:
+            keep = len(v) // 2
+            row[key] = v[:keep] + [f"… (+{len(v) - keep} more)"]
+        elif isinstance(v, str) and len(v) > 80:
+            row[key] = clip(v, len(v) // 2)
+        elif isinstance(v, (dict, list)):
+            row[key] = clip(json.dumps(v, default=str), 80)
+        else:
+            break  # nothing left worth cutting; a few scalar fields never reach the cap
+        if row[key] == v:
+            break
+    return row
+
+
 def _fit(rows: list[Any], cap: int, overhead: int, enrich: Callable[[Any], Any] | None = None) -> list[Any]:
-    """The longest prefix of rows that fits the cap (at least one row, whatever its size). `enrich` finishes each
-    row BEFORE it is measured (T6 N3: participants appended reach strings after fitting and overshot the cap), and
-    only for rows that may still be shown."""
+    """The longest prefix of rows that fits the cap. The first row is always shown, so paging never stalls; one
+    too big for the cap alone is shrunk to fit. `enrich` finishes each row BEFORE it is measured (T6 N3:
+    participants appended reach strings after fitting and overshot the cap), and only for rows that may still
+    be shown."""
     out: list[Any] = []
     used = overhead
     for r in rows:
@@ -84,6 +106,9 @@ def _fit(rows: list[Any], cap: int, overhead: int, enrich: Callable[[Any], Any] 
         b = nbytes(r) + 1
         if out and used + b > cap:
             break
+        if not out and used + b > cap and isinstance(r, dict):
+            r = _shrink(r, cap - used - 1)
+            b = nbytes(r) + 1
         out.append(r)
         used += b
     return out

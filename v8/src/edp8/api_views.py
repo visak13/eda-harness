@@ -21,7 +21,7 @@ from typing import Any, Callable
 from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel
 
-from . import views
+from . import guest_scope, views
 from .avatar_preferences import save_avatar_preference
 from .avatars import (
     _HUMAN_NAMES,
@@ -87,16 +87,6 @@ def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
         """v34 item 6 (owner m-1a09573d3d): the no-reply path. Marks asks waiting on you as dismissed. A pure
         attention write: no message is posted and no seat is woken; every attention surface clears together."""
         return ok({"dismissed": board.dismiss_asks(a, body.ids)})
-
-    # -------------------------------------------------------------- me (Decisions home)
-    @r.get("/v1/me/decisions")
-    def me_decisions(a: Participant = Depends(actor)):
-        return ok(views.decisions_for(board, a),
-                  "sign-offs you must rule, questions in your inbox, open gates you can answer")
-
-    @r.get("/v1/me/decisions/resolved")
-    def me_resolved(limit: int = 30, a: Participant = Depends(actor)):
-        return ok(views.resolved_for(board, a, limit=limit))
 
     @r.get("/v1/me/people")
     def me_people(a: Participant = Depends(actor)):
@@ -178,7 +168,7 @@ def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
                 svg = human_avatar_svg(avatar_id_for(p, views._prefs()), size)
             else:
                 svg = role_avatar_svg(p.role, p.model, size)
-        etag = '"' + hashlib.sha1(svg.encode("utf-8")).hexdigest()[:20] + '"'
+        etag = '"' + hashlib.sha1(svg.encode("utf-8"), usedforsecurity=False).hexdigest()[:20] + '"'
         if request.headers.get("if-none-match") == etag:
             return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
         return Response(content=svg, media_type="image/svg+xml",
@@ -198,8 +188,10 @@ def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
     def tickets_table(epic: str | None = None, status: str | None = None, kind: str | None = None,
                       work_type: str | None = None, assignee: str | None = None, tag: str | None = None,
                       q: str | None = None, a: Participant = Depends(actor)):
+        scope = guest_scope.scope_for(board, a)
         return ok(views.tickets_table(board, epic=epic, status=status, kind=kind, work_type=work_type,
-                                      assignee=assignee, tag=tag, q=q))
+                                      assignee=assignee, tag=tag, q=q,
+                                      only=None if scope is None else scope.tickets))
 
     @r.get("/v1/tickets/{ticket_id}/page")
     def ticket_page(ticket_id: str, include: str | None = None, a: Participant = Depends(actor)):
@@ -220,7 +212,11 @@ def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
     # -------------------------------------------------------------- docs / activity / library
     @r.get("/v1/docs/{doc_id}/html")
     def doc_html(doc_id: str, version: int | None = None, a: Participant = Depends(actor)):
-        return ok(views.doc_page(board, doc_id, viewer=a, version=version))
+        # S18-3: the whole-body HTML is for people, like GET /v1/docs/{id}?all=true (S13 F11); an agent gets the
+        # rendered head with the same continuation as doc_read
+        head = a.type != "human"
+        return ok(views.doc_page(board, doc_id, viewer=a, version=version, head_only=head),
+                  "an agent gets the head; read on with doc_read(section=...) or the page continuation" if head else "")
 
     @r.get("/v1/activity")
     def activity(limit: int = 120, a: Participant = Depends(actor)):

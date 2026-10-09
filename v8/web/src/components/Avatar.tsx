@@ -2,7 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { authHeaders, identity } from "../auth/identity";
 import { Icon } from "./Icon";
 import { harnessGlyph, PROVIDER_ICONS, ROLE_ICONS, seatRole } from "./iconPaths";
-import { agentAvatarSvg } from "./agentAvatars";
+import { agentAvatarSvg, serviceAvatarSvg } from "./agentAvatars";
 import styles from "./Avatar.module.css";
 
 // Authenticated identity SVGs share owned object URLs. Saving bumps only the current person's
@@ -75,9 +75,21 @@ function useAvatarImage(id: string, size: number, v: number): string | undefined
 /** S-UI (owner m-ec5a9b86c5): an AGENT seat (`<role>.<ticket>` or a bare role) shows its role glyph
  *  instead of the generic generated avatar; a person keeps their picture. */
 export function Avatar({ id, size = 24, className }: { id: string; size?: number; className?: string }): React.JSX.Element {
+  if (SERVICES.has(id)) return <ServiceAvatar id={id} size={size} className={className} />;
   const role = seatRole(id);
   if (role) return <RoleAvatar id={id} role={role} size={size} className={className} />;
   return <PictureAvatar id={id} size={size} className={className} />;
+}
+
+/** Heronry's own services post notes too (a requeued checker, a pairing): they share one chip avatar. */
+const SERVICES = new Set(["board", "broker", "pool", "supervisor", "mcp", "bridge"]);
+
+function ServiceAvatar({ id, size, className }: { id: string; size: number; className?: string }): React.JSX.Element {
+  return (
+    <span className={`${styles.avatar} ${styles.role} ${className ?? ""}`} style={{ width: size, height: size }}
+      aria-hidden="true" data-testid="avatar" data-avatar-for={id} data-service={id}
+      dangerouslySetInnerHTML={{ __html: serviceAvatarSvg(size) }} />
+  );
 }
 
 /** Owner m-ff00fad1ec: an agent seat is an illustrated character in the people avatars' language (same

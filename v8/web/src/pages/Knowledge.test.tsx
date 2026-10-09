@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { server } from "../test/setup";
 import { KNOWLEDGE_DIFF, KNOWLEDGE_VIEW } from "../test/handlers";
@@ -72,6 +72,7 @@ describe("Library knowledge", () => {
     mount("/library/knowledge?k=strategyhl-1");
     fireEvent.click(await screen.findByTestId("knowledge-edit"));
     const text = await screen.findByTestId("knowledge-edit-body");
+    expect(screen.getByTestId("knowledge-doc-write-hint")).toHaveTextContent("/doc-write"); // S17 decision 1
     expect(text).toHaveValue("- rule one");
     fireEvent.change(text, { target: { value: "- rule one\n- rule two" } });
     fireEvent.change(screen.getByTestId("knowledge-edit-tags"), { target: { value: "Python, web" } });
@@ -124,11 +125,63 @@ describe("Library knowledge", () => {
     mount();
     fireEvent.click(await screen.findByTestId("knowledge-new-open"));
     const dialog = await screen.findByRole("dialog", { name: "New knowledge doc" });
+    expect(within(dialog).getByTestId("knowledge-doc-write-hint")).toHaveTextContent("summary-first"); // S17
     fireEvent.change(within(dialog).getByLabelText("Kind"), { target: { value: "domain" } });
     fireEvent.change(within(dialog).getByTestId("knowledge-new-title"), { target: { value: "Board domain" } });
     fireEvent.change(within(dialog).getByLabelText(/Tags/), { target: { value: "board ops" } });
     fireEvent.change(within(dialog).getByTestId("knowledge-new-body"), { target: { value: "- a fact" } });
     fireEvent.click(within(dialog).getByTestId("knowledge-new-create"));
     await waitFor(() => expect(sent).toEqual({ scope: "global", doc_type: "domain", title: "Board domain", body_md: "- a fact", tags: ["board", "ops"] }));
+  });
+
+  // sweep #4 (note-8f0629190d): lessons have scope, a detail view, an owner-only retire, and a Retired filter that shows them
+  const LESSONS = [
+    { id: "les-1", domain: "operations", topic: "restart", text: "restart the board by pid", status: "live", scope_kind: "framework", project: "",
+      created_by: "owner", created_at: "2026-09-18T10:00:00Z" },
+    { id: "les-2", domain: "blender", topic: "uv", text: "bake before export", status: "retired", scope_kind: "project", project: "blender",
+      retired_reason: "superseded [by owner]", created_by: "arch", created_at: "2026-09-19T10:00:00Z" },
+  ];
+  function mountLessons(role = "owner") {
+    server.use(
+      http.get("/v1/knowledge", () => okJson({ ...KNOWLEDGE_VIEW, lessons: LESSONS })),
+      http.get("/v1/whoami", () => okJson({ participant: { id: "owner", handle: "owner", role, type: "human" } })),
+    );
+    return renderRoute("/library/knowledge", "/library/:section", <LibraryPage />);
+  }
+
+  it("shows a lesson's scope in the list and lists a retired lesson under the Retired filter", async () => {
+    mountLessons();
+    await screen.findByTestId("knowledge-list");
+    expect(screen.getAllByTestId("lesson-scope-tag").map((t) => t.textContent)).toEqual(["framework", "project · blender"]);
+    fireEvent.change(screen.getByTestId("knowledge-status-filter"), { target: { value: "retired" } });
+    expect(screen.getAllByTestId("knowledge-lesson")).toHaveLength(1);
+    expect(screen.getByTestId("knowledge-lesson")).toHaveTextContent("bake before export");
+    fireEvent.change(screen.getByTestId("knowledge-status-filter"), { target: { value: "active" } });
+    expect(screen.getByTestId("knowledge-lesson")).toHaveTextContent("restart the board by pid");
+  });
+
+  it("opens a lesson's detail; the owner retires it with a reason", async () => {
+    let sent: unknown = null;
+    server.use(http.post("/v1/lessons/:id/retire", async ({ request, params }) => { sent = { id: params.id, ...(await request.json() as object) }; return okJson({}); }));
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    mountLessons();
+    const open = (await screen.findAllByTestId("knowledge-lesson-open"))[0];
+    fireEvent.click(open);
+    const detail = await screen.findByTestId("lesson-detail");
+    expect(within(detail).getByTestId("lesson-scope")).toHaveTextContent("framework epics");
+    fireEvent.change(await within(detail).findByTestId("lesson-retire-reason"), { target: { value: "stale" } });
+    fireEvent.click(within(detail).getByTestId("lesson-retire"));
+    await waitFor(() => expect(sent).toEqual({ id: "les-1", reason: "stale" }));
+  });
+
+  it("shows a retired lesson's reason and no Retire action; a non-owner never gets one", async () => {
+    mountLessons("architect");
+    fireEvent.click((await screen.findAllByTestId("knowledge-lesson-open"))[1]);
+    const detail = await screen.findByTestId("lesson-detail");
+    expect(within(detail).getByTestId("lesson-reason")).toHaveTextContent("superseded");
+    expect(within(detail).getByTestId("lesson-scope")).toHaveTextContent("project blender");
+    fireEvent.click(screen.getAllByTestId("knowledge-lesson-open")[0]);
+    await waitFor(() => expect(screen.getByTestId("lesson-detail")).toHaveTextContent("restart the board by pid"));
+    expect(screen.queryByTestId("lesson-retire")).toBeNull();
   });
 });

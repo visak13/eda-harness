@@ -3,8 +3,8 @@
 * GET  /v1/admin/updates — current version, the latest release (the same once-a-day, ETag-cached GitHub
   check `heronry update --check` makes; `?force=true` checks now), and the last apply: the request
   (who, when), the helper's outcome (update-result.json) and the tail of the update log.
-* POST /v1/admin/updates/apply — refuses what `heronry update` would refuse up front (dev checkout,
-  desktop bundle, not a `uv tool` install, live seats without force), then asks the supervisor (control
+* POST /v1/admin/updates/apply — refuses what `heronry update` would refuse up front (dev checkout, an update
+  already running, not a `uv tool` install, a pool that cannot be asked to park seats), then asks the supervisor (control
   port `/update`) to run `heronry update` detached. That command does backup → stop → upgrade → start, so
   the board answering this request is among what it stops; the answer is 202 and the UI polls `/healthz`.
 """
@@ -48,22 +48,27 @@ def _tail(f: Path, n: int = 20) -> list[str]:
 
 def last_apply() -> dict[str, Any]:
     run = settings.run_dir()
-    req = _read_json(run / "update-request.json")
-    return {"request": req, "result": _read_json(run / "update-result.json"),
+    res = updater.last_result()  # whichever runner wrote it (MSI runner or uv helper): the newest file
+    if res is not None:
+        res = {**{k: v for k, v in res.items() if not k.startswith("_")}, "text": updater.result_text(res)}
+    return {"request": _read_json(run / "update-request.json"), "result": res,
+            "staged": updater.update_staged(),
             "log": _tail(settings.logs_dir() / "update.log") or _tail(settings.logs_dir() / "update-run.out")}
 
 
 def refusal(force: bool) -> str | None:
-    """What `heronry update` would refuse before touching anything (the rest it checks itself)."""
-    if launcher.bundled():
-        return "the desktop bundle updates through its installer; download the new release"
+    """What `heronry update` would refuse before touching anything (the rest it checks itself). Live seats are not a
+    refusal (S10): the update parks them and the pool resumes them; only a pool that cannot answer is."""
     if settings.dev_mode():
         return "this is a source checkout (dev mode): update it with git"
-    if not updater._uv_tool_env() and not settings.env_raw("EDP_UPDATE_INSTALL_CMD"):
+    if not launcher.bundled() and not updater._uv_tool_env() and not settings.env_raw("EDP_UPDATE_INSTALL_CMD"):
         return "this install was not made by `uv tool install`; re-run the install script instead"
-    if not force:
-        return launcher.seat_block(launcher.live_seats(),
-                                   "apply with force to take them offline")
+    if updater.update_staged():
+        return "an update is already running; wait for its outcome"
+    if launcher.bundled() and updater.install_scope_busy():
+        return "Windows Installer is busy; try again in a minute"
+    if not force and launcher.live_seats() is None:
+        return launcher.seat_block(None, "apply with force to update without parking seats")
     return None
 
 

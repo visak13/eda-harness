@@ -57,7 +57,8 @@ def rig(client):
     kt = post("/v1/tickets", {"kind": "story", "work_type": "knowledge", "title": "hl-craft",
                               "parent_id": epic, "assignee": "craft"}, {"X-Participant": "arch"})["id"]
     kcrit = post("/v1/criteria", {"ticket_id": kt, "text": "strategy doc signed by the owner",
-                                  "check": "look", "checked_by": "owner"}, {"X-Participant": "arch"})["id"]
+                                  "check": "look", "checked_by": "owner",
+                                  "override_reason": "the owner signs it"}, OWN)["id"]
     doc = post("/v1/docs", {"doc_type": "strategy_hl", "title": "shape",
                             "body_md": "# Walking skeleton\n- build the **thin** thread first",
                             "scope": epic}, {"X-Participant": "craft"})["id"]

@@ -1,0 +1,1 @@
+{"hooks":{"SessionStart":[{"matcher":"compact","hooks":[{"type":"command","command":"\"/c/src/Learning/eda-base3/v8/.venv/Scripts/python.exe\" -c \"print('Your context was just compacted. Before anything else call resume_self() then context().')\"","timeout":5}]}]}}

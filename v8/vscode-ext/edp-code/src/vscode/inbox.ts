@@ -65,7 +65,7 @@ export class InboxHost implements vscode.Disposable {
     if (!sc || this.disposed) return;
     const n = ++this.gen;
     try {
-      const home = await this.board().decisions();
+      const home = await this.board().inbox();
       const cur = this.scope();
       if (n !== this.gen || cur?.id !== sc.id) return; // a newer read or another scope won
       this.state = { scope: sc.id, items: scopeInbox(home, cur.ids, cur.titles), loading: false, error: null };

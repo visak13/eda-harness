@@ -15,17 +15,25 @@
 #      The template's Scope="perUserOrMachine" (ALLUSERS=2 + MSIINSTALLPERUSER=1) already installs per-user by
 #      default, into %LOCALAPPDATA%\Programs, with no admin prompt; Scope="perUser" would NOT (ProgramFiles64Folder
 #      then stays per-machine: error 1303, measured)
-#   6. briefcase package windows --adhoc-sign (unsigned, R10) -> dist\Heronry Desktop-<ver>.msi
-param([string]$Wheels = "", [switch]$NoPackage)
+#   6. scope pin (S2 s-725ef36c03): an update is a MajorUpgrade, which only finds the old product in the SAME scope
+#      (FindRelatedProducts reads ALLUSERS). A launch condition refuses ALLUSERS=1, so no command line can put a
+#      second, per-machine copy beside the per-user one; the MajorUpgrade element is asserted present
+#   7. briefcase package windows --adhoc-sign (unsigned, R10) -> dist\Heronry Desktop-<ver>.msi
+# -Fresh drops build\ first (a stale tree, e.g. 0.8.0's, is never reused); -NoCliPath leaves step 5 out (the S2
+# spike's side-by-side identity must not share the PATH component's fixed GUID and HKCU key with an installed app).
+# -BuildEnv reuses an existing venv holding briefcase 0.4.5 + pip (S2: uv.exe's sockets are refused on the fleet
+# host, os error 10013, while pip's are not).
+param([string]$Wheels = "", [switch]$NoPackage, [switch]$Fresh, [switch]$NoCliPath, [string]$BuildEnv = "")
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $PSScriptRoot
 Set-Location $here
 if (-not $Wheels) { $Wheels = Join-Path $here "wheels" }
 $Wheels = (Resolve-Path $Wheels).Path
-$bc = Join-Path $here ".buildenv\Scripts\briefcase.exe"
-$bpy = Join-Path $here ".buildenv\Scripts\python.exe"
+if (-not $BuildEnv) { $BuildEnv = Join-Path $here ".buildenv" }
+$bc = Join-Path $BuildEnv "Scripts\briefcase.exe"
+$bpy = Join-Path $BuildEnv "Scripts\python.exe"
 if (-not (Test-Path $bc)) {
-  uv venv (Join-Path $here ".buildenv") --python 3.12 -q
+  uv venv $BuildEnv --python 3.12 -q
   uv pip install --python $bpy "briefcase==0.4.5" pip -q
 }
 function Run($what, [scriptblock]$b) { "== $what"; & $b; if ($LASTEXITCODE) { throw "$what failed (exit $LASTEXITCODE)" } }
@@ -42,6 +50,7 @@ if ($Wheels -ne $local) {
 }
 
 # 2. the app
+if ($Fresh -and (Test-Path (Join-Path $here "build"))) { Remove-Item -Recurse -Force (Join-Path $here "build") }
 $app = Join-Path $here "build\heronry\windows\app"
 if (Test-Path (Join-Path $app "briefcase.toml")) {
   Run "briefcase update" { & $bc update windows -r --no-input }
@@ -76,28 +85,14 @@ Run "stamp heronry.exe" { & $rcedit (Join-Path $src "heronry.exe") --set-version
 
 # 4. bin\heronry.cmd
 $bin = Join-Path $src "bin"; New-Item -ItemType Directory -Force $bin | Out-Null
-Set-Content -Path (Join-Path $bin "heronry.cmd") -Encoding ascii -Value "@echo off`r`n`"%~dp0..\heronry.exe`" %*`r`nexit /b %ERRORLEVEL%"
+# the checked-in shim (scripts\heronry.cmd, tested by test_heronry_cmd_shim.py), written with CRLF line ends for cmd
+$shim = (Get-Content (Join-Path $PSScriptRoot "heronry.cmd")) -join "`r`n"
+Set-Content -Path (Join-Path $bin "heronry.cmd") -Encoding ascii -NoNewline -Value ($shim + "`r`n")
 
-# 5. heronry.wxs
-$wxsPath = Join-Path $app "heronry.wxs"
-$wxs = Get-Content $wxsPath -Raw
-if ($wxs -notmatch 'Id="HeronryCliOnPath"') {
-  $component = @'
-        <!-- S8: the CLI on the user PATH (bin\heronry.cmd only), removed at uninstall -->
-        <Component Id="HeronryCliOnPath" Guid="4f3b5a52-9f55-4a5e-a1d1-6c1d2f8e0b17" Directory="INSTALLFOLDER">
-            <Environment Id="HeronryPathEntry" Name="PATH" Value="[INSTALLFOLDER]bin" Part="last" Action="set" System="no" Permanent="no" />
-            <RegistryValue Root="HKCU" Key="Software\Heronry contributors\Heronry Desktop" Name="cli_on_path" Type="integer" Value="1" KeyPath="yes" />
-        </Component>
+# 5 + 6. heronry.wxs: the CLI on PATH, the scope pin and the MajorUpgrade assert (patch_wxs.ps1, tested on a template)
+Run "patch heronry.wxs" { & (Join-Path $PSScriptRoot "patch_wxs.ps1") -Wxs (Join-Path $app "heronry.wxs") -NoCliPath:$NoCliPath }
 
-        <StandardDirectory Id="ProgramMenuFolder">
-'@
-  $wxs = $wxs.Replace("        <StandardDirectory Id=`"ProgramMenuFolder`">", $component.TrimEnd())
-  $wxs = $wxs.Replace("            <ComponentRef Id=`"ApplicationShortcuts`" />", "            <ComponentRef Id=`"ApplicationShortcuts`" />`r`n            <ComponentRef Id=`"HeronryCliOnPath`" />")
-}
-Set-Content -Path $wxsPath -Value $wxs -Encoding utf8
-if ($wxs -notmatch 'ComponentRef Id="HeronryCliOnPath"') { throw "heronry.wxs patch did not apply" }
-
-# 6. package
+# 7. package
 if (-not $NoPackage) {
   Run "briefcase package" { & $bc package windows --adhoc-sign --no-input }
   Get-ChildItem (Join-Path $here "dist") -Filter "*.msi" | ForEach-Object { "MSI $($_.FullName) $([math]::Round($_.Length/1MB,1)) MB sha256 $((Get-FileHash $_.FullName).Hash.ToLower())" }

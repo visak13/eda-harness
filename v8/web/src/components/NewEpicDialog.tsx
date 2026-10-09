@@ -1,11 +1,13 @@
-import { useRef, useState } from "react";
+import { hideFromGuests, usePoolCapabilities } from "../auth/guest";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
-import { createEpic, libraryTags, type EpicSeatChoice } from "../api/endpoints";
+import { createEpic, libraryTags, sameOption, type EpicSeatChoice, type SeatOption } from "../api/endpoints";
+import { AddOptionButton, effortOf, normOption, RoleOptionList } from "./SeatOptions";
 import { parseTags } from "../pages/KnowledgeDetail";
-import { getModels, getPoolCapabilities, spawnSeat } from "../api/seats";
+import { getModels, spawnSeat } from "../api/seats";
 import { listWorkflows, pinnable } from "../api/workflows";
 import { clampEffort, SeatPickHead, SeatPickRow, type Effort } from "./SeatPicks";
 import type { ModelCatalog, PoolCapabilities } from "../api/types";
@@ -24,8 +26,8 @@ import { useModalDialog } from "./useModalDialog";
 // Owner m-2d7ef9243d / m-3238155d2e (2026-09-17): the owner chooses the seat MODEL and EFFORT for
 // every seat of the epic HERE, before any launch — sent as seat-model:/seat-effort: tags on the epic
 // (edp8/seat_choice.py) so every later spawn inherits them — and creating an epic never forces a
-// spawn: the box is UNTICKED by default. Claude effort is capped at medium fleet-wide (ruling
-// 2026-08-04): a Claude seat asked for high runs at medium, and the dialog says so.
+// spawn: the box is UNTICKED by default. Effort is capped per catalog entry, never above
+// high (owner R6): a seat asked for more runs at its model's cap, and the dialog says so.
 //
 // S-ROLES (design-34bf11cc07 §4.1, owner m-bba708e10e): the model is chosen PER ROLE — one select per
 // role of the models.json catalog (GET /v1/models), prefilled with each role's default, sent as
@@ -39,18 +41,27 @@ import { useModalDialog } from "./useModalDialog";
 //
 // S14 (design-e963c656f5 §4.14(e)): a workflow picker — every published version, Standard first and the
 // default; the epic pins the pick for life (its page shows workflow@version).
+//
+// S7 (design-b6a55eed13 §4.E): each role may carry an ORDERED option list (`model:<role>=<id>@<effort>|…`,
+// the first = the default row above it); a story may later run a role on any of its catalog models (RC2 F2). No seat runs
+// above high: the catalog's effort cap clamps every option.
 
-export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () => void }): React.JSX.Element | null {
+const dedupeOptions = (l: SeatOption[]): SeatOption[] => l.filter((o, i) => l.findIndex((x) => sameOption(x, o)) === i);
+
+function NewEpicDialogView({ open, onClose }: { open: boolean; onClose: () => void }): React.JSX.Element | null {
   const [words, setWords] = useState("");
   const [title, setTitle] = useState("");
   const [tags, setTags] = useState("");
   const committed = useRef<{ id: string; hint: string; choice: EpicSeatChoice } | null>(null);
   const busy = useRef(false);
   const panelRef = useRef<HTMLFormElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const [spawn, setSpawn] = useState(false);
   const [picks, setPicks] = useState<Record<string, string>>({});
   const [efforts, setEfforts] = useState<Record<string, Effort>>({});
   const [workflow, setWorkflow] = useState("");
+  const [smes, setSmes] = useState(false);
+  const [project, setProject] = useState("");
   const workflowsQ = useQuery({ queryKey: ["workflows"], queryFn: listWorkflows, retry: false, enabled: open });
   const pins = pinnable(workflowsQ.data ?? []);
   const pickedWorkflow = workflow || pins[0]?.ref || "";
@@ -63,21 +74,29 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
   // every role's effort (default medium), already capped for a Claude row
   const roleEfforts: Record<string, Effort> = Object.fromEntries(
     roles.map((r) => [r, clampEffort(roleModels[r], efforts[r] ?? "medium", catalog?.models)]));
+  // S7: the options AFTER each role's default; a role with none keeps the single model@effort pair
+  const [extras, setExtras] = useState<Record<string, SeatOption[]>>({});
+  const roleOptions: Record<string, SeatOption[]> = Object.fromEntries(roles
+    .filter((r) => roleModels[r] && (extras[r] ?? []).length)
+    .map((r) => [r, dedupeOptions([{ model: roleModels[r], effort: roleEfforts[r] }, ...extras[r].map((o) => normOption(o, catalog?.models))])]));
   const [done, setDone] = useState<{ id: string; hint: string; spawnHint: string | null } | null>(null);
   const navigate = useNavigate();
   const qc = useQueryClient();
   const titleRef = useRef<HTMLInputElement>(null);
-  const capsQ = useQuery({ queryKey: ["pool", "capabilities"], queryFn: getPoolCapabilities, retry: false, enabled: open });
+  const capsQ = usePoolCapabilities(open);
   const caps = capsQ.data as PoolCapabilities | undefined;
   const canSpawn = Boolean(caps?.spawn);
 
   useModalDialog(open, panelRef, titleRef, busy, onClose);
+  // S12-ui (owner m-839aa76c90): the dialog opens at its top, heading and title field in view, whatever focus or a
+  // late catalog load did to the scroll; the heading and the Cancel/Create row are pinned outside the scrolling body
+  useEffect(() => { if (open && bodyRef.current) bodyRef.current.scrollTop = 0; }, [open, roles.length]);
 
   const create = useMutation({
     mutationFn: async () => {
-      const choice = committed.current?.choice ?? { roleModels, roleEfforts };
+      const choice = committed.current?.choice ?? { roleModels, roleEfforts, roleOptions };
       if (!committed.current) {
-        const made = await createEpic(words, choice, title, parseTags(tags), pickedWorkflow || undefined);
+        const made = await createEpic(words, choice, title, parseTags(tags), pickedWorkflow || undefined, { sme: smes, project });
         committed.current = { id: made.value.id, hint: made.hint, choice };
       }
       const made = committed.current;
@@ -97,7 +116,7 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
       void qc.invalidateQueries({ queryKey: ["epics", "summary"] });
       void qc.invalidateQueries({ queryKey: ["me", "summary"] });
       void qc.invalidateQueries({ queryKey: ["seats"] });
-      setWords(""); setTitle(""); setTags(""); setSpawn(false); setDone(null); setPicks({}); setEfforts({}); setWorkflow("");
+      setWords(""); setTitle(""); setTags(""); setSpawn(false); setDone(null); setPicks({}); setEfforts({}); setExtras({}); setWorkflow(""); setSmes(false); setProject("");
       committed.current = null;
       navigate(`/epic/${encodeURIComponent(res.id)}`);
       onClose();
@@ -123,7 +142,8 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
           if (text && title.trim() && title.trim().length <= 80 && !busy.current) { busy.current = true; create.mutate(); }
         }}
       >
-        <h2 className={styles.title}>New epic</h2>
+        <h2 className={styles.title} data-testid="new-epic-heading">New epic</h2>
+        <div className={styles.body} ref={bodyRef} data-testid="new-epic-body">
         <label className={ui.sectionLabel} htmlFor="new-epic-title">Title</label>
         <input id="new-epic-title" data-testid="new-epic-title" ref={titleRef} className={ui.input} maxLength={80} value={title} disabled={create.isPending || Boolean(done)} onChange={(e) => setTitle(e.target.value)} aria-describedby="new-epic-title-count" />
         <p id="new-epic-title-count" className={styles.muted}>{title.length}/80 — required</p>
@@ -160,6 +180,27 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
           {workflowsQ.isError ? "Could not load the workflows; the epic pins standard@1."
             : "The roles, gates and caps the epic runs on, pinned for its life. Published versions only; see Design."}
         </p>
+        <label className={ui.sectionLabel} htmlFor="new-epic-smes">SME seats</label>
+        <select id="new-epic-smes" data-testid="new-epic-smes" className={ui.select} value={smes ? "on" : "off"}
+          disabled={create.isPending || Boolean(done)} onChange={(e) => setSmes(e.target.value === "on")}
+          aria-describedby="new-epic-smes-help">
+          <option value="off">off</option>
+          <option value="on">on</option>
+        </select>
+        <p id="new-epic-smes-help" className={styles.muted} data-testid="new-epic-smes-help">
+          {smes
+            ? "Tags the epic sme:on: its architect may spawn SMEs, who check and close their own knowledge tickets."
+            : "Off (default): no SME seat is spawned on this epic; the architect does its knowledge work."}
+        </p>
+        <label className={ui.sectionLabel} htmlFor="new-epic-project">Project</label>
+        <input id="new-epic-project" data-testid="new-epic-project" className={ui.input} value={project}
+          disabled={create.isPending || Boolean(done)} onChange={(e) => setProject(e.target.value)}
+          placeholder="blender" aria-describedby="new-epic-project-help" />
+        <p id="new-epic-project-help" className={styles.muted} data-testid="new-epic-project-help">
+          {project.trim()
+            ? `Tags the epic project:${project.trim()}: it recalls ${project.trim()} lessons, not the framework's.`
+            : "Optional. Leave blank for Heronry's own work."}
+        </p>
         <fieldset className={styles.roleModels} data-testid="new-epic-role-models">
           <legend className={ui.sectionLabel}>Model and effort per role</legend>
           {modelsQ.isError ? (
@@ -168,14 +209,31 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
             </p>
           ) : null}
           {roles.length ? <SeatPickHead /> : null}
-          {roles.map((r) => (
-            <SeatPickRow key={r} role={r} testIdPrefix="new-epic" options={catalog?.roles[r] ?? []} meta={catalog?.models}
-              model={roleModels[r]} effort={roleEfforts[r]} disabled={create.isPending || Boolean(done)}
-              onModel={(id) => setPicks((p) => ({ ...p, [r]: id }))}
-              onEffort={(e) => setEfforts((p) => ({ ...p, [r]: e }))} />
-          ))}
+          {roles.map((r) => {
+            const opts = {
+              role: r, testIdPrefix: "new-epic", catalogIds: catalog?.roles[r] ?? [], meta: catalog?.models,
+              list: [{ model: roleModels[r], effort: roleEfforts[r] }, ...(extras[r] ?? [])],
+              disabled: create.isPending || Boolean(done),
+              onChange: (next: { model: string; effort: string }[]) => {
+                setPicks((p) => ({ ...p, [r]: next[0].model }));
+                setEfforts((p) => ({ ...p, [r]: effortOf(next[0]) }));
+                setExtras((p) => ({ ...p, [r]: next.slice(1) }));
+              },
+            };
+            return (
+              <div key={r} className={styles.roleBlock}>
+                <SeatPickRow role={r} testIdPrefix="new-epic" options={catalog?.roles[r] ?? []} meta={catalog?.models}
+                  model={roleModels[r]} effort={roleEfforts[r]} disabled={create.isPending || Boolean(done)}
+                  onModel={(id) => setPicks((p) => ({ ...p, [r]: id }))}
+                  onEffort={(e) => setEfforts((p) => ({ ...p, [r]: e }))}
+                  add={roleModels[r] ? <AddOptionButton {...opts} /> : null} />
+                {roleModels[r] ? <RoleOptionList {...opts} /> : null}
+              </div>
+            );
+          })}
           <p className={styles.muted} data-testid="new-epic-effort-cap">
-            Each model's effort cap comes from its catalog entry (Admin → Seats &amp; models → Models).
+            The first option is each role's default; a story may pick another of its role's options. Each model's
+            effort cap comes from its catalog entry (Admin → Seats &amp; models → Models); no seat runs above high.
           </p>
         </fieldset>
         <label className={styles.check}>
@@ -187,13 +245,14 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
             data-testid="new-epic-spawn"
           />
           Spawn the architect
-          {!canSpawn ? <span className={styles.muted}> — {caps?.reason ?? "the pool cannot spawn from here"}</span> : null}
+          {/* S12-ui3: the pool answers in seconds; while it does, say so, never "cannot spawn" */}
+          {!canSpawn ? <span className={styles.muted} data-testid="new-epic-spawn-why"> — {capsQ.isPending ? "checking the pool…" : caps?.reason ?? "the pool cannot spawn from here"}</span> : null}
         </label>
         <p className={styles.preview} data-testid="new-epic-preview">
           Creates the epic with your words verbatim and your explicit title. Each role's seats run on
           the model and effort chosen above, unless a spawn names its own.
           {spawn && canSpawn
-            ? " Then spawns role=architect on it (wakes a new architect shell on that model), which designs it and comes back to you with questions on Decisions."
+            ? " Then spawns role=architect on it (wakes a new architect seat on that model), which designs it and comes back to you with questions on Decisions."
             : " No seat is woken now; spawn the architect later from the epic page."}
         </p>
         {err ? (
@@ -206,7 +265,8 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
             Epic created. {err ? "The architect could not start. Retry uses this same epic." : done.hint} <Link to={`/epic/${encodeURIComponent(done.id)}`} aria-disabled={create.isPending} onClick={(e) => { if (busy.current) { e.preventDefault(); return; } committed.current = null; setDone(null); setTitle(""); setWords(""); setSpawn(false); onClose(); }}>Open existing epic</Link>
           </p>
         ) : null}
-        <div className={styles.actions}>
+        </div>
+        <div className={styles.actions} data-testid="new-epic-actions">
           <button type="button" className={ui.button} onClick={onClose} disabled={create.isPending}>
             {done ? "Close" : "Cancel"}
           </button>
@@ -223,3 +283,6 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
     </div>, document.body,
   );
 }
+
+/** e0cec S5: a guest never sees this control (the board refuses it). */
+export const NewEpicDialog = hideFromGuests(NewEpicDialogView);

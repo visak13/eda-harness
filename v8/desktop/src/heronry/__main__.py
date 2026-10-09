@@ -50,6 +50,9 @@ def _as_interpreter(argv: list[str]) -> int:
         exec(compile(argv[1], "<string>", "exec"), {"__name__": "__main__", "__builtins__": __builtins__})
         return 0
     sys.argv = list(argv)
+    # as `python script.py` does: the script's folder comes first on the path, so a module beside it imports (the
+    # update helper's update_lock.py; without this 0.10.2's `heronry update` died at its first import)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(argv[0])))
     runpy.run_path(argv[0], run_name="__main__")
     return 0
 

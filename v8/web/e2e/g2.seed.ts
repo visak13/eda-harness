@@ -23,7 +23,7 @@ const as = (id: string) => ({ "X-Participant": id });
 
 export interface G2Fixture {
   epic: string; // the owner-owned epic carrying the sign-off, question and gate
-  freshEpic: string; // a 0/0 epic → Epic pulse "None defined"
+  freshEpic: string; // a 0/0 epic → Epic pulse "No criteria yet"
   story: string; // the story under `epic`, assigned to the live engineer seat
   liveSeat: string; // engineer.<story>, session state=alive
   deadSeat: string; // engineer.<deadStory>, session state=dead — a question of theirs is collapsed

@@ -23,7 +23,7 @@ from .skill import (
 )
 from .tool import Tool, ToolError, ToolOk, ToolResult
 
-__version__ = "0.9.1"
+__version__ = "0.10.8"
 
 __all__ = [
     # service

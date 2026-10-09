@@ -56,7 +56,7 @@ export function WorkflowList({ rows, selected, canEdit, onSelect, onDuplicate, o
                   <span className={styles.mono}>{r.ref}</span>{r.source ? ` · from ${r.source}` : ""}
                 </span>
                 <span className={styles.itemMeta} data-testid={`wf-pins-${r.ref}`}>
-                  {r.pinned_by.length ? `pinned by ${r.pinned_by.length} epic${r.pinned_by.length === 1 ? "" : "s"}: ${r.pinned_by.slice(0, 4).join(", ")}${r.pinned_by.length > 4 ? "…" : ""}` : "no epic pins it"}
+                  {r.pinned_by.length ? `Pinned by ${r.pinned_by.length} epic${r.pinned_by.length === 1 ? "" : "s"}` : "no epic pins it"}
                 </span>
                 {canEdit ? (
                   <span className={styles.row}>

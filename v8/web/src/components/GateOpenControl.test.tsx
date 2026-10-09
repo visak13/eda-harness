@@ -7,6 +7,12 @@ import { GateOpenControl } from "./GateOpenControl";
 // Open-a-gate (design §5, §16): posts to /v1/gates/{ticket}/{gate}/open with the chosen kind + note.
 
 describe("GateOpenControl", () => {
+  it("raises only a design sign-off or a scope decision: Acceptance is gone (design-63db8a7d42 row C)", () => {
+    renderRoute("/x", "/x", <GateOpenControl ticketId="s-1" />);
+    const options = [...screen.getByTestId("gate-open-kind").querySelectorAll("option")].map((o) => o.textContent);
+    expect(options).toEqual(["Design sign-off", "Scope"]);
+  });
+
   it("opens the chosen gate with its note, then calls onOpened", async () => {
     let path = "";
     let body: unknown = null;
@@ -19,10 +25,10 @@ describe("GateOpenControl", () => {
       }),
     );
     renderRoute("/x", "/x", <GateOpenControl ticketId="s-1" onOpened={() => (opened = true)} />);
-    fireEvent.change(screen.getByTestId("gate-open-kind"), { target: { value: "demo" } });
+    fireEvent.change(screen.getByTestId("gate-open-kind"), { target: { value: "scope" } });
     fireEvent.change(screen.getByLabelText("Gate note"), { target: { value: "show the sheet" } });
     fireEvent.click(screen.getByRole("button", { name: /Open the .* gate/ }));
-    await waitFor(() => expect(path).toBe("demo"));
+    await waitFor(() => expect(path).toBe("scope"));
     expect(body).toEqual({ note: "show the sheet" });
     expect(opened).toBe(true);
   });

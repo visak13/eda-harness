@@ -13,6 +13,8 @@ from pathlib import Path
 
 from edp_contracts import settings
 
+from . import lean_boot
+
 SpawnMode = str  # "headless" (drained ConPTY) | "monitor" (visible console)
 
 
@@ -230,6 +232,7 @@ class SubprocessSpawner(Spawner):
             build_argv,
             build_env,
             build_session_args,
+            claude_launch_choice,
             ensure_claude_healthy,
             ensure_claude_runs,
             resolve_claude_bin,
@@ -239,6 +242,11 @@ class SubprocessSpawner(Spawner):
         # seam (see seat_model_for above) — an unpassed model no longer
         # falls to the config-dir default.
         model = model or seat_model_for(role, self.cwd)
+        # S7: the argv id carries `[1m]` for a 1M-window Claude row (never doubled) and the seat launches
+        # with `--effort <resolved>`, clamped to its model's catalog cap here too (a path that skipped the
+        # pool's spawn clamp, e.g. a resume replaying an old env, still cannot exceed it). `model` itself
+        # stays the catalog id: build_env looks the row up by it.
+        argv_model, effort = claude_launch_choice(self.cwd, model, extra_env)
         bin_ = resolve_claude_bin(self.claude_bin)
         # W14: pre-spawn health gate at the single resolved-bin chokepoint —
         # covers BOTH the monitor (ConsoleLaunch) and headless (PtyLaunch)
@@ -262,8 +270,11 @@ class SubprocessSpawner(Spawner):
         # reaches the shell and its MCP client authenticates as the seat.
         if extra_env:
             env.update({str(k): str(v) for k, v in extra_env.items()})
+        lean_boot.apply_env(env)   # S8: connectors/cron off + output caps (setdefault; operator env wins)
+        lean_boot.apply_wake_mod(env, self.cwd)   # e0cec s-e60c3d42ad: the edp-wake mod replaces the Monitor
         # phase 5: snapshot/branch flags (pin id / resume+fork a base).
         sargs = build_session_args(claude_session, resume_session)
+        sargs += lean_boot.lean_args(role, extra_env, self.cwd, env["CLAUDE_CONFIG_DIR"])
         # S19: a role the board declares tool-restricted (the read-only Help seat) spawns with claude's own
         # deny list, so its shell has no Bash/Edit/Write even under skip-permissions
         sargs = variadic_safe([*sargs, *disallowed_tools_args(extra_env)])
@@ -288,7 +299,7 @@ class SubprocessSpawner(Spawner):
 
             launch = ConsoleLaunch(
                 argv=build_argv(bin_, extra=[*sargs, activation_line],
-                                skip_permissions=skip_perms, model=model),
+                                skip_permissions=skip_perms, model=argv_model, effort=effort),
                 env=env,
                 cwd=self.cwd,
             )
@@ -307,7 +318,7 @@ class SubprocessSpawner(Spawner):
             )
             launch = PtyLaunch(
                 argv=build_argv(bin_, extra=sargs,
-                                skip_permissions=skip_perms, model=model),
+                                skip_permissions=skip_perms, model=argv_model, effort=effort),
                 env=env,
                 cwd=self.cwd,
                 log_path=log_path,

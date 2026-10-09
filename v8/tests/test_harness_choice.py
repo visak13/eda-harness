@@ -130,8 +130,9 @@ def test_rest_spawn_refuses_fable_adversary_until_a_human_acknowledges(rig):
     assert client.get("/v1/harness", headers=OWNER).json()["value"]["fable_ack"]["by"] == "owner"
 
 
-def test_the_gate_is_only_for_an_adversary_on_fable(rig):
+def test_the_gate_is_only_for_an_adversary_on_fable(rig, monkeypatch):
     client, epic, calls = rig["client"], rig["epic"], rig["calls"]
+    monkeypatch.setattr(rig["board"], "qa_wait", lambda t: None)  # S4 C1 staffing is not under test here
     r = client.post("/v1/sessions/spawn", json={"role": "qa", "participant_id": f"qa.{epic}", "ticket_id": epic},
                     headers=OWNER)
     assert r.json()["ok"] and calls[-1]["model"] == harness.FABLE  # qa on Fable is not gated
@@ -181,6 +182,6 @@ def test_codex_selected_never_gates(rig, monkeypatch):
 
 def test_pi_seat_guide_ships():
     from pathlib import Path
-    guide = (Path(__file__).resolve().parents[1] / "guides" / "pi-seat.md").read_text(encoding="utf-8")
+    guide = (Path(__file__).resolve().parents[1] / "docs" / "operator" / "pi-seat.md").read_text(encoding="utf-8")
     for must in ("harness", "/login", "models.json", "EDP_PI_ROLES", "claude-fable-5-1"):
         assert must in guide

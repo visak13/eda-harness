@@ -66,7 +66,9 @@ const check = (ok, what) => { L(`${ok ? "PASS" : "FAIL"} ${what}`); if (!ok) fai
     const seatMint = await fetch(`${BOARD}/v1/code/session`, { method: "POST", headers: { "X-Participant": SEAT, "X-Token": TOKEN } });
     check(seatMint.status === 403, `the board refuses this agent seat a code session (${seatMint.status})`);
     errors.length = 0;
-    await page.goto(`${GUARD}/__edp/login?t=${mintToken(REC.mint_key)}&next=%2F`);
+    // RC2 F5: the login is one POSTed form (a GET is 405), so the token never sits in a URL
+    await page.setContent(`<form method="post" action="${GUARD}/__edp/login"><input type="hidden" name="t" value="${mintToken(REC.mint_key)}"><input type="hidden" name="next" value="/"></form>`);
+    await page.evaluate(() => document.forms[0].submit());
     await page.waitForURL((u) => !u.pathname.startsWith("/__edp/"), { timeout: 30000 });
     L(`landed on ${page.url().slice(0, 100)}`);
     check(new URL(page.url()).pathname !== "/__edp/login", "the guard login redirected to the workbench");

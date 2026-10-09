@@ -36,6 +36,8 @@ def _free_port() -> int:
 
 def _env(tmp_path: Path, **extra: str) -> dict[str, str]:
     env = dict(os.environ)
+    env.pop("EDP8_HOME", None)
+    env["EDP_HOME"] = str(tmp_path)  # the run dir below must sit inside EDP_HOME or the home guard refuses
     env["EDP8_RUN_DIR"] = str(tmp_path / "run")  # never read or write the fleet's .run
     for var in ("EDP8_PORT", "EDP_BROKER_PORT", "EDP_POOL_PORT", "EDP8_MCP_PORT", "EDP_CODE_PORT"):
         env[var] = str(_free_port())  # nothing listens

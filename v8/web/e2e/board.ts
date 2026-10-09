@@ -10,6 +10,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { deadServiceEnv, hermeticEnv, seedAgentHome } from "./hermeticEnv";
 import { e2eBoardDistEnv } from "./distDir";
+import { resolveBoardCmd } from "./boardCmd";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const WEB_DIR = path.resolve(HERE, "..");
@@ -74,7 +75,7 @@ export async function startBoard(extraEnv: Record<string, string> = {}): Promise
 
   // Default to the documented `uv run edp8-board`; EDP8_BOARD_CMD overrides it (e.g. the
   // venv console script `edp8-board`) to skip a cold `uv` sync on CI / pool shells.
-  const cmd = (process.env.EDP8_BOARD_CMD ?? "uv run edp8-board").split(" ");
+  const cmd = resolveBoardCmd(process.env.EDP8_BOARD_CMD, REPO_DIR);
   board = spawn(cmd[0], cmd.slice(1), {
     cwd: REPO_DIR,
     shell: true, // resolve the launcher on PATH (Windows)

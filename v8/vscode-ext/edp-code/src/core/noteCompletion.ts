@@ -27,7 +27,7 @@ export type NoteCompletionRow = { label: string; insert: string; detail: string;
 
 /** C24: a board object inserts `$<id> (<title>) `; the detail names its kind and title. */
 export function refRows(rows: RefRow[]): NoteCompletionRow[] {
-  return rows.map(r => ({ label: `$${r.id}`, insert: refToken(r), detail: `${kindLabel(r.kind)} · ${r.title}${r.group === 'board' ? ' (other work)' : ''}`, kind: 'ref' as const }));
+  return rows.map(r => ({ label: `$${r.id}`, insert: refToken(r), detail: `${kindLabel(r.kind)} · ${r.title}${r.kind === 'artifact' ? ` · ${r.epic ?? 'no epic'}` : ''}${r.group === 'board' ? ' (other work)' : ''}`, kind: 'ref' as const }));
 }
 
 export function mentionRows(people: PersonRow[], query: string): NoteCompletionRow[] {

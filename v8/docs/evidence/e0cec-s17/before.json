@@ -1,0 +1,214 @@
+{
+ "label": "before",
+ "head_first": false,
+ "assemble_ruleset": true,
+ "engineer_tool_desc_chars": 23348,
+ "rows": [
+  {
+   "set": "orig",
+   "story": "A1",
+   "read": 153555,
+   "written": 51826,
+   "calls": {
+    "context": 8534,
+    "ticket_read": 7272,
+    "assemble_ruleset": 8410,
+    "doc_read": 125809,
+    "find": 3530
+   },
+   "misses": []
+  },
+  {
+   "set": "orig",
+   "story": "A2",
+   "read": 140574,
+   "written": 43292,
+   "calls": {
+    "context": 6789,
+    "ticket_read": 5886,
+    "assemble_ruleset": 7138,
+    "doc_read": 116526,
+    "find": 4235
+   },
+   "misses": []
+  },
+  {
+   "set": "orig",
+   "story": "A3",
+   "read": 140186,
+   "written": 40079,
+   "calls": {
+    "context": 6844,
+    "ticket_read": 5950,
+    "assemble_ruleset": 6518,
+    "doc_read": 116227,
+    "find": 4647
+   },
+   "misses": []
+  },
+  {
+   "set": "orig",
+   "story": "B1",
+   "read": 161102,
+   "written": 47147,
+   "calls": {
+    "context": 7866,
+    "ticket_read": 6835,
+    "assemble_ruleset": 9444,
+    "doc_read": 132610,
+    "find": 4347
+   },
+   "misses": []
+  },
+  {
+   "set": "orig",
+   "story": "B2",
+   "read": 147432,
+   "written": 36463,
+   "calls": {
+    "context": 7383,
+    "ticket_read": 6082,
+    "assemble_ruleset": 8412,
+    "doc_read": 121725,
+    "find": 3830
+   },
+   "misses": []
+  },
+  {
+   "set": "orig",
+   "story": "B3",
+   "read": 160644,
+   "written": 47931,
+   "calls": {
+    "context": 8212,
+    "ticket_read": 6918,
+    "assemble_ruleset": 9851,
+    "doc_read": 130683,
+    "find": 4980
+   },
+   "misses": []
+  },
+  {
+   "set": "pyr",
+   "story": "A1",
+   "read": 180519,
+   "written": 51826,
+   "calls": {
+    "context": 8531,
+    "ticket_read": 7266,
+    "assemble_ruleset": 8410,
+    "doc_read": 152782,
+    "find": 3530
+   },
+   "misses": []
+  },
+  {
+   "set": "pyr",
+   "story": "A2",
+   "read": 163935,
+   "written": 43292,
+   "calls": {
+    "context": 6789,
+    "ticket_read": 5883,
+    "assemble_ruleset": 7138,
+    "doc_read": 139895,
+    "find": 4230
+   },
+   "misses": []
+  },
+  {
+   "set": "pyr",
+   "story": "A3",
+   "read": 163247,
+   "written": 40079,
+   "calls": {
+    "context": 6838,
+    "ticket_read": 5943,
+    "assemble_ruleset": 6518,
+    "doc_read": 139268,
+    "find": 4680
+   },
+   "misses": []
+  },
+  {
+   "set": "pyr",
+   "story": "B1",
+   "read": 192827,
+   "written": 47147,
+   "calls": {
+    "context": 7866,
+    "ticket_read": 6830,
+    "assemble_ruleset": 11999,
+    "doc_read": 161651,
+    "find": 4481
+   },
+   "misses": []
+  },
+  {
+   "set": "pyr",
+   "story": "B2",
+   "read": 174117,
+   "written": 36463,
+   "calls": {
+    "context": 7384,
+    "ticket_read": 6078,
+    "assemble_ruleset": 10967,
+    "doc_read": 145855,
+    "find": 3833
+   },
+   "misses": []
+  },
+  {
+   "set": "pyr",
+   "story": "B3",
+   "read": 191762,
+   "written": 47931,
+   "calls": {
+    "context": 8210,
+    "ticket_read": 6913,
+    "assemble_ruleset": 12406,
+    "doc_read": 159202,
+    "find": 5031
+   },
+   "misses": []
+  },
+  {
+   "set": "real",
+   "story": "design-b6a55eed13",
+   "read": 42134,
+   "written": 41597,
+   "calls": {},
+   "misses": []
+  },
+  {
+   "set": "real",
+   "story": "design-f39cf0db7d",
+   "read": 8171,
+   "written": 7381,
+   "calls": {},
+   "misses": []
+  },
+  {
+   "set": "real",
+   "story": "note-0db5502c85",
+   "read": 13130,
+   "written": 12187,
+   "calls": {},
+   "misses": []
+  }
+ ],
+ "totals": {
+  "orig": {
+   "read": 903493,
+   "written": 266738
+  },
+  "pyr": {
+   "read": 1066407,
+   "written": 266738
+  },
+  "real": {
+   "read": 63435,
+   "written": 61165
+  }
+ }
+}

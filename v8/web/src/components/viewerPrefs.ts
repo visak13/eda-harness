@@ -22,6 +22,11 @@ export function writeFlag(viewer: string, key: string, value: boolean): void {
   }
 }
 
+/** A phone-width viewport (the shell's mobile breakpoint). False where matchMedia is missing (SSR, a bare test DOM). */
+export function narrowViewport(): boolean {
+  try { return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 767px)").matches; } catch { return false; }
+}
+
 /** A remembered boolean for this viewer; the setter persists (best effort). */
 export function useViewerFlag(viewer: string, key: string, fallback = false): [boolean, (next: boolean) => void] {
   const [value, setValue] = useState(() => readFlag(viewer, key, fallback));

@@ -1,0 +1,491 @@
+
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+    <Package
+        UpgradeCode="41c17ed3-4788-5f2a-812b-7c2da17661ff"
+        Name="Heronry S2 Spike"
+        Version="0.9.1"
+        Manufacturer="Heronry contributors"
+        Language="1033"
+        Scope="perUserOrMachine">
+        <!-- See scope comments below -->
+
+        <Media Id="1" Cabinet="product.cab" EmbedCab="yes" />
+
+        <MajorUpgrade
+            DowngradeErrorMessage="A newer version of [ProductName] is already installed."
+            AllowSameVersionUpgrades="yes"
+            Schedule="afterInstallInitialize" />
+
+        <!-- S2: per-user only. A MajorUpgrade finds the installed product only in the same scope, so ALLUSERS=1 is refused -->
+        <Launch Condition="Installed OR NOT (ALLUSERS = 1)" Message="[ProductName] installs per user only; run it without ALLUSERS=1." />
+        <Property Id="HeronryScopePin" Value="perUser" />
+
+        <Icon Id="ProductIcon" SourceFile="icon.ico" />
+
+        <!-- Add/Remove Programs settings -->
+        <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
+        <Property Id="ARPURLINFOABOUT" Value="https://github.com/visak13/eda-harness" />
+        <Property Id="ARPCONTACT" Value="noreply@github.com" />
+        
+        <Property Id="ARPNOREPAIR" Value="1" />
+        <Property Id="ARPNOMODIFY" Value="1" />
+        
+
+        <!-- This property controls the target directory set by the
+        InstallDirDlg. The value must be upper case to make it a public property
+        that will be passed to the execution phase. And since WiX will create a
+        default INSTALLFOLDER directory under certain circumstances, let's
+        override that with our own definition to avoid confusion. -->
+        <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+
+        
+        <Property Id="WINDOWSBUILDNUMBER" Secure="yes">
+            <RegistrySearch Id="BuildNumberSearch" Root="HKLM" Key="SOFTWARE\Microsoft\Windows NT\CurrentVersion" Name="CurrentBuildNumber" Type="raw" />
+        </Property>
+        <Launch
+            Condition="Installed OR (VersionNT64 AND (WINDOWSBUILDNUMBER &gt;= 10240))"
+            Message="This application requires Windows build 10240 or later." />
+        
+
+        
+
+        <!-- This is either the per-user or the per-machine Program Files folder,
+        depending on the values of the ALLUSERS and MSIINSTALLPERUSER properties. -->
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <Directory Name="Heronry contributors">
+            <Directory Id="INSTALLFOLDER" Name="Heronry S2 Spike" />
+            </Directory>
+        </StandardDirectory>
+
+        <ComponentGroup Id="heronry_COMPONENTS">
+            <!-- "\\?\" enables long paths (https://github.com/wixtoolset/issues/issues/9115). -->
+            <Files
+                Directory="INSTALLFOLDER"
+                Include="\\?\<repo>\v8\.data\s2-spike\src-0.9.1\v8\desktop\build\heronry\windows\app\src\**" />
+            <Files
+                Directory="INSTALLFOLDER"
+                Include=".\extras\**" />
+        </ComponentGroup>
+
+        <Component Id="InstallFolderPermissions"
+                Guid="9162f60e-18be-5fdb-bf62-77e5d1147a5d"
+                Directory="INSTALLFOLDER"
+                Condition="ALLUSERS = 1">
+            <CreateFolder>
+                <!--
+                  If the MSI has been installed for all users, make sure that
+                  the install directory doesn't inherit permissions from the
+                  parent directory. This SDDL defines:
+
+                    D:P â€” Protected DACL (blocks inheritance â€” this is the key flag)
+                    AI â€” auto-inherit to children
+                    (A;OICI;FA;;;BA) â€” Full control for Administrators
+                    (A;OICI;FA;;;SY) â€” Full control for SYSTEM
+                    (A;OICI;0x1200a9;;;BU) â€” Read+Execute only for Built-in Users
+                  -->
+                <PermissionEx
+                    Sddl="D:PAI(A;OICI;FA;;;BA)(A;OICI;FA;;;SY)(A;OICI;0x1200a9;;;BU)"
+                />
+            </CreateFolder>
+        </Component>
+
+        <StandardDirectory Id="ProgramMenuFolder">
+            <Directory Id="ProgramMenuSubfolder" Name="Heronry S2 Spike">
+                <Component Id="ApplicationShortcuts">
+                    <Shortcut
+                        Id="ApplicationShortcut1"
+                        Name="Heronry S2 Spike"
+                        Icon="ProductIcon"
+                        Description="Your agent team, built on decisions, checked before delivery."
+                        Target="[INSTALLFOLDER]Heronry S2 Spike.exe" />
+                    <RegistryValue
+                        Root="HKMU"
+                        Key="Software\Heronry contributors\Heronry S2 Spike"
+                        Name="installed"
+                        Type="integer"
+                        Value="1"
+                        KeyPath="yes" />
+                    <RemoveFolder Id="ProgramMenuSubfolder" On="uninstall" />
+                </Component>
+            </Directory>
+        </StandardDirectory>
+
+        
+
+        
+
+        <Feature
+            Id="DefaultFeature"
+            Title="Heronry S2 Spike"
+            Description="Required application files"
+            Display="expand"
+        >
+            <ComponentGroupRef Id="heronry_COMPONENTS" />
+            <ComponentRef Id="InstallFolderPermissions" />
+
+            <ComponentRef Id="ApplicationShortcuts" />
+        </Feature>
+
+        
+
+        <!-- Custom user properties
+
+          The OPTION_X property definition describes a value that can be set.
+
+          If the option is enabled by default, it is set to a value of "1".
+          Options that are disabled by default are *not* set. If the value
+          is still unset at the cost finalization phase, the installer converts
+          the value to "0".
+          -->
+        
+
+        
+
+        
+
+        <!--
+          The ALLUSERS variable has to have a value of "" or 1; we need a
+          value of 0 or 1 for option output purposes.
+          -->
+        <Property Id="OPTION_ALLUSERS" Value="0"/>
+        <SetProperty
+            Id="OPTION_ALLUSERS"
+            Value="1"
+            After="CostFinalize"
+            Sequence="execute"
+            Condition="ALLUSERS = 1" />
+
+        <!--
+          If the installer is running in "quiet" mode (UILevel < 3), it must be treated as unattended.
+          -->
+        <Property Id="INSTALL_UNATTENDED" Value="0"/>
+        <SetProperty
+            Id="INSTALL_UNATTENDED"
+            Value="1"
+            After="CostFinalize"
+            Sequence="execute"
+            Condition="UILevel &lt; 3" />
+
+        
+
+        <!-- UI features are documented at:
+
+           https://docs.firegiant.com/wix/tools/wixext/wixui/,
+
+        and implemented in the WiX source code:
+
+           https://github.com/wixtoolset/wix/tree/v5.0.2/src/ext/UI/wixlib
+
+        We implement our own UI flow by linking together individual dialogs. There are
+        some pre-defined UI flows such as WixUI_Advanced, but they don't allow much
+        customization, and they have some bugs, e.g.
+        https://github.com/wixtoolset/issues/issues/5908. -->
+
+        <!-- Ensure the dialog titles reflect whether this is an install or uninstall -->
+        <Property Id="DIALOG_TITLE" Value="Installation" />
+        <SetProperty
+            Id="DIALOG_TITLE"
+            Value="Uninstallation"
+            Sequence="first"
+            Before="AppSearch"
+            Condition="Installed" />
+
+        <!-- Enable the radio buttons in InstallScopeDlg, and set the default value -->
+        <WixVariable Id="WixUISupportPerUser" Value="1" />
+        <WixVariable Id="WixUISupportPerMachine" Value="1" />
+        <Property Id="WixAppFolder" Value="WixPerUserFolder" />
+
+        <!-- Customize the images in the installer -->
+        
+        
+
+        <!-- Define the license text-->
+        <WixVariable Id="WixUILicenseRtf" Value="LICENSE.rtf" />
+
+        <UI>
+            <!-- Include the common WixUI resources-->
+            <UIRef Id="WixUI_Common" />
+
+            <!-- Include translations for error text (see https://stackoverflow.com/questions/44161526) -->
+            <UIRef Id="WixUI_ErrorProgressText" />
+
+            <!-- Prompt to close apps locking files (see https://stackoverflow.com/a/710685) -->
+            <DialogRef Id="FilesInUse" />
+            <DialogRef Id="MsiRMFilesInUse" />
+
+            <!-- Include all TextStyles from WixUI_Advanced -->
+            <TextStyle
+                Id="WixUI_Font_Normal"
+                FaceName="!(loc.Advanced_Font_FaceName)"
+                Size="!(loc.Advanced_Font_Normal_Size)" />
+            <TextStyle
+                Id="WixUI_Font_Bigger"
+                FaceName="!(loc.Advanced_Font_FaceName)"
+                Size="!(loc.Advanced_Font_Bigger_Size)" />
+            <TextStyle
+                Id="WixUI_Font_Title"
+                FaceName="!(loc.Advanced_Font_FaceName)"
+                Size="!(loc.Advanced_Font_Title_Size)"
+                Bold="yes" />
+            <TextStyle
+                Id="WixUI_Font_Emphasized"
+                FaceName="!(loc.Advanced_Font_FaceName)"
+                Size="!(loc.Advanced_Font_Emphasized_Size)"
+                Bold="yes" />
+            <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+
+            <!-- Define a custom InstallDirDlg so we can add a "Disk Usage" button
+                 to the bottom button row. The layout is otherwise identical to
+                 the standard InstallDirDlg -->
+            <Dialog
+                Id="CustomInstallDirDlg"
+                Width="370" Height="270"
+                Title="!(loc.InstallDirDlg_Title)">
+
+                <Control
+                    Id="BannerBitmap"
+                    Type="Bitmap"
+                    X="0" Y="0" Width="370" Height="44"
+                    TabSkip="no"
+                    Text="!(loc.InstallDirDlgBannerBitmap)" />
+                <Control
+                    Id="Title"
+                    Type="Text"
+                    X="15" Y="6" Width="200" Height="15"
+                    Transparent="yes"
+                    NoPrefix="yes"
+                    Text="!(loc.InstallDirDlgTitle)" />
+                <Control
+                    Id="Description"
+                    Type="Text"
+                    X="25" Y="23" Width="280" Height="15"
+                    Transparent="yes"
+                    NoPrefix="yes"
+                    Text="!(loc.InstallDirDlgDescription)" />
+                <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="373" Height="0" />
+
+                <Control
+                    Id="FolderLabel"
+                    Type="Text"
+                    X="20" Y="60" Width="290" Height="30"
+                    NoPrefix="yes"
+                    Text="!(loc.InstallDirDlgFolderLabel)" />
+                <Control
+                    Id="Folder"
+                    Type="PathEdit"
+                    X="20" Y="100" Width="320" Height="18"
+                    Property="WIXUI_INSTALLDIR"
+                    Indirect="yes" />
+                <Control
+                    Id="ChangeFolder"
+                    Type="PushButton"
+                    X="20" Y="120" Width="56" Height="17"
+                    Text="!(loc.InstallDirDlgChange)" />
+
+                
+
+                <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="373" Height="0" />
+                <Control
+                    Id="DiskUsage"
+                    Type="PushButton"
+                    X="112" Y="243" Width="56" Height="17"
+                    Text="Disk &amp;Usage" />
+                <Control
+                    Id="Back"
+                    Type="PushButton"
+                    X="180" Y="243" Width="56" Height="17"
+                    Text="!(loc.WixUIBack)" />
+                <Control
+                    Id="Next"
+                    Type="PushButton"
+                    X="236" Y="243" Width="56" Height="17"
+                    Default="yes"
+                    Text="!(loc.WixUINext)" />
+                <Control
+                    Id="Cancel"
+                    Type="PushButton"
+                    X="304" Y="243" Width="56" Height="17"
+                    Cancel="yes"
+                    Text="!(loc.WixUICancel)">
+                    <Publish Event="SpawnDialog" Value="CancelDlg" />
+                </Control>
+            </Dialog>
+
+            
+            
+
+            <!-- Define the workflow through the install dialogs.
+
+            The general workflow is:
+             * Welcome
+             * License
+             * (optional) Install Scope (see notes below)
+             * Install Directory
+             * (optional) Install options
+             * Verify Ready
+             * Exit
+
+            Scope handling has to work within the following constraints, some of
+            which are documented, and some not
+            (https://learn.microsoft.com/en-us/windows/win32/msi/single-package-authoring):
+
+            * If ALLUSERS="" or 1, then:
+              * Whether elevation is required depends on the "Word Count Summary".
+              * Some folders are affected by the choice of "" or 1, but ProgramFiles
+                folders will always point at the per-machine location.
+              * MSIINSTALLPERUSER has no effect during startup.
+
+            * If ALLUSERS=2 and MSIINSTALLPERUSER=1, then:
+              * Elevation will not be required.
+              * ProgramFiles folders will point at the per-user location.
+              * If either phase is started with these values, then ALLUSERS will be
+                changed to "" before running any actions. However, if the UI phase ends
+                and both properties still have the same values (ALLUSERS="",
+                MSIINSTALLPERUSER=1), then it will reset ALLUSERS=2 before invoking the
+                execution phase.
+
+            * Properties that depend on a ProgramFiles folder are immediately
+              re-evaluated in the following circumstances. This is important for
+              the InstallDirDlg:
+              * Setting ALLUSERS=1 sets the per-machine location.
+              * Setting ALLUSERS="", MSIINSTALLPERUSER=1, in that order, sets the
+                per-user location.
+
+            * Most standard actions, such as FindRelatedProducts, interpret ALLUSERS=""
+              as per-user scope, and any other value as per-machine scope.
+
+            Based on this, our UI phase sets the properties to one of two states:
+              * Per-user: ALLUSERS="", MSIINSTALLPERUSER=1
+              * Per machine: ALLUSERS=1, MSIINSTALLPERUSER="" -->
+
+            <!-- Initial welcome dialog -->
+            <Publish
+                Dialog="WelcomeDlg"
+                Control="Next"
+                Event="NewDialog"
+                Value="LicenseAgreementDlg" />
+
+            <!-- License agreement -->
+            <Publish
+                Dialog="LicenseAgreementDlg"
+                Control="Back"
+                Event="NewDialog"
+                Value="WelcomeDlg" />
+
+            
+            <!-- The scope is pre-determined, and the properties have already been set
+            to the correct values by the <Package> Scope attribute. -->
+            <Publish
+                Dialog="LicenseAgreementDlg"
+                Control="Next"
+                Event="NewDialog"
+                Value="CustomInstallDirDlg"
+                Condition='LicenseAccepted = "1"'/>
+
+            <!-- Install Dir -->
+            <Publish
+                Dialog="CustomInstallDirDlg"
+                Control="Back"
+                Event="NewDialog"
+                Value="LicenseAgreementDlg" />
+
+                
+
+            <Publish
+                Dialog="CustomInstallDirDlg"
+                Control="Next"
+                Event="NewDialog"
+                Value="VerifyReadyDlg"
+                Order="99"/>
+
+            <!-- Verify -->
+            <Publish
+                Dialog="VerifyReadyDlg"
+                Control="Back"
+                Event="NewDialog"
+                Value="CustomInstallDirDlg"
+                Order="1"
+                Condition="NOT Installed" />
+                
+            
+
+            <!-- Display the BrowseDlg when the "Change" button on InstallDirDlg
+            is pressed. -->
+            <Publish
+                Dialog="CustomInstallDirDlg"
+                Control="ChangeFolder"
+                Event="[_BrowseProperty]"
+                Value="[WIXUI_INSTALLDIR]"
+                Order="1"/>
+            <Publish
+                Dialog="CustomInstallDirDlg"
+                Control="ChangeFolder"
+                Event="SpawnDialog"
+                Value="BrowseDlg"
+                Order="2"/>
+            <!-- Display the standard DiskCostDlg (provided by WixUI_Common)
+            when the "Disk Usage" button on CustomInstallDirDlg is pressed. -->
+            <Publish
+                Dialog="CustomInstallDirDlg"
+                Control="DiskUsage"
+                Event="SpawnDialog"
+                Value="DiskCostDlg" />
+
+            
+
+            <!-- Define the workflow through the uninstall dialogs.
+
+            The general workflow is:
+             * Maintenance Welcome
+             * (optional) Uninstall options
+             * Verify Ready
+             * Exit
+            -->
+
+            <Publish
+                Dialog="MaintenanceWelcomeDlg"
+                Control="Next"
+                Property="WixUI_InstallMode"
+                Value="Remove"
+                Order="98" />
+
+            
+
+            <Publish
+                Dialog="MaintenanceWelcomeDlg"
+                Control="Next"
+                Event="NewDialog"
+                Value="VerifyReadyDlg"
+                Order="99" />
+
+            <!-- Verify -->
+            <Publish
+                Dialog="VerifyReadyDlg"
+                Control="Back"
+                Event="NewDialog"
+                Value="MaintenanceWelcomeDlg"
+                Order="2"
+                Condition="Installed" />
+
+            
+
+            <!-- Install complete -->
+            <Publish
+                Dialog="ExitDialog"
+                Control="Finish"
+                Event="EndDialog"
+                Value="Return"
+                Order="99" />
+        </UI>
+
+        
+        
+        <InstallExecuteSequence>
+        
+        
+        </InstallExecuteSequence>
+    </Package>
+</Wix>

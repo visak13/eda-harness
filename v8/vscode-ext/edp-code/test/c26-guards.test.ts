@@ -65,7 +65,7 @@ it('C26 Q1: ChatController.fail shows a 403 as an error and never clears the vie
 
 it('C26 Q1: an Inbox 403 shows in its tab without signing out', async () => {
   const onAuthFail = vi.fn(), post = vi.fn();
-  const board = { decisions: async () => { throw new BoardError('forbidden', 'not permitted', 403); } } as unknown as Board;
+  const board = { inbox: async () => { throw new BoardError('forbidden', 'not permitted', 403); } } as unknown as Board;
   const sc = { id: 's-0123456789', ids: new Set(['s-0123456789']), titles: new Map() };
   const host = new InboxHost(() => board, () => 'http://127.0.0.1:1', () => sc, post, async () => {}, onAuthFail, () => {});
   try {
@@ -100,7 +100,7 @@ const question = { id: 'm-1111111111', ticket_id: STORY, text: 'ship it?', creat
 function inbox(send: () => Promise<unknown>) {
   const posts: any[] = [];
   const onAuthFail = vi.fn();
-  const board = { decisions: vi.fn(async () => ({ questions: [question], signoffs: [], gates: [], counts: {} })), send: vi.fn(send) };
+  const board = { inbox: vi.fn(async () => ({ questions: [question], signoffs: [], gates: [], counts: {} })), send: vi.fn(send) };
   const sc = { id: STORY, ids: new Set([STORY]), titles: new Map([[STORY, 'Story']]) };
   const host = new InboxHost(() => board as unknown as Board, () => 'http://127.0.0.1:1', () => sc, m => posts.push(m), async () => {}, onAuthFail, () => {});
   return { host, posts, onAuthFail, board, done: () => posts.filter(m => m.type === 'inboxDone') };

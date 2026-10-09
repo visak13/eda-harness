@@ -18,7 +18,8 @@ Then the guard's own gate (s-17c13096e5): code-server's session is added only fo
 holds the guard's cookie (``edp-code-guard``, a per-start random value in this process's memory
 only; HttpOnly, SameSite=Strict, Path=/). Without it every request and WebSocket upgrade gets 401,
 so a local non-browser caller that forges Host/Origin (a sandboxed agent) no longer rides the
-owner's session. The cookie is set by ``GET /__edp/login?t=<token>&next=<path>``, where the token
+owner's session. The cookie is set by ``POST /__edp/login`` with the form ``t=<token>&next=<path>`` (RC2 F5,
+architect m-e26cf15b4f: a login token never rides a URL the UI renders, so a GET is refused 405), where the token
 is a one-time, short-lived HMAC the board mints for its human owner (``POST /v1/code/session``)
 with the per-start mint key both share (env here, ``.run/code.json`` for the board). Only
 ``GET /healthz`` passes without it, relayed without the session, and ``GET /__edp/home``, which the guard
@@ -66,6 +67,7 @@ MINT_KEY_ENV = "CODE_GUARD_MINT_KEY"
 LOGIN_PATH = "/__edp/login"
 HOME_PATH = "/__edp/home"
 TOKEN_TTL_S = 60
+LOGIN_MAX_BODY = 2048  # the POSTed login form: a token and one next path
 TOKEN_MAX_TTL_S = 120  # a token that claims to live longer than this was not minted by the board
 _TOKEN_RE = re.compile(r"(\d{1,12})\.([0-9a-f]{32})\.([0-9a-f]{64})")
 _TOKEN = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")  # RFC 9110 field-name
@@ -134,8 +136,9 @@ def check_head(head: bytes, port: int, origins: set[str], session: str | None = 
     With ``session``, the forwarded head carries ``code-server-session=<session>`` in place of any
     session cookie the client sent (code-server's password login, supplied by the guard).
     With ``gate`` (the guard cookie's value), a request without that cookie is refused 401, except
-    ``GET /healthz`` (relayed without the session) and the login route (``facts["login"]`` holds its
-    query; the guard answers it, nothing is relayed). The guard cookie is never forwarded.
+    ``GET /healthz`` (relayed without the session) and the login route (a POST: ``facts["login"]`` is "" and
+    ``facts["length"]`` its form's size; the guard reads and answers it, nothing is relayed). The guard cookie
+    is never forwarded.
     Raises Refused for a request the guard must not relay. Anything a parser downstream could read
     differently from this one (a non-token header name, a bare CR/LF, a repeated Content-Length or
     Upgrade, Content-Length with Transfer-Encoding, an Upgrade without the ``upgrade`` Connection
@@ -215,8 +218,10 @@ def check_head(head: bytes, port: int, origins: set[str], session: str | None = 
     home = target == HOME_PATH and parts[0] == "GET" and not (is_ws or length or chunked)
     if gate is not None and not home:
         login = path == LOGIN_PATH
-        if login and (parts[0] != "GET" or is_ws or length or chunked):
-            raise Refused(400, "Bad Request", "the login route is a plain GET")
+        if login and parts[0] != "POST":
+            raise Refused(405, "Method Not Allowed", "the login route takes one POSTed form (t, next): a token never rides a URL")
+        if login and (query or is_ws or chunked or not 0 < length <= LOGIN_MAX_BODY):
+            raise Refused(400, "Bad Request", f"the login route takes one form body of 1-{LOGIN_MAX_BODY} bytes and no query")
         health = target == "/healthz" and parts[0] == "GET" and not is_ws
         if not (login or health or any(hmac.compare_digest(p.encode(), gate.encode()) for p in presented)):
             raise Refused(401, "Unauthorized", "no guard session: open the Code tab on the board (/ui/code) to sign in")
@@ -227,7 +232,7 @@ def check_head(head: bytes, port: int, origins: set[str], session: str | None = 
     if chunked:
         kept = [k for k in kept if not k.lower().startswith("connection:")] + ["Connection: close"]
     out = ("\r\n".join(kept) + "\r\n\r\n").encode("latin-1")
-    return out, {"ws": is_ws, "length": length, "chunked": chunked, "login": query if login else None, "home": home}
+    return out, {"ws": is_ws, "length": length, "chunked": chunked, "login": "" if login else None, "home": home}
 
 
 def refusal(r: Refused) -> bytes:
@@ -338,7 +343,9 @@ class Guard:
                 return
             fwd, facts = self.check(head)
             if facts["login"] is not None or facts["home"]:
-                cwriter.write(self.login(facts["login"]) if facts["login"] is not None else self.identity())
+                form = (await asyncio.wait_for(creader.readexactly(facts["length"]), 10)).decode("latin-1") \
+                    if facts["login"] is not None else ""
+                cwriter.write(self.login(form) if facts["login"] is not None else self.identity())
                 await cwriter.drain()
                 return
             ureader, uwriter = await open_upstream(self.upstream)

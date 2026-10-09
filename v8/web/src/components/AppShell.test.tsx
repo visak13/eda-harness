@@ -36,37 +36,33 @@ beforeEach(() => {
 });
 
 describe("AppShell", () => {
-  // S20 (design-e963c656f5 §4.18): the Needs you page is gone; v34 (owner m-8aa6439a77): so is the rail's
-  // "Waiting on you" entry and its popover, with nothing in their place.
-  it("renders Epics, Seats, Library, Code, Design (one Library destination) and no Waiting on you entry", async () => {
+  // S20 (design-e963c656f5 §4.18) and s-aa76c83998: the rail has no waiting entry and no popover.
+  it("renders Epics, Seats, Library, Code, Design (one Library destination) and no waiting entry", async () => {
     renderShell("/epics");
     const links = screen.getAllByRole("link");
     expect(links.map((l) => l.textContent?.replace(/\d+$/, "").trim())).toEqual(["Epics", "Seats", "Library", "Code", "Design"]);
     // NavLink marks the active route with aria-current=page.
     expect(screen.getByRole("link", { name: /Epics/ })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByTestId("waiting-open")).toBeNull();
-    expect(within(screen.getByRole("navigation", { name: "Sections" })).queryByText("Waiting on you")).toBeNull();
-    expect(screen.queryByRole("link", { name: /Needs you/ })).toBeNull();
   });
 
   it("S20 rail: the attention counts sit on Epics and Library (Admin-free rail), each with a dot and an aria-label", async () => {
     server.use(attentionHandler());
     renderShell("/epics");
     const epics = screen.getByRole("link", { name: /^Epics/ });
-    expect(await within(epics).findByRole("img", { name: "needs your attention: 5" })).toBeInTheDocument();
+    expect(await within(epics).findByRole("img", { name: "needs your attention: 2" })).toBeInTheDocument();
     expect(within(screen.getByRole("link", { name: /^Library/ })).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
     expect(within(screen.getByRole("link", { name: /^Seats/ })).queryByRole("img")).toBeNull();
     expect(within(screen.getByTestId("ask-help")).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
     // never colour only: the dot carries a glyph and the count as text
-    expect(within(epics).getByRole("img").textContent).toMatch(/5/);
+    expect(within(epics).getByRole("img").textContent).toMatch(/2/);
   });
 
-  it("v34: no rail control opens a Waiting on you popover", async () => {
+  it("v34: no rail control opens a waiting popover", async () => {
     server.use(attentionHandler());
     renderShell("/epics");
-    await within(screen.getByRole("link", { name: /^Epics/ })).findByRole("img", { name: "needs your attention: 5" });
-    expect(screen.queryByRole("button", { name: /Waiting on you/ })).toBeNull();
-    expect(screen.queryByRole("dialog", { name: "Waiting on you" })).toBeNull();
+    await within(screen.getByRole("link", { name: /^Epics/ })).findByRole("img", { name: "needs your attention: 2" });
+    expect(screen.queryByRole("dialog", { name: /Waiting/ })).toBeNull();
   });
 
   it("S20 clearing: a dot leaves the rail once its item is answered (the next attention read)", async () => {
@@ -80,7 +76,7 @@ describe("AppShell", () => {
     value = without("m-topicq");
     await qc.invalidateQueries({ queryKey: ["me"] });
     await waitFor(() => expect(within(library).queryByRole("img")).toBeNull());
-    expect(within(screen.getByRole("link", { name: /^Epics/ })).getByRole("img", { name: "needs your attention: 5" })).toBeInTheDocument();
+    expect(within(screen.getByRole("link", { name: /^Epics/ })).getByRole("img", { name: "needs your attention: 2" })).toBeInTheDocument();
   });
 
   it("works with no dots when the attention read is unavailable (an older board)", async () => {
@@ -109,7 +105,8 @@ describe("AppShell", () => {
     );
     renderShell("/me");
     expect(await screen.findByTestId("identity-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("identity-hint")).toHaveTextContent("check your token");
+    // an untouched card shows no error; one appears only after a sign-in attempt (architect m-67dc851e4f)
+    expect(screen.queryByTestId("identity-hint")).not.toBeInTheDocument();
     // The shell chrome is NOT rendered while identity is unresolved (no silent `as` fallback).
     expect(screen.queryByRole("link", { name: /Epics/ })).not.toBeInTheDocument();
   });

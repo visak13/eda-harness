@@ -4,6 +4,7 @@ import { useNavigate } from "react-router";
 import { dispositionOf, fetchArtifactContent, isVideoType } from "./ArtifactLink";
 import styles from "./Markdown.module.css";
 import { kindLabel, refHref, splitRefs, type RefPart } from "./boardRefs";
+import { isExternalHref } from "../desktop/shell";
 
 // Server-rendered doc HTML (views.render_markdown) is sanitised AGAIN in the browser before it
 // is injected — defence in depth, and the criterion (c-d2dbb34b06) requires the client to strip
@@ -24,6 +25,23 @@ export function demoteHeadings(html: string): string {
     }
   }
   return doc.body.innerHTML;
+}
+
+/** S11: every external link (http/https on another origin) in a rendered body opens in a new context and cannot
+ *  reach back to the board (`target=_blank rel="noopener noreferrer"`). DOMPurify drops `target`, so this runs on
+ *  the sanitised HTML and only ever adds those two attributes. In the desktop window the shell sends the new
+ *  window to the system browser. Same-origin and in-app links are left alone. */
+export function externalizeLinks(html: string): string {
+  if (typeof DOMParser === "undefined" || !/<a[\s>]/i.test(html)) return html;
+  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+  let changed = false;
+  for (const a of Array.from(doc.body.querySelectorAll("a[href]"))) {
+    if (!isExternalHref(a.getAttribute("href") ?? "")) continue;
+    a.setAttribute("target", "_blank");
+    a.setAttribute("rel", "noopener noreferrer");
+    changed = true;
+  }
+  return changed ? doc.body.innerHTML : html;
 }
 
 // A board artifact embedded in markdown (`![](/v1/artifacts/<id>/content)`), relative or absolute.
@@ -82,12 +100,22 @@ export function useArtifactMedia(ref: React.RefObject<HTMLElement | null>, dep: 
   }, [ref, dep]);
 }
 
+/** qa 0.10.8 round 3: a host name, path or slash command must not break at its hyphen or slash ("your-pc.tail1234.ts.net",
+ *  "uses_strategy/uses_domain", "/doc-write" read as "remote-" / "access.md" otherwise). A <code> that is ONE short token stays on
+ *  one line, and so does a bare slash command in prose; long code and code with spaces keeps wrapping. Runs after DOMPurify. */
+const NOWRAP = 'style="white-space:nowrap"';
+export function keepTokensWhole(html: string): string {
+  return html
+    .replace(/<code>([^\s<>&]{1,48})<\/code>/g, (m, tok: string) => (/[-/.]/.test(tok) ? `<code ${NOWRAP}>${tok}</code>` : m))
+    .replace(/(^|[\s(>])(\/[a-z][a-z0-9]*(?:-[a-z0-9]+)+)(?=[\s).,;:<]|$)/g, `$1<span ${NOWRAP}>$2</span>`);
+}
+
 export function Markdown({ html, className }: { html: string; className?: string }): React.JSX.Element {
   // React 19 re-applies innerHTML whenever the dangerouslySetInnerHTML OBJECT changes identity —
   // a fresh `{ __html }` per render would rebuild the body's DOM on every parent re-render and
   // detach whatever the reader had (a link mid-click, a selection). Memoise on the sanitised
   // string so the body's nodes survive re-renders (qa finding while pinning doc versions, 2026-09-10).
-  const inner = useMemo(() => ({ __html: deferArtifactMedia(demoteHeadings(DOMPurify.sanitize(html))) }), [html]);
+  const inner = useMemo(() => ({ __html: keepTokensWhole(externalizeLinks(deferArtifactMedia(demoteHeadings(DOMPurify.sanitize(html))))) }), [html]);
   const ref = useRef<HTMLDivElement>(null);
   useArtifactMedia(ref, inner);
   return (
@@ -144,9 +172,16 @@ export function linkifyMessageHtml(html: string, strip: string[] = []): string {
   const nodes: Text[] = [];
   for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n as Text);
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+  // only the attachment ids that END the message are the composer's tokens; one inside a sentence stays and links
+  const last = [...nodes].reverse().find((n) => n.data.trim() !== "" && !n.parentElement?.closest("code, pre"));
+  const ids = strip.filter(Boolean);
   for (const node of nodes) {
     let text = node.data;
-    for (const id of strip) if (id) text = text.split(id).join("");
+    if (node === last && ids.length) {
+      const words = text.split(/(\s+)/);
+      while (words.length && (words[words.length - 1] === "" || ids.includes(words[words.length - 1]!) || /^\s+$/.test(words[words.length - 1]!))) words.pop();
+      text = words.join("");
+    }
     if (text !== node.data) node.data = text;
     if (node.parentElement?.closest("a, code, pre")) continue;
     // C24: `$<id> (label)` references become link chips; the rest of the text is linkified as before
@@ -175,7 +210,7 @@ export function linkifyMessageHtml(html: string, strip: string[] = []): string {
 export function MessageMarkdown({ html, strip, className }: { html: string; strip?: string[]; className?: string }): React.JSX.Element {
   const navigate = useNavigate();
   const key = strip?.join(",") ?? "";
-  const inner = useMemo(() => ({ __html: deferArtifactMedia(linkifyMessageHtml(demoteHeadings(DOMPurify.sanitize(html)), key ? key.split(",") : [])) }), [html, key]);
+  const inner = useMemo(() => ({ __html: externalizeLinks(deferArtifactMedia(linkifyMessageHtml(demoteHeadings(DOMPurify.sanitize(html)), key ? key.split(",") : []))) }), [html, key]);
   const ref = useRef<HTMLDivElement>(null);
   useArtifactMedia(ref, inner);
   function onClick(e: React.MouseEvent<HTMLDivElement>) {
@@ -188,8 +223,6 @@ export function MessageMarkdown({ html, strip, className }: { html: string; stri
       e.preventDefault();
       url.searchParams.delete("token");
       navigate(`${url.pathname.slice(base.length)}${url.search}${url.hash}`);
-    } else if (url.origin !== window.location.origin) {
-      a.setAttribute("target", "_blank");
     }
   }
   return (

@@ -12,12 +12,14 @@ import { sharedTreePaths } from './badge';
 import type { API, Change, Repository } from './git.d';
 import { inSharedTree } from '../core/seats';
 import { gitApi } from './repo';
+import { requireTrust } from './trust';
 
 const DEBOUNCE_MS = 500;
 const STATUS_GAP_MS = 1500;
 
 function run(exe: string, cwd: string, args: string[], input?: string): Promise<string> {
   return new Promise((res, rej) => {
+    try { requireTrust(); } catch (e) { rej(e); return; }
     const p = execFile(exe, args, { cwd, windowsHide: true, maxBuffer: 64 << 20, encoding: 'utf8' },
       (e, out, err) => (e ? rej(new Error((err || e.message).trim().slice(0, 300))) : res(out)));
     if (input !== undefined) p.stdin?.end(input); else p.stdin?.end();

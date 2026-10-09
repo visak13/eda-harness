@@ -90,7 +90,7 @@ Add the model in **Admin → Models** (below) with harness **pi** and the model 
 
 - **Models:** a table of every model for the selected harnesses: model id, harness, provider, context
   window, compact point, effort cap and the roles that use it. **Add a model**, **Edit** or **Remove**.
-  Claude models are capped at medium effort or lower. A Pi model's API key comes from its secret
+  A model's effort cap is low, medium or high (xhigh and max are never used); a seat asked for more runs at the cap. A Pi model's API key comes from its secret
   setting in **Admin → Settings**.
 - **Models per role:** tick the models each role may run on and pick its default. The **New epic**
   dialog offers exactly these. The board refuses a role with no model.

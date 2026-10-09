@@ -22,6 +22,7 @@ from typing import Any, Callable
 
 from edp8 import settings
 
+from . import lesson_scope
 from .schemas import now
 
 # S18 T2: sha256 of the source this process executed, taken as the module loads (edp8.rsi reads it)
@@ -102,10 +103,15 @@ def live_scope_ids(store: Any, target_epic: str | None) -> set[str]:
         for r in store.query(rtype, limit=100000):
             if not _dropped(r, rtype) and _epic_id_of(store, getattr(r, "scope", "") or "") == target_epic:
                 ids.add(r.id)
-    for les in store.query("lesson", limit=100000):
-        if not _dropped(les, "lesson"):
-            ids.add(les.id)
+    ids |= visible_lesson_ids(store, target_epic)
     return ids
+
+
+def visible_lesson_ids(store: Any, target_epic: str | None) -> set[str]:
+    """Ids of the live lessons this epic may see (lesson_scope.visible): the framework's for a framework
+    epic, a project's for an epic of that project. The dense lesson pool ranks within this set."""
+    _project, ok = lesson_scope.targets(store, target_epic)
+    return {les.id for les in store.query("lesson", limit=100000) if not _dropped(les, "lesson") and ok(les)}
 
 
 def _tokens(q: str) -> str:
@@ -236,11 +242,13 @@ def _source_excerpts(store: Any, target_epic: str | None, question: str | None,
             hits = []
     cand: list[tuple[str, Any]] = []
     seen: set[str] = set()
+    section: dict[str, str | None] = {}
     for h in hits:
         t, i = h.get("type"), h.get("id")
         if t not in ("message", "doc") or not i or i in seen:
             continue
         seen.add(i)
+        section[i] = h.get("section")
         obj = store.get(t, i)
         if obj is None:
             continue
@@ -251,9 +259,21 @@ def _source_excerpts(store: Any, target_epic: str | None, question: str | None,
     cand.sort(key=lambda to: to[1].created_at, reverse=True)  # newest-first
     out: list[dict[str, str]] = []
     for t, obj in cand[:MAX_EXCERPTS]:
-        body = obj.text if t == "message" else f"{getattr(obj, 'title', '')} {getattr(obj, 'body_md', '')}"
-        out.append({"id": obj.id, "type": t, "author": obj.created_by or "",
-                    "date": _as_date(obj.created_at), "text": _excerpt(body, question)})
+        item = {"id": obj.id, "type": t, "author": obj.created_by or "", "date": _as_date(obj.created_at)}
+        if t == "message":
+            body = obj.text
+        else:  # S17: a doc is quoted from the section the search hit, which doc_read(section=) reads whole
+            from .doc_tools import bounded_read, legacy_note
+            body, sec = obj.body_md, section.get(obj.id)
+            if sec:
+                try:
+                    body = bounded_read(obj, section=sec, limit=len(obj.body_md))["body_md"]
+                    item["heading"] = sec  # "section" is the pack slot (excerpt)
+                except Exception:  # noqa: BLE001 — a stale heading falls back to the whole body
+                    pass
+            body = f"{obj.title} {body}"
+            item.update(legacy_note(obj))
+        out.append({**item, "text": _excerpt(body, question)})
     return out
 
 
@@ -368,20 +388,22 @@ def _seed(store: Any, *, question: str | None, node_id: str | None, path: str | 
 
 
 def _lesson_seeds(store: Any, question: str | None,
-                  semantic: Callable[[str], list[dict[str, Any]]] | None) -> list[str]:
+                  semantic: Callable[[str], list[dict[str, Any]]] | None,
+                  target_epic: str | None = None) -> list[str]:
     """Item 3: lessons get their OWN seed leg (lesson-only FTS + the dense hits that are lessons, RRF),
-    so a cross-epic lesson is found even when the epic's decisions fill every main seed slot."""
+    so a cross-epic lesson is found even when the epic's decisions fill every main seed slot. Only the
+    lessons the epic may see (lesson_scope.visible) are seeded."""
     if not question:
         return []
     legs: list[list[str]] = []
     try:
-        legs.append(_leg_ranked(store, store.fts_search(question, types={"lesson"}, limit=50), None,
+        legs.append(_leg_ranked(store, store.fts_search(question, types={"lesson"}, limit=50), target_epic,
                                 2 * MAX_LESSONS, types=("lesson",)))
     except Exception:
         pass
     if semantic is not None:
         try:
-            legs.append(_leg_ranked(store, semantic(question), None, 2 * MAX_LESSONS, types=("lesson",)))
+            legs.append(_leg_ranked(store, semantic(question), target_epic, 2 * MAX_LESSONS, types=("lesson",)))
         except Exception:
             pass
     fused: dict[str, float] = {}
@@ -393,7 +415,7 @@ def _lesson_seeds(store: Any, question: str | None,
 
 def _in_scope(store: Any, rec: Any, rec_type: str, target_epic: str | None) -> bool:
     if rec_type == "lesson":
-        return True  # cross-epic by design
+        return lesson_scope.visible(store, rec, target_epic)  # e0cec S6: framework vs project lessons
     if target_epic is None:
         return False  # an unresolved scope isolates decisions/claims to NOTHING, never everything
     return _record_epic(store, rec, rec_type) == target_epic
@@ -646,10 +668,10 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
     lesson_cands = [t for t in ranked if t[2] == "lesson"]
     ranked = [t for t in ranked if t[2] != "lesson"]
     have_lessons = {t[1]: k for k, t in enumerate(lesson_cands)}
-    lesson_seed_ids = _lesson_seeds(store, question, lesson_semantic or semantic) if not id else []
+    lesson_seed_ids = _lesson_seeds(store, question, lesson_semantic or semantic, target_epic) if not id else []
     for i, lid in enumerate(lesson_seed_ids):
         les = store.get("lesson", lid)
-        if les is None or _dropped(les, "lesson"):
+        if les is None or _dropped(les, "lesson") or not _in_scope(store, les, "lesson", target_epic):
             continue
         w = SEED_W_HI - (SEED_W_HI - SEED_W_LO) * (i / max(1, len(lesson_seed_ids) - 1))
         sc, entry = _mk(lid, "lesson", les, w)
@@ -770,8 +792,9 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
     if kept_domains:
         have = {t[1] for t in lesson_cands}
         extra = []
+        _proj, _lesson_ok = lesson_scope.targets(store, target_epic)
         for les in store.query("lesson", {"status": "live"}, limit=100000):
-            if les.id in have or les.domain not in kept_domains:
+            if les.id in have or les.domain not in kept_domains or not _lesson_ok(les):
                 continue
             sc, entry = _mk(les.id, "lesson", les, DEFAULT_WEIGHT)
             entry["provenance"] = "domain"
@@ -838,7 +861,10 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
             if used_bytes + bsize > MAX_BYTES:
                 break
             records.append(e)
-            excerpt_lines.append(f"- SOURCE {ex['type']} <{ex['id']}> {ex['author']} {ex['date']}: {ex['text']}")
+            where = f" [{ex['heading']}]" if ex.get("heading") else ""  # S17: doc_read(id, section=) reads it
+            warn = f" ({ex['warning']})" if ex.get("warning") else ""
+            excerpt_lines.append(f"- SOURCE {ex['type']} <{ex['id']}>{where} {ex['author']} {ex['date']}{warn}: "
+                                 f"{ex['text']}")
             used_bytes += bsize
             n_items += 1
 
@@ -919,7 +945,9 @@ def wired_lookup(store: Any, index: Any | None, scope: str, *, question: str | N
                                                 types=set(EPIC_TYPES), allow_ids=allow)
         # second opinion P2: lessons get their OWN dense pool (type-filtered before truncation), so the
         # epic's records and the cross-epic lessons can never crowd each other out of one top-k
-        lesson_semantic = lambda q: index.dense_search(q, k=DENSE_FETCH, types={"lesson"})  # noqa: E731
+        lesson_allow = visible_lesson_ids(store, _epic_id_of(store, scope))  # e0cec S6: rank within what it may see
+        lesson_semantic = lambda q: index.dense_search(q, k=DENSE_FETCH, types={"lesson"},  # noqa: E731
+                                                       allow_ids=lesson_allow)
         embed_status = index.status()  # R2-6: report the seeding backend in the receipt
         # R2-7: the source-fallback tier searches the epic's own messages/docs (BM25 ∪ dense)
         source_search = lambda q: index.search(q, k=30, types={"message", "doc"})  # noqa: E731

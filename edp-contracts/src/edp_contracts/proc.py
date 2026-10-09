@@ -275,6 +275,60 @@ def popen_service(argv: Sequence[str], **kw: Any) -> subprocess.Popen:
     return subprocess.Popen(list(argv), **kw)
 
 
+@dataclass(frozen=True)
+class Bounded:
+    """What :func:`run_bounded` saw: `returncode` is None when the run timed out (its tree was killed)."""
+    returncode: int | None
+    stdout: str
+    stderr: str
+
+    @property
+    def timed_out(self) -> bool:
+        return self.returncode is None
+
+
+def _pump(stream, buf: list[bytes]) -> None:
+    try:
+        for chunk in iter(lambda: stream.read(65536), b""):
+            buf.append(chunk)
+    except (OSError, ValueError):
+        pass
+
+
+def run_bounded(argv: Sequence[str], timeout: float, *, cwd: str | None = None,
+                env: Mapping[str, str] | None = None, grace: float = 0.5) -> Bounded:
+    """Run a short command (a ``--version`` probe, a vendor update) and return within `timeout` plus about
+    a second, whatever its children do (D9, m-7998902b38).
+
+    ``subprocess.run(capture_output=True, timeout=…)`` is not bounded on Windows: the timeout kills the
+    direct child only (``cmd.exe`` for a ``.CMD`` shim), then waits for EOF on pipes the grandchild (node)
+    still holds. Here the pipes are drained by reader threads, a timeout kills the whole tree
+    (:func:`kill_popen`), and the readers are joined only until the deadline, so a lingering holder of the
+    pipe costs output, never time. Raises OSError when `argv` cannot start."""
+    import threading
+
+    deadline = time.monotonic() + timeout
+    proc = popen_service(argv, cwd=cwd, env=dict(env) if env is not None else None,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    bufs: tuple[list[bytes], list[bytes]] = ([], [])
+    readers = [threading.Thread(target=_pump, args=(s, b), daemon=True, name="run-bounded-pipe")
+               for s, b in ((proc.stdout, bufs[0]), (proc.stderr, bufs[1]))]
+    for t in readers:
+        t.start()
+    try:
+        rc: int | None = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        kill_popen(proc, grace=grace)
+        rc = None
+    # after a kill the readers see EOF at once; a grandchild that outlived a clean exit gets the rest of
+    # the budget, never more (its pipe stays open until it exits, and the daemon readers with it)
+    join_until = max(deadline, time.monotonic()) + (1.0 if rc is None else 0.0)
+    for t in readers:
+        t.join(max(0.0, join_until - time.monotonic()))
+    out, err = (b"".join(b).decode("utf-8", errors="replace") for b in bufs)
+    return Bounded(rc, out, err)
+
+
 # The intermediate `detach` runs: stdlib only, so it works under the base interpreter. It launches the
 # target, prints its pid, and exits, leaving the target with a dead parent (out of every caller's tree).
 _DETACH_CODE = r"""

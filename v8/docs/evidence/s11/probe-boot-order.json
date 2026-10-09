@@ -1,0 +1,37 @@
+{
+ "mode": "edp8.desktop.make_window + guard attached in boot order",
+ "origin": "http://127.0.0.1:61334",
+ "external_rule_before": true,
+ "guard_attached_at_boot": true,
+ "guard_wait_s": 0.41,
+ "guard_error": "",
+ "external_rule_after": false,
+ "bridge_notify_type": "function",
+ "body_user_select": "auto",
+ "drag_selection": "Select this sentence to quote it from the desktop window.",
+ "drag_selection_len": 57,
+ "link_ext": {
+  "system_browser": [
+   "https://example.com/ext-blank"
+  ],
+  "window_url_still_board": true
+ },
+ "link_ext2": {
+  "system_browser": [
+   "https://example.com/ext-plain"
+  ],
+  "window_url_still_board": true
+ },
+ "link_inapp_loaded_in_window": true,
+ "link_inapp_system_browser": [],
+ "window_open_foreign": {
+  "system_browser": [
+   "https://example.com/window-open"
+  ],
+  "window_url_still_board": true
+ },
+ "data_page_navigation": {
+  "window_url_still_board": true
+ },
+ "bridge_notify_result": "{\"ok\":true}"
+}

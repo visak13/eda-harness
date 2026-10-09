@@ -1,11 +1,12 @@
 /* C19: the selection popover (Quote + optional note) and the "quoted into …" toast. */
 .popover {
   position: fixed;
-  z-index: 1000;
-  width: min(332px, calc(100vw - 16px));
+  z-index: var(--z-popover);
+  box-sizing: border-box;
+  width: min(340px, calc(100vw - 16px));
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
   padding: 8px;
   border: 1.5px solid var(--strongline);
@@ -14,9 +15,10 @@
   box-shadow: 2px 2px 0 var(--line);
   color: var(--ink);
 }
-.noteWrap { flex: 1 1 180px; min-width: 0; }
+.noteWrap { width: 100%; min-width: 0; }
 .note {
-  flex: 1 1 180px;
+  box-sizing: border-box;
+  width: 100%;
   min-width: 0;
   height: 32px;
   padding: 0 8px;
@@ -27,23 +29,30 @@
   font: inherit;
   font-size: 14px;
 }
-.quote {
+/* row 2: the actions, right-aligned, never wrapping; both buttons share height and font, only the fill differs */
+.actions { display: flex; flex-wrap: nowrap; justify-content: flex-end; align-items: center; gap: 8px; }
+.primary, .secondary {
   flex: none;
+  box-sizing: border-box;
   height: 32px;
   padding: 0 14px;
-  border: 0;
   border-radius: 6px;
-  background: var(--ink);
-  color: var(--bg);
+  font: inherit;
+  font-size: 14px;
   font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
 }
-.quote:disabled { opacity: 0.6; cursor: default; }
-.note:focus-visible, .quote:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
-.error { flex: 1 1 100%; margin: 0; font-size: 13px; color: var(--accentink); }
+.primary { border: 1px solid var(--ink); background: var(--ink); color: var(--bg); }
+.secondary { border: 1px solid var(--strongline); background: var(--panel); color: var(--ink); }
+.primary:disabled, .secondary:disabled { opacity: 0.6; cursor: default; }
+.note:focus-visible, .primary:focus-visible, .secondary:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
+.error { margin: 0; font-size: 13px; color: var(--accentink); }
+/* Only where no composer is on screen (the composer's own status slot says it there, qa fail 8): a fixed note in the corner. */
 .toast {
   position: fixed;
-  z-index: 1000;
+  z-index: var(--z-popover);
   right: 16px;
   bottom: 16px;
   max-width: min(420px, calc(100vw - 32px));

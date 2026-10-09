@@ -57,6 +57,9 @@ def _no_operator_spawn_defaults(tmp_path):
     # S12: models.json resolves to the data dir's editable catalog when one exists
     # (edp_contracts.seats.config_path); a test's registry must never be the host's.
     mp.setenv("EDP8_DATA", str(tmp_path / "absent-data-dir"))
+    # G3: the pre-spawn guard waits up to 60 s for an auto-update in flight; a refusal test must not
+    from edp_pool import pty_launcher
+    mp.setattr(pty_launcher, "_UPDATE_WAIT_S", 0.0)
     if _HOST_PLATFORM != "win32":
         mp.setattr(shutil, "which", _host_which)
     yield

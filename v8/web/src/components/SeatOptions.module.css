@@ -1,0 +1,48 @@
+/* S12-ui2: an option row lines up under its role row's model and effort columns (SeatPicks.module.css) */
+.list {
+  display: grid;
+  gap: 6px;
+  margin: 2px 0 4px;
+}
+.item {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.8fr) minmax(0, 1.9fr) minmax(96px, 0.8fr) 36px;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 2px;
+}
+.item select { width: 100%; min-width: 0; }
+@media (min-width: 561px) {
+  .item select { min-height: 34px; padding: 4px 8px; }
+}
+.tag {
+  padding-left: 32px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.itemActions { grid-column: 2 / -1; display: flex; gap: 12px; }
+.textButton {
+  min-height: 24px; padding: 0; border: 0; background: none;
+  font: inherit; font-size: 12px; color: var(--accentink); text-decoration: underline; cursor: pointer;
+}
+.textButton:disabled { color: var(--muted); text-decoration: none; cursor: default; }
+/* the row's add button: a square icon button in the row's last column */
+.add {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; min-height: 32px; padding: 0;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--panel);
+  font: inherit; font-size: 18px; line-height: 1; color: var(--accentink); cursor: pointer;
+}
+.add:hover:not(:disabled) { background: var(--accentwash); }
+.add:disabled { color: var(--muted); cursor: default; }
+.add:focus-visible, .textButton:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; border-radius: 4px; }
+@media (max-width: 560px) {
+  .item { grid-template-columns: minmax(0, 1fr) 104px 44px; row-gap: 4px; }
+  .tag { grid-row: 1; grid-column: 1; padding-left: 0; }
+  .item select:last-of-type { grid-row: 1; grid-column: 2; }
+  .item > .add { grid-row: 1; grid-column: 3; }
+  .item select:first-of-type { grid-row: 2; grid-column: 1 / -1; }
+  .itemActions { grid-row: 3; grid-column: 1 / -1; }
+  .add { width: 44px; height: 44px; }
+}

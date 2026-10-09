@@ -20,10 +20,10 @@ TOOL_OBJECTS: dict[str, tuple[str, ...]] = {
     "ticket_create": ("ticket",), "ticket_read": ("ticket", "criterion"), "ticket_query": ("ticket",),
     "ticket_update": ("ticket",), "criterion_create": ("criterion",), "criterion_query": ("criterion",),
     "criterion_update": ("criterion", "doc"),
+    "requirements": ("requirement",), "requirement_link": ("requirement", "criterion"),
     # doc
     "doc_create": ("doc",), "doc_read": ("doc",), "doc_query": ("doc",), "doc_update": ("doc",),
     "doc_edit": ("doc",), "link_create": ("link",), "link_query": ("link",), "link_delete": ("link",),
-    "assemble_ruleset": ("doc",),
     # thread
     "message_send": ("message",), "message_query": ("message",), "message_read": ("message",),
     "gate_open": ("gate",), "gate_answer": ("gate",), "gates": ("gate",), "inbox": ("message",),
@@ -36,6 +36,7 @@ TOOL_OBJECTS: dict[str, tuple[str, ...]] = {
     "reap": ("session",), "session_query": ("session",), "close": ("ticket", "session"),
     # knowledge
     "record_decision": ("decision",), "record_claim": ("claim",), "record_lesson": ("lesson",),
+    "retire_lesson": ("lesson",),
     "lookup": ("decision", "claim", "lesson"), "withdraw_decision": ("decision",),
     "withdraw_claim": ("claim",), "set_binding": ("decision",), "dense_search": ("decision",),
     "topic_research": ("topic",), "topic_propose": ("topic", "doc"),
@@ -52,7 +53,7 @@ TOOL_OBJECTS: dict[str, tuple[str, ...]] = {
 
 # object -> the skills that walk it (named as /skill in every linked tool's description)
 OBJECT_SKILLS: dict[str, tuple[str, ...]] = {
-    "ticket": ("/ticket",), "criterion": ("/verify",), "artifact": ("/demo",), "doc": ("/methodology",),
+    "ticket": ("/ticket",), "criterion": ("/verify",), "artifact": ("/demo",), "doc": ("/methodology", "/doc-write"),
     "pain": ("/pain",), "lesson": ("/learn",), "cost": ("/harvest",), "decision": ("/doubt",),
     "gate": ("/epic",), "workflow": ("/epic",),
 }
@@ -111,12 +112,15 @@ LOCAL_OBJECTS: dict[str, dict[str, Any]] = {
                    "new_id": "duplicate target id"},
         "enums": [], "guides": ["agent-tools"]},
     "pain": {
-        "contract": "A pain record: a tool or guide found wrong versus reality. Append-only log; a resolution "
-                    "is a new line (latest wins); dup_of folds a duplicate into its original's status; "
-                    "supersedes names a record this one replaces.",
+        "contract": "A pain record: a tool or guide found wrong versus reality, kept in the board's database "
+                    "(the one pain store). Status open | fixed (commit) | ticket (the ticket that owns the "
+                    "fix) | duplicate (dup_of) | invalid; the owner, the doctor, an admin or an epic's "
+                    "architect (fixed, with a commit reachable from main) resolves it and the row records "
+                    "who and which commit. supersedes names a record this one replaces.",
         "fields": {"id": "p-xxxxxxxx", "area": "tools|guides|board|pool|...", "symptom": "what happened",
                    "expected": "what should have happened", "evidence": "ids, paths", "severity": "low|medium|high",
-                   "workaround": "what you did instead", "status": "open|fixed|invalid|superseded",
+                   "workaround": "what you did instead", "status": "open|fixed|ticket|duplicate|invalid",
+                   "commit": "the sha that fixed it (status=fixed)", "ticket_id": "the owning ticket (status=ticket)",
                    "dup_of": "an earlier pain id", "supersedes": "a pain id this replaces"},
         "enums": [], "guides": ["agent-tools"]},
     "service": {
@@ -124,15 +128,15 @@ LOCAL_OBJECTS: dict[str, dict[str, Any]] = {
                     "git rev, uptime. Read-only to seats; start/stop/restart is a human action (edp.ps1).",
         "fields": {"service": "name", "state": "up|down", "port": "listen port", "git_rev": "running code",
                    "uptime": "since start"},
-        "enums": [], "guides": ["shared-host-rules", "edp-ps1"]},
+        "enums": [], "guides": ["shared-host-rules"]},
     "teammate": {
         "contract": "A human participant with a board credential (owner-managed). create registers the human "
                     "and returns a one-time invite link; mint issues a new token and returns it ONCE (never "
                     "logged or stored in events); revoke disables the token; list shows teammates without "
                     "secrets.",
-        "fields": {"handle": "the teammate's @handle", "role": "board role (owner by default)",
+        "fields": {"handle": "the teammate's @handle", "role": "board role (guest by default)",
                    "admin": "grant the admin tier"},
-        "enums": [], "guides": ["tailnet-public-mode"]},
+        "enums": [], "guides": []},
     "cost": {
         "contract": "A seat's framework token cost: input/output/cache tokens summed from its transcript "
                     "between two instants, plus the knowledge records it wrote. Bounded totals, no bodies.",
@@ -140,8 +144,8 @@ LOCAL_OBJECTS: dict[str, dict[str, Any]] = {
                    "until": "ISO end (default: its close)"},
         "enums": [], "guides": ["agent-tools"]},
     "guide": {
-        "contract": "A reference guide under the agent home's guides/ (markdown). Cards and tasks name them.",
-        "fields": {"name": "guide file name without .md"}, "enums": [], "guides": ["agent-tools"]},
+        "contract": "A reference guide (markdown) cards and tasks name; get_guide() with no name lists them all.",
+        "fields": {"name": "guide name without .md; omit for the index"}, "enums": [], "guides": ["agent-tools"]},
     "enum": {
         "contract": "A strict vocabulary a tool argument takes. describe('enums') lists all, describe('enum:<Name>') "
                     "one; a schema error names the allowed values.",
@@ -162,6 +166,15 @@ CREATE_EXEMPT = {
     "record_status": "sets the seat's current status; a repeat restates the same state",
     "teammate": "action=create is keyed by handle: a second create of the same handle is refused",
     "workflow": "action=duplicate is keyed by new_id: a second duplicate to the same id is a conflict",
-    "pain": "action=file is query-first (/pain) and a repeat is linked dup_of; the log is append-only by design",
+    "pain": "action=file is query-first (/pain) and a repeat is linked dup_of; the board's DB is the one store",
     "topic_research": "a fetch with a receipt, not a record: nothing is created",
 }
+
+
+# S9 precision pass: required args whose name already says everything (ids, title, text); the schema
+# carries no description for them, so the surface does not pay bytes for a tautology.
+SELF_EVIDENT_ARGS = frozenset({
+    "id", "ticket_id", "epic", "epic_id", "claim_id", "decision_id", "lesson_id", "participant_id", "title", "text",
+    "parent_id", "from_id", "to_id", "subject_id", "assignee", "created_by", "tag", "tags", "domains", "scope", "note",
+    "body_md", "url", "lines", "limit", "cursor", "idempotency_key",  # the last three: guides/agent-tools.md
+})

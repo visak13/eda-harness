@@ -7,14 +7,25 @@ import { onAttentionChanged } from '../live/notificationEvents';
 import { pendingWork } from './PendingNavigation';
 import styles from './NotificationCenter.module.css';
 import { Icon } from './Icon';
+import { desktopApi, desktopNotify, isDesktopShell } from '../desktop/shell';
 
 const protocol = 'edp8-notifications-v1';
-const supported = () => window.isSecureContext && 'Notification' in window && 'serviceWorker' in navigator;
+const browserSupported = () => window.isSecureContext && 'Notification' in window && 'serviceWorker' in navigator;
+// S11: the desktop window raises native toasts through its bridge (no service worker, no browser permission); the
+// attention rows, and so the mention-triggered rules, are the same ones the browser polls.
+const supported = () => isDesktopShell() || browserSupported();
+const permitted = () => isDesktopShell() || Notification.permission === 'granted';
+const DESKTOP_TITLE = 'Board needs your attention';
+const DESKTOP_BODY = 'Open the board to view your request.';
 const pref = (actor: string) => `edp8.notifications.${actor}`;
 function enabledFor(actor: string): boolean {
   try { return localStorage.getItem(pref(actor)) === 'enabled'; } catch { return false; }
 }
 export function notificationState(enabled: boolean): string {
+  if (isDesktopShell()) {
+    if (!navigator.onLine) return 'Offline — notifications cannot receive new requests.';
+    return enabled ? 'Notifications enabled as Windows notifications while the app runs.' : 'Notifications are off for this participant.';
+  }
   if (!window.isSecureContext) return 'Notifications require HTTPS or localhost.';
   if (!('Notification' in window) || !('serviceWorker' in navigator)) return 'This browser does not support board notifications.';
   if (!navigator.onLine) return 'Offline — notifications cannot receive new requests.';
@@ -78,7 +89,9 @@ export function NotificationPanel(): React.JSX.Element | null {
   const configStatus = !(n.status.startsWith('Request ') || n.status.startsWith('Could not') || n.status.startsWith('This request'));
   return <section className={styles.root} aria-label="Board notifications" data-testid="notification-panel">
     <h3 className={styles.heading}><Icon name="warning" size={16} /> Notifications</h3>
-    <p>Private alerts for new questions and approval requests. Keep a board tab open; no delivery when the browser is closed.</p>
+    {isDesktopShell()
+      ? <p>Private alerts for new questions and approval requests, shown as Windows notifications while the app runs (closing the window keeps it in the tray).</p>
+      : <p>Private alerts for new questions and approval requests. Keep a board tab open; no delivery when the browser is closed.</p>}
     <div className={styles.actions}>
       {!n.enabled ? <button disabled={n.busy || !n.supported} onClick={n.enable}>Enable notifications</button> : <>
         <button onClick={n.disable}>Disable notifications</button>
@@ -138,7 +151,7 @@ export function NotificationCenter({ actor, children }: { actor: string; childre
     } catch { if (alive.current) setStatus('Could not authorize this request. Check your connection or identity; follow the dots from Epics in the menu.'); }
   }, [actor, hasDirty, navigate]);
   useEffect(() => {
-    if (!supported()) return;
+    if (!browserSupported()) return; // the worker channel is the browser's; the desktop window has no worker
     let stopped = false;
     const listener = (event: MessageEvent) => {
       if (event.data?.protocol !== protocol) return;
@@ -187,18 +200,28 @@ export function NotificationCenter({ actor, children }: { actor: string; childre
     let timer: ReturnType<typeof setTimeout> | undefined;
     const refreshState = () => { if (!stopped) setStatus(notificationState(enabled)); };
     const poll = async () => {
-      if (running || !enabled || !supported() || Notification.permission !== 'granted') { refreshState(); return; }
+      if (running || !enabled || !supported() || !permitted()) { refreshState(); return; }
       running = true;
+      const desktop = isDesktopShell();
       try {
         if (!navigator.onLine) { refreshState(); return; }
-        if (!target || target.state === 'redundant') target = await worker();
+        if (!desktop && (!target || target.state === 'redundant')) target = await worker();
         for (let pages = 0; pages < 20 && !stopped; pages++) {
           const value = await attention(cursor);
           if (stopped || value.participant !== actor) return;
-          for (const row of value.requests) {
-            if (stopped) return;
-            if (!target || target.state === 'redundant') target = await worker();
-            await showAttention(target, actor, row);
+          if (desktop) {
+            // one combined toast per page, none while this window has focus (the browser path's rule); a dropped or
+            // rate-limited toast is handled, never retried, so the cursor below always moves on
+            if (value.requests.length && !document.hasFocus()) {
+              const n = value.requests.length;
+              await desktopNotify(n === 1 ? DESKTOP_TITLE : `${n} requests need you`, DESKTOP_BODY);
+            }
+          } else {
+            for (const row of value.requests) {
+              if (stopped) return;
+              if (!target || target.state === 'redundant') target = await worker();
+              await showAttention(target, actor, row);
+            }
           }
           const prior = cursor; cursor = value.cursor;
           if (prior < 0 || cursor === prior) break;
@@ -226,6 +249,16 @@ export function NotificationCenter({ actor, children }: { actor: string; childre
   const enable = async () => {
     if (!supported()) return;
     setBusy(true);
+    if (isDesktopShell()) {
+      // no browser permission in the shell: enabling is a tray check plus the same per-participant preference
+      try {
+        const info = await (await desktopApi())?.ping();
+        if (info?.toast) { localStorage.setItem(pref(actor), 'enabled'); changeEnabled(true); setStatus(notificationState(true)); }
+        else setStatus('The desktop tray cannot raise notifications on this system.');
+      } catch { setStatus('The desktop app did not answer. Restart the app and try again.'); }
+      finally { setBusy(false); }
+      return;
+    }
     try {
       const permission = await Notification.requestPermission(); // direct user gesture, never mount
       if (permission === 'granted') {
@@ -237,6 +270,12 @@ export function NotificationCenter({ actor, children }: { actor: string; childre
   };
   const test = async () => {
     setBusy(true);
+    if (isDesktopShell()) {
+      const ok = await desktopNotify('Board notification test', 'Desktop notifications work while the app runs.');
+      setStatus(ok ? 'Test notification sent. It appears as a Windows notification.' : 'Could not send test notification. The desktop tray is unavailable.');
+      setBusy(false);
+      return;
+    }
     try {
       const request = `ev-test-${crypto.randomUUID()}`;
       await showAttention(await worker(), actor, { request, url: `/ui/ticket/test?request=${request}` }, true);

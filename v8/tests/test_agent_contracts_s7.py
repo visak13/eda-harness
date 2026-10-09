@@ -8,7 +8,7 @@ from edp8.client import BoardClient
 
 def test_legacy_document_defaults(client, rig):
     doc = rig['doc']
-    out = client.get(f"/v1/docs/{doc['id']}", headers=H).json()
+    out = client.get(f"/v1/docs/{doc['id']}", headers=H, params={'all': 'true'}).json()  # S17: all=true = the record
     assert out['ok'] and out['value']['body_md'] == 'kestrel pilgrim'
     assert out['value']['versions'] == [1]
     updated = client.patch(f"/v1/docs/{doc['id']}", headers=H,
@@ -46,7 +46,7 @@ def test_atomic_edits_and_bounded_read(client, rig):
     assert edit([{'old_text': 'A', 'new_text': 'C'}])['error']['code'] == 'version_conflict'
     part = client.get(url, params={'version': 2, 'section': '# First', 'limit': 10}, headers=H).json()['value']
     chunks = part['body_md']
-    while part['continuation']:
+    while part.get('continuation'):
         params = part['continuation'].copy()
         params.pop('id')
         part = client.get(url, params=params, headers=H).json()['value']
@@ -85,7 +85,7 @@ def test_doc_permissions_and_measured_savings(client, rig):
     changed = client.post(url + '/edit', headers={'X-Participant': 'arch'}, json={
         'expected_version': 1, 'edits': [{'old_text': '# Design', 'new_text': '# New'}]}).json()
     assert changed['ok'], changed
-    full = client.get(url, headers=H).json()
+    full = client.get(url, headers=H, params={'all': 'true'}).json()
     narrow = client.get(url, headers=H, params={'limit': 1024}).json()
     sizes = {key: len(json.dumps(out).encode()) for key, out in [('full', full), ('edit', changed), ('range', narrow)]}
     print('document serialized bytes:', sizes)
@@ -93,7 +93,8 @@ def test_doc_permissions_and_measured_savings(client, rig):
 
 
 def test_discovery_enum_audit_and_future_heartbeat(client, rig):
-    from edp8.bundles import ROLE_BUNDLES, _heartbeat_prompt
+    from edp8 import feed_driver
+    from edp8.bundles import ROLE_BUNDLES
     with bind_request(BoardClient(participant='eng', client=client)):
         listing = invoke(ALL_TOOLS['describe_objects'], {})
         assert 'ContextDelta' in listing['value']['objects']
@@ -104,11 +105,11 @@ def test_discovery_enum_audit_and_future_heartbeat(client, rig):
             assert '$ref' in json_repr(schema['properties'][field])
     for role in ROLE_BUNDLES:
         assert 'context_delta' in ROLE_BUNDLES[role] and 'describe_objects' in ROLE_BUNDLES[role]
-    for role in ('owner', 'architect', 'engineer', 'qa'):
-        prompt = _heartbeat_prompt(role + '.ticket')
-        assert 'context_delta' in prompt and 'Do not call both routinely' in prompt
-        if role in ('engineer', 'qa'):
-            assert 'NEXT UNBUILT ITEM' in prompt
+    # S8: the heartbeat text is the feed driver's; the liveness ping (doing seats) keeps NEVER IDLE MID-PLAN
+    for prompt in (feed_driver._CHANGES_NEXT, feed_driver._LIVENESS_NEXT):
+        assert 'context_delta' in prompt
+    assert 'NEXT UNBUILT ITEM' in feed_driver._LIVENESS_NEXT
+    assert not {'engineer', 'qa'} & feed_driver._LISTENING_ROLES
 
 
 @pytest.mark.parametrize('fence', ['```', '~~~~'])
@@ -118,7 +119,7 @@ def test_section_read_ignores_fenced_comments(client, rig, fence):
     client.patch(url, headers=H, json={'body_md': body})
     read = client.get(url, headers=H, params={'section': '# Target'}).json()['value']
     assert read['body_md'] == body.split('# End')[0]
-    assert not read['truncated']
+    assert not read.get('truncated')
     assert not client.get(url, headers=H, params={'section': '# code comment'}).json()['ok']
 
 

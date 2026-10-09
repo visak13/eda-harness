@@ -154,7 +154,7 @@ def test_install_per_os_gui_and_cmd_at_most_five_steps() -> None:
 def test_first_run_and_harness_choice() -> None:
     assert "## First run" in README
     harness = README.split("## Choose your harnesses", 1)[1].split("\n## ", 1)[0]
-    for needle in ("Claude Code", "Codex", "at least one", "v8/guides/pi-seat.md", "Fable", "claude-fable-5-1"):
+    for needle in ("Claude Code", "Codex", "at least one", "v8/docs/operator/pi-seat.md", "Fable", "claude-fable-5-1"):
         assert needle in harness, needle
 
 

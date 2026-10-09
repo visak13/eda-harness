@@ -11,7 +11,9 @@ import styles from "./IdentityPanel.module.css";
 // access is off.
 
 const CLAIM_KEY = "edp8.access.claim";
-const ROLE_LABEL: Record<string, string> = { owner: "Member" };
+const ROLE_LABEL: Record<string, string> = { guest: "Guest", owner: "Member" };
+/** What a role means, said under the select: the option itself stays short enough for a phone (qa 0.10.8: "…added tc"). */
+const ROLE_NOTE: Record<string, string> = { guest: "A guest sees only the epics you are added to." };
 
 type Phase =
   | { kind: "closed" }
@@ -43,7 +45,8 @@ export function RequestAccess(): React.JSX.Element | null {
     return code ? { kind: "waiting", code, pollS: 5 } : { kind: "closed" };
   });
   const [name, setName] = useState("");
-  const [role, setRole] = useState("owner");
+  // owner m-ab7c81eb8d: a request asks for guest unless the person says otherwise; the admin decides either way
+  const [role, setRole] = useState("guest");
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -156,6 +159,7 @@ export function RequestAccess(): React.JSX.Element | null {
         <select className={styles.input} value={role} onChange={(e) => setRole(e.target.value)} data-testid="access-role">
           {avail.roles.map((r) => <option key={r} value={r}>{ROLE_LABEL[r] ?? r}</option>)}
         </select>
+        {ROLE_NOTE[role] ? <span className={styles.opt} data-testid="access-role-note">{ROLE_NOTE[role]}</span> : null}
       </label>
       <label className={styles.label}>
         Note <span className={styles.opt}>(optional: what you are here for)</span>

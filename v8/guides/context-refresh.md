@@ -40,6 +40,6 @@ An empty delta is not a stop signal for a doing seat: see your card's NEVER IDLE
 
 ## Activation
 Deploy board and MCP only through owner-coordinated maintenance. Verify tools/list contains
-context_delta and run an isolated/new-session snapshot→delta. Only then explicitly replace
-that session's existing cron with subscribe's choice-based heartbeat. Never update a live
-cron to call a tool unavailable in its loaded schema; no automatic cron migration occurs.
+context_delta and run an isolated/new-session snapshot→delta. The 30-minute heartbeat is the feed
+driver's own tick (a `heartbeat` feed line), not a model cron; a live session's old cron, if it still has
+one, is harmless and lapses with the session — nothing migrates automatically.

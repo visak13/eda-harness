@@ -1,0 +1,32 @@
+{"t": 1790990729.0266094, "tool": "ticket_read", "args": {"ticket_id": "s-a469a6df9b"}, "chars": 5617}
+{"t": 1790990737.1507452, "tool": "ticket_read", "args": {"ticket_id": "s-a469a6df9b", "include": "chain,criteria,docs,children,blockers,gates,thread,links"}, "chars": 6641}
+{"t": 1790990737.1693404, "tool": "doc_read", "args": {"id": "design-84ceac3abd"}, "chars": 10579}
+{"t": 1790990737.184704, "tool": "doc_read", "args": {"id": "strategyll-45e2c7fd28"}, "chars": 8408}
+{"t": 1790990737.2045774, "tool": "doc_read", "args": {"id": "strategyll-d7e677657f"}, "chars": 8670}
+{"t": 1790990737.2228878, "tool": "doc_read", "args": {"id": "strategyll-5e5d23676e"}, "chars": 8708}
+{"t": 1790990737.2445145, "tool": "doc_read", "args": {"id": "strategyll-ae6d2570dc"}, "chars": 16104}
+{"t": 1790990746.292172, "tool": "doc_read", "args": {"id": "strategyll-45e2c7fd28"}, "chars": 8408}
+{"t": 1790990746.3104181, "tool": "doc_read", "args": {"id": "strategyll-d7e677657f"}, "chars": 8670}
+{"t": 1790990746.3301635, "tool": "doc_read", "args": {"id": "strategyll-5e5d23676e"}, "chars": 8708}
+{"t": 1790990746.3454363, "tool": "doc_read", "args": {"id": "design-84ceac3abd"}, "chars": 10579}
+{"t": 1790990746.375027, "tool": "doc_read", "args": {"id": "strategyll-ae6d2570dc"}, "chars": 16104}
+{"t": 1790990752.720573, "tool": "doc_read", "args": {"id": "strategyll-45e2c7fd28", "version": 1, "offset": 0, "limit": 20000}, "chars": 13692}
+{"t": 1790990752.7444608, "tool": "doc_read", "args": {"id": "strategyll-d7e677657f", "version": 1, "offset": 0, "limit": 20000}, "chars": 12245}
+{"t": 1790990752.763454, "tool": "doc_read", "args": {"id": "strategyll-5e5d23676e", "version": 1, "offset": 0, "limit": 20000}, "chars": 11228}
+{"t": 1790990763.348411, "tool": "doc_read", "args": {"id": "design-84ceac3abd", "version": 1, "offset": 8192, "limit": 10000}, "chars": 9244}
+{"t": 1790990763.3644807, "tool": "doc_read", "args": {"id": "strategyll-ae6d2570dc", "version": 1, "offset": 0, "limit": 16500}, "chars": 16875}
+{"t": 1790990763.3815062, "tool": "doc_read", "args": {"id": "strategyll-ae6d2570dc", "version": 1, "offset": 16500, "limit": 16500}, "chars": 16963}
+{"t": 1790990772.3992615, "tool": "doc_read", "args": {"id": "strategyll-ae6d2570dc", "version": 1, "offset": 33000, "limit": 12000}, "chars": 12398}
+{"t": 1790990772.424718, "tool": "doc_read", "args": {"id": "strategyll-ae6d2570dc", "version": 1, "offset": 45000, "limit": 12000}, "chars": 12458}
+{"t": 1790990781.902846, "tool": "doc_read", "args": {"id": "strategyll-ae6d2570dc", "version": 1, "offset": 57000, "limit": 12000}, "chars": 12462}
+{"t": 1790990781.9202857, "tool": "doc_read", "args": {"id": "strategyll-ae6d2570dc", "version": 1, "offset": 69000, "limit": 12000}, "chars": 12406}
+{"t": 1790990781.946413, "tool": "find", "args": {"query": "A2 reconciliation amendments process rules", "k": 20}, "chars": 3617}
+{"t": 1790990792.6761482, "tool": "doc_read", "args": {"id": "strategyll-ae6d2570dc", "version": 1, "offset": 81000, "limit": 3000}, "chars": 1825}
+{"t": 1790990792.7032382, "tool": "doc_read", "args": {"id": "strategyll-ae6d2570dc", "version": 1, "offset": 11500, "limit": 3000}, "chars": 3307}
+{"t": 1790990792.7212174, "tool": "doc_read", "args": {"id": "strategyll-3a3c282412"}, "chars": 9415}
+{"t": 1790990792.7384746, "tool": "doc_read", "args": {"id": "strategyll-2593d550b0"}, "chars": 8855}
+{"t": 1790990792.757034, "tool": "ticket_read", "args": {"ticket_id": "epic-c6a831c53b", "include": "chain,docs,thread,links"}, "chars": 989}
+{"t": 1790990807.3172262, "tool": "doc_read", "args": {"id": "strategyll-ae6d2570dc", "version": 1, "offset": 10500, "limit": 1100}, "chars": 1374}
+{"t": 1790990807.33335, "tool": "doc_read", "args": {"id": "strategyll-3a3c282412", "version": 1, "offset": 8030, "limit": 6000}, "chars": 4988}
+{"t": 1790990807.3493907, "tool": "doc_read", "args": {"id": "strategyll-2593d550b0", "version": 1, "offset": 7432, "limit": 6000}, "chars": 5124}
+{"t": 1790990807.371884, "tool": "find", "args": {"query": "A2 nightly settlement exception amendment trial balance", "k": 20, "types": "message,doc"}, "chars": 1956}

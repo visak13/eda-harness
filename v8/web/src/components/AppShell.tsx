@@ -6,6 +6,7 @@ import { getEpicPage } from "../api/endpoints";
 import { BoardVersionBanner } from "./BoardVersionBanner";
 import { useCurrentEpicId } from "./currentEpic";
 import { identity, signOut, SIGNED_OUT_EVENT } from "../auth/identity";
+import { displayHandle, GUEST_ROLE } from "../auth/guest";
 import { IdentityPanel } from "./IdentityPanel";
 import { DraftGuardProvider } from "../live/useDraftGuard";
 import { DocDrawerProvider } from "./DocDrawer";
@@ -23,6 +24,7 @@ import { CommandPalette } from "./CommandPalette";
 import { CopyDescriptions } from "./CopyDescriptions";
 import { PendingNavigation } from "./PendingNavigation";
 import { NotificationCenter } from "./NotificationCenter";
+import { HistoryButtons, useDesktopShortcuts } from "../desktop/DesktopChrome";
 import { useAttention } from "../api/attention";
 import { AttentionDot } from "./AttentionDot";
 import { useViewerFlag } from "./viewerPrefs";
@@ -37,7 +39,7 @@ interface WhoAmI {
 
 // The rail per revision3-clean (design-a2e5369133 §AppShell): brand, Epics, Seats, a divider, the CURRENT EPIC block,
 // then (lower) Find and the account row. v34 (owner m-8aa6439a77 "why is that useless tab still there?"): the
-// "Waiting on you" entry and its popover are gone and nothing replaces them. S20 (design-e963c656f5 §4.18): Epics and Library carry the attention dot with their count,
+// waiting entry and its popover are gone and nothing replaces them. S20 (design-e963c656f5 §4.18): Epics and Library carry the attention dot with their count,
 // the first hop of the trail; every count comes from GET /v1/me/attention (useAttention).
 // No Usage entry (S19, owner m-845b58f25c "only show what works"): /v1/me/usage returns no data on
 // this board (no EDP8_USAGE_CONFIG), so the rail button + widget were removed; the endpoint stays. Notifications are NOT a rail item (finding 6): Enable/Test live on
@@ -138,6 +140,7 @@ function AppShellChrome(): React.JSX.Element {
   const closeAccount = useCallback(() => setAccountOpen(false), []);
   const pageFraming = framing ?? defaultFraming(location.pathname);
   const pageKey = pageKeyFor(location.pathname);
+  useDesktopShortcuts(); // S11: Alt+Left/Right and external links, desktop shell only
 
   const helpRef = useRef<HTMLButtonElement>(null);
   const closeHelp = () => {
@@ -172,19 +175,22 @@ function AppShellChrome(): React.JSX.Element {
   }, [qc]);
   const attention = useAttention();
 
-  const handle = whoami.data?.participant.handle ?? as;
   const role = whoami.data?.participant.role ?? "";
+  // e0cec S5: a guest is always named ext:<handle> and reaches only its member epics.
+  const handle = whoami.data ? displayHandle(whoami.data.participant) : as;
+  const guest = role === GUEST_ROLE;
   // t-3e246b5e32 (e): an expert reaches only its Library topic — the board answers its whoami with 403 (no
   // other signed-in participant gets that), so the rail hides what would 403: Epics and Seats.
   const expert = role === "expert" || (whoami.error instanceof BoardApiError && whoami.error.status === 403);
-  const nav = expert ? NAV.filter((item) => item.to === "/library/knowledge") : NAV;
+  const nav = expert ? NAV.filter((item) => item.to === "/library/knowledge")
+    : guest ? NAV.filter((item) => item.to === "/epics") : NAV;
   const admin = Boolean(whoami.data?.admin);
   const counts = attention.counts;
 
   // Design §4.1: a 401 from the identity probe renders the inline identity panel.
   const authError = whoami.error instanceof BoardApiError && whoami.error.status === 401 ? whoami.error : null;
   if (authError) {
-    return <IdentityPanel hint={authError.hint ?? authError.message} />;
+    return <IdentityPanel />;
   }
 
   const shell = (
@@ -213,6 +219,7 @@ function AppShellChrome(): React.JSX.Element {
             <Icon name={railCollapsed ? "forward" : "back"} size={18} />
           </button>
         </div>
+        <HistoryButtons />
 
         <nav className={styles.nav} aria-label="Sections">
           {nav.map((item) => (
@@ -230,7 +237,6 @@ function AppShellChrome(): React.JSX.Element {
               aria-current={activeFamily === "/admin" ? "page" : undefined} {...copyProps("sidebar", "admin")}>
               <span className={styles.icon} data-nav-icon><Icon name="preferences" size={18} /></span>
               <span className={styles.navLabel}>Admin</span>
-              <span className={styles.dotSlot}><AttentionDot count={counts.admin} /></span>
             </Link>
           ) : null}
           {expert ? null : (<>
@@ -240,7 +246,7 @@ function AppShellChrome(): React.JSX.Element {
         </nav>
 
         <div className={styles.lower}>
-          {expert ? null : (
+          {expert || guest ? null : (
             <button ref={askRef} className={styles.railBtn} type="button" aria-label="Ask for help" title="Ask the Help seat: it diagnoses and proposes fixes an admin approves"
               aria-haspopup="dialog" aria-expanded={askOpen} onClick={() => setAskOpen((o) => !o)} data-testid="ask-help">
               <Icon name="lifebuoy" size={18} />
@@ -266,7 +272,7 @@ function AppShellChrome(): React.JSX.Element {
             onClick={() => { setMenuOpen(true); setAccountOpen((o) => !o); }} data-testid="account-open">
             <Avatar id={as} size={36} className={styles.avatar} />
             <span className={styles.accountText}>
-              <strong data-testid="identity">{as}</strong>
+              <strong data-testid="identity">{guest ? handle : as}</strong>
               <small>
                 <span data-testid="whoami-handle">{handle !== as ? handle : role || "member"}</span>
                 {handle !== as && role ? ` · ${role}` : ""} · Preferences

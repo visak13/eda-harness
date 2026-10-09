@@ -3,15 +3,15 @@ import { useLocation, useNavigate } from "react-router";
 import { useRouteId } from "../routeId";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getTicketPage, finalizeArtifacts } from "../api/endpoints";
+import { getSeats } from "../api/seats";
 import type { CriterionView, MessageView, SignoffRow, TicketStatus, TicketPage as TicketPageData, UploadedArtifact } from "../api/types";
 import { ProcessStrip, nextActionFor } from "../components/ProcessStrip";
 import { StatusControl } from "../components/StatusControl";
 import { AddCriterion } from "../components/CriterionControls";
-import { AssignControl } from "../components/AssignControl";
+import { AssignControl, assignLabel, usePoolCanSpawn } from "../components/AssignControl";
 import { SpawnSeatForm } from "../components/SpawnSeatForm";
 import { GateOpenControl } from "../components/GateOpenControl";
 import { GateForms, useRetainedGates } from "../components/GateForm";
-import { countWhere, pageItems, useAttention } from "../api/attention";
 import { attentionMark } from "../components/AttentionDot";
 import { LinkDocControl, AskRoleControl } from "../components/TicketAsks";
 import { Term } from "../components/Term";
@@ -19,7 +19,7 @@ import { CriterionCard } from "../components/CriterionCard";
 import { RulingDrawer } from "../components/RulingDrawer";
 import { Composer } from "../components/Composer";
 import { ExpandableComposer } from "../components/ExpandableComposer";
-import { copyItem, copyProps } from "../copy/pages";
+import { actionGloss, copyProps } from "../copy/pages";
 import { useDocDrawer } from "../components/DocDrawer";
 import { identity } from "../auth/identity";
 import ui from "../components/ui.module.css";
@@ -30,6 +30,7 @@ import { useThreadHistory } from "../components/useThreadHistory";
 import { WorkHeader } from "../components/WorkHeader";
 import { ActionsMenu, type ActionItem } from "../components/ActionsMenu";
 import { ModelsControl } from "../components/ModelsControl";
+import { useIsGuest } from "../auth/guest";
 import { Conversation } from "../components/Conversation";
 import { Markdown } from "../components/Markdown";
 
@@ -40,9 +41,22 @@ import { Markdown } from "../components/Markdown";
 
 const KINDS_DEFAULT = ["note", "question", "steer", "finding", "status", "deviation", "answer"] as const;
 const KINDS_REPLY = ["answer", "note", "question", "steer", "finding", "status", "deviation"] as const;
+// e0cec S5: a guest posts only a question or a note, and its Actions menu keeps reading and asking.
+const KINDS_GUEST = ["question", "note"] as const;
+const GUEST_ACTIONS = new Set(["ask-role", "record"]);
 
 export function TicketPage(): React.JSX.Element {
-  const id = useRouteId();
+  return <TicketSurface id={useRouteId()} />;
+}
+
+/** The ticket page's body for one id. A Library topic (S16) renders it too, embedded: `home` replaces the
+ *  breadcrumb's "Epics" root and `children` render above the SAME conversation and composer a ticket gets
+ *  (the topic's own panels). */
+export function TicketSurface({ id, home, children }: {
+  id: string;
+  home?: { label: string; to: string };
+  children?: React.ReactNode;
+}): React.JSX.Element {
   const as = identity();
   const [order, setOrder] = useState<"newest" | "oldest">("newest");
   const drawer = useDocDrawer();
@@ -69,66 +83,74 @@ export function TicketPage(): React.JSX.Element {
   // C10 (design-10b21760d9 §13): an epic has its own page. A /ticket/<epic id> link (the VS Code
   // chat's, an old bookmark) replaces itself with /epic/<id>, query and #m- anchor kept.
   const isEpic = page.data?.ticket.kind === "epic";
+  // S16: a topic's own page is the Library's, so a /ticket/<topic id> link lands there the same way
+  const isTopic = page.data?.ticket.kind === "topic" && !children;
   useEffect(() => {
     if (isEpic) navigate(`/epic/${encodeURIComponent(id)}${search}${hash}`, { replace: true });
-  }, [isEpic, id, search, hash, navigate]);
+    else if (isTopic) navigate(`/library/topics/${encodeURIComponent(id)}${search}${hash}`, { replace: true });
+  }, [isEpic, isTopic, id, search, hash, navigate]);
   const history = useThreadHistory(id, page.data);
   // S22: before the early returns (a hook); keeps a gate answered elsewhere while its ruling is unsent.
   const gates = useRetainedGates((page.data?.open_gates ?? []).filter((g) => g.gate !== "design_signoff"));
-  // S20 attention trail: this ticket's items, each at its opener (a quick task's page is its own scope)
-  const here = pageItems(useAttention(), id);
-  // S20: an owner sign-off waiting on the viewer ends its trail here — the criterion is marked, and it (or its #c-
-  // deep link, once) opens the ruling drawer: the evidence frozen at its version beside the verdict (the home the
-  // Decisions page's sign-offs moved to, architect m-e972777a3d).
+  const guest = useIsGuest();
+  const canSpawn = usePoolCanSpawn();
+  // An owner-checked criterion with evidence is marked, and it (or its #c- deep link, once) opens the ruling drawer:
+  // the evidence frozen at its version beside the verdict.
   const [ruling, setRuling] = useState<string | null>(null);
   const rulingOpener = useRef<HTMLElement | null>(null);
   const landed = useRef<string | null>(null);
   const target = hash.startsWith("#c-") ? decodeURIComponent(hash.slice(1)) : null;
-  const signoffWaiting = here.some((i) => i.kind === "signoff" && i.item.id === target);
+  const signoffWaiting = !guest && Boolean(page.data?.criteria.some((c) => c.id === target && awaitsOwner(c)));
   useEffect(() => {
     if (!target || !signoffWaiting || landed.current === target || !page.data) return;
     landed.current = target;
     document.getElementById(target)?.scrollIntoView?.({ block: "center" });
     setRuling(target);
   }, [target, signoffWaiting, page.data]);
+  // S12-ui2 (qa m-da89ef8294 m4): a seat alive on this ticket is who works it, even before the ticket names an assignee
+  const seats = useQuery({ queryKey: ["seats"], queryFn: getSeats, retry: false });
+  const liveSeat = seats.data?.seats.find((s) => s.ticket_id === id && s.state === "alive")?.handle ?? null;
 
-  if (page.isPending || isEpic) return <p className={ui.empty}>Loading ticket…</p>;
-  if (page.isError)
-    return (
+  // embedded (a topic), the host's own panels stay readable while the ticket surface loads or if it is refused
+  // the children keep one slot (second child of the page div) in every state, so their state survives the load
+  if (page.isPending || isEpic || isTopic) return children ? <div className={styles.page}><p className={ui.empty}>Loading ticket…</p>{children}</div> : <p className={ui.empty}>Loading ticket…</p>;
+  if (page.isError) {
+    const failed = (
       <p className={ui.banner} role="alert">
         Could not load {id}: {(page.error as Error).message}
       </p>
     );
+    return children ? <div className={styles.page}>{failed}{children}</div> : failed;
+  }
 
   const { ticket, epic_id, criteria, docs, assignee, waiting_reason, description_html } = page.data;
-  const seat = assignee.handle ?? ticket.assignee ?? null;
-  const gloss = (k: string) => copyItem("ticket", k).text;
+  const seat = assignee.handle ?? ticket.assignee ?? liveSeat;
+  const gloss = (k: string) => actionGloss("ticket", k);
+  const topic = ticket.kind === "topic"; // its seat is the resident sme and it has no epic's model rows
 
-  const waitingGates = new Set(here.filter((i) => i.pageTab === "actions").map((i) => i.item.id));
-  const waitingCriteria = new Set(here.filter((i) => i.kind === "signoff").map((i) => i.item.id));
+  const waitingCriteria = new Set(guest ? [] : criteria.filter(awaitsOwner).map((c) => c.id));
   const request = new URLSearchParams(search).get("request");
   const openKey = request && gates.some(({ gate: g }) => g.event_id === request) ? "answer-decision" : null;
-  const actions: ActionItem[] = [
-    { key: "change-status", label: "Change status", gloss: gloss("process-strip"), copy: copyProps("ticket", "process-strip"),
+  const all: ActionItem[] = [
+    { key: "change-status", label: "Change status", gloss: gloss("change-status"), copy: copyProps("ticket", "process-strip"),
       render: () => <StatusControl ticketId={id} currentStatus={ticket.status as TicketStatus} /> },
-    { key: "assign-spawn", label: "Assign or spawn a seat", gloss: copyItem("epic", "assign-spawn").text,
-      render: () => <AssignControl ticketId={id} currentAssignee={seat} /> },
-    ...(gates.length ? [{ key: "answer-decision", label: "Answer a decision", count: gates.length, gloss: copyItem("epic", "answer-decision").text,
-      attention: countWhere(here, "actions", "decisions"),
-      render: () => <GateForms gates={gates} waiting={waitingGates} /> } as ActionItem] : []),
-    ...(ticket.kind === "story" ? [{ key: "spawn-seat", label: "Spawn seat", gloss: copyItem("ticket", "spawn-seat").text,
+    ...(topic ? [] : [{ key: "assign-spawn", label: assignLabel(canSpawn), gloss: gloss(canSpawn ? "assign-spawn" : "assign"),
+      render: () => <AssignControl ticketId={id} currentAssignee={seat} /> } as ActionItem]),
+    ...(gates.length ? [{ key: "answer-decision", label: "Answer a decision", count: gates.length, gloss: gloss("answer-decision"),
+      render: () => <GateForms gates={gates} /> } as ActionItem] : []),
+    ...(ticket.kind === "story" ? [{ key: "spawn-seat", label: "Spawn seat", gloss: gloss("spawn-seat"),
       render: () => <SpawnSeatForm ticketId={id} roles={["engineer", "qa", "adversary"]} /> } as ActionItem] : []),
-    { key: "models", label: "Models…", gloss: "each role's model and effort on this ticket's epic; switch them for the seats spawned next.",
-      render: () => <ModelsControl epicId={epic_id} /> },
-    { key: "raise-decision", label: "Raise a decision", gloss: copyItem("epic", "raise-decision").text,
+    ...(topic ? [] : [{ key: "models", label: "Models…", gloss: gloss("models"),
+      render: () => <ModelsControl epicId={epic_id} storyId={ticket.kind === "story" ? id : undefined} /> } as ActionItem]),
+    { key: "raise-decision", label: "Raise a decision", gloss: gloss("raise-decision"),
       render: () => <GateOpenControl ticketId={id} /> },
-    { key: "ask-role", label: "Ask a role", gloss: copyItem("epic", "ask-role").text,
+    { key: "ask-role", label: "Ask a role", gloss: gloss("ask-role"),
       render: () => <AskRoleControl ticketId={id} /> },
-    { key: "link-doc", label: "Link a document", gloss: gloss("documents"), copy: copyProps("ticket", "documents"),
+    { key: "link-doc", label: "Link a document", gloss: gloss("link-doc"), copy: copyProps("ticket", "documents"),
       render: () => <LinkDocControl ticketId={id} /> },
-    { key: "add-criterion", label: "Add an acceptance criterion", gloss: gloss("criteria"),
+    { key: "add-criterion", label: "Add an acceptance criterion", gloss: gloss("add-criterion"),
       render: () => <AddCriterion ticketId={id} /> },
-    { key: "record", label: "Record ids", gloss: "the ticket's id, kind, work type and raw status, for a message or a shell.",
+    { key: "record", label: "Record ids", gloss: gloss("record"),
       render: () => <dl className={styles.record}>
         <div><dt>Id</dt><dd className={ui.idMono}>{ticket.id}</dd></div>
         <div><dt>Epic</dt><dd className={ui.idMono}>{epic_id}</dd></div>
@@ -137,6 +159,7 @@ export function TicketPage(): React.JSX.Element {
         <div><dt>Waiting</dt><dd>{waiting_reason.reason || "—"}</dd></div>
       </dl> },
   ];
+  const actions = guest ? all.filter((a) => GUEST_ACTIONS.has(a.key)) : all;
 
   const work = (
     <div className={styles.work} data-testid="ticket-work">
@@ -154,7 +177,7 @@ export function TicketPage(): React.JSX.Element {
         <div className={styles.seat}>
           <span className={styles.seatName}>{seat ?? "unassigned"}</span>
           {assignee.role ? <span className={ui.tag}>{assignee.role}</span> : null}
-          <span className={styles.seatState}>{waiting_reason.presence ? waiting_reason.presence : "no live shell"}</span>
+          <span className={styles.seatState}>{waiting_reason.presence ? waiting_reason.presence : "not running"}</span>
         </div>
       </section>
       <section>
@@ -217,7 +240,7 @@ export function TicketPage(): React.JSX.Element {
       <Composer
         key={reply?.id ?? "new"}
         ticketId={id}
-        kinds={[...(reply ? KINDS_REPLY : KINDS_DEFAULT)]}
+        kinds={[...(guest ? KINDS_GUEST : reply ? KINDS_REPLY : KINDS_DEFAULT)]}
         showTo to={reply ? reply.by : null} replyTo={reply?.id ?? null} replyToBy={reply?.by ?? null}
         onCancelReply={() => setReply(null)}
         placeholder={reply ? `Reply to @${reply.by}` : `Write a message as @${as}… use @ to mention someone.`}
@@ -231,23 +254,24 @@ export function TicketPage(): React.JSX.Element {
     <div className={styles.page}>
       <WorkHeader
         ticketId={id} kind="ticket" title={ticket.title} purpose={ticket.description} status={ticket.status}
-        assignee={seat} designRef={ticket.design_ref} epic={{ id: epic_id, title: page.data.epic_title ?? epic_id }}
+        assignee={seat} designRef={ticket.design_ref} epic={{ id: epic_id, title: page.data.epic_title ?? epic_id }} home={home}
         actions={<ActionsMenu items={actions} subject={ticket.title} openKey={openKey} />} work={work}
-        onRuleDoc={(docId) => { const c = criteria.find((x) => waitingCriteria.has(x.id) && x.evidence_ref === docId); if (c) setRuling(c.id); else drawer.openDoc(docId); }}
       />
+      {children}
       <Conversation ticketId={id} history={history} order={order} viewer={as}
         onToggleOrder={() => setOrder((o) => (o === "newest" ? "oldest" : "newest"))}
         onReply={(m: MessageView) => setReply({ id: m.id, by: m.by })}
         composer={composer} />
-      <RulingDrawer signoff={rulingFor(page.data, criteria.find((c) => c.id === ruling), seat,
-        here.find((i) => i.kind === "signoff" && i.item.id === ruling)?.ask)}
+      <RulingDrawer signoff={rulingFor(page.data, criteria.find((c) => c.id === ruling), seat)}
         onClose={() => setRuling(null)} returnFocusTo={rulingOpener.current} />
     </div>
   );
 }
 
-/** The ruling drawer's row for one of this ticket's criteria: its evidence doc at the version the evidence named, and
- *  the served `ask` (the attention item's plain-words question, t-77c3a55b75) the drawer heads with. */
+/** An owner-checked criterion that has evidence and no verdict yet: the owner reviews it and rules. */
+const awaitsOwner = (c: CriterionView): boolean => c.checked_by === "owner" && c.verdict === "pending" && Boolean(c.evidence_ref);
+
+/** The ruling drawer's row for one of this ticket's criteria: its evidence doc at the version the evidence named. */
 export function rulingFor(data: TicketPageData, c: CriterionView | undefined, assignee: string | null, ask?: string): SignoffRow | null {
   if (!c?.evidence_ref) return null;
   const d = data.docs.find((x) => x.id === c.evidence_ref);

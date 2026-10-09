@@ -169,6 +169,12 @@ describe('boardClient: upload and content', () => {
     expect(await c.content(A, true)).toEqual({ bytes: null, type: 'application/pdf', size: 5 });
     expect(String((f.mock.calls[0] as unknown as [URL])[0])).toBe(`http://127.0.0.1:9400/v1/artifacts/${A}/content`);
   });
+  it('content: a probe of a reply without Content-Length reports an unknown size, not 0 (RC2)', async () => {
+    const f = vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'content-type': 'text/markdown' } }));
+    const c = boardClient('http://127.0.0.1:9400', creds, f as unknown as typeof fetch);
+    expect((await c.content(A, true)).size).toBeNull();
+    expect((await c.content(A)).size).toBe(3);
+  });
   it('content: a board refusal is a BoardError; the token never appears in the message', async () => {
     const f = async () => json(404, { ok: false, error: { code: 'not_found', message: `artifact ${A} has no stored content` } });
     const c = boardClient('http://127.0.0.1:9400', creds, f as unknown as typeof fetch);

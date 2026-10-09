@@ -40,6 +40,8 @@ def _code_server_row(r: dict[str, Any]) -> dict[str, Any]:
     if r["state"] == "not_installed":
         r["health"] = "not installed"
         r["note"] = f"code-server is not installed. Install it: {r.get('install_hint')}"
+    elif r.get("downloadable"):  # Windows x64: the first Start downloads the pinned release
+        r["note"] = f"Start downloads the pinned code-server first: {r.get('install_hint')}"
     elif r["state"] == "foreign":
         r["note"] = r.get("reason")
     elif not r.get("autostart"):
@@ -146,7 +148,8 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
                                       "started_at": before},
                 "hint": "poll /healthz until started_at changes"})
         try:
-            code, out = control.request(path, body)
+            # a first code start downloads and unpacks the pinned code-server: allow it minutes, not 180 s
+            code, out = control.request(path, body, timeout=900.0 if svc == "code" and verb != "stop" else 180.0)
         except control.ControlUnavailable as e:
             raise _refuse_unavailable(e) from None
         invalidate()  # the action changed what a read shows; never serve the pre-action rows

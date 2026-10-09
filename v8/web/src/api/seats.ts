@@ -16,19 +16,41 @@ export const getPoolCapabilities = () => api<PoolCapabilities>("/v1/pool/capabil
 export const getModels = () => api<ModelCatalog>("/v1/models");
 
 /** A model id as the owner reads it. */
-export function modelLabel(id: string | null | undefined): string {
+export function modelLabel(id: string | null | undefined, meta?: { context_window?: number | null }): string {
+  const base = modelName(id);
+  // S12 sweep #13: a 1M-window row says so, whether or not its id carries `[1m]`
+  return meta?.context_window && meta.context_window >= 1_000_000 && !/\(1M\)$/.test(base) ? `${base} (1M)` : base;
+}
+
+function modelName(id: string | null | undefined): string {
   const known: Record<string, string> = {
     "claude-fable-5-1": "Claude Fable 5.1", "claude-opus-5-5": "Claude Opus 5.5",
     "gpt-6-astra": "GPT-6 Astra", "gpt-6-sol": "GPT-6 Sol", astra: "GPT-6 Astra", claude: "Claude",
   };
   if (!id) return "Claude (the fleet default)";
-  return known[id] ?? id;
+  if (known[id]) return known[id];
+  // RC2 F2: any other catalog id reads as a name, not a raw id (`claude-sonnet-5-5[1m]` → "Claude Sonnet 5.5 (1M)")
+  const oneM = /\[1m\]$/i.test(id);
+  const base = id.replace(/\[1m\]$/i, "");
+  const cap = (w: string) => w.charAt(0).toUpperCase() + w.slice(1);
+  const c = /^claude-([a-z]+)-(\d+)-(\d+)$/i.exec(base);
+  const g = /^gpt-([\d.]+)-([a-z]+)$/i.exec(base);
+  const name = c ? `Claude ${cap(c[1])} ${c[2]}.${c[3]}` : g ? `GPT-${g[1]} ${cap(g[2])}` : base;
+  return oneM ? `${name} (1M)` : name;
 }
 
 /** POST /v1/sessions/resume — one path for parked, stalled, dead and closed seats.
  *  The pool chooses the stored harness session and reports explicit fresh starts. */
 export const resumeSeat = (participantId: string, ticketId?: string | null) =>
   postJson<Record<string, unknown>>("/v1/sessions/resume", {
+    participant_id: participantId,
+    ticket_id: ticketId ?? null,
+  });
+
+/** POST /v1/sessions/close — the owner's Close: the pool closes the shell and the board records "closed by owner",
+ *  so the close is not reported as a crash (design-63db8a7d42 G). */
+export const closeSeat = (participantId: string, ticketId?: string | null) =>
+  postJson<Record<string, unknown>>("/v1/sessions/close", {
     participant_id: participantId,
     ticket_id: ticketId ?? null,
   });

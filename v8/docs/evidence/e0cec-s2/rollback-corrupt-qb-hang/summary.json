@@ -1,0 +1,26 @@
+﻿{
+    "from":  "0.9.1",
+    "to":  "0.9.2.dev0",
+    "state":  "failed",
+    "reason":  "msiexec exit 4294967295: the installer failed; Windows Installer rolled its changes back; the previous version did not come back (installed None, health None); reinstall 0.9.1 with the install script: `.\\install.ps1 -Version v0.9.1 -Force` (Windows) or `sh install.sh --version v0.9.1 --force`, then `heronry start`",
+    "timings":  {
+                    "parked":  0.5,
+                    "stopped":  5.8,
+                    "holders_checked":  50.5,
+                    "installed":  618.2,
+                    "rolled_back":  740.5
+                },
+    "parked":  [
+                   "engineer.s2-drill"
+               ],
+    "resumed":  [
+
+                ],
+    "installed":  null,
+    "health_version":  null,
+    "finished_at":  "2026-10-01T23:43:37+00:00",
+    "installed_before":  "{522AFB7E-2060-4653-A273-8AA6E77C3C89}=0.9.1",
+    "installed_after":  "",
+    "seat_after":  null,
+    "drill_seconds":  742.4
+}

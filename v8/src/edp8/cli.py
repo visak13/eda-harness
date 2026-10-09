@@ -153,6 +153,19 @@ def _code(verb: str, explicit: bool, opts: dict | None = None) -> int:
     return 0
 
 
+def _heal_code() -> None:
+    """The new version's start: a code server still serving the previous EDP Chat is restarted once onto this one's.
+    One line; a failure is said and never fails the start."""
+    from . import code_service
+    try:
+        got = code_service.heal_extension()
+    except Exception as e:  # noqa: BLE001 -- the start has already succeeded; the code server is opt-in
+        print(f"code       could not refresh EDP Chat ({e}); run: heronry stop code, then heronry start code", file=sys.stderr)
+        return
+    if got:
+        print(f"code       EDP Chat {got['from'] or 'none'} -> {got['to']}: restarted the code server so it serves the new one")
+
+
 def _legacy_supervisor() -> bool:
     """A supervisor runs without a control port (started by a pre-S3 launcher): it cannot be asked to hold
     off, so a single-service stop/restart replaces it rather than race its restarts."""
@@ -206,6 +219,10 @@ def start(argv: list[str]) -> int:
     from . import launcher
     pos, opts = _split(argv)
     rc = 0
+    blocked = launcher.update_block()
+    if blocked:
+        print(blocked, file=sys.stderr)
+        return 3
     targets = _targets(pos)
     for svc in targets:
         if svc == launcher.SUPERVISOR:
@@ -220,7 +237,10 @@ def start(argv: list[str]) -> int:
             continue
         _say(out)
     if targets == [launcher.CODE]:
-        return _code("start", explicit=True, opts=opts)
+        rc = _code("start", explicit=True, opts=opts)
+        if rc == 0:
+            _heal_code()
+        return rc
     if not opts.get("no-supervisor") and rc == 0:
         try:
             _say(launcher.ensure_supervisor())
@@ -229,6 +249,8 @@ def start(argv: list[str]) -> int:
             rc = 1
     if launcher.CODE in targets and rc == 0:  # `all` with code_server.autostart
         rc = _code("start", explicit=False)
+    if rc == 0:
+        _heal_code()  # whichever services started: a code server left running by the previous version is refreshed
     if rc == 0:
         try:
             from .updater import notice
@@ -363,6 +385,10 @@ def restart(argv: list[str]) -> int:
     from . import launcher, supervisor
     pos, opts = _split(argv)
     force = bool(opts.get("force"))
+    blocked = launcher.update_block()
+    if blocked:
+        print(blocked, file=sys.stderr)
+        return 3
     targets = _targets(pos)
     if "pool" in targets and not _pool_guard("restart", force):
         return 3
@@ -396,6 +422,9 @@ def restart(argv: list[str]) -> int:
         _say(launcher.ensure_supervisor())
     if code_too and rc == 0:
         rc = _code("restart", explicit=False)
+    if "board" in targets:  # RC2 item 6: the board serves edp8's MCP; say the one action a long restart needs
+        from .updater import MCP_RECONNECT_HINT
+        print(f"{MCP_RECONNECT_HINT}.")
     return rc
 
 
@@ -482,12 +511,13 @@ COMMANDS: tuple[Command, ...] = (
     Command("update", "update", "check for a new release and install it (backup, stop, upgrade, start)", (
         ("--check", "only report the current and latest versions"),
         ("--dry-run", "check, download and verify, then stop before changing anything"),
-        ("--force", "reinstall the same version, update with live seats or an unanswering pool (takes them "
-                    "offline), or update with no way back when the installed version's wheels can't be secured"),
+        ("--force", "reinstall the same version, update with an unanswering pool (seats can't be parked), or "
+                    "update with no way back when the installed version's rollback can't be secured"),
         ("--allow-downgrade", "install an older release"),
         ("--skip-compat", "skip the custom-workflow compatibility check"),
         ("--release-url URL", "update from this release instead of the latest"),
-        ("--previous-url URL", "the installed version's release, for the rollback wheels (default: its GitHub tag)"),
+        ("--previous-url URL", "the installed version's release, for the rollback (default: its GitHub tag)"),
+        ("--relaunch-app", "reopen the desktop window after the update (the tray's Install update sets this)"),
     )),
     Command("import", "import --from DIR", "copy an existing v8 install's state (dry run first)", (
         ("--from DIR", "the v8 folder to copy from (never written)"),
@@ -501,9 +531,25 @@ COMMANDS: tuple[Command, ...] = (
     Command("gui", "gui", "open the desktop app", (
         ("--capture [DIR]", "save the app's own window content as PNGs under its data folder, then quit"),
     )),
+    Command("notify-test", "notify-test", "raise one native desktop toast (the desktop app's notification path)", (
+        ("--title T", "the toast title (default: the app name)"),
+        ("--message M", "the toast text"),
+        ("--wait S", "seconds to keep the tray icon up so the toast shows (default 6)"),
+    )),
     Command("version", "version", "print the product name and version (also --version)"),
     Command("help", "help", "this text (also --help, -h)"),
 )
+
+
+def command_help(name: str) -> int:
+    """`heronry <command> --help`: that command's usage and flags. It acts on nothing (`update --help` used to run
+    a real update check)."""
+    from .brand import CLI_NAME
+    c = next(c for c in COMMANDS if c.name == name)
+    print(f"usage: {CLI_NAME} {c.usage}\n\n{c.summary}")
+    for flag, text in c.flags:
+        print(f"  {flag:<22} {text}")
+    return 0
 
 
 def help_cmd(_argv: list[str]) -> int:
@@ -520,13 +566,16 @@ def help_cmd(_argv: list[str]) -> int:
 
 _COMMANDS = {
     "status": status, "start": start, "stop": stop, "restart": restart, "version": version_cmd,
-    "help": help_cmd, "gui": gui,
+    "help": help_cmd, "gui": gui, "notify-test": _lazy("edp8.desktop", "notify_test_main"),
     "init": _lazy("edp8.setup", "init_cmd"), "doctor": _lazy("edp8.setup", "doctor_cmd"),
     "prereqs": _lazy("edp8.prereqs_cmd", "main"),
     "import": _lazy("edp8.importer", "main"), "update": _lazy("edp8.updater", "main"),
     # S13 owns `heronry workflows …` (the update's compat check runs it from the NEW release)
     "workflows": _lazy("edp8.workflows_cli", "main"),
 }
+#: every other command reads or acts on a home's records, DB or services, so a foreign state dir refuses it (S10,
+#: c-1ccf55aec4); these five touch none (`workflows check --db` names its DB explicitly; `notify-test` only raises a toast).
+_UNGUARDED = frozenset({"version", "help", "prereqs", "workflows", "notify-test"})
 _ALIASES = {"--version": "version", "-V": "version", "--help": "help", "-h": "help"}
 
 
@@ -542,7 +591,33 @@ def main(argv: list[str] | None = None) -> int:
     if fn is None:
         print(f"{CLI_NAME}: unknown command {cmd!r}. commands: {', '.join(_COMMANDS)}", file=sys.stderr)
         return 2
-    return fn(argv[1:])
+    if cmd != "help" and any(a in ("--help", "-h") for a in argv[1:]) and any(c.name == cmd for c in COMMANDS):
+        return command_help(cmd)  # before the home guard and before anything runs
+    if cmd not in _UNGUARDED:
+        from . import settings
+        try:
+            settings.home_guard()
+        except settings.ForeignHome as e:
+            print(f"{CLI_NAME} {cmd}: refused: {e}", file=sys.stderr)
+            return 2
+    if cmd not in ("start", "restart") or settings_debug():
+        return fn(argv[1:])
+    try:
+        return fn(argv[1:])
+    except KeyboardInterrupt:
+        print(f"{CLI_NAME} {cmd}: interrupted. Run `{CLI_NAME} start` again: it adopts or clears what this "
+              "start left running.", file=sys.stderr)
+        return 130
+    except Exception as e:  # noqa: BLE001 — RC2 item 3: one plain line and the command to run, never a traceback
+        print(f"{CLI_NAME} {cmd}: failed: {type(e).__name__}: {e}. Run `{CLI_NAME} stop --force`, then "
+              f"`{CLI_NAME} start`; `{CLI_NAME} doctor` checks the install (HERONRY_DEBUG=1 shows the traceback).",
+              file=sys.stderr)
+        return 1
+
+
+def settings_debug() -> bool:
+    from . import settings
+    return str(settings.environ_copy().get("HERONRY_DEBUG") or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 if __name__ == "__main__":

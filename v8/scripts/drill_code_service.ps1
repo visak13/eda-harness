@@ -72,7 +72,7 @@ $env:HERONRY_NO_UPDATE_CHECK = "1"; $env:PYTHONIOENCODING = "utf-8"
 Copy-Item "$root\edp-pool\tests\fixtures\stub_harness.py" "$T\stub_harness.py"
 Set-Content -Path "$T\claude-stub.cmd" -Value "@`"$py`" `"$T\stub_harness.py`" %*" -Encoding ascii
 $env:EDP_CLAUDE_BIN = "$T\claude-stub.cmd"; $env:EDP_SPAWN_MODE = "headless"; $env:EDP_SHADOW = "0"
-# no code-server anywhere on PATH (npm's global bin is where `npm install -g code-server` would put it)
+# no code-server anywhere on PATH (a global npm install would put one in npm's bin dir)
 $env:PATH = (($env:PATH -split ";") | Where-Object { $_ -and -not (Test-Path (Join-Path $_ "code-server*")) }) -join ";"
 Set-Location $T
 "   ports board=$env:EDP8_PORT mcp=$env:EDP8_MCP_PORT pool=$env:EDP_POOL_PORT broker=$env:EDP_BROKER_PORT code=$env:EDP_CODE_PORT"
@@ -81,12 +81,14 @@ Set-Location $T
 Check ($LASTEXITCODE -eq 0) "init exit 0"
 
 "== 3. without code-server: not_installed with the install hint"
+$env:EDP_CODE_NO_DOWNLOAD = "1"   # S16: Windows x64 would otherwise download the pinned code-server; this drill needs "none"
 $out = & $h start code 2>&1 | Out-String
 $code3 = $LASTEXITCODE
 $out.TrimEnd() -split "`n" | ForEach-Object { "   $_" }
 Check ($code3 -eq 1) "heronry start code exits 1 (got $code3)"
-Check ($out -match "not installed" -and $out -match "npm install -g code-server") "it names the install command for this OS"
+Check ($out -match "not installed" -and $out -match "code_server.path") "it says how to point at a code-server"
 $row = CodeRow
+Remove-Item Env:\EDP_CODE_NO_DOWNLOAD
 "   status code row: $($row | ConvertTo-Json -Compress)"
 Check ($row.state -eq "not_installed" -and $row.install_hint -match "code-server") "status shows code not_installed with the hint"
 Check (-not (Get-NetTCPConnection -LocalPort $env:EDP_CODE_PORT -State Listen -ErrorAction SilentlyContinue)) "nothing listens on the code port"
@@ -182,7 +184,7 @@ out['wrong_host'] = get(guard + '/', {'Host': 'evil.example:80'})[0]
 s, _, b = get(board + '/v1/code/session', {**auth, 'Content-Type': 'application/json'}, 'POST', b'{}')
 out['session_mint'] = s
 t = json.loads(b)['value']['token']
-s, hd, _ = get(guard + '/__edp/login?t=' + t + '&next=/')
+s, hd, _ = get(guard + '/__edp/login', None, 'POST', ('t=' + t + '&next=/').encode())  # RC2 F5: POSTed
 out['login'] = s
 cookie = '; '.join(v.split(';', 1)[0] for k, v in hd.items() if k.lower() == 'set-cookie')
 s, hd2, b = get(guard + '/', {'Cookie': cookie})
@@ -193,7 +195,7 @@ if s == 302 and 'folder=' in loc and '//' not in loc:
     s, _, b = get(guard + '/' + loc.lstrip('./'), {'Cookie': cookie})
 out['workbench'] = s
 out['workbench_is_vscode'] = b'vscode' in b.lower() or b'workbench' in b.lower()
-out['replayed_token'] = get(guard + '/__edp/login?t=' + t + '&next=/')[0]
+out['replayed_token'] = get(guard + '/__edp/login', None, 'POST', ('t=' + t + '&next=/').encode())[0]
 print(json.dumps(out))
 '@ -Encoding utf8
   $probe = & $py "$T\probe.py" | Out-String

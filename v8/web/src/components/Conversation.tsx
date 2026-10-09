@@ -9,7 +9,7 @@ import { ArtifactVideo, dispositionOf, fetchArtifactContent, isVideoType, Messag
 import { ThreadHistoryControls, type useThreadHistory } from "./useThreadHistory";
 import { pendingWork } from "./PendingNavigation";
 import { useScrollToHash } from "./useScrollToHash";
-import { useViewerFlag } from "./viewerPrefs";
+import { narrowViewport, useViewerFlag } from "./viewerPrefs";
 import { useRetired } from "./useRetired";
 import { MessageMarkdown } from "./Markdown";
 import { CodeCard } from "./CodeCard";
@@ -19,16 +19,13 @@ import styles from "./Conversation.module.css";
 import { dismissAsks, threadAsks, useAttention, type PageItem } from "../api/attention";
 import { attentionMark } from "./AttentionDot";
 import { ago, highlightMessage, useJumpToMessage } from "./AttentionAsks";
+import { usePersonName } from "./usePersonName";
 
 // The conversation canvas per revision3-clean-epic.png: "Conversation · N messages · Today" and a
 // continuous run of messages (36px avatar, bold name, "To x", time, Reply on the right), with an
 // attachment CARD (thumbnail, filename, "View image") under a message that carries artifacts —
 // never the raw `art-…` token in the text (owner defect m-f33ab9207d). The composer sits under
 // the run, in flow, always mounted; the page owns it and passes it as `composer`.
-
-function nameOf(by: string): string {
-  return by.includes(".") ? by.split(".")[0] : by;
-}
 
 function clock(at: string): string {
   const d = new Date(at);
@@ -75,12 +72,15 @@ function useFillViewport(): React.RefObject<HTMLElement | null> {
   return ref;
 }
 
-/** Message text without the artifact tokens the cards already render. */
+/** Message text without the artifact tokens the cards already render: only the run of attachment ids that ENDS the
+ *  text (where the composer puts them). An id the author wrote inside a sentence ("attachment id art-x, and …")
+ *  stays, so the sentence still reads; the plain text view and the Markdown view link it. */
 export function stripTokens(text: string, attachments: MessageAttachment[] | undefined): string {
   if (!attachments?.length) return text;
-  let out = text;
-  for (const a of attachments) out = out.split(a.id).join("");
-  return out.replace(/[ \t]{2,}/g, " ").trim();
+  const ids = new Set(attachments.map((a) => a.id));
+  const words = text.trimEnd().split(/(\s+)/);
+  while (words.length && (words[words.length - 1] === "" || ids.has(words[words.length - 1]!) || /^\s+$/.test(words[words.length - 1]!))) words.pop();
+  return words.join("").trim();
 }
 
 function AttachmentCard({ a }: { a: MessageAttachment }): React.JSX.Element {
@@ -150,6 +150,7 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
   const thread = history.messages;
   const ordered = order === "newest" ? [...thread].reverse() : thread;
   const byId = new Map(thread.map((m) => [m.id, m]));
+  const nameOf = usePersonName(); // S12-ui2: a guest reads as ext:<handle>, never its participant id
   const retired = useRetired(); // t-882e4d2eeb: people who left keep their name here, greyed
   useScrollToHash(Boolean(thread.length));
   // S20: the asks waiting on the viewer come from the one attention list (never a rule of this thread's own);
@@ -170,7 +171,7 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
   const loaded = Boolean(target && byId.has(target));
   useEffect(() => { if (target && loaded) highlightMessage(target); }, [target, loaded]);
   const last = thread[thread.length - 1]?.at;
-  const [composerCollapsed, setComposerCollapsed] = useViewerFlag(viewer, "composer-collapsed");
+  const [composerCollapsed, setComposerCollapsed] = useViewerFlag(viewer, "composer-collapsed", narrowViewport()); // a phone starts on the one-line bar; a stored choice wins
   const fillRef = useFillViewport();
   return (
     <section ref={fillRef} className={styles.conversation} aria-label="Conversation" data-testid="conversation" data-ticket={ticketId}>
@@ -203,8 +204,7 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
                     {m.by.includes(".") ? <span className={styles.id}>{m.by}</span> : null}
                     {m.to ? <span className={styles.to}>To {m.to === viewer ? "you" : nameOf(m.to)}</span> : null}
                     {m.kind !== "note" ? <Term category="message_kind" value={m.kind} className={styles.kind} /> : null}
-                    {/* v34 item 5: the large highlight is the marker; the tag is a quiet caption, no dot */}
-                    {waiting ? <span className={styles.waiting} data-testid="reader-tag">Waiting on you</span> : null}
+                    {/* s-aa76c83998: no "waiting" caption on a message; the large highlight is the only marker */}
                     <time dateTime={m.at}>{clock(m.at)}</time>
                     <span className={styles.actions}>
                       {waiting ? (

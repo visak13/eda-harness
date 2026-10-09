@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-import subprocess
 import threading
 import time
 from pathlib import Path
@@ -23,6 +22,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from edp_contracts.proc import run_bounded
 from edp_contracts.toolpath import find_tool, probe_version, tool_argv
 
 from .. import harness, launcher, pool_adapter, seat_choice, settings
@@ -36,6 +36,7 @@ NPM_PACKAGES = {"claude": "@anthropic-ai/claude-code", "codex": "@openai/codex",
 WAIT_POLL_S = 30.0
 WAIT_MAX_S = 12 * 3600.0
 UPDATE_TIMEOUT_S = 900
+PROBE_TIMEOUT_S = 10.0   # one `--version`; bounded with its whole tree (D9), so a page load waits at most 3 of these
 
 
 class UpdateIn(BaseModel):
@@ -48,18 +49,20 @@ class SelectionIn(BaseModel):
 
 
 def _run(argv: list[str], timeout: float = UPDATE_TIMEOUT_S) -> tuple[int, str]:
-    """The vendor update command, no shell (tests replace this seam)."""
+    """The vendor update command, no shell, bounded by `timeout` even when a .CMD shim's node lingers
+    (tests replace this seam)."""
     try:
-        r = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                           timeout=timeout, stdin=subprocess.DEVNULL)
-        return r.returncode, ((r.stdout or "") + (r.stderr or ""))[-2000:]
-    except (OSError, subprocess.TimeoutExpired) as e:
+        r = run_bounded(argv, timeout)
+    except OSError as e:
         return 127, str(e)
+    if r.timed_out:
+        return 127, f"timed out after {timeout:g}s: {(r.stdout + r.stderr)[-1800:]}"
+    return int(r.returncode), (r.stdout + r.stderr)[-2000:]
 
 
 def _probe(path: str) -> str | None:
     try:
-        return probe_version(tool_argv(path), timeout=10.0)
+        return probe_version(tool_argv(path), timeout=PROBE_TIMEOUT_S)
     except Exception:  # noqa: BLE001 — a missing node for a .js shim: version unknown
         return None
 

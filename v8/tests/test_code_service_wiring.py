@@ -87,11 +87,11 @@ def test_launcher_status_rows_end_with_the_code_row(monkeypatch):
     monkeypatch.setattr(launcher, "supervisor_running", lambda: False)
     monkeypatch.setattr(code_service, "status", lambda: {
         "service": "code", "state": "not_installed", "pid": None, "port": 9410, "url": "http://127.0.0.1:9410/",
-        "installed": False, "install_hint": "npm install -g code-server", "autostart": False,
+        "installed": False, "install_hint": "brew install code-server", "autostart": False,
         "reason": "code-server is not installed", "version": None})
     row = launcher.status_rows()[-1]
     assert row["service"] == "code" and row["state"] == "not_installed"
-    assert row["install_hint"] == "npm install -g code-server" and row["reason"] == "code-server is not installed"
+    assert row["install_hint"] == "brew install code-server" and row["reason"] == "code-server is not installed"
 
 
 # ------------------------------------------------------------------------------------------ supervisor

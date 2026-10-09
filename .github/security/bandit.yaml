@@ -1,0 +1,15 @@
+# bandit for the CI `security` job (ci.yml): medium severity and above (-ll), the four packages' src trees.
+# Every skip here is a documented baseline (v8/docs/evidence/e0cec-s10/security-scan.md); line-level ones are
+# `# nosec Bxxx  # reason` beside the code.
+exclude_dirs:
+  - tests
+  - node_modules
+skips:
+  # B608 (SQL built by string formatting): store.py and search.py interpolate only table/column names taken from the
+  # closed OBJECT_TYPES / _INDEXED maps (an unknown type raises KeyError before any SQL is built) and the `?` placeholders
+  # of an IN list; every VALUE is bound. The semgrep rule sql-concat in semgrep-rules.yml covers SQL text built by % or +.
+  - B608
+  # B104 (bind to 0.0.0.0): public mode (EDP8_PUBLIC_URL) is the explicit opt-in to be reachable from another
+  # machine (service.resolve_host, launcher._bind_host); the default is 127.0.0.1. The other literals are
+  # comparisons that map a bind-all host to loopback to CONNECT (keys_common, desktop).
+  - B104

@@ -118,3 +118,35 @@ def test_report_names_the_install_not_none(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "None" not in out
     assert str(tmp_path / "cfg") in out
+
+
+# -- S10 (s-b431082892): read-only flags never stop an import -------------------------------------------------------
+
+def _read_only(p: Path) -> None:
+    p.chmod(0o444)
+
+
+def test_read_only_sources_and_targets_are_imported_and_left_writable(home, tmp_path):
+    import os
+    import stat
+    src = _src(tmp_path)
+    (src / ".data" / "models.json").write_text('{"live": true}', encoding="utf-8")
+    _board_db(src / ".data" / "edp8.db", epics=2)
+    for f in (src / ".data" / "models.json", src / ".data" / "edp8.db"):
+        _read_only(f)  # a bundle, a synced or an attrib +R folder: copy2 carries the mode over
+    target, db = settings.data_dir() / "models.json", Path(settings.get("EDP8_DB"))
+    importer.apply(importer.plan(src), ({}, {}, []))  # first import: read-only sources
+    assert target.read_text(encoding="utf-8") == '{"live": true}' and db.is_file()
+    for f in (target, db):
+        assert os.access(f, os.W_OK), f"{f.name} was left read-only"
+    _read_only(target)
+    _read_only(db)  # a re-import over read-only targets: copy2 and the replace would fail on them
+    (src / ".data" / "models.json").chmod(0o666)
+    (src / ".data" / "models.json").write_text('{"live": 2}', encoding="utf-8")
+    _read_only(src / ".data" / "models.json")
+    importer.apply(importer.plan(src), ({}, {}, []))
+    assert target.read_text(encoding="utf-8") == '{"live": 2}'
+    assert db.stat().st_mode & stat.S_IWRITE
+    c = sqlite3.connect(db)
+    assert c.execute("SELECT count(*) FROM ticket").fetchone()[0] == 2
+    c.close()

@@ -24,7 +24,20 @@ spawn's own model wins, else the epic's `model:<role>=` tag, else the old `seat-
 the role's first catalog entry, else the catalog's `default_model` (a role with no catalog row).
 The pool routes by the entry's `harness`, regardless of id spelling.
 
-CAP: Each catalog entry names its effort cap; Claude entries may not exceed medium.
+CAP: Each catalog entry names its effort cap (low, medium or high; never above high: the owner's §6 words). resolve()
+clamps the chosen effort to it, and the pool clamps again at /v1/spawn and at launch.
+
+OPTION LISTS AND STORY PICKS (epic-0cec8d1c31 S7, design §4.E):
+    model:<role>=<id>@<effort>|<id>@<effort>   an ORDERED list of options for the role; the first is the
+                                               default. `@<effort>` is optional; the legacy single
+                                               `model:<role>=<id>` is a list of one.
+    seat:<role>=<id>@<effort>                  on a STORY: this story's seat of <role> runs on that option.
+                                               It names any model of the role's catalog row within its cap
+                                               (board check; RC2 F2: the epic's list is not a limit), and is
+                                               written by the owner or the epic's architect only.
+Precedence for a spawn of a role: the spawn's own arg > the story's `seat:` pick > the role's first option >
+the old whole-epic `seat-model:` > the catalog default; the effort follows the same order, and every step is
+clamped to the chosen model's cap.
 """
 
 from __future__ import annotations
@@ -37,14 +50,19 @@ from typing import Any, Iterable
 
 from edp8 import harness, settings
 from edp_contracts.roles import is_non_agent, refuse_non_agent
+from edp_contracts.seats import EFFORT_LEVELS, catalog_keys, clamp_effort, effort_cap_of
 
 MODEL_TAG = "seat-model:"
-ROLE_MODEL_TAG = "model:"    # model:<role>=<id>, one per role (S-ROLES)
+ROLE_MODEL_TAG = "model:"    # model:<role>=<id>[@<effort>][|<id>[@<effort>]...], one per role (S-ROLES)
+STORY_TAG = "seat:"          # seat:<role>=<id>[@<effort>], on a story (S7)
 EFFORT_TAG = "seat-effort:"
-EFFORTS = ("low", "medium", "high")
+OPTION_SEP = "|"
+EFFORTS = EFFORT_LEVELS
 CLAUDE = "claude"            # the sentinel seat name: no per-spawn model, the Claude roles column
-CLAUDE_EFFORT_CAP = "medium"
+CLAUDE_EFFORT_CAP = "medium"  # a model with no catalog row is capped here
 CATALOG_KEY = "role_models"  # models.json: {role: [model ids]}, first entry = the role's default
+
+Option = tuple[str, "str | None"]  # (model id, effort or None)
 
 
 @dataclass(frozen=True)
@@ -73,15 +91,92 @@ def choice_from_tags(tags: Iterable[str] | None) -> tuple[str | None, str | None
     return model, effort
 
 
-def role_models_from_tags(tags: Iterable[str] | None) -> dict[str, str]:
-    """PURE. The per-role picks on an epic's tags: `model:<role>=<id>` → {role: id}; last wins."""
-    out: dict[str, str] = {}
+def parse_option(token: str) -> tuple[Option, str | None]:
+    """PURE. `<id>[@<effort>]` → ((id, effort|None), problem|None). An effort outside low/medium/high keeps
+    the id, drops the effort and names the problem, so the board can refuse it with a clear reason."""
+    head, sep, tail = token.strip().rpartition("@")
+    if not sep:
+        return (token.strip(), None), None
+    e = tail.strip().lower()
+    if e in EFFORTS:
+        return (head.strip(), e), None
+    return (head.strip(), None), f"effort {tail.strip()!r} is not one of {list(EFFORTS)}"
+
+
+def format_option(opt: Option) -> str:
+    return f"{opt[0]}@{opt[1]}" if opt[1] else opt[0]
+
+
+def role_options_from_tags(tags: Iterable[str] | None) -> dict[str, list[Option]]:
+    """PURE. The per-role OPTION lists on an epic's tags: `model:<role>=<id>@<effort>|<id>@<effort>` →
+    {role: [(id, effort|None), ...]}, first = the default; last tag per role wins; empty items dropped."""
+    out: dict[str, list[Option]] = {}
     for t in tags or []:
         if t.startswith(ROLE_MODEL_TAG):
-            role, sep, mid = t[len(ROLE_MODEL_TAG):].partition("=")
-            if sep and role.strip() and mid.strip():
-                out[role.strip()] = mid.strip()
+            role, sep, rest = t[len(ROLE_MODEL_TAG):].partition("=")
+            opts = [parse_option(x)[0] for x in rest.split(OPTION_SEP) if x.strip()]
+            opts = [o for o in opts if o[0]]
+            if sep and role.strip() and opts:
+                out[role.strip()] = opts
     return out
+
+
+def role_models_from_tags(tags: Iterable[str] | None) -> dict[str, str]:
+    """PURE. The per-role DEFAULT model on an epic's tags: the first option of `model:<role>=…` → {role: id}."""
+    return {r: opts[0][0] for r, opts in role_options_from_tags(tags).items()}
+
+
+def story_picks_from_tags(tags: Iterable[str] | None) -> dict[str, Option]:
+    """PURE. A story's `seat:<role>=<id>@<effort>` picks → {role: (id, effort|None)}; last wins."""
+    out: dict[str, Option] = {}
+    for t in tags or []:
+        if t.startswith(STORY_TAG):
+            role, sep, rest = t[len(STORY_TAG):].partition("=")
+            opt = parse_option(rest)[0] if rest.strip() else ("", None)
+            if sep and role.strip() and opt[0]:
+                out[role.strip()] = opt
+    return out
+
+
+def tags_for_role_options(picks: dict[str, list[Option]] | None) -> list[str]:
+    """PURE. The `model:<role>=<id>@<effort>|…` tags that record per-role option lists (the web dialogs)."""
+    return [f"{ROLE_MODEL_TAG}{r}={OPTION_SEP.join(format_option(o) for o in opts)}"
+            for r, opts in (picks or {}).items() if r and opts]
+
+
+def tag_for_story_pick(role: str, opt: Option) -> str:
+    """PURE. The `seat:<role>=<id>@<effort>` tag that records a story's pick."""
+    return f"{STORY_TAG}{role}={format_option(opt)}"
+
+
+def option_problems(role: str, opts: list[Option], home: str | os.PathLike | None) -> list[str]:
+    """Reasons an option list is refused: an id the catalog does not list for the role, an effort outside
+    low/medium/high (parse_option names it) or above the model's own cap. [] = fine."""
+    out: list[str] = []
+    for mid, eff in opts:
+        why = unknown_model(role, mid, home)
+        if why:
+            out.append(why)
+        elif eff and clamp_effort(eff, _effort_cap(mid, home))[1]:
+            out.append(f"{mid} is capped at {_effort_cap(mid, home)}; {eff!r} is above its cap")
+    return out
+
+
+def story_pick_problem(role: str, pick: Option, epic_tags: Iterable[str] | None,
+                       home: str | os.PathLike | None) -> str | None:
+    """Why a story's `seat:<role>=` pick is refused, or None. RC2 F2 (owner: "an epic can set a model and effort
+    per story"; architect m-1f09a47214): a story may run its role on ANY model of the role's catalog row (or an
+    id the epic's own `model:<role>=` list names), at any effort up to that model's cap. The epic's list is the
+    role's default and its quick choices, not a limit on a story."""
+    mid, eff = pick
+    allowed = list(catalog(home).get(role) or []) + [o[0] for o in role_options_from_tags(epic_tags).get(role) or []]
+    if not allowed:
+        return None  # a role with no catalog row and no epic list: nothing to be one of
+    if mid not in allowed:
+        return f"{mid!r} is not a {role} model in the catalog: {sorted(set(allowed))}"
+    if eff and clamp_effort(eff, _effort_cap(mid, home))[1]:
+        return f"{mid} is capped at {_effort_cap(mid, home)}; {eff!r} is above its cap"
+    return None
 
 
 def role_efforts_from_tags(tags: Iterable[str] | None) -> dict[str, str]:
@@ -188,6 +283,19 @@ def unknown_model(role: str | None, model: str | None, home: str | os.PathLike |
     return f"{model!r} is not a {role} model; the catalog for {role} is {allowed}"
 
 
+def role_options_for(tags: Iterable[str] | None,
+                     home: str | os.PathLike | None) -> dict[str, list[dict[str, str | None]]]:
+    """{role: [{model, effort}, ...]} each catalog role's option list as the Models tab shows it: the epic's
+    `model:<role>=` list when it has one, else the role's catalog models (effort None = the role's own
+    effort). The first item is what a spawn of the role runs on."""
+    listed = role_options_from_tags(tags)
+    out: dict[str, list[dict[str, str | None]]] = {}
+    for r, ids in catalog(home).items():
+        opts = listed.get(r) or [(m, None) for m in ids]
+        out[r] = [{"model": m, "effort": e} for m, e in opts]
+    return out
+
+
 def role_models_for(tags: Iterable[str] | None, home: str | os.PathLike | None) -> dict[str, str | None]:
     """{role: model} each catalog role of an epic runs on (resolve() with no spawn-named model).
     The Epic page shows it; None = the pool's roles column (an old `seat-model:claude` epic)."""
@@ -215,37 +323,39 @@ def is_pi_seat(model: str | None, agent_home: str | os.PathLike | None) -> bool:
 def _effort_cap(model: str | None, home: str | os.PathLike | None) -> str:
     """Read the effort cap from data, not the model name."""
     reg = _registry(home)
-    row = (reg.get("models") or {}).get(model) or (reg.get("seats") or {}).get(model)
+    row = next((r for mid in catalog_keys(model or "") for r in ((reg.get("models") or {}).get(mid),
+                                                               (reg.get("seats") or {}).get(mid))
+                if isinstance(r, dict)), None)
     if not isinstance(row, dict):
         return CLAUDE_EFFORT_CAP
-    return str(row.get("effort_cap") or ("high" if row.get("harness") in ("pi", "codex") else "medium"))
+    return effort_cap_of(row)
 
 
 def resolve(model: str | None, effort: str | None, epic_tags: Iterable[str] | None,
-            agent_home: str | os.PathLike | None, *, role: str | None = None) -> SeatChoice:
-    """PURE (given the registry). Model: the spawn's explicit `model` wins, else the epic's
-    `model:<role>=` tag, else its old `seat-model:` tag ("claude" = no per-spawn model, the pool's
-    roles column), else the role's first catalog entry, else the catalog default. Effort: explicit, else the epic's
-    `seat-effort:<role>=` tag, else its old whole-epic `seat-effort:`;
-    outside low/medium/high is dropped; a Claude seat is capped at medium. A person's role has no seat
-    model: NonAgentRole (owner m-da9a2ae62f)."""
+            agent_home: str | os.PathLike | None, *, role: str | None = None,
+            story_tags: Iterable[str] | None = None) -> SeatChoice:
+    """PURE (given the registry). Model: the spawn's explicit `model` wins, else the story's `seat:<role>=`
+    pick (`story_tags`), else the FIRST option of the epic's `model:<role>=` list, else its old
+    `seat-model:` tag ("claude" = no per-spawn model, the pool's roles column), else the role's first
+    catalog entry, else the catalog default. Effort: explicit, else the story pick's, else the chosen
+    option's, else the epic's `seat-effort:<role>=` tag, else its old whole-epic `seat-effort:`; the story
+    and option efforts apply only to the model they name. Outside low/medium/high is dropped; the result
+    is clamped to the chosen model's catalog cap (never above high). A person's role has no seat model:
+    NonAgentRole (owner m-da9a2ae62f)."""
     if role:
         refuse_non_agent(role)
     tags = list(epic_tags or [])
     tag_model, tag_effort = choice_from_tags(tags)
-    per_role = role_models_from_tags(tags).get(role) if role else None
-    m = (model or per_role or tag_model or "").strip() or None
+    options = role_options_from_tags(tags).get(role) if role else None
+    story = story_picks_from_tags(story_tags).get(role) if role else None
+    m = (model or (story[0] if story else None) or (options[0][0] if options else None) or tag_model or "").strip() or None
     if m and m.lower() == CLAUDE:
         m = None
     elif m is None and role:
         m = (catalog(agent_home).get(role) or [None])[0] or default_model(agent_home)
+    pick_effort = story[1] if story and story[0] == m else None
+    option_effort = next((o[1] for o in options or [] if o[0] == m and o[1]), None)
     role_effort = role_efforts_from_tags(tags).get(role) if role else None
-    e = (effort or role_effort or tag_effort or "").strip().lower() or None
-    if e is not None and e not in EFFORTS:
-        e = None
-    note = None
-    cap = _effort_cap(m, agent_home)
-    if e and cap in EFFORTS and EFFORTS.index(e) > EFFORTS.index(cap):
-        note = f"effort {e} capped to {cap} (catalog entry cap)"
-        e = cap
-    return SeatChoice(model=m, effort=e, note=note)
+    e, _ = clamp_effort(effort or pick_effort or option_effort or role_effort or tag_effort, "high")
+    capped, note = clamp_effort(e, _effort_cap(m, agent_home))
+    return SeatChoice(model=m, effort=capped, note=note)

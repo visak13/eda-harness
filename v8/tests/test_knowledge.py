@@ -1003,7 +1003,7 @@ def test_board_dense_leg_is_scope_limited(board, rig):
     assert seen["k"] == knowledge.DENSE_FETCH
     assert da.id in seen["allow"] and les.id in seen["allow"] and db.id not in seen["allow"]
     assert da.id in out["receipt"]["seeds"]
-    assert seen["types"] == set(knowledge.EPIC_TYPES) and seen["lesson_allow"] is None
+    assert seen["types"] == set(knowledge.EPIC_TYPES) and les.id in seen["lesson_allow"]  # e0cec S6: the lessons pool is scope-gated
 
 
 # --------------------------------------------------------------------------- second opinion (run 20260923T002224Z-473cda9a)
@@ -1337,3 +1337,22 @@ def test_o2_score_identical_across_calls_on_one_request_clock(board, rig):
     b = board.lookup(rig["engineer"], scope=epic.id, question="webhook hosts", ref_now=clock)
     assert a["records"] and a["records"] == b["records"]
     assert [r["score"] for r in a["records"]] == [r["score"] for r in b["records"]]
+
+
+# --------------------------------------------------------------------------- S17: doc excerpts are section-first
+def test_doc_excerpt_quotes_the_hit_section_and_warns_on_legacy(board, rig):
+    """S17 decisions 4 and 6: a doc excerpt quotes the section the search hit (named, so doc_read(section=) reads
+    it) even past the first 2,000 chars, and a legacy doc carries the warning in the record and the body."""
+    from edp8.schemas import LEGACY_WARNING
+    epic = make_epic(board, rig)
+    body = "# Notes\n\n## Purpose\nfiller.\n\n" + "".join(
+        f"### Part {i}\n" + "padding text here. " * 40 + "\n\n" for i in range(6)) + \
+        "### Part 9\nThe quokka rollout waits for the ledger freeze.\n"
+    assert body.index("quokka") > 2000
+    d = board.doc_create(rig["architect"], doc_type=DocType.note, scope=epic.id, title="ops notes",
+                         body_md=body, layout="legacy")
+    out = board.lookup(rig["engineer"], scope=epic.id, question="quokka rollout ledger freeze")
+    exc = [r for r in out["records"] if r.get("section") == "excerpt" and r["id"] == d.id]
+    assert exc and exc[0]["heading"] == "### Part 9" and "quokka" in exc[0]["text"]
+    assert exc[0]["warning"] == LEGACY_WARNING
+    assert f"<{d.id}> [### Part 9]" in out["body"] and LEGACY_WARNING in out["body"]

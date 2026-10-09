@@ -1,0 +1,128 @@
+{
+ "skipped_unreadable_files": 1,
+ "mcp": {
+  "results": 16080,
+  "total_chars": 46420853,
+  "p50": 925,
+  "p90": 7326,
+  "p99": 30796,
+  "max": 49685,
+  "caps": {
+   "16000": {
+    "results_clipped": 673,
+    "chars_saved": 6676844,
+    "share_of_chars_saved": 0.1438
+   },
+   "24000": {
+    "results_clipped": 266,
+    "chars_saved": 2800846,
+    "share_of_chars_saved": 0.0603
+   },
+   "40000": {
+    "results_clipped": 69,
+    "chars_saved": 368270,
+    "share_of_chars_saved": 0.0079
+   }
+  }
+ },
+ "Read": {
+  "results": 3087,
+  "total_chars": 14139489,
+  "p50": 1737,
+  "p90": 11755,
+  "p99": 43326,
+  "max": 65383,
+  "caps": {
+   "20000": {
+    "results_clipped": 147,
+    "chars_saved": 2152982,
+    "share_of_chars_saved": 0.1523
+   },
+   "40000": {
+    "results_clipped": 44,
+    "chars_saved": 364800,
+    "share_of_chars_saved": 0.0258
+   },
+   "60000": {
+    "results_clipped": 2,
+    "chars_saved": 9940,
+    "share_of_chars_saved": 0.0007
+   },
+   "100000": {
+    "results_clipped": 0,
+    "chars_saved": 0,
+    "share_of_chars_saved": 0.0
+   }
+  }
+ },
+ "Bash": {
+  "results": 21824,
+  "total_chars": 39634926,
+  "p50": 746,
+  "p90": 4577,
+  "p99": 14873,
+  "max": 29864,
+  "caps": {
+   "8000": {
+    "results_clipped": 858,
+    "chars_saved": 4034280,
+    "share_of_chars_saved": 0.1018
+   },
+   "12000": {
+    "results_clipped": 359,
+    "chars_saved": 1761700,
+    "share_of_chars_saved": 0.0444
+   },
+   "15000": {
+    "results_clipped": 211,
+    "chars_saved": 920426,
+    "share_of_chars_saved": 0.0232
+   },
+   "20000": {
+    "results_clipped": 66,
+    "chars_saved": 233714,
+    "share_of_chars_saved": 0.0059
+   },
+   "30000": {
+    "results_clipped": 0,
+    "chars_saved": 0,
+    "share_of_chars_saved": 0.0
+   }
+  }
+ },
+ "PowerShell": {
+  "results": 1978,
+  "total_chars": 2124984,
+  "p50": 453,
+  "p90": 2667,
+  "p99": 8758,
+  "max": 28678,
+  "caps": {
+   "8000": {
+    "results_clipped": 22,
+    "chars_saved": 132958,
+    "share_of_chars_saved": 0.0626
+   },
+   "12000": {
+    "results_clipped": 11,
+    "chars_saved": 69057,
+    "share_of_chars_saved": 0.0325
+   },
+   "15000": {
+    "results_clipped": 8,
+    "chars_saved": 42023,
+    "share_of_chars_saved": 0.0198
+   },
+   "20000": {
+    "results_clipped": 2,
+    "chars_saved": 15007,
+    "share_of_chars_saved": 0.0071
+   },
+   "30000": {
+    "results_clipped": 0,
+    "chars_saved": 0,
+    "share_of_chars_saved": 0.0
+   }
+  }
+ }
+}

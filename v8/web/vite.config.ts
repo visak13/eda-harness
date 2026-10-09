@@ -3,6 +3,8 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { searchForWorkspaceRoot } from "vite";
 import { execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { resolveBase } from "./viteBase.ts";
 
 // SEAM (serve-under-prefix): the built bundle is mounted by FastAPI (serve.py::mount_spa).
 // `base` MUST equal the mount prefix so the emitted asset URLs resolve against StaticFiles,
@@ -10,7 +12,7 @@ import { execSync } from "node:child_process";
 // Post-cutover (S12) the SPA owns `/ui` under EDP8_UI=folio (the default), so `base` is `/ui/`.
 // `main.tsx` derives the react-router basename from import.meta.env.BASE_URL, so this one knob
 // moves both. Build with EDP8_WEB_BASE=/app/ only for the legacy-mode SPA mount at /app.
-const BASE = process.env.EDP8_WEB_BASE ?? "/ui/";
+const BASE = resolveBase(process.env.EDP8_WEB_BASE);
 
 // Dev proxy: `vite dev` serves the SPA at BASE and forwards the board's real
 // endpoints to the running board on :9400 (no CORS — same-origin in prod).
@@ -25,7 +27,10 @@ function git(args: string): string {
     return "";
   }
 }
-const BUILD = { rev: git("rev-parse --short=7 HEAD") || "unknown", dirty: git("status --porcelain -- .") !== "", at: new Date().toISOString() };
+// version = the package version this bundle ships as: the board's /v1/health `version` is compared with it (a release tag or
+// a branch name in git_rev says nothing about which release the page is).
+const VERSION = (JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as { version: string }).version;
+const BUILD = { rev: git("rev-parse --short=7 HEAD") || "unknown", dirty: git("status --porcelain -- .") !== "", at: new Date().toISOString(), version: VERSION };
 
 // t-b2f8859d30: only the deploy (edp.ps1 update, CI) writes the shared dist the fleet board serves. A seat or e2e
 // build sets EDP8_WEB_OUT to a private dir (web/e2e/distDir.ts) and points its own board at it (EDP8_WEB_DIST).

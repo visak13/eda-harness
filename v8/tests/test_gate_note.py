@@ -60,19 +60,20 @@ def _opened(board, tid, gate):
 
 # ---- (1) the board's own opens say what they ask -------------------------------------------------
 
-def test_auto_opened_acceptance_gate_names_the_epic_and_the_ask(board, r):
-    """The live bug (ev-28a4d0cb87): every story released → the board opened `acceptance` with no note."""
+def test_the_board_never_opens_acceptance_but_a_hand_opened_one_names_the_epic(board, r):
+    """C: every story released moves the epic to in_review and opens no gate; the architect opens acceptance by hand."""
     epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature,
                                title="Productize the app")
     s1, s2 = _story(board, r, epic, "S1"), _story(board, r, epic, "S2")
     _story_to_review(board, r, epic, s1)
-    assert not _opened(board, epic.id, Gate.acceptance)  # S2 still holds the epic
     _story_to_review(board, r, epic, s2)
+    assert board.ticket(epic.id).status == TicketStatus.in_review
+    assert not _opened(board, epic.id, Gate.acceptance)
+    board.gate_open(epic.id, Gate.acceptance, by=r["architect"].id)
     [ev] = _opened(board, epic.id, Gate.acceptance)
-    assert ev.data["by"] == "board"
-    note = ev.data["note"]
-    assert note == ("Every story on “Productize the app” is in review (2 stories). qa is giving its verdicts; "
-                    "once qa's report passes, accept the epic here: done, partial, or send back.")
+    assert ev.data["by"] == r["architect"].id
+    assert ev.data["note"] == ("Every story on “Productize the app” is in review (2 stories). qa is giving its "
+                               "verdicts; once qa's report passes, accept the epic here: done, partial, or send back.")
 
 
 @pytest.mark.parametrize("gate", list(Gate))
@@ -88,28 +89,32 @@ def test_every_gate_kind_has_a_plain_question_with_the_title(board, r, gate):
 def test_any_path_that_skips_the_edge_still_stores_a_question(board, r):
     """Defence in depth: Board.gate_open itself never stores a blank note (dry-run walk, scripts, old callers)."""
     epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E1")
-    ev = board.gate_open(epic.id, Gate.demo, by="arch", note="   ")
-    assert ev.data["note"] == "Look at the demo of “E1”: approve it, or say what to change."
+    ev = board.gate_open(epic.id, Gate.scope, by="arch", note="   ")
+    assert ev.data["note"] == board.gate_question(epic.id, Gate.scope) and "“E1”" in ev.data["note"]
 
 
-# ---- (2) seats and humans are refused a blank note ------------------------------------------------
+# ---- (2) seats and humans who send a blank note get the default question, and the reply says so ----------
+# design-63db8a7d42 I: the blank-note refusal became advice; the gate opens with the generated question.
 
-@pytest.mark.parametrize("note", ["", "   ", "\n\t"])
-def test_require_gate_note_refuses_blank(board, r, note):
+@pytest.mark.parametrize("note", ["", "   ", chr(10) + chr(9)])
+def test_require_gate_note_defaults_a_blank_note_and_says_so(board, r, note):
+    from edp8 import advice
+    advice.take()
     epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E1")
-    with pytest.raises(BoardError) as ei:
-        board.require_gate_note(epic.id, Gate.demo, note)
-    assert ei.value.code == "validation"
-    assert "needs a note" in ei.value.message and "“E1”" in ei.value.hint
-    assert board.require_gate_note(epic.id, Gate.demo, "  is the demo good?  ") == "is the demo good?"
+    advice.take()
+    assert board.require_gate_note(epic.id, Gate.scope, note) == board.gate_question(epic.id, Gate.scope)
+    [said] = advice.take()
+    assert "should carry a note" in said and "default question" in said
+    assert board.require_gate_note(epic.id, Gate.scope, "  is the demo good?  ") == "is the demo good?"
+    assert advice.take() == []
 
 
 def test_a_workflow_gate_question_is_the_default_note(board, r):
     """S13 data: a gate definition may carry a `question` template; then a blank note takes it, never blank."""
     epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E1")
     wf = board.workflow_of(epic)
-    wf.gates["demo"] = wf.gates["demo"].model_copy(update={"question": "Demo of {title} ({id}): ship it?"})
-    assert board.require_gate_note(epic.id, Gate.demo, "") == f"Demo of E1 ({epic.id}): ship it?"
+    wf.gates["scope"] = wf.gates["scope"].model_copy(update={"question": "Demo of {title} ({id}): ship it?"})
+    assert board.require_gate_note(epic.id, Gate.scope, "") == f"Demo of E1 ({epic.id}): ship it?"
     # the standard workflow declares none, so a seat must always write its question
     std = wflow.build_standard()
     assert all(not g.question for g in std.gates)
@@ -134,26 +139,25 @@ def _rest_epic(client):
 
 
 @pytest.mark.parametrize("body", [{}, {"note": ""}, {"note": "   "}])
-def test_rest_refuses_a_blank_note(client, body):
+def test_rest_opens_a_blank_note_with_the_default_question_and_a_hint(client, body):
     epic = _rest_epic(client)
-    resp = client.post(f"/v1/gates/{epic}/demo/open", json=body, headers={"X-Participant": "arch"})
+    resp = client.post(f"/v1/gates/{epic}/scope/open", json=body, headers={"X-Participant": "arch"})
     j = resp.json()
-    assert not j["ok"] and j["error"]["code"] == "validation", j
-    assert "needs a note" in j["error"]["message"]
-    gates = client.get(f"/v1/gates/{epic}", headers={"X-Participant": "sam"}).json()["value"]
-    assert gates == [] or all(g.get("gate") != "demo" for g in gates)
+    assert j["ok"], j
+    assert "should carry a note" in j["hint"]
+    assert "Rest epic" in j["value"]["data"]["note"]
 
 
 def test_rest_opens_with_a_note_and_stores_it(client):
     epic = _rest_epic(client)
-    j = client.post(f"/v1/gates/{epic}/demo/open", json={"note": "  is the demo good?  "},
+    j = client.post(f"/v1/gates/{epic}/scope/open", json={"note": "  is the demo good?  "},
                     headers={"X-Participant": "arch"}).json()
     assert j["ok"], j
     assert j["value"]["data"]["note"] == "is the demo good?"
 
 
-def test_mcp_gate_open_refuses_a_blank_note(client, monkeypatch):
-    """MCP gate_open rides the REST route through the client, so it gets the same refusal."""
+def test_mcp_gate_open_with_a_blank_note_opens_and_carries_the_hint(client, monkeypatch):
+    """MCP gate_open rides the REST route through the client, so it gets the same advice."""
     from edp8 import bundles
 
     class _C:
@@ -163,8 +167,9 @@ def test_mcp_gate_open_refuses_a_blank_note(client, monkeypatch):
 
     monkeypatch.setattr(bundles, "get_client", lambda: _C())
     epic = _rest_epic(client)
-    out = bundles._gate_open(bundles.GateOpenArgs(ticket_id=epic, gate="demo"))
-    assert not out["ok"] and out["error"]["code"] == "validation"
+    out = bundles._gate_open(bundles.GateOpenArgs(ticket_id=epic, gate="scope"))
+    assert out["ok"], out
+    assert "should carry a note" in out.get("hint", "")
     assert "note" in bundles.GateOpenArgs.model_fields["note"].description
 
 

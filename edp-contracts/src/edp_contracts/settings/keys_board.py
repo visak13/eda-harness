@@ -60,6 +60,11 @@ declare("board.feed_event_b", "EDP8_FEED_EVENT_B", "int", 2_000, "Limits/tuning"
         "Byte cap of one feed_driver output line (floor 600).",
         tier="advanced", label='Agent wake line size',
         help='The most one wake-up line sent to an agent may hold.')
+declare("board.heartbeat_s", "EDP8_HEARTBEAT_S", "int", 1_800, "Limits/tuning",
+        "Seconds between the feed driver's own heartbeat ticks (0 turns the tick off). A tick wakes a seat only "
+        "for changes its feed did not deliver, or as a mid-plan liveness ping for a doing seat.",
+        tier="advanced", label='Agent heartbeat interval',
+        help='How often the wake feed checks for missed changes; an idle seat is never woken by a quiet tick.')
 
 # ---- MCP proxy
 declare("mcp.role", "EDP8_ROLE", "str", None, "Identity",

@@ -3,7 +3,8 @@ import { Link, useLocation, useSearchParams } from "react-router";
 import { useRouteId } from "../routeId";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getEpicPage, getEpicsSummary, getTicketsTable } from "../api/endpoints";
-import { getPoolCapabilities, resumeSeat } from "../api/seats";
+import { closeSeat, getSeats, resumeSeat } from "../api/seats";
+import { presenceOf } from "./presence";
 import { BoardApiError } from "../api/client";
 import type { CriterionView, EpicKnowledgeRow, EpicSummaryRow, EpicTreeNode, MessageView, PoolCapabilities, TicketStatus } from "../api/types";
 import { StatusChip } from "../components/StatusChip";
@@ -11,16 +12,17 @@ import { ProcessStrip } from "../components/ProcessStrip";
 import { StatusControl } from "../components/StatusControl";
 import { GateOpenControl } from "../components/GateOpenControl";
 import { GateForms, useRetainedGates } from "../components/GateForm";
-import { countWhere, itemPath, newestFor, pageItems, ticketCount, useAttention, type PageItem } from "../api/attention";
+import { itemPath, newestFor, pageItems, ticketCount, useAttention, type PageItem } from "../api/attention";
 import { AttentionDot, attentionMark } from "../components/AttentionDot";
-import { AssignControl } from "../components/AssignControl";
+import { AssignControl, assignLabel, usePoolCanSpawn } from "../components/AssignControl";
 import { AskRoleControl } from "../components/AskRole";
 import { SpawnArchitect } from "../components/SpawnArchitect";
 import { CriterionCard } from "../components/CriterionCard";
 import { AddCriterion } from "../components/CriterionControls";
 import { Composer } from "../components/Composer";
 import { ExpandableComposer } from "../components/ExpandableComposer";
-import { copyItem, copyProps } from "../copy/pages";
+import { actionGloss, copyProps, PAGES } from "../copy/pages";
+import { usePageFrame } from "../components/PageFrame";
 import { useDocDrawer } from "../components/DocDrawer";
 import { identity } from "../auth/identity";
 import ui from "../components/ui.module.css";
@@ -31,6 +33,10 @@ import { WorkHeader } from "../components/WorkHeader";
 import { ActionsMenu, type ActionItem } from "../components/ActionsMenu";
 import { Conversation } from "../components/Conversation";
 import { ModelsControl } from "../components/ModelsControl";
+import { EpicPeople } from "../components/EpicPeople";
+import { useIsGuest, usePoolCapabilities } from "../auth/guest";
+import { stripDesignPrefix } from "../components/dropLeadingTitle";
+import { GateHeldCaption, RequirementsSection, useOpenRequirements } from "../components/Requirements";
 
 // The epic page per revision3-clean-epic.png (design-a2e5369133): WorkHeader (topline + Actions ▾,
 // title, purpose, metadata, links) over the conversation canvas with the composer under it. Every
@@ -65,9 +71,20 @@ const KANBAN: [string, string[]][] = [
 
 const KINDS_DEFAULT = ["note", "steer", "question", "status", "finding", "deviation", "answer"] as const;
 const KINDS_REPLY = ["answer", "note", "question", "steer", "status", "finding", "deviation"] as const;
+// e0cec S5: a guest posts only a question or a note (the board refuses every other kind from a guest).
+const KINDS_GUEST = ["question", "note"] as const;
+// what a guest's Actions menu keeps: reading, asking, its People list
+const GUEST_ACTIONS = new Set(["ask-role", "people", "original-request", "record"]);
+
+// the words the epic page uses, listed under "Words on this page" in the help panel
+const EPIC_TERMS = [
+  { category: "gate", value: "design_signoff" }, { category: "gate", value: "scope" },
+  { category: "concept", value: "requirement" }, { category: "concept", value: "seat" }, { category: "concept", value: "wake" },
+] as const;
 
 export function EpicPage(): React.JSX.Element {
   const id = useRouteId();
+  usePageFrame(PAGES.epic.framing, [...EPIC_TERMS]);
   const [order, setOrder] = useState<"newest" | "oldest">("newest");
   const [reply, setReply] = useState<{ id: string; by: string } | null>(null);
   const { hash } = useLocation();
@@ -81,7 +98,10 @@ export function EpicPage(): React.JSX.Element {
   const gates = useRetainedGates((page.data?.answerable_gates ?? []).filter((g) => g.gate !== "design_signoff"));
   // S20 attention trail: this epic's items (its own at their opener, its tickets' behind Work)
   const here = pageItems(useAttention(), id);
+  const openRequirements = useOpenRequirements(id);
   const [params] = useSearchParams();
+  const guest = useIsGuest();
+  const canSpawn = usePoolCanSpawn();
 
   if (page.isPending) return <p className={ui.empty}>Loading epic…</p>;
   if (page.isError)
@@ -100,40 +120,43 @@ export function EpicPage(): React.JSX.Element {
   const row = summary.data?.find((r: EpicSummaryRow) => r.id === id) ?? null;
   const totals = tallyTotals(epic);
   const design = data.docs.find((d) => d.doc_type === "design") ?? null;
-  const gloss = (k: string) => copyItem("epic", k).text;
+  const gloss = (k: string) => actionGloss("epic", k);
+  // ONE answer to "who is this epic assigned to", read by the header and the Assign dialog alike: the epic's own assignee only
+  // (a seat on one of its stories is listed under Assigned seats, never passed off as the epic's assignee)
+  const assignedTo = epic.assignee ?? null;
 
-  const waitingGates = new Set(here.filter((i) => i.pageTab === "actions").map((i) => i.item.id));
   const request = params.get("request");
   const openKey = request && gates.some(({ gate: g }) => g.event_id === request) ? "answer-decision" : null;
-  const actions: ActionItem[] = [
+  const all: ActionItem[] = [
     { key: "change-status", label: "Change status", gloss: gloss("change-status"), copy: copyProps("epic", "change-status"),
       render: () => <StatusControl ticketId={id} currentStatus={epic.status as TicketStatus} /> },
     ...(gates.length ? [{ key: "answer-decision", label: "Answer a decision", count: gates.length, gloss: gloss("answer-decision"), copy: copyProps("epic", "answer-decision"),
-      attention: countWhere(here, "actions", "decisions"),
-      render: () => <GateForms gates={gates} waiting={waitingGates} /> } as ActionItem] : []),
+      render: () => <GateForms gates={gates} /> } as ActionItem] : []),
     { key: "raise-decision", label: "Raise a decision", gloss: gloss("raise-decision"), copy: copyProps("epic", "raise-decision"),
       render: () => <GateOpenControl ticketId={id} /> },
-    { key: "assign-spawn", label: "Assign or spawn a seat", gloss: gloss("assign-spawn"), copy: copyProps("epic", "assign-spawn"),
+    { key: "assign-spawn", label: assignLabel(canSpawn), gloss: gloss(canSpawn ? "assign-spawn" : "assign"), copy: copyProps("epic", "assign-spawn"),
       render: () => <>
-        <AssignControl ticketId={id} currentAssignee={epic.assignee ?? null} seatChoice={data.seat_choice ?? null} />
+        <AssignControl ticketId={id} currentAssignee={assignedTo} seatChoice={data.seat_choice ?? null} />
         <SpawnArchitect epicId={id} assignedSeats={row?.assigned_seats ?? []} gloss={<p className={styles.gloss}>{gloss("spawn-architect")}</p>} />
         {row && row.assigned_seats.length > 0 ? <div className={styles.seats}>
           <div className={ui.sectionLabel}>Assigned seats</div>
           {row.assigned_seats.map((s) => <AssignedSeatRow key={s} seatId={s} epicId={id} />)}
         </div> : null}
       </> },
-    { key: "models", label: "Models…", gloss: "each role's model and effort on this epic; switch them for the seats spawned next.",
+    { key: "models", label: "Models…", gloss: gloss("models"),
       render: () => <ModelsControl epicId={id} /> },
     { key: "ask-role", label: "Ask a role", gloss: gloss("ask-role"), copy: copyProps("epic", "ask-role"),
       render: () => <AskRoleControl ticketId={id} /> },
-    { key: "add-criterion", label: "Add an acceptance criterion", gloss: gloss("overview"), copy: copyProps("epic", "overview"),
+    { key: "people", label: "People", gloss: gloss("people"),
+      render: () => <EpicPeople epicId={id} /> },
+    { key: "add-criterion", label: "Add an acceptance criterion", gloss: gloss("add-criterion"),
       render: () => <AddCriterion ticketId={id} /> },
-    { key: "original-request", label: "Original request", gloss: gloss("title"),
+    { key: "original-request", label: "Original request", gloss: gloss("original-request"),
       render: () => <figure className={styles.words} data-testid="owner-words">
         <figcaption className={styles.wordsLabel}>Owner&rsquo;s words · original request</figcaption>
         <blockquote className={styles.wordsText} data-testid="owner-words-text">{words}</blockquote>
       </figure> },
-    { key: "record", label: "Record ids", gloss: "the epic's id, kind and raw status, for a message or a shell.",
+    { key: "record", label: "Record ids", gloss: gloss("record"),
       render: () => <dl className={styles.record}>
         <div><dt>Id</dt><dd className={ui.idMono}>{epic.id}</dd></div>
         <div><dt>Kind</dt><dd>{epic.kind}</dd></div>
@@ -141,6 +164,7 @@ export function EpicPage(): React.JSX.Element {
         <div><dt>Design</dt><dd>{design ? <DocLink id={design.id} /> : "Not linked"}</dd></div>
       </dl> },
   ];
+  const actions = guest ? all.filter((a) => GUEST_ACTIONS.has(a.key)) : all;
 
   const work = (
     <div className={styles.work} data-testid="epic-work">
@@ -155,8 +179,10 @@ export function EpicPage(): React.JSX.Element {
       <section>
         <div className={ui.sectionLabel}>Process</div>
         <ProcessStrip status={epic.status} ariaLabel="Epic process" />
+        <GateHeldCaption epicId={id} />
       </section>
       <OverviewTab epicId={id} storyCount={stories.length} totals={totals} openGates={data.open_gates.length} docs={data.docs} knowledge={data.knowledge ?? []} criteria={data.criteria} />
+      <RequirementsSection epicId={id} />
       <WorkTab epicId={id} epic={epic} stories={stories} here={here} />
     </div>
   );
@@ -164,11 +190,11 @@ export function EpicPage(): React.JSX.Element {
   const composer = (
     <ExpandableComposer title={`Message ${id}`}>{(expand) => <Composer
       ticketId={id}
-      kinds={[...(reply ? KINDS_REPLY : KINDS_DEFAULT)]}
+      kinds={[...(guest ? KINDS_GUEST : reply ? KINDS_REPLY : KINDS_DEFAULT)]}
       showTo to={reply?.by} replyTo={reply?.id} replyToBy={reply?.by} onCancelReply={() => setReply(null)}
       expand={expand}
       quotes
-      placeholder="Write a message… use @ to mention someone. Type = Steer to steer this epic."
+      placeholder={guest ? "Ask a question or leave a note… use @ to mention someone." : "Write a message. Choose Steer to change the plan."}
     />}</ExpandableComposer>
   );
 
@@ -176,10 +202,11 @@ export function EpicPage(): React.JSX.Element {
     <div className={styles.page}>
       <WorkHeader
         ticketId={id} kind="epic" title={heading} purpose={data.description || (words !== heading ? words : null)}
-        status={epic.status} assignee={epic.assignee ?? row?.assigned_seats[0] ?? null} designRef={design?.id ?? null}
+        status={epic.status} assignee={assignedTo} designRef={design?.id ?? null}
         reviewRequested={data.answerable_gates.some((g) => g.gate === "design_signoff") || undefined}
         architect={data.architect ?? null}
         workflow={data.workflow ?? null}
+        openRequirements={openRequirements}
         actions={<ActionsMenu items={actions} subject={heading} openKey={openKey} />}
         work={work}
       />
@@ -195,9 +222,13 @@ export function EpicPage(): React.JSX.Element {
 function AssignedSeatRow({ seatId, epicId }: { seatId: string; epicId: string }): React.JSX.Element {
   const qc = useQueryClient();
   const [hint, setHint] = useState<string | null>(null);
-  const capsQ = useQuery({ queryKey: ["pool", "capabilities"], queryFn: getPoolCapabilities, retry: false });
+  // S12-ui2 (qa m-da89ef8294 m7): the board refuses the pool's capabilities to a guest, who cannot resume a seat
+  const capsQ = usePoolCapabilities();
   const caps = capsQ.data as PoolCapabilities | undefined;
-  const canResume = !!(caps?.resume_parked || caps?.resume_closed);
+  // qa c-4c274905e3: the buttons follow the Seats page's presence rule (one function), not "both on every seat"
+  const seatsQ = useQuery({ queryKey: ["seats"], queryFn: getSeats, retry: false });
+  const seat = seatsQ.data?.seats.find((x) => x.id === seatId);
+  const presence = seat ? presenceOf(seat, caps) : null;
   const dot = seatId.indexOf(".");
   const seatTicket = dot > 0 ? seatId.slice(dot + 1) : epicId;
   const resume = useMutation({
@@ -208,16 +239,30 @@ function AssignedSeatRow({ seatId, epicId }: { seatId: string; epicId: string })
       void qc.invalidateQueries({ queryKey: ["epics", "summary"] });
     },
   });
-  const err = resume.error as BoardApiError | undefined;
+  const close = useMutation({
+    mutationFn: () => closeSeat(seatId, seatTicket),
+    onSuccess: (res) => {
+      setHint(res.hint || `Closed ${seatId}.`);
+      void qc.invalidateQueries({ queryKey: ["seats"] });
+      void qc.invalidateQueries({ queryKey: ["epics", "summary"] });
+    },
+  });
+  const err = (resume.error ?? close.error) as BoardApiError | undefined;
   return (
-    <div className={styles.seat} data-testid="assigned-seat" data-seat={seatId}>
+    <div className={styles.seat} data-testid="assigned-seat" data-seat={seatId} data-presence={presence?.kind}>
       <div className={styles.seatRow}>
         <Link to={`/seats#${encodeURIComponent(seatId)}`} className={`${ui.idMono} ${styles.seatLink}`} data-testid="assigned-seat-link">{seatId}</Link>
+        {presence ? <span className={styles.seatState} data-testid="assigned-seat-state"><span className={`${styles.seatDot} ${styles[presence.dot] ?? ""}`} aria-hidden="true" />{presence.word}</span> : <span />}
         <div className={styles.seatActions}>
           <Link to={`/seats?message=${encodeURIComponent(seatId)}#${encodeURIComponent(seatId)}`} className={styles.seatAction} data-testid="assigned-seat-message" {...copyProps("seats", "message")}>Message</Link>
-          {canResume ? (
+          {presence?.showResume ? (
             <button type="button" className={styles.seatAction} data-testid="assigned-seat-resume" disabled={resume.isPending} onClick={() => resume.mutate()} {...copyProps("seats", "resume")}>
               {resume.isPending ? "Resuming…" : "Resume"}
+            </button>
+          ) : null}
+          {presence?.showClose ? (
+            <button type="button" className={styles.seatAction} data-testid="assigned-seat-close" disabled={close.isPending} onClick={() => close.mutate()} {...copyProps("seats", "close")}>
+              {close.isPending ? "Closing…" : "Close"}
             </button>
           ) : null}
         </div>
@@ -249,9 +294,9 @@ function OverviewTab({ epicId, storyCount, totals, openGates, docs, knowledge, c
             `${totals.total === 0 ? "no criteria yet" : `${totals.passed} of ${totals.total} criteria passed`} · ` +
             `${openGates} open ${openGates === 1 ? "gate" : "gates"}`}
       </p>
-      {design ? <p className={ui.empty}>Design: <button type="button" className={styles.docLink} onClick={() => drawer.openDoc(design.id)}>{design.title}</button></p> : null}
+      {design ? <p className={ui.empty}>Design: <button type="button" className={styles.docLink} onClick={() => drawer.openDoc(design.id)}>{stripDesignPrefix(design.title)}</button></p> : null}
       {/* S-LIBRARY c-14e93ebfc7: the Library docs this epic's briefs index (link/unlink in the Library) */}
-      <div className={ui.sectionLabel}>Knowledge ({knowledge.length})</div>
+      <div className={`${ui.sectionLabel} ${styles.overviewLabel}`}>Knowledge ({knowledge.length})</div>
       {knowledge.length === 0 ? (
         <p className={ui.empty} data-testid="epic-knowledge-empty">
           No Library docs linked. <Link to="/library/knowledge">Link one from the Library</Link>.
@@ -267,7 +312,7 @@ function OverviewTab({ epicId, storyCount, totals, openGates, docs, knowledge, c
           ))}
         </ul>
       )}
-      <div className={ui.sectionLabel}>Acceptance criteria ({criteria.length})</div>
+      <div className={`${ui.sectionLabel} ${styles.overviewLabel}`}>Acceptance criteria ({criteria.length})</div>
       {criteria.length === 0 ? (
         <p className={ui.empty}>No acceptance criteria on the epic itself. Add one under Actions.</p>
       ) : (
@@ -304,7 +349,8 @@ function WorkTab({ epicId, epic, stories, here }: { epicId: string; epic: EpicTr
   const filtered = all.filter(match);
   const filterCount = [status, workType, assignee].filter(Boolean).length;
 
-  if (stories.length === 0) return <p className={ui.empty}>This epic has no stories yet.</p>;
+  // S12-ui2 (qa m-da89ef8294 item 7): the overview's pulse already says there are no stories; say it once
+  if (stories.length === 0) return <></>;
 
   return (
     <section>

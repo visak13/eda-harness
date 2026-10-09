@@ -1,0 +1,182 @@
+{
+  "steps": [
+    {
+      "n": 1,
+      "do": "Raise the unresolved access and dry-run questions on the design and in the guild channel: verification requires reading back archive objects despite the specified write-only credential; the disabled switch requires immediate exit despite requiring a production dry run before first enabling it. Obtain documented resolution before implementing those paths; do not invent access permissions or a switch bypass.",
+      "per": "strategyll-dd953fbec6 §§1.1–1.3, 5.1, 16.1; strategyll-de46e9b3a7 §§1, 3–5; design-6229a6b94b / A3 Storage access and Observability and rollout"
+    },
+    {
+      "n": 2,
+      "do": "Request PR-7 privacy review early. Request the new archival write-only credential from data platform and a SEC-REQ for the Vault access policy under secret/tallyline/retention/<name>; keep it separate from the Console viewer credential.",
+      "per": "strategyll-dd953fbec6 §§9.2, 10.2; strategyll-de46e9b3a7 §§5, 7"
+    },
+    {
+      "n": 3,
+      "do": "Create a short-lived branch such as feat/A3-ledger-archival from main. Implement within the existing service and tallyline/ledger/retention/ package, using typed code and existing dependencies.",
+      "per": "strategyll-dd953fbec6 §§3.4, 4.1, 16.1; design-6229a6b94b §3 and Story A3"
+    },
+    {
+      "n": 4,
+      "do": "Register retention_ledger_archival with @scheduled_job in tallyline/jobs/registry.py for nightly execution at 01:30 UTC. Set log_retention_days=400 with the audit-evidence reason. Keep archival outside finance's 06:00–12:00 UTC trial-balance window on working day 1.",
+      "per": "strategyll-dd953fbec6 §14.1; strategyll-de46e9b3a7 §6; strategyll-a39ce76b6e §5; design-6229a6b94b / A3 What we are building and §4"
+    },
+    {
+      "n": 5,
+      "do": "Store the current 37-full-calendar-month horizon in config/retention.yaml, alongside retention.archival.enabled=false. Read the switch at every run start; disabled normal runs emit retention_ledger_archival.skipped and exit. Implement retention.archival.dry_run according to the documented resolution from step 1: legal-hold checking, batch calculation and count events, with no writes or deletes.",
+      "per": "strategyll-de46e9b3a7 §4 and Update 2026-08-03; strategyll-50ec2a9bc8 §1 retention exception; design-6229a6b94b / A3"
+    },
+    {
+      "n": 6,
+      "do": "Use UTC and the injected clock with finance-maintained accounting periods. Select only periods that ended more than 37 complete months ago, process oldest first and one period at a time, and batch whole journals with all their entries. Check persisted progress on startup and continue unfinished work on subsequent runs.",
+      "per": "strategyll-dd953fbec6 §§7.4, 14.2–14.3; strategyll-de46e9b3a7 §§3, 10 and Update 2026-08-03; design-6229a6b94b / A3 Shape of a run"
+    },
+    {
+      "n": 7,
+      "do": "For each batch, perform the legal-hold check through LegalHoldClient.customers_on_hold(), fresh each run, and exclude held customers' journals from archival and removal, including resumed work. Keep database transactions closed during legal-hold, object-store and other network calls.",
+      "per": "strategyll-de46e9b3a7 §3; strategyll-dd953fbec6 §8.3; A3-c2"
+    },
+    {
+      "n": 8,
+      "do": "Fetch credentials only through tallyline.common.secrets.get. Copy canonical journal and entry data intact into Parquet under tallyline-ledger-archive/period=<YYYY-MM>/batch=<archive_batch_id>/. Generate the batch ULID when writing and persist its period, state written, row count, digest and timestamps in the existing archive_batches table. Resume written or verified batches without writing them again.",
+      "per": "strategyll-dd953fbec6 §9; strategyll-de46e9b3a7 §§3, 5; design-6229a6b94b / A3 Shape of a run and Schema"
+    },
+    {
+      "n": 9,
+      "do": "Read each archived batch back using the resolved access arrangement; compare both row count and SHA-256 canonical_rows_digest() against the hot rows. Mark verified only after both match. On verification failure, leave written, delete nothing for that batch, emit archive.batch_verification_failed and stop the run without retrying verification within that run; leave investigation to a human.",
+      "per": "strategyll-de46e9b3a7 §3; design-6229a6b94b / A3 Shape of a run"
+    },
+    {
+      "n": 10,
+      "do": "Delete ledger_entries and ledger_journals only for batches verified in this or an earlier run, using transactions of at most 5,000 rows and committing between batches. Mark removed after removal. Preserve restart safety after partial progress and account for concurrent request traffic.",
+      "per": "strategyll-de46e9b3a7 §3; strategyll-dd953fbec6 §§14.2–14.3; design-6229a6b94b / A3"
+    },
+    {
+      "n": 11,
+      "do": "Emit lifecycle started, finished with counts, failed with error class, and skipped events through tallyline.common.events.emit_event. Emit archive.batch_written, archive.batch_verified, archive.batch_removed and archive.batch_verification_failed with batch ID, period and row count; add schemas for every new event in the same PR. Use dotted event names.",
+      "per": "strategyll-a39ce76b6e §2 and Update 2026-01-19; strategyll-dd953fbec6 Update 2026-07-20; design-6229a6b94b / A3 Observability and rollout"
+    },
+    {
+      "n": 12,
+      "do": "Use get_logger for JSON debugging logs with redaction intact: WARNING for handled failures, ERROR for unhandled failures, INFO sparingly. Identify archival work only by batch ID and period. Add a Tallyline – jobs panel in ops/dashboards/ and guild-routed alerts in ops/alerts/ for verification failures and last success older than the nightly interval plus two hours. Use automatic job metrics; add other metrics only for an identified on-call or finance question.",
+      "per": "strategyll-dd953fbec6 §§11.1, 11.3; strategyll-a39ce76b6e §§1, 3–5; design-6229a6b94b / A3 Observability and rollout"
+    },
+    {
+      "n": 13,
+      "do": "Add behaviour-focused unit tests and Postgres integration tests under tests/integration/ in the same PR. Use factories, the in-memory object-store fake and fake secrets backend. Cover all four criteria, restart safety, transaction-size limits, event schemas, identifier exclusion and dry-run safety. Run make check and the integration suite; require at least 85% coverage of changed executable lines, including moved lines unless genuinely untestable glue has a justified no-cover annotation. If a flaky test appears, open a flaky ticket and fix or quarantine it.",
+      "per": "strategyll-dd953fbec6 §§3.1–3.3, 6.1–6.5, 16.3 and Update 2026-04-01; strategyll-de46e9b3a7 §10; A3-c1–A3-c4"
+    },
+    {
+      "n": 14,
+      "do": "Add a finance/support-readable one-line CHANGELOG.md entry under Unreleased in the same PR. Use commit messages such as feat(retention): add ledger archival job [A3], keeping the summary under 72 characters and explaining why in any body. Describe risk, testing and rollback, including disabling the retention switch for subsequent runs and previous-tag redeployment where needed; link A3, the design, signed PR-7 and SEC-REQ.",
+      "per": "strategyll-50ec2a9bc8 §§2, 4; strategyll-dd953fbec6 §§4.2, 5.3, Appendix A and Update 2026-03-02; strategyll-de46e9b3a7 §4"
+    },
+    {
+      "n": 15,
+      "do": "Before merge, obtain the privacy officer's signed PR-7 and one approval from a Ledger Guild member other than the author. Resolve review threads only after addressing the concern or receiving an acknowledged answer. Squash-and-merge a single logical change; otherwise rebase-and-merge, keeping main releasable.",
+      "per": "strategyll-dd953fbec6 §§4.4, 5.2, 5.5, 10.2 and Update 2026-06-15; strategyll-de46e9b3a7 §7; strategyll-50ec2a9bc8 / How releases work"
+    },
+    {
+      "n": 16,
+      "do": "Release with the kill switch off through the ordinary working-day 10:00 UK release process, outside the last-two-working-days-of-month and 20 December–2 January freezes. Put signed PR-7 and SEC-REQ links in the release ticket's Links field. Let automated staging smoke tests run and obtain the week's release captain's approval before production deployment.",
+      "per": "strategyll-50ec2a9bc8 / How releases work, §§5–6 and Update 2026-05-11; strategyll-dd953fbec6 §15.3; strategyll-de46e9b3a7 §4"
+    },
+    {
+      "n": 17,
+      "do": "After deployment, complete the production dry run through the resolved mechanism without writing or deleting data. Have finance compare the emitted counts with its period figures and obtain finance and privacy-officer sign-off on the release ticket. Confirm the dashboard and both alerts are merged and live, then release the retention kill switch as a separate deliberate action.",
+      "per": "strategyll-de46e9b3a7 §4; strategyll-a39ce76b6e §4; design-6229a6b94b §§3.1 and A3 Observability and rollout"
+    }
+  ],
+  "must_not": [
+    {
+      "rule": "Do not invent a resolution to conflicting requirements or silently choose between ticket and design. The read-back credential and pre-enable dry-run mechanism remain unresolved in the supplied documents.",
+      "per": "strategyll-dd953fbec6 §§1.1–1.3, 16.1; strategyll-de46e9b3a7 §§1, 3–5"
+    },
+    {
+      "rule": "Do not create a Flagpole flag, apply its naming/creation rules, open a Flagpole cleanup ticket or remove the kill-switch off-path after a flag cleanup window. A3 is explicitly exempt; neither the obsolete 30-day nor current 60-day Flagpole cleanup window applies.",
+      "per": "strategyll-50ec2a9bc8 §1 and Update 2026-02-23; strategyll-de46e9b3a7 §§4, 10"
+    },
+    {
+      "rule": "Do not use the withdrawn 25-month horizon in code, configuration or tests, hard-code the horizon, or assume the design's approximate backlog overrides actual eligibility.",
+      "per": "strategyll-de46e9b3a7 Update 2026-08-03; design-6229a6b94b / A3 What we are building"
+    },
+    {
+      "rule": "Do not archive or remove held customers' journals, cache holds between runs, split journals across batches, delete unverified batches or continue after a verification failure.",
+      "per": "strategyll-de46e9b3a7 §§3, 10; A3-c1–A3-c3"
+    },
+    {
+      "rule": "Do not update ledger rows, post archival journals, perform amount arithmetic or reinterpret amounts. Copy canonical data intact; do not introduce float, Decimal, rounding, currency conversion, balance columns or new accounts. Verified archival removal is the narrow exception to append-only, not permission for general mutation.",
+      "per": "strategyll-dd953fbec6 §§7, 16.2, Appendix M; strategyll-de46e9b3a7 §2; design-6229a6b94b / A3 Shape of a run"
+    },
+    {
+      "rule": "Do not archive through scripts, migrations, a one-off backfill or the deleted 2025 prototype. Do not implement rejected partitioning, soft-delete or delete-without-archive alternatives.",
+      "per": "strategyll-de46e9b3a7 §§2, 8–9; strategyll-dd953fbec6 §16.8"
+    },
+    {
+      "rule": "Do not add schema changes: archive_batches already exists. Migration PRs, rehearsals, migration sign-offs, backfills and expand-before-feature release sequencing are therefore outside A3's scope.",
+      "per": "design-6229a6b94b / A3 Schema and §5; strategyll-de46e9b3a7 §3; strategyll-dd953fbec6 §§1.1, 1.3"
+    },
+    {
+      "rule": "Do not add public API, Console, invoice/PDF archival or archive-expiry work. Archive retention is ten years after period end, with expiry owned by data platform. Finance's post-first-run trial-balance spot check is not A3 implementation work.",
+      "per": "design-6229a6b94b §3 and A3 Observability and rollout / Out of scope; strategyll-de46e9b3a7 §§1, Purpose"
+    },
+    {
+      "rule": "Do not apply public-API changelog/spec/versioning requirements, Console checks/screenshots/accessibility/additional review, billing-render benchmarks, Money-helper property-test requirements or more-than-hourly scheduling consultation to this unchanged scope.",
+      "per": "strategyll-dd953fbec6 §§1.1, 6.6–6.7, 12.1, 12.3, 16.5; design-6229a6b94b §3 and Story A3"
+    },
+    {
+      "rule": "Do not add services, third-party dependencies, new top-level packages, gateway operations, refund flows or webhook work; their conditional process requirements are not triggered by A3.",
+      "per": "design-6229a6b94b §3 and Story A3; strategyll-dd953fbec6 §§3.4, 8, 13"
+    },
+    {
+      "rule": "Do not request a second ledger-owner engineering approval merely because archival removes ledger rows. That requirement remains limited to tallyline/ledger/posting/; privacy review and rollout sign-offs still apply.",
+      "per": "strategyll-dd953fbec6 §5.2 and Update 2026-06-15"
+    },
+    {
+      "rule": "Do not include customer identifiers or finer-grained object identifiers in retention logs/events, despite the general customer-ID logging rule. Do not use unbounded metric labels or the default 30-day job-log retention.",
+      "per": "strategyll-a39ce76b6e §§1, 3, 5; strategyll-de46e9b3a7 §6; strategyll-dd953fbec6 §1.3"
+    },
+    {
+      "rule": "Do not emit business or lifecycle events as EVENT: INFO lines or plain logs, use old snake_case names for new events, bypass redaction, use another logging library, or log raw payloads, request bodies or secrets.",
+      "per": "strategyll-a39ce76b6e / Precedence, §§1–2, 6 and Update 2026-01-19; strategyll-dd953fbec6 §§11.1, 11.3 and Update 2026-07-20"
+    },
+    {
+      "rule": "Do not reuse personal or Console viewer credentials or place secrets in code, config, environment files, fixtures, CI variables or the repository. Do not test against the real archive bucket. If a secret leaks, notify on-call and leave rotation/history remediation to platform.",
+      "per": "strategyll-de46e9b3a7 §§5, 8, 10; strategyll-dd953fbec6 §9"
+    },
+    {
+      "rule": "Do not hold transactions across network calls or add job-owned single-instance locks. Do not de-anonymise or copy the seed snapshot off the development machine or use real customer data for fixtures.",
+      "per": "strategyll-dd953fbec6 §§3.2, 8.3, 14.2 and Appendix C.6"
+    },
+    {
+      "rule": "Do not use old ticket-prefix commit messages, merge commits, the superseded 80% coverage gate, follow-up-only tests or smoke tests as a substitute for main-suite tests. Ordinary A3 work needs no smoke-suite extension or gateway sandbox tests.",
+      "per": "strategyll-dd953fbec6 §§4.4, 6.2–6.3 and Updates 2026-03-02/2026-04-01; strategyll-50ec2a9bc8 §6"
+    },
+    {
+      "rule": "Do not require the retired QA guild release sign-off/checklist or treat historical examples, onboarding suggestions, reviewer thinking aids or PR-template guidance as additional mandatory gates. The ticket's QA-assigned criterion checks remain distinct.",
+      "per": "strategyll-dd953fbec6 §§2.3–2.4, 5.3, 5.6, 16.4, Appendices A–F and N; A3 criteria metadata"
+    },
+    {
+      "rule": "Do not deploy ordinary A3 feature work during an actual freeze or classify it as a hotfix. Do not invent a Thursday/Friday freeze, activate archival during deployment, or enable it before the required dry run, sign-offs and live observability.",
+      "per": "strategyll-dd953fbec6 §15.3; strategyll-50ec2a9bc8 §§5, 7; strategyll-de46e9b3a7 §4; strategyll-a39ce76b6e §4"
+    }
+  ],
+  "criteria_checks": [
+    {
+      "criterion": "A3-c1 / c-c8175680bb",
+      "how": "Provide command-based unit and integration evidence for QA using a frozen injected UTC clock and finance period fixtures: periods at or inside the 37-complete-month boundary remain hot, strictly older periods are processed oldest first, periods have separate batches, and every journal stays with all its entries. Verify horizon configuration rather than hard-coding."
+    },
+    {
+      "criterion": "A3-c2 / c-2a43da11ff",
+      "how": "Use held and unheld customer fixtures; assert held journals are neither written to the archive nor removed. Change holds between runs and resume pending batches to prove the fresh legal-hold check protects resumed work."
+    },
+    {
+      "criterion": "A3-c3 / c-488770057e",
+      "how": "Inject row-count mismatches, same-count digest corruption and read-back failures. Assert the batch remains written, hot rows remain, the failure event occurs and the run stops without an in-run verification retry. Verify successful written→verified→removed ordering, the 5,000-row transaction ceiling, and safe restart from written, verified and partially removed work without duplicate archive writes."
+    },
+    {
+      "criterion": "A3-c4 / c-d889e1e2dc",
+      "how": "Assert the shipped enabled setting is false and each disabled normal run emits only skipped and performs no work. After the documented dry-run ambiguity is resolved, test that dry-run mode checks holds and calculates/emits counts without writes or deletes. Verify production dry-run evidence and finance/privacy sign-offs on the release ticket, live dashboards/alerts, and activation separately after deployment."
+    }
+  ],
+  "complete": false
+}

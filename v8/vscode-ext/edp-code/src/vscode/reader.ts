@@ -12,7 +12,7 @@ import { canResolve } from '../core/docs';
 import { TICKET_ID } from '../core/chatProtocol';
 import { DOC_ID, parseDocPath } from '../core/docUri';
 import { compareChoices, decideBody, decideProblem, diffPair, parseReaderInbound, pickReviewContext, readerComments, READER_VIEW, reviewSources,
-  type HostToReader, type ReaderDoc, type ReaderGate, type ReaderState, type ReaderToHost, type ReaderWrite } from '../core/reader';
+  sectionSizes, type HostToReader, type ReaderDoc, type ReaderGate, type ReaderState, type ReaderToHost, type ReaderWrite } from '../core/reader';
 import { docUri } from './docs';
 import { docReaderDraft } from '../core/quotes';
 import type { QuoteHost } from './quotes';
@@ -262,13 +262,14 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
     if (!p.current(n)) return;
     const versions = (latest.versions ?? at.versions ?? [latest.version]).filter(v => Number.isSafeInteger(v) && v > 0).sort((x, y) => x - y);
     const doc: ReaderDoc = { id: p.id, title: latest.title || at.title || p.id, docType: String(latest.doc_type ?? ''), status: String(latest.status ?? ''),
-      version: p.version, versions, current: latest.version, body: at.body_md ?? '', proposes: latest.proposes ?? null, resolution: latest.resolution ?? null };
+      version: p.version, versions, current: latest.version, body: at.body_md ?? '', proposes: latest.proposes ?? null, resolution: latest.resolution ?? null,
+      warning: at.warning ?? null, map: sectionSizes(at.body_md ?? '') };
     p.panel.title = `${doc.title} · v${p.version}`;
     const [ctx, role, diff, comments] = await Promise.all([
       this.gateOf(p, doc, latest.scope ?? null), this.viewerRole(),
       doc.status === 'proposed' ? b.docDiff(p.id).then(d => ({ baseId: d.base_id, baseVersion: d.base_version, text: d.diff }), () => null) : Promise.resolve(null),
       b.docComments(p.id, p.version).then(r => ({ rows: readerComments(r), error: null }),
-        (e: BoardError) => ({ rows: [], error: e?.status === 404 || e?.status === 405 ? 'Comments are not available on this board yet.' : `Could not read the comments: ${e?.message ?? String(e)}` })),
+        (e: BoardError) => ({ rows: [], error: (e?.status === 404 && e?.code !== 'not_found') || e?.status === 405 ? 'Comments are not available on this board yet.' : `Could not read the comments: ${e?.message ?? String(e)}` })),
     ]);
     if (!p.current(n)) return;
     this.set(p, { doc, gate: ctx.gate, gateError: ctx.error, diff, comments, canResolve: canResolve(doc, role) && p.version === doc.current, loading: false, error: null });

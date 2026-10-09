@@ -1,0 +1,13 @@
+   fleet before: board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+PASS  pre-check: every record in <repo>\v8\.data\s2-spike\home\.run names a private (or dead) pid
+   ports board=55585 pool=55588 mcp=55586 broker=55589; home <repo>\v8\.data\s2-spike\home
+== 09:07:05 rollback-unhealthy from {015FD807-D012-4E4E-A414-93FC737F76F7}=0.9.1
+   health 0.9.1; seat engineer.s2-drill row active pid 23684 liveness alive
+   09:07:05 heronry update --release-url <repo>\v8\.data\s2-spike\release-0.9.2.dev0 --previous-url <repo>\v8\.data\s2-spike\release-0.9.1
+   | current 0.9.1, release 0.9.2.dev0
+   | verified Heronry S2 Spike-0.9.2.dev0.msi against SHA256SUMS (0.1s)
+   | the installed 0.9.1's MSI is cached for a rollback (<repo>\v8\.data\s2-spike\home\.data\updates\0.9.1\Heronry S2 Spike-0.9.1.msi)
+   | compat check passed (0 workflow(s))
+   | backed up the DB to <repo>\v8\.data\s2-spike\home\.data\backups\edp8-0.9.1-20261002T033741Z.db
+   | installing 0.9.2.dev0 from <repo>\v8\.data\s2-spike\home\update (outside the install folder); progress in <repo>\v8\.data\s2-spike\home\.data\logs\update.log, outcome in <repo>\v8\.data\s2-spike\home\update\update-result.json
+   cli exit 0 after 36.5s

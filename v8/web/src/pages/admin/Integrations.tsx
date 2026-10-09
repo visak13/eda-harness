@@ -18,11 +18,12 @@ import { AdminError, Done, Secret, SettingField, errorText, formValue, toPut } f
 
 const MASK = "********";
 
-export type IntegrationState = { kind: "none" } | { kind: "untested" } | { kind: "ok"; detail?: string } | { kind: "error"; reason: string };
+export type IntegrationState = { kind: "none" } | { kind: "checking" } | { kind: "untested" } | { kind: "ok"; detail?: string } | { kind: "error"; reason: string };
 
 /** The status line every card shows. */
 export function StatusLine({ state, testid }: { state: IntegrationState; testid: string }): React.JSX.Element {
   const text = state.kind === "none" ? "Not set up"
+    : state.kind === "checking" ? "Checking…"
     : state.kind === "untested" ? "Set up, not tested yet: press Test"
     : state.kind === "ok" ? `Connected (tested)${state.detail ? `: ${state.detail}` : ""}`
     : `Error: ${state.reason}`;
@@ -71,7 +72,7 @@ function HarnessesCard(): React.JSX.Element {
   const ready = selected.filter((h) => h.installed && h.signed_in !== false);
   // GET probes every harness live (`--version`, sign-in), so a loaded view IS a test
   const state: IntegrationState = q.isError ? { kind: "error", reason: errorText(q.error) }
-    : !q.data ? { kind: "untested" }
+    : !q.data ? { kind: "checking" }
     : !ready.length ? (missing.length || signedOut.length
       ? { kind: "error", reason: [missing.length ? `${missing.join(", ")} not installed` : "", signedOut.length ? `${signedOut.join(", ")} not signed in` : ""].filter(Boolean).join("; ") }
       : { kind: "none" })
@@ -90,18 +91,19 @@ function HarnessesCard(): React.JSX.Element {
       <StatusLine state={state} testid="harnesses-status" />
       <p className={styles.fieldDoc}>The app never updates claude, codex or pi on its own. Update when idle runs the vendor's own command only while no seat of that harness is live.</p>
       <div className={styles.tableWrap}>
-        <table className={styles.table}>
+        <table className={`${styles.table} ${styles.stackTable}`}>
           <thead><tr><th>Harness</th><th>Installed</th><th>Latest</th><th>Signed in</th><th>Live seats</th><th /></tr></thead>
           <tbody>
+            {q.isLoading ? <tr data-testid="harnesses-checking"><td colSpan={6}>Checking which programs are installed and signed in…</td></tr> : null}
             {rows.map((h) => {
               const why = !h.installed ? "Not installed: install it first (links above)." : h.update?.state === "waiting" || h.update?.state === "running" ? `An update is ${h.update.state}.` : null;
               return (
                 <tr key={h.harness} data-testid={`harness-${h.harness}`}>
                   <td><strong>{h.harness}</strong>{h.selected ? <div className={styles.usage}>selected</div> : <div className={styles.usage}>not selected</div>}{h.path ? <div className={ui.idMono}>{h.path}</div> : null}</td>
-                  <td>{h.installed ? h.version ?? "yes" : "not installed"}</td>
-                  <td>{h.latest ?? "—"}</td>
-                  <td>{h.signed_in === null ? "—" : h.signed_in ? "yes" : "no: sign in with the program itself"}</td>
-                  <td>{h.live_seats === null ? "unknown" : h.live_seats.length}</td>
+                  <td data-label="Installed">{h.installed ? h.version ?? "yes" : "not installed"}</td>
+                  <td data-label="Latest">{h.latest ?? <span title="The npm registry did not answer (offline?)" data-testid={`harness-${h.harness}-latest-unknown`}>unknown</span>}</td>
+                  <td data-label="Signed in">{h.signed_in === null ? "—" : h.signed_in ? "yes" : "no: sign in with the program itself"}</td>
+                  <td data-label="Live seats">{h.live_seats === null ? "unknown" : h.live_seats.length}</td>
                   <td>
                     <button type="button" className={`${ui.button} ${styles.small}`} disabled={Boolean(why) || upd.isPending} title={why ?? undefined}
                       aria-describedby={why ? `harness-${h.harness}-why` : undefined} onClick={() => upd.mutate(h.harness)} data-testid={`harness-${h.harness}-update`}>Update when idle</button>
@@ -288,7 +290,7 @@ function CodeServerCard(): React.JSX.Element {
       <div className={styles.cardHead}><h2 className={styles.cardTitle}>code-server</h2></div>
       <About testid="about-code-server"
         does="Puts a full VS Code in the browser under the Code tab, on the board's shared working tree."
-        needs="code-server installed on this computer (it stays on 127.0.0.1; the board embeds it)."
+        needs="Nothing to install on Windows x64: the first start downloads the pinned code-server (it brings its own Node) and checks its sha256. Other systems need their own code-server. It stays on 127.0.0.1; the board embeds it."
         where={<a href="https://coder.com/docs/code-server/install" target="_blank" rel="noreferrer">code-server install guide</a>}
         changes="The Code tab opens the editor instead of explaining how to start it." />
       <StatusLine state={stateOf(c?.running, test, c ? `port ${c.port}` : undefined)} testid="code-server-status" />

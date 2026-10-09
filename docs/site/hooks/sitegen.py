@@ -8,7 +8,8 @@ results as generated files at build time. Sources:
 - settings    `edp_contracts.settings.all_settings()` (the S1 registry; callable defaults are described by
               their `default_doc`, never resolved, so no build machine's paths reach the site)
 - REST API    `edp8.service.create_app().openapi()`, in a child process on a throwaway home
-- MCP tools   `edp8.bundles.ALL_TOOLS` descriptions and `ROLE_BUNDLES`
+- MCP tools   `edp8.bundles.ALL_TOOLS` descriptions and `ROLE_BUNDLES`, plus the docs-only argument
+              explanations in `docs/site/tool-docs.yml` and the captured replies in `docs/site/tool-examples.json`
 - workflow    `edp8.workflow.WorkflowDef` (the S13 definition schema)
 - models      `edp8.model_catalog.MODEL_FIELD_DOCS` (the S12 catalog row fields)
 - downloads   the GitHub Releases API `latest` for `edp8.brand.REPO_SLUG`, or a release JSON fixture
@@ -208,29 +209,78 @@ def rest_md(doc: dict[str, Any] | None = None) -> str:
 # ----------------------------------------------------------------------------- MCP tools
 
 
+SITE_DIR = Path(__file__).resolve().parent.parent
+TOOL_DOCS = SITE_DIR / "tool-docs.yml"          # docs-only argument explanations (agents never read it)
+TOOL_EXAMPLES = SITE_DIR / "tool-examples.json"  # one captured reply per tool (tools/capture_tool_examples.py)
+
+
+def tool_docs() -> dict[str, dict[str, str]]:
+    """{tool: {arg: explanation}} from tool-docs.yml; empty when the file is absent."""
+    if not TOOL_DOCS.exists():
+        return {}
+    import yaml
+    raw = yaml.safe_load(TOOL_DOCS.read_text(encoding="utf-8")) or {}
+    return {name: dict((entry or {}).get("args") or {}) for name, entry in (raw.get("tools") or {}).items()}
+
+
+def tool_examples() -> dict[str, dict[str, Any]]:
+    if not TOOL_EXAMPLES.exists():
+        return {}
+    return json.loads(TOOL_EXAMPLES.read_text(encoding="utf-8")).get("tools", {})
+
+
+def _json_block(value: Any, indent: str) -> list[str]:
+    body = json.dumps(value, indent=2, ensure_ascii=False)
+    return [f"{indent}```json", *[f"{indent}{ln}" for ln in body.splitlines()], f"{indent}```"]
+
+
 def mcp_md() -> str:
     from edp8 import bundles
     tools = dict(sorted(bundles.ALL_TOOLS.items()))
     roles = {name: sorted(r for r, names in bundles.ROLE_BUNDLES.items() if name in names) for name in tools}
+    docs, examples = tool_docs(), tool_examples()
     by_bundle: dict[str, list[Any]] = {}
     for t in tools.values():
         by_bundle.setdefault(t.bundle, []).append(t)
     parts = ["# MCP tools", "",
              f"Generated at build from the tool definitions every seat's MCP server advertises ({len(tools)} tools). "
-             "A seat sees only its role's bundle; the roles column lists the built-in roles that get each tool "
-             "(a custom workflow role picks its own in the [Design tab](../docs/design-tab.md)).", ""]
+             "A seat sees only its role's bundle; the roles line lists the built-in roles that get each tool "
+             "(a custom workflow role picks its own in the [Design tab](../docs/design-tab.md)).", "",
+             "Each tool lists its **input**, the arguments it takes, and its **output**. Every tool replies with the "
+             "same wrapper:", "",
+             "| Field | Meaning |", "|---|---|",
+             "| `ok` | `true` when the call worked, `false` when it was refused or failed |",
+             "| `value` | the result, present when `ok` is `true`; its shape is described under each tool |",
+             "| `error` | present when `ok` is `false`: a `code`, a `message`, and for a bad argument the `field` and what it accepts |",
+             "| `hint` | one line on what to do next |", "",
+             "The examples are real replies, captured by calling each tool on a throwaway board seeded with a made-up "
+             "project (the one in [Using Heronry](../guide/index.md)). Long lists and text are shortened.", ""]
     parts.append(" · ".join(f"[{b}](#{_slug(b)})" for b in sorted(by_bundle)))
     for b in sorted(by_bundle):
         parts += ["", _h2(b), ""]
         for t in by_bundle[b]:
-            parts += [f"### `{t.name}`", "", t.description, ""]
+            parts += [f"### `{t.name}`", "", _flat(t.what) + ".", "", f"**When:** {_flat(t.when)}", ""]
             props = t.input_schema.get("properties", {})
             req = set(t.input_schema.get("required", []))
+            meaning = docs.get(t.name, {})
+            parts += ["**Input**", ""]
             if props:
                 rows = []
                 for arg, spec in props.items():
-                    rows.append([_code(arg), _cell(_type_of(spec)), "yes" if arg in req else "", _cell(spec.get("description", ""))])
+                    rows.append([_code(arg), _cell(_type_of(spec)), "yes" if arg in req else "",
+                                 _cell(meaning.get(arg) or spec.get("description", ""))])
                 parts += [_table(["Argument", "Type", "Required", "Meaning"], rows), ""]
+            else:
+                parts += ["No arguments.", ""]
+            parts += ["**Output**", "", _flat(t.returns).rstrip(".") + ".", ""]
+            ex = examples.get(t.name)
+            if ex:
+                who = ex.get("caller", "a seat")
+                parts += [f'??? note "Example: called by the {who}"', ""]
+                if ex.get("note"):
+                    parts += [f"    {_flat(ex['note'])}", ""]
+                parts += ["    Input:", "", *_json_block(ex.get("args", {}), "    "), "",
+                          "    Output:", "", *_json_block(ex.get("reply", {}), "    "), ""]
             if roles[t.name]:
                 parts += ["Roles: " + ", ".join(roles[t.name]), ""]
     return "\n".join(parts) + "\n"

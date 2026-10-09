@@ -99,24 +99,17 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
 
     @r.get("/v1/admin/tailnet/guide")
     def tailnet_guide(a: Participant = Depends(admin_actor)):
-        # t-20f0718990: the Remote access tab links the same steps as a guide (guides/remote-access.md),
+        # t-20f0718990: the Remote access tab links the same steps as a guide (docs/operator/remote-access.md),
         # rendered by the board's sanitised markdown path like the Code tab FAQ
-        from ..materialise import source_root
+        from .. import operator_docs
         from ..views import render_markdown
-        p = settings.agent_home().resolve() / "guides" / "remote-access.md"
-        if not p.is_file():  # a home never materialised: the copy this build ships
-            try:
-                p = source_root() / "guides" / "remote-access.md"
-            except FileNotFoundError:
-                pass
-        try:
-            body = p.read_text(encoding="utf-8")
-        except OSError:
-            raise HTTPException(404, "guides/remote-access.md is missing; it ships with the board tree under guides/") from None
+        body = operator_docs.read("remote-access")
+        if body is None:
+            raise HTTPException(404, f"{operator_docs.shown_path('remote-access')} is missing; it ships with the board build") from None
         # the file's diagram links are relative to the repo (../assets/guides/*.svg) and would render broken
         # here; the tab already shows each diagram on its step, so the in-place copy drops the image lines
         body = "\n".join(ln for ln in body.splitlines() if not ln.lstrip().startswith("!["))
-        return {"ok": True, "value": {"name": "remote-access", "path": "guides/remote-access.md",
+        return {"ok": True, "value": {"name": "remote-access", "path": operator_docs.shown_path("remote-access"),
                                       "html": render_markdown(body)}, "hint": ""}
 
     @r.post("/v1/admin/tailnet/apply")

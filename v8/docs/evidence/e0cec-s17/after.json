@@ -1,0 +1,268 @@
+{
+ "label": "after",
+ "head_first": true,
+ "ruleset_tool": false,
+ "engineer_tool_desc_chars": 22895,
+ "rows": [
+  {
+   "set": "orig",
+   "story": "A1",
+   "read": 80889,
+   "section_read": 63684,
+   "in_head": 4,
+   "written": 26646,
+   "calls": {
+    "context": 8949,
+    "ticket_read": 7808,
+    "doc_read": 60243,
+    "find": 3889
+   },
+   "misses": [],
+   "section_calls": 52,
+   "section_body": 29392
+  },
+  {
+   "set": "orig",
+   "story": "A2",
+   "read": 69406,
+   "section_read": 63250,
+   "in_head": 3,
+   "written": 22379,
+   "calls": {
+    "context": 7208,
+    "ticket_read": 6422,
+    "doc_read": 51115,
+    "find": 4661
+   },
+   "misses": [],
+   "section_calls": 69,
+   "section_body": 39886
+  },
+  {
+   "set": "orig",
+   "story": "A3",
+   "read": 69866,
+   "section_read": 44642,
+   "in_head": 2,
+   "written": 20773,
+   "calls": {
+    "context": 7259,
+    "ticket_read": 6486,
+    "doc_read": 50913,
+    "find": 5208
+   },
+   "misses": [],
+   "section_calls": 54,
+   "section_body": 23545
+  },
+  {
+   "set": "orig",
+   "story": "B1",
+   "read": 92510,
+   "section_read": 57782,
+   "in_head": 4,
+   "written": 24307,
+   "calls": {
+    "context": 8280,
+    "ticket_read": 7368,
+    "doc_read": 62398,
+    "find": 5057
+   },
+   "misses": [],
+   "section_calls": 48,
+   "section_body": 23644
+  },
+  {
+   "set": "orig",
+   "story": "B2",
+   "read": 71966,
+   "section_read": 55777,
+   "in_head": 8,
+   "written": 18965,
+   "calls": {
+    "context": 7797,
+    "ticket_read": 6615,
+    "doc_read": 53187,
+    "find": 4367
+   },
+   "misses": [],
+   "section_calls": 53,
+   "section_body": 33137
+  },
+  {
+   "set": "orig",
+   "story": "B3",
+   "read": 84472,
+   "section_read": 37982,
+   "in_head": 28,
+   "written": 24699,
+   "calls": {
+    "context": 8626,
+    "ticket_read": 7451,
+    "doc_read": 62606,
+    "find": 5789
+   },
+   "misses": [],
+   "section_calls": 43,
+   "section_body": 30795
+  },
+  {
+   "set": "pyr",
+   "story": "A1",
+   "read": 80990,
+   "section_read": 85093,
+   "in_head": 2,
+   "written": 26646,
+   "calls": {
+    "context": 8942,
+    "ticket_read": 7799,
+    "doc_read": 60360,
+    "find": 3889
+   },
+   "misses": [],
+   "section_calls": 59,
+   "section_body": 34605
+  },
+  {
+   "set": "pyr",
+   "story": "A2",
+   "read": 69882,
+   "section_read": 80856,
+   "in_head": 2,
+   "written": 22379,
+   "calls": {
+    "context": 7204,
+    "ticket_read": 6416,
+    "doc_read": 51601,
+    "find": 4661
+   },
+   "misses": [],
+   "section_calls": 75,
+   "section_body": 44219
+  },
+  {
+   "set": "pyr",
+   "story": "A3",
+   "read": 71557,
+   "section_read": 59448,
+   "in_head": 1,
+   "written": 20773,
+   "calls": {
+    "context": 7257,
+    "ticket_read": 6476,
+    "doc_read": 52608,
+    "find": 5216
+   },
+   "misses": [],
+   "section_calls": 57,
+   "section_body": 26359
+  },
+  {
+   "set": "pyr",
+   "story": "B1",
+   "read": 92825,
+   "section_read": 91186,
+   "in_head": 2,
+   "written": 24307,
+   "calls": {
+    "context": 8282,
+    "ticket_read": 7366,
+    "doc_read": 62663,
+    "find": 5060
+   },
+   "misses": [],
+   "section_calls": 55,
+   "section_body": 28722
+  },
+  {
+   "set": "pyr",
+   "story": "B2",
+   "read": 72121,
+   "section_read": 79765,
+   "in_head": 5,
+   "written": 18965,
+   "calls": {
+    "context": 7800,
+    "ticket_read": 6614,
+    "doc_read": 53409,
+    "find": 4298
+   },
+   "misses": [],
+   "section_calls": 62,
+   "section_body": 39729
+  },
+  {
+   "set": "pyr",
+   "story": "B3",
+   "read": 84527,
+   "section_read": 63046,
+   "in_head": 10,
+   "written": 24699,
+   "calls": {
+    "context": 8630,
+    "ticket_read": 7449,
+    "doc_read": 62716,
+    "find": 5732
+   },
+   "misses": [],
+   "section_calls": 71,
+   "section_body": 51772
+  },
+  {
+   "set": "real",
+   "story": "design-b6a55eed13",
+   "read": 10182,
+   "section_read": 0,
+   "written": 389,
+   "calls": {},
+   "misses": []
+  },
+  {
+   "set": "real",
+   "story": "design-f39cf0db7d",
+   "read": 8184,
+   "section_read": 0,
+   "written": 365,
+   "calls": {},
+   "misses": []
+  },
+  {
+   "set": "real",
+   "story": "note-0db5502c85",
+   "read": 9367,
+   "section_read": 0,
+   "written": 407,
+   "calls": {},
+   "misses": []
+  }
+ ],
+ "totals": {
+  "orig": {
+   "read": 469109,
+   "written": 137769,
+   "section_read": 323117,
+   "misses": 0,
+   "sections_in_head": 49,
+   "section_calls": 319,
+   "section_body_chars": 180399
+  },
+  "pyr": {
+   "read": 471902,
+   "written": 137769,
+   "section_read": 459394,
+   "misses": 0,
+   "sections_in_head": 22,
+   "section_calls": 379,
+   "section_body_chars": 225406
+  },
+  "real": {
+   "read": 27733,
+   "written": 1161,
+   "section_read": 0,
+   "misses": 0,
+   "sections_in_head": 0,
+   "section_calls": 0,
+   "section_body_chars": 0
+  }
+ }
+}

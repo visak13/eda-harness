@@ -6,6 +6,7 @@ import os
 
 os.environ.setdefault("EDP8_EMBEDDER", "none")
 
+from asks_support import serve_rest
 import pytest
 from fastapi.testclient import TestClient
 
@@ -36,19 +37,20 @@ def rig(client):
 
 def test_task_create_hint_names_the_stitch(client, rig):
     r = client.post("/v1/tickets", json={"kind": "task", "work_type": "feature", "title": "t",
-                                         "parent_id": rig["story"]}, headers={"X-Participant": "eng"}).json()
+                                         "parent_id": rig["story"],
+                                         "serves": serve_rest(client, rig["epic"], {"X-Participant": "owner"})}, headers={"X-Participant": "eng"}).json()
     assert r["ok"], r
     assert "low-level craft" in r["hint"]
 
 
-def test_strategy_doc_hint_names_extends_and_ruleset(client, rig):
+def test_strategy_doc_hint_names_extends(client, rig):
     r = client.post("/v1/docs", json={"doc_type": "strategy_hl", "title": "shape", "body_md": "b",
                                       "scope": rig["epic"]}, headers={"X-Participant": "craft"}).json()
     assert r["ok"], r
-    assert "extends" in r["hint"] and "assemble_ruleset" in r["hint"]
+    assert "extends" in r["hint"] and "ruleset" not in r["hint"]  # S17: the ruleset tool is gone
 
 
-def test_context_flags_strategy_links_and_hints_ruleset(client, rig):
+def test_context_flags_strategy_links_and_hints_the_head_read(client, rig):
     r = client.post("/v1/docs", json={"doc_type": "strategy_hl", "title": "shape", "body_md": "b",
                                       "scope": rig["epic"]}, headers={"X-Participant": "craft"}).json()
     doc = r["value"]["id"]
@@ -60,7 +62,7 @@ def test_context_flags_strategy_links_and_hints_ruleset(client, rig):
     assert ctx["ok"], ctx
     blocks = {b["ticket"]["id"]: b for b in ctx["value"]["tickets"]}
     assert blocks[rig["story"]]["strategy_links"] is True  # inherited from the epic
-    assert "assemble_ruleset" in ctx["value"]["hint"]
+    assert "doc_read(id)" in ctx["value"]["hint"] and "heading map" in ctx["value"]["hint"]
 
 
 def test_context_without_strategy_links_stays_quiet(client, rig):
@@ -69,4 +71,4 @@ def test_context_without_strategy_links_stays_quiet(client, rig):
     ctx = client.get("/v1/context", headers={"X-Participant": "eng"}).json()
     blocks = {b["ticket"]["id"]: b for b in ctx["value"]["tickets"]}
     assert blocks[rig["story"]]["strategy_links"] is False
-    assert "assemble_ruleset" not in ctx["value"]["hint"]
+    assert "doc_read(id)" not in ctx["value"]["hint"]

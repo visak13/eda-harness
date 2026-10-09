@@ -6,6 +6,7 @@ import { getEpicsSummary } from "../api/endpoints";
 import type { EpicSummaryRow } from "../api/types";
 import { PageHeader } from "../components/PageHeader";
 import { copyProps } from "../copy/pages";
+import { useIsGuest } from "../auth/guest";
 import { NewEpicDialog } from "../components/NewEpicDialog";
 import { QuickTaskDialog } from "../components/QuickTaskDialog";
 import { Icon } from "../components/Icon";
@@ -16,7 +17,7 @@ import { AttentionDot, attentionMark } from "../components/AttentionDot";
 import styles from "./Epics.module.css";
 
 // Epics destination (design §4.2, criterion c-63b8ab97ad): a calm portfolio, one row per epic,
-// with the status WORD, a criteria tally as words ("N of M passed" / "None defined" — no bar for
+// with the status WORD, a criteria tally as words ("N/M criteria passed" / "No criteria yet" — no bar for
 // 0/0), the date and the waiting reason. status/q filters are bound to the query string (parity
 // with the legacy /ui page: ?status=&q=), so a filtered view is a shareable URL.
 const STATUS_OPTIONS = [
@@ -33,10 +34,13 @@ const STATUS_OPTIONS = [
   "dropped",
 ];
 
+/** The board's fallback reasons ("None defined", "N/M criteria passed") say what the criteria tally beside them already says. */
+const SAYS_TALLY = /^(None defined|\d+\/\d+ criteria passed)$/;
+
 function tally(row: EpicSummaryRow): { text: string; pct: number | null } {
   const { passed, total } = row.criteria;
-  if (total === 0) return { text: "None defined", pct: null };
-  return { text: `${passed} of ${total} passed`, pct: Math.round((100 * passed) / total) };
+  if (total === 0) return { text: "No criteria yet", pct: null };
+  return { text: `${passed}/${total} criteria passed`, pct: Math.round((100 * passed) / total) };
 }
 
 /** S20 (design-e963c656f5 §4.18): epics that wait on the viewer first, the board's order kept within each group. */
@@ -45,6 +49,7 @@ export function byAttention(rows: EpicSummaryRow[], need: Map<string, AttentionS
 }
 
 export function EpicsPage(): React.JSX.Element {
+  const guest = useIsGuest(); // a guest cannot start an epic or a quick task: the board refuses it (403), so no button
   const [newEpicOpen, setNewEpicOpen] = useState(false);
   const closeNewEpic = useCallback(() => setNewEpicOpen(false), []);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -73,14 +78,14 @@ export function EpicsPage(): React.JSX.Element {
         <PageHeader title="Epics" subtitle="Every epic and quick task on the board and its pulse." />
         <div className={styles.headActions}>
           {/* S-QUICK: the owner's own small task, one submit — story + engineer on the chosen model */}
-          <button type="button" className={styles.newEpic} data-testid="quick-task-open" aria-haspopup="dialog"
+          {guest ? null : <button type="button" className={styles.newEpic} data-testid="quick-task-open" aria-haspopup="dialog"
             aria-expanded={quickOpen} onClick={() => setQuickOpen(true)} {...copyProps("sidebar", "quick-task")}>
             <Icon name="play" size={18} /> Quick task
-          </button>
-          <button type="button" className={styles.newEpic} data-testid="new-epic-open" aria-haspopup="dialog"
+          </button>}
+          {guest ? null : <button type="button" className={styles.newEpic} data-testid="new-epic-open" aria-haspopup="dialog"
             aria-expanded={newEpicOpen} onClick={() => setNewEpicOpen(true)} {...copyProps("sidebar", "new-epic")}>
             <Icon name="add" size={18} /> New epic
-          </button>
+          </button>}
         </div>
       </div>
       <NewEpicDialog open={newEpicOpen} onClose={closeNewEpic} />
@@ -104,7 +109,7 @@ export function EpicsPage(): React.JSX.Element {
           className={ui.input}
           type="search"
           aria-label="Search epic titles and descriptions"
-          placeholder="Search words in epic titles / descriptions"
+          placeholder="Search epics…"
           value={q}
           onChange={(e) => set("q", e.target.value)}
         />
@@ -135,9 +140,9 @@ export function EpicsPage(): React.JSX.Element {
                       <StatusChip status={row.status} />
                       <AttentionDot count={waiting?.count ?? 0} />
                     </div>
-                    {waiting ? <div className={styles.needs} data-testid="attention-reason">Waiting on you: {waiting.reason}</div> : null}
+                    {waiting ? <div className={styles.needs} data-testid="attention-reason">{waiting.reason}</div> : null}
                     <span className={ui.idMono}>{row.kind === "quick" ? "Quick task · " : ""}{row.id}</span>
-                    {row.waiting_reason.reason ? (
+                    {row.waiting_reason.reason && !SAYS_TALLY.test(row.waiting_reason.reason) ? (
                       <div className={styles.reason} data-testid="waiting-reason">
                         {row.waiting_reason.reason}
                       </div>

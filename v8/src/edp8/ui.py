@@ -9,7 +9,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Form, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from . import delivery, views
+from . import delivery, guest_scope, views
 
 
 def _md(body: str) -> str:
@@ -19,7 +19,7 @@ def _md(body: str) -> str:
 from .avatar_preferences import load_avatar_preferences, save_avatar_preference
 from .avatars import HUMAN_AVATAR_IDS, avatar_id_for, avatar_picker_html, human_avatar_svg, role_avatar_svg, system_avatar_svg
 from .board import Board, BoardError
-from .schemas import Gate, MessageKind, Participant, Role, TicketKind, TicketStatus, Verdict
+from .schemas import Gate, MessageKind, Participant, TicketKind, TicketStatus, Verdict
 
 _TERMINAL = (TicketStatus.done, TicketStatus.partial, TicketStatus.dropped)
 _CSS = """
@@ -136,8 +136,12 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
            public: bool = False, prefix: str = "/ui") -> APIRouter:
     r = APIRouter()
     preferences = load_avatar_preferences()
-    def _me(as_: str, token: str | None) -> Participant: return verify(as_, token) if verify else board.participant(as_)
-    def _guard(as_: str | None, token: str | None) -> Participant | None:
+    def _me(as_: str, token: str | None, allow_guest: bool = False) -> Participant:
+        p = verify(as_, token) if verify else board.participant(as_)
+        if guest_scope.is_guest(p) and not allow_guest:  # e0cec S5: the legacy forms are not ported to the
+            raise HTTPException(403, "a guest uses the board app, not the legacy forms")  # guest scope
+        return p
+    def _guard(as_: str | None, token: str | None, allow_guest: bool = False) -> Participant | None:
         """S17 c-9428c09be1 / adversary #1: in PUBLIC mode no legacy `/ui` page renders without a
         verified identity — a request with no `as=` (or a wrong/missing token) is refused 401,
         exactly like the `/v1` API. In trusted single-machine mode the legacy anonymous view is
@@ -145,11 +149,15 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         if public:
             if not as_:
                 raise HTTPException(401, "identity required in public mode: append ?as=<you>&token=<secret>")
-            return _me(as_, token)  # raises 401 on an unknown participant or a wrong/missing token
+            return _me(as_, token, allow_guest)  # raises 401 on an unknown participant or a wrong/missing token
         if not as_:
             return None
         try:  # trusted mode NEVER raises — a bad/unknown identity just renders the legacy anon view
-            return _me(as_, token)
+            return _me(as_, token, allow_guest)
+        except HTTPException as e:
+            if e.status_code == 403:
+                raise
+            return None
         except Exception:  # noqa: BLE001
             return None
     def _qs(p: Participant, token: str | None) -> str: return f"as={quote(p.id)}" + (f"&token={quote(token)}" if token else "")
@@ -225,10 +233,13 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
     def poll(since: int=0,scope: str="all",as_: str|None=Query(default=None,alias="as"),token: str|None=Query(default=None)):
         """How many events landed in `scope` since seq — the page decides whether to swap or offer a pill."""
         from fastapi.responses import JSONResponse
-        _guard(as_,token)  # public mode: no polling without a verified identity
+        who=_guard(as_,token,allow_guest=True)  # public mode: no polling without a verified identity
         top=board.store.max_seq()
         if top<=since: return JSONResponse({"seq":top,"new":0})
         evs=board.store.events_since(since,limit=500)
+        keep=guest_scope.keep_event(board,who) if who is not None else None
+        if keep is not None:  # e0cec S5: a guest counts only its member epics' events
+            evs=[(s_,e) for s_,e in evs if keep(e)]
         if scope=="me":
             try: p=_me(as_ or "owner",token)
             except Exception: p=None
@@ -265,30 +276,6 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
             return (f"<details class='fold ask-group' open><summary>{crumbs}<span class='muted'>{title}</span>"
                     f"<span class='count'>{len(rows)}</span></summary>{''.join(rows)}</details>")
         asks="".join(_group(t,rows) for t,rows in groups.items()) or _empty_state("inbox","Inbox clear","Nothing is waiting for your answer.")
-        gate_rows=[(tid,ev.data.get("gate"),ev) for tid,ev in (r["_src"] for r in att if r["kind"]=="gate")]
-        gates="".join(_gate_card_html(t,g,e.data.get("by"),(e.data.get("note") or "").strip() or board.gate_question(t,g or ""),hidden,True) for t,g,e in gate_rows) or _empty_state("gate","No open gates","No rulings need your attention.")
-        # docs awaiting the human's sign-off: criteria checked_by=owner, pending, with evidence —
-        # the deliverable renders HERE (markdown) and the verdict button IS the HITL gate
-        signoff_rows=[]
-        if p.role==Role.owner:
-            for c,tk,doc in (r["_src"] for r in att if r["kind"]=="signoff"):
-                doc_view=(f"<details open><summary>{_e(getattr(doc,'title','evidence'))} "
-                          f"<span class='muted'>{_e(getattr(doc,'doc_type',''))} v{getattr(doc,'version','?')}</span></summary>"
-                          f"<div class='doc-md'>{_md(getattr(doc,'body_md',''))}</div></details>") if doc else \
-                         f"<p class='muted'>evidence {_e(c.evidence_ref)} unreadable</p>"
-                signoff_rows.append(
-                    f"<article class='signoff-card'><div class='who'>sign-off wanted on "
-                    f"<a href='{prefix}/ticket/{quote(c.ticket_id,safe='')}'>{_e(c.ticket_id)}</a> · "
-                    f"<span class='object-id'>{_e(c.id)}</span></div><p>{_e(c.text)}</p>{doc_view}"
-                    f"<form class='signoff-actions' method='post' action='{prefix}/me/verdict'>{hidden}"
-                    f"<input type='hidden' name='criterion_id' value='{_e(c.id)}'>"
-                    f"<input type='hidden' name='ticket_id' value='{_e(c.ticket_id)}'>"
-                    f"<input type='hidden' name='evidence_version' value='{getattr(doc,'version','') if doc else ''}'>"
-                    f"<input name='note' placeholder='optional note to the author…'>"
-                    f"<button name='verdict' value='pass' title='approve — the ticket can close'>Approve</button>"
-                    f"<button name='verdict' value='fail' class='btn-fail' title='send back — add a note saying what is missing'>Needs work</button>"
-                    f"</form></article>")
-        signoffs="".join(signoff_rows)
         # message kinds with human labels + tooltips; the wire value stays the enum
         _KIND_LABELS={"note":("Note","FYI on the thread — no reply expected"),
                       "question":("Question","expects an answer; recipients see it in 'waiting on you'"),
@@ -336,8 +323,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                        (f"<optgroup label='Other open tickets'>{other_opts}</optgroup>" if other_opts else "")
         sidebar=(f"<div class='identity'>{identity}<div class='identity-copy'><strong>{_e(p.handle)}</strong>"
                  f"<span>{_e(p.role)} · {_e(p.type)}</span></div></div>"
-                 f"<div class='nav-stat'><span>Waiting on you</span><b>{len(ask_rows)}</b></div>"
-                 f"<div class='nav-stat'><span>Open gates</span><b>{len(gate_rows)}</b></div>"
+                 f"<div class='nav-stat'><span>Asks to you</span><b>{len(ask_rows)}</b></div>"
                  f"{_section_header('Conversations',len(convo_rows))}<div class='convo-list'>{conversations}</div>"
                  f"{avatar_picker_html(p,selected,hidden) if p.type=='human' else ''}")
         # People = humans (taggable, always) + LIVE agent seats (with their ticket + state).
@@ -378,8 +364,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                   f"title='posts to the ticket thread; the addressee and every @mention get it in their inbox'>"
                   f"<input type='hidden' name='reply_to' value=''>"
                   f"<button title='send to the thread and notify the addressee + every @mention'>Send</button></form></div>")
-        right=(f"{_section_header('Open gates',len(gate_rows))}{gates}"
-               f"{_section_header('Who can I reach',len(people_rows))}<div class='people-list'>{people}</div>"
+        right=(f"{_section_header('Who can I reach',len(people_rows))}<div class='people-list'>{people}</div>"
                f"<p class='muted' style='font-size:12px'>Agents without a running shell aren't listed: "
                f"post on their <b>ticket thread</b> instead — the next shell on that seat reads it first thing. "
                f"<a href='{prefix}/activity?{qs}'>Full activity →</a></p>")
@@ -391,8 +376,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         if unresolved:
             banner+=(f"<div class='alert' role='alert'>⚠ {_e(', '.join('@'+h for h in unresolved.split(',') if h))} matched nobody — "
                      f"the message is posted but nobody was notified for those; pick from the list (type @).</div>")
-        signoff_block=f"{_section_header('Docs awaiting your sign-off',len(signoff_rows))}{signoffs}" if signoff_rows else ""
-        body=f"{banner}<div class='identity'>{identity}<div class='identity-copy'><strong>{_e(p.handle)}</strong><span>{_e(p.role)} · {_e(p.type)} participant</span></div></div><p class='secondary'>Messages are pinned to the project. Active shells wake immediately; closed shells read them when they reopen.</p>{signoff_block}{_section_header('Waiting on you',len(ask_rows))}<div class='conversation'>{asks}</div>"
+        body=f"{banner}<div class='identity'>{identity}<div class='identity-copy'><strong>{_e(p.handle)}</strong><span>{_e(p.role)} · {_e(p.type)} participant</span></div></div><p class='secondary'>Messages are pinned to the project. Active shells wake immediately; closed shells read them when they reopen.</p>{_section_header('Asks to you',len(ask_rows))}<div class='conversation'>{asks}</div>"
         return _page(f"{p.handle} · My inbox",body,poll="me",seq=seq0,active_nav="me",sidebar=sidebar,context=right,composer=composer,identity=identity,qs=qs,people=people_json,prefix=prefix)
     @r.post(prefix + "/me/message")
     def me_message(as_: str=Form(...),token: str=Form(default=""),ticket_id: str=Form(...),to: str=Form(default=""),kind: str=Form(default="note"),text: str=Form(...),reply_to: str=Form(default="")):

@@ -1,7 +1,7 @@
 """Claude-parity Monitor / TaskStop / CronCreate / CronList / CronDelete for a codex app-server seat.
 
 A line-for-line port of `.pi/extensions/edp8.ts` (the reference implementation the parity oracle
-judges): the same parameter schemas, description texts (`guides/harness-parity/descriptions.ours.json`),
+judges): the same parameter schemas, description texts (`codex_seat/descriptions.ours.json`),
 result strings, `<task-notification>` envelopes, preamble and delivery rules. Every constant cites
 the parity row edp8.ts cites. What differs is only the harness seam:
 
@@ -66,7 +66,7 @@ SEND_RETRY_S = 0.05
 RETRY_BACKOFF_S = (2.0, 60.0)  # retries exhausted: re-kick on our own, doubling up to 60 s
 UNKNOWN_START_S = 90.0  # a timed-out turn/start with no turn notification by then was never accepted
 
-PREAMBLE_IDLE = (  # our wording (owner m-2d7ef9243d); mapped to Claude's by guides/harness-parity/wording.json
+PREAMBLE_IDLE = (  # our wording (owner m-2d7ef9243d); mapped to Claude's by docs/operator/harness-parity/wording.json
     "[BACKGROUND EVENT - NOT FROM THE USER]\n"
     "A watch or a scheduled job produced this message automatically; it is not a message from the user.\n"
     "It is not the user's acknowledgement, confirmation, or answer to anything you asked.\n"
@@ -150,7 +150,7 @@ class Clock:
         extra = str(self.seed_counter) if self.seed else str(int(self._wall() * 1000))
         if self.seed:
             self.seed_counter += 1
-        return hashlib.sha1((repr(self.rand()) + extra).encode()).hexdigest()[:8]
+        return hashlib.sha1((repr(self.rand()) + extra).encode(), usedforsecurity=False).hexdigest()[:8]
 
 
 # ---------------------------------------------------------------------------- delivery
@@ -625,7 +625,7 @@ class SeatTools:
         self.tasks_dir = Path(tasks_dir)
         self.env = env if env is not None else settings.environ_copy()
         self.variant = variant or self.env.get("EDP_MONITOR_VARIANT", "persistent")
-        dp = desc_path or self.env.get("EDP_PARITY_DESCRIPTIONS") or Path(self.cwd) / "guides" / "harness-parity" / "descriptions.ours.json"
+        dp = desc_path or self.env.get("EDP_PARITY_DESCRIPTIONS") or Path(__file__).with_name("descriptions.ours.json")
         self.desc = _desc(Path(dp))
         self.clock = clock or Clock(self.env.get("EDP_PARITY_SEED", ""), float(self.env.get("EDP_PARITY_CLOCK_SCALE", "1") or 1))
         self._log_fn = log

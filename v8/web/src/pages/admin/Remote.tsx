@@ -17,7 +17,7 @@ import restartSvg from "../../../../assets/guides/remote-access-6-restart.svg?ra
 // mention about the tailscale setup"): a numbered, guided Tailscale setup. Each step says what to do, shows
 // its diagram (assets/guides/remote-access-*.svg) and a done / not done chip computed from the live
 // GET /v1/admin/tailnet (the board runs `tailscale status` / `tailscale serve status`); Check again re-reads
-// it. guides/remote-access.md is the same walk as a written guide, opened from the header.
+// it. docs/operator/remote-access.md is the same walk as a written guide, opened from the header.
 // S14 reopen (qa m-c4f23e49f0, owner m-b841864899 "everything aligns with our app theme"): the diagrams are
 // inlined, not <img>, because an <img> SVG is its own document and never sees data-theme; their colours are
 // var(--token, light fallback), so they follow every theme here and keep the light look when opened alone.
@@ -71,7 +71,7 @@ function GuideFold(): React.JSX.Element {
   const g = useQuery({ queryKey: ["admin", "tailnet", "guide"], queryFn: getTailnetGuide, retry: false, enabled: open });
   return (
     <details className={ui.fold} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)} data-testid="remote-guide">
-      <summary>Read the written guide (guides/remote-access.md)</summary>
+      <summary>Read the written guide (<span className={styles.host}>docs/operator/remote-access.md</span>)</summary>
       {g.data ? <Markdown html={g.data.html} /> : g.isError ? <AdminError error={g.error} testid="remote-guide-error" /> : open ? <p className={ui.empty}>Loading…</p> : null}
     </details>
   );
@@ -99,7 +99,7 @@ export function RemoteTab({ onRestartRequired }: { onRestartRequired: (services:
           </button>
         </div>
         <p className={styles.fieldDoc} data-testid="remote-progress">
-          {t ? `${[s.installed, s.signedIn, s.ready, s.served, s.restarted].filter(Boolean).length} of 5 steps done. ` : ""}
+          {t ? `${[s.installed, s.signedIn, s.ready, s.served, s.restarted].filter(Boolean).length} of 5 setup steps done (step 1 only explains). ` : ""}
           Follow the steps in order; each one checks itself when you press Check again.
         </p>
         <GuideFold />
@@ -128,7 +128,7 @@ export function RemoteTab({ onRestartRequired }: { onRestartRequired: (services:
           alt="Sign in to Tailscale; this page then reads tailscale status and shows Running">
           <p className={styles.fieldDoc}>Open the Tailscale app and log in, or run <code>tailscale up</code> in a terminal. Sign in the same way on each device that should reach the board.</p>
           <p className={styles.usage} data-testid="remote-signin">
-            {s.signedIn ? `Signed in as ${t?.tailscale?.dns}.` : !s.installed ? "Waiting for step 2." : `Tailscale says ${t?.tailscale?.backend ?? "nothing"}; it must say Running.`}
+            {s.signedIn ? <>Signed in as <span className={styles.host}>{t?.tailscale?.dns}</span>.</> : !s.installed ? "Waiting for step 2." : `Tailscale says ${t?.tailscale?.backend ?? "nothing"}; it must say Running.`}
           </p>
         </Step>
 
@@ -150,7 +150,7 @@ export function RemoteTab({ onRestartRequired }: { onRestartRequired: (services:
             <details className={ui.fold} data-testid="remote-readiness">
               <summary>Every check ({t.rows.length})</summary>
               <div className={styles.tableWrap}>
-                <table className={styles.table}>
+                <table className={`${styles.table} ${styles.stackTable} ${styles.checkRows}`}>
                   <thead><tr><th>Level</th><th>Check</th><th>Detail</th></tr></thead>
                   <tbody>
                     {t.rows.map((r, i) => (
@@ -166,7 +166,7 @@ export function RemoteTab({ onRestartRequired }: { onRestartRequired: (services:
 
         <Step n={5} title="Serve the board on your tailnet" state={st(s.served)} img={serveSvg} testid="remote-step-serve"
           alt="tailscale serve publishes https://your-machine.ts.net on the tailnet and forwards to the board on 127.0.0.1">
-          <p className={styles.fieldDoc}>Public mode runs <code>tailscale serve</code> so <code>{t?.tailnet_url ?? "https://<this machine>.ts.net"}</code> reaches this board, and requires a token for every request. Teammate invites then carry that address.</p>
+          <p className={styles.fieldDoc}>Public mode runs <code>tailscale serve</code> so <code className={styles.host}>{t?.tailnet_url ?? "https://<this machine>.ts.net"}</code> reaches this board, and requires a token for every request. Teammate invites then carry that address.</p>
           {t ? (
             <div className={styles.row} data-testid="remote-switch">
               <span>Public mode: <strong data-testid="remote-mode">{t.public_mode ? "on (tailnet)" : "off (this computer only)"}</strong></span>
@@ -186,7 +186,7 @@ export function RemoteTab({ onRestartRequired }: { onRestartRequired: (services:
           {t ? (
             <div className={styles.row} data-testid="remote-public-url">
               <span>Address:</span>
-              {t.public_url ? <><a href={t.public_url}>{t.public_url}</a><CopyButton text={t.public_url} testid="remote-public-url-copy" /></> : <span className={styles.usage}>none yet</span>}
+              {t.public_url ? <><a href={t.public_url} target="_blank" rel="noreferrer">{t.public_url}</a><CopyButton text={t.public_url} testid="remote-public-url-copy" /></> : <span className={styles.usage}>none yet</span>}
             </div>
           ) : null}
           {t ? (

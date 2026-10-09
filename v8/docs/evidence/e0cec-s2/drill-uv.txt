@@ -1,0 +1,58 @@
+﻿   fleet before: board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+== 06:01:54 uv: private uv tool install 0.9.1 -> heronry update -> 0.9.2.dev0
+PASS  pre-check: every record in C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home-uv\.run names a private (or dead) pid
+   Installed 6 executables: [1medp8[0m, [1medp8-board[0m, [1medp8-feed[0m, [1medp8-mcp[0m, [1medp8-supervisor[0m, [1mheronry[0m
+   [1m[33mwarning[39m[0m[1m:[0m [1m`[36mC:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\uv-bin[39m` is not on your PATH. To use installed tools, run `[32mset PATH="C:\\src\\Learning\\.wt-e0cec-S2\\v8\\.data\\s2-spike\\uv-bin;%PATH%"[39m` or `[32muv tool update-shell[39m`.[0m
+   uv tool install 0.9.1 took 7.3s
+PASS  heronry on the private uv bin dir
+   next: heronry doctor, then heronry start
+   supervisor started          pid 23972
+   setup      first run: finish setup at http://127.0.0.1:55062/ui/setup?code=<redacted>  (the link signs you in once, within 24 h)
+PASS  uv install healthy at 0.9.1 (0.9.1)
+   | current 0.9.1, release 0.9.2.dev0
+   | verified 4 wheels against SHA256SUMS
+   | compat check passed (0 workflow(s))
+   | the installed 0.9.1's wheels are cached for a rollback
+   | backed up the DB to C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home-uv\.data\backups\edp8-0.9.1-20261002T003235Z.db
+   | stopped the supervisor and services
+   | installing 0.9.2.dev0 in the background; progress in C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home-uv\.data\logs\update.log, outcome in C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home-uv\.run\update-result.json. `heronry status` shows the services when it is done.
+   cli exit 0 after 11.7s
+   outcome after 25.8s
+   result: {"from":"0.9.1","to":"0.9.2.dev0","state":"ok","reason":"","finished_at":"2026-10-02T00:32:51+00:00"}
+   log 2026-10-02T00:32:38+00:00 helper up (pid 2044): 0.9.1 -> 0.9.2.dev0
+   log 2026-10-02T00:32:38+00:00 install: C:\Users\olive\AppData\Local\Microsoft\WinGet\Links\uv.EXE tool install --force C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home-uv\.data\updates\0.9.2.dev0\edp8-0.9.2.dev0-py3-none-any.whl --with C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home-uv\.data\updates\0.9.2.dev0\edp_contracts-0.9.2.dev0-py3-none-any.whl --with C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home-uv\.data\updates\0.9.2.dev0\edp_pool-0.9.2.dev0-py3-none-any.whl --with C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home-uv\.data\updates\0.9.2.dev0\edp_broker-0.9.2.dev0-py3-none-any.whl
+   log 2026-10-02T00:32:40+00:00   | [2mResolved [1m45 packages[0m [2min 27ms[0m[0m
+   log 2026-10-02T00:32:40+00:00   | [2mUninstalled [1m5 packages[0m [2min 681ms[0m[0m
+   log 2026-10-02T00:32:40+00:00   | [2mInstalled [1m4 packages[0m [2min 1.07s[0m[0m
+   log 2026-10-02T00:32:40+00:00   |  [31m-[39m [1medp-broker[0m[2m==0.9.1 (from file:///C:/src/Learning/.wt-e0cec-S2/v8/.data/s2-spike/uvrel-0.9.1/edp_broker-0.9.1-py3-none-any.whl)[0m
+   log 2026-10-02T00:32:40+00:00   |  [32m+[39m [1medp-broker[0m[2m==0.9.2.dev0 (from file:///C:/src/Learning/.wt-e0cec-S2/v8/.data/s2-spike/home-uv/.data/updates/0.9.2.dev0/edp_broker-0.9.2.dev0-py3-none-any.whl)[0m
+   log 2026-10-02T00:32:40+00:00   |  [31m-[39m [1medp-contracts[0m[2m==0.9.1 (from file:///C:/src/Learning/.wt-e0cec-S2/v8/.data/s2-spike/uvrel-0.9.1/edp_contracts-0.9.1-py3-none-any.whl)[0m
+   log 2026-10-02T00:32:40+00:00   |  [32m+[39m [1medp-contracts[0m[2m==0.9.2.dev0 (from file:///C:/src/Learning/.wt-e0cec-S2/v8/.data/s2-spike/home-uv/.data/updates/0.9.2.dev0/edp_contracts-0.9.2.dev0-py3-none-any.whl)[0m
+   log 2026-10-02T00:32:40+00:00   |  [31m-[39m [1medp-pool[0m[2m==0.9.1 (from file:///C:/src/Learning/.wt-e0cec-S2/v8/.data/s2-spike/uvrel-0.9.1/edp_pool-0.9.1-py3-none-any.whl)[0m
+   log 2026-10-02T00:32:40+00:00   |  [32m+[39m [1medp-pool[0m[2m==0.9.2.dev0 (from file:///C:/src/Learning/.wt-e0cec-S2/v8/.data/s2-spike/home-uv/.data/updates/0.9.2.dev0/edp_pool-0.9.2.dev0-py3-none-any.whl)[0m
+   log 2026-10-02T00:32:40+00:00   |  [31m-[39m [1medp8[0m[2m==0.9.1 (from file:///C:/src/Learning/.wt-e0cec-S2/v8/.data/s2-spike/uvrel-0.9.1/edp8-0.9.1-py3-none-any.whl)[0m
+   log 2026-10-02T00:32:40+00:00   |  [32m+[39m [1medp8[0m[2m==0.9.2.dev0 (from file:///C:/src/Learning/.wt-e0cec-S2/v8/.data/s2-spike/home-uv/.data/updates/0.9.2.dev0/edp8-0.9.2.dev0-py3-none-any.whl)[0m
+   log 2026-10-02T00:32:40+00:00   |  [31m-[39m [1mproxy-tools[0m[2m==0.1.0 (from file:///C:/src/Learning/.wt-e0cec-S2/v8/.data/s2-spike/uvrel-0.9.1/proxy_tools-0.1.0-py3-none-any.whl)[0m
+   log 2026-10-02T00:32:40+00:00   | Installed 6 executables: [1medp8[0m, [1medp8-board[0m, [1medp8-feed[0m, [1medp8-mcp[0m, [1medp8-supervisor[0m, [1mheronry[0m
+   log 2026-10-02T00:32:40+00:00   | [1m[33mwarning[39m[0m[1m:[0m [1m`[36mC:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\uv-bin[39m` is not on your PATH. To use installed tools, run `[32mset PATH="C:\\src\\Learning\\.wt-e0cec-S2\\v8\\.data\\s2-spike\\uv-bin;%PATH%"[39m` or `[32muv tool update-shell[39m`.[0m
+   log 2026-10-02T00:32:40+00:00 install exit 0
+   log 2026-10-02T00:32:40+00:00 start: C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\uv-tools\edp8\Scripts\python.exe -m edp8.cli start
+   log 2026-10-02T00:32:51+00:00   | board      started          pid 4804  http://127.0.0.1:55062
+   log 2026-10-02T00:32:51+00:00   | broker     started          pid 34008  http://127.0.0.1:55065
+   log 2026-10-02T00:32:51+00:00   | pool       started          pid 13784  http://127.0.0.1:55064
+   log 2026-10-02T00:32:51+00:00   | mcp        started          pid 35400  http://127.0.0.1:55063
+   log 2026-10-02T00:32:51+00:00   | bridge     skipped          (no slack map configured)
+   log 2026-10-02T00:32:51+00:00   | supervisor started          pid 33300
+   log 2026-10-02T00:32:51+00:00   | setup      first run: finish setup at http://127.0.0.1:55062/ui/setup?code=<redacted>  (the link signs you in once, within 24 h)
+   log 2026-10-02T00:32:51+00:00 start exit 0
+   log 2026-10-02T00:32:51+00:00 result ok
+PASS  uv update outcome ok
+PASS  uv install healthy at 0.9.2 (0.9.2.dev0)
+   Heronry 0.9.2.dev0
+   private pids: 26844:heronry.exe 26496:heronry.exe 16652:heronry.exe 14236:heronry.exe 12004:heronry.exe 16392:OpenConsole.exe 27188:cmd.exe 7684:python.exe 29028:python.exe 26012:python.exe 28336:python.exe 23748:python.exe 31008:python.exe 26512:python.exe
+   private pids left: 0
+   Uninstalled 6 executables: [1medp8[0m, [1medp8-board[0m, [1medp8-feed[0m, [1medp8-mcp[0m, [1medp8-supervisor[0m, [1mheronry[0m
+   fleet after:  board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+PASS  fleet pids unchanged
+elapsed 61s
+RESULT: all checks passed

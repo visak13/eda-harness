@@ -21,7 +21,7 @@ Glossary categories and where their words surface:
 | ticket_status | Drafted, Designed, Signed off, Ready, In progress, In review, Done, Blocked, Partial, Dropped | status chips, process strip, status control, filters |
 | ticket_kind | Epic, Story, Task | ticket/epic headers, filters |
 | work_type | Feature, Bug, R&D, Creative | ticket details, filters |
-| gate | Design sign-off, Proof of concept, Demo, Adversarial, Budget, Acceptance, Scope | gate forms, open-a-gate control |
+| gate | Design sign-off, Acceptance, Scope | gate forms, open-a-gate control |
 | message_kind | Question, Answer, Steer, Finding, Deviation, Status, Note | thread rows, composer |
 | role | Owner, Architect, Engineer, Adversary, QA, SME, Doctor | seats, assignee, ask-a-role |
 | check | Command, Path, Look, Verdict | criterion cards, add-criterion |

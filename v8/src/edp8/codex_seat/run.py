@@ -138,7 +138,8 @@ def main(argv: list[str] | None = None) -> int:
                      developer_instructions=instructions,
                      creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if console_mode else 0)
     if console_mode and os.name == "nt":
-        os.system(f"title {handle} (codex seat)")
+        import ctypes  # a title is not worth a cmd.exe shell with the handle in its command line
+        ctypes.windll.kernel32.SetConsoleTitleW(f"{handle} (codex seat)")
     try:
         seat.start(resume=resume)  # fail-closed: uncontained MCP set or invalid resume state raise here
     except Exception as e:  # noqa: BLE001

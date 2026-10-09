@@ -132,3 +132,39 @@ def test_versions_cache_env_override_is_honored(tmp_path, monkeypatch):
     pl.ensure_claude_healthy(binp)
 
     assert pl.claude_bin_needs_repair(binp) is False
+
+
+def test_missing_bin_waits_for_an_update_in_flight_then_spawns(tmp_path):
+    """e0cec S9 G3: Claude Code's auto-update leaves the bin gone for a while; with no cache to repair from
+    the guard polls (2 s step, 45 s default) and lets the spawn through once the binary is healthy again."""
+    binp = _make_install(tmp_path, bin_bytes=_STUB)
+    os.remove(binp)
+    assert pl.claude_bin_needs_repair(binp) is True
+    sleeps = []
+
+    def sleep(s):
+        sleeps.append(s)
+        if len(sleeps) == 3:  # the update finishes during the third wait
+            with open(binp, "wb") as f:
+                f.write(b"\0" * _HEALTHY)
+
+    assert pl.ensure_claude_healthy(binp, wait_s=60, step_s=2, sleep=sleep) == binp
+    assert sleeps == [2, 2, 2]
+
+
+def test_update_wait_plus_ready_window_stays_under_the_boards_pool_timeout():
+    assert pl._UPDATE_WAIT_S + pl._READY_TIMEOUT_DEFAULT < 90  # the board gives up on a pool spawn at 90 s
+
+
+def test_missing_bin_that_never_returns_is_refused_naming_the_update(tmp_path):
+    binp = _make_install(tmp_path, bin_bytes=_STUB)
+    os.remove(binp)
+    sleeps = []
+    with pytest.raises(pl.ClaudeInstallError, match="auto-update may be in flight: retry in a minute"):
+        pl.ensure_claude_healthy(binp, wait_s=6, step_s=2, sleep=sleeps.append)
+    assert sleeps == [2, 2, 2]
+
+
+def test_a_cache_source_repairs_at_once_without_waiting(tmp_path):
+    binp = _make_install(tmp_path, bin_bytes=_STUB, source_bytes=_HEALTHY)
+    assert pl.ensure_claude_healthy(binp, sleep=lambda s: pytest.fail("waited")) == binp

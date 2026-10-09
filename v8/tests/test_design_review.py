@@ -215,7 +215,8 @@ def test_contextual_unanswered_attention_and_answer_transition(rig, kind):
     ask = b.message_send(architect, ticket_id=ticket.id, to=owner.id, kind=MessageKind.question, text="Please answer")
     assert contextual_work(b, ticket.id)["unresolved_asks"] == [{
         "id": ask.id, "kind": "question", "to": owner.id,
-        "by": architect.id, "at": ask.created_at.isoformat(), "text": "Please answer"}]  # S-UI: the badge lists them
+        "by": architect.id, "at": ask.created_at.isoformat(), "text": "Please answer",
+        "why": "Addressed to you; work does not wait on it, the seat carries on with its recommendation"}]  # S-UI
     ask2 = b.message_send(architect, ticket_id=ticket.id, to=owner.id, kind=MessageKind.question, text="And this")
     assert [a["id"] for a in contextual_work(b, ticket.id)["unresolved_asks"]] == [ask.id, ask2.id]  # oldest first
     # a third party's answer-less note resolves nothing

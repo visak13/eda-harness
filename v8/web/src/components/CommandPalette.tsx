@@ -228,7 +228,7 @@ export function CommandPalette({
             type="search"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Find a ticket, epic, document, message or seat…"
+            placeholder="Find anything…"
             role="combobox"
             aria-expanded={rows.length > 0}
             aria-controls="find-results"
@@ -281,7 +281,7 @@ export function CommandPalette({
             ))
           )}
         </div>
-        <button type="button" className={styles.row} onClick={() => { onClose(); navigate("/library/tickets"); }}>
+        <button type="button" className={`${styles.row} ${styles.browse}`} onClick={() => { onClose(); navigate("/library/tickets"); }}>
           Browse all records
         </button>
       </div>

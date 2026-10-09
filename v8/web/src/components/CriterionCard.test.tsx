@@ -118,6 +118,17 @@ describe("CriterionCard", () => {
     expect((screen.getByLabelText("NOTE TO THE AUTHOR") as HTMLTextAreaElement).value).toBe("");
   });
 
+  it("a pending line whose evidence version is null resolves it from the doc, and says why when it cannot (p-03acb4cd)", async () => {
+    server.use(http.get("/v1/docs/report-1/html", () => HttpResponse.json({ ok: true, value: { id: "report-1", title: "r", doc_type: "report", scope: "s-1", owner_role: "engineer", version: 3, versions: [1, 2, 3], html: "", signoff_criterion: null } })));
+    const first = renderCard({ criterion: { ...crit, evidence_version: null }, ruling: { evidenceVersion: null }, ticketId: "s-1" });
+    await waitFor(() => expect(screen.getByTestId("approve")).toBeEnabled());
+    first.unmount();
+    server.use(http.get("/v1/docs/report-1/html", () => new HttpResponse(null, { status: 500 })));
+    renderCard({ criterion: { ...crit, evidence_version: null }, ruling: { evidenceVersion: null }, ticketId: "s-1" });
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Approve is unavailable: the evidence doc report-1 could not be read/);
+    expect(screen.getByTestId("approve")).toBeDisabled();
+  });
+
   it("read-only mode (no ruling): shows the verdict word and opens evidence", () => {
     const onOpenEvidence = vi.fn();
     renderCard({ criterion: { ...crit, verdict: "pass" }, onOpenEvidence });

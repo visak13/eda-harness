@@ -91,6 +91,26 @@
   line-height: 22px;
   color: var(--ink);
 }
+.lessonRow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lessonSelected {
+  border-color: var(--accentink);
+}
+.lessonRetired {
+  color: var(--muted);
+}
 .detail {
   position: sticky;
   top: 16px;

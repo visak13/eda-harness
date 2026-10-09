@@ -17,21 +17,24 @@ import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from . import __version__, pool_adapter, seat_choice, settings
+from . import __version__, guest_scope, pool_adapter, records, secret_screen, seat_choice, settings
+from . import advice as advice_mod
+from . import epic_work
+from . import requirements as requirements_mod
 from . import workflow as wflow
 from edp_contracts.roles import non_agent_refusal
 from edp_contracts.settings import secrets as secret_files
 from . import rsi  # S18: imported at boot so rsi.LOADED hashes the retrieval code this process runs
-from .board import QUICK_TAG, Board, BoardError
+from .board import CLEAN_CLOSE_REASONS, QUICK_TAG, Board, BoardError
 from .contextual_work import HistoryCategory, contextual_work
 from .design_review import DocumentComment, ReviewDecision, comment, decide, source_context
-from .doc_tools import DocEdit
+from .doc_tools import DOC_WRITE_HINT, DocEdit
 from .schemas import (
     ParticipantType,
     DESCRIBE,
@@ -61,7 +64,9 @@ from .store import Store
 
 
 def ok(value: Any, hint: str = "") -> dict[str, Any]:
-    return {"ok": True, "value": value, "hint": hint}
+    # design-63db8a7d42 I: a rule that used to refuse (and a rewrite of the caller's input) speaks here
+    advice = "; ".join(advice_mod.take())
+    return {"ok": True, "value": value, "hint": "; ".join(x for x in (hint, advice) if x)}
 
 
 def _dump(o: Any) -> Any:
@@ -77,6 +82,10 @@ def _dump(o: Any) -> Any:
 
 
 # ----------------------------------------------------------------------------- bodies
+
+
+class MembersIn(BaseModel):
+    members: list[str] = Field(default_factory=list)  # participant ids or @handles (humans)
 
 
 class ParticipantIn(BaseModel):
@@ -98,6 +107,8 @@ class TicketIn(BaseModel):
     description: str = ""
     tags: list[str] | None = None
     workflow: str | None = None  # S13, epic only: 'lean' (latest published) or 'lean@2'; default standard@1
+    serves: list[str] | None = None  # S4 E6: a task's ask ids or finding ids
+    cap_lift_message: str | None = None  # J: the owner's chat reply (message id) that lifts the epic's story cap
 
 
 class WorkflowRefIn(BaseModel):
@@ -113,6 +124,7 @@ class TicketPatch(BaseModel):
     design_ref: str | None = None
     description: str | None = None
     tags: list[str] | None = None
+    work_type: WorkType | None = None  # epic/story, architect/owner; pending criteria follow the new checker
 
 
 class CriterionIn(BaseModel):
@@ -121,6 +133,22 @@ class CriterionIn(BaseModel):
     check: Check
     checked_by: str | None = None  # accepted for one release, ignored unless owner + override_reason
     override_reason: str | None = None
+
+
+class RequirementMarkIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    message_id: str
+    char_start: int | None = None  # 0-based, end-exclusive range of the quoted span; neither = the whole message
+    char_end: int | None = None
+    text: str | None = None  # a quote without a range: the span is this text's first occurrence in the message
+
+
+class RequirementLinkIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    criterion: str | None = None
+    doc: str | None = None
+    version: int | None = None
+    heading: str | None = None
 
 
 class CriterionPatch(BaseModel):
@@ -142,6 +170,7 @@ class DocIn(BaseModel):
     status: DocStatus | None = None  # active (default) | proposed
     proposes: str | None = None  # proposed: the active doc this would become the next version of
     ticket_id: str | None = None  # proposed: the ticket it came from (its source)
+    layout: Literal["legacy", "summary_first"] | None = None  # S17: default summary_first; the doc-write skill
 
 
 class LibraryImportIn(BaseModel):
@@ -155,6 +184,7 @@ class DocPatch(BaseModel):
     title: str | None = None
     tags: list[str] | None = None
     compact: bool = False
+    layout: Literal["legacy", "summary_first"] | None = None  # S17: a summary-first rewrite clears the legacy flag
 
 
 class LinkIn(BaseModel):
@@ -169,6 +199,7 @@ class MessageIn(BaseModel):
     kind: MessageKind
     text: str
     reply_to: str | None = None
+    resolves: list[str] | None = None  # e0cec S3: ask message ids on this ticket this message settles
     artifacts: list[str] | None = None  # staged upload ids to finalise onto this ticket (§18.1)
     # epic-91fcd3b370 S4: a code anchor. Taken raw and validated in the route, so a bad field is a
     # 400 naming `code_context.<field>` (FastAPI's body validation would answer an unnamed 422).
@@ -226,6 +257,14 @@ class LessonIn(BaseModel):
     topic: str
     text: str
     evidence: list[str] = []
+    scope_kind: str | None = None
+    project: str | None = None
+    domains: list[str] = []
+    ticket_id: str | None = None
+
+
+class LessonBackfillIn(BaseModel):
+    dry_run: bool = False
 
 
 class WithdrawIn(BaseModel):
@@ -247,6 +286,10 @@ class ResolveIn(BaseModel):
     to: str | None = None
     kind: MessageKind = MessageKind.question
     text: str = ""  # the draft body: its @mentions join the wake preview (adversary round 2 #7)
+
+
+class SeenIn(BaseModel):
+    ids: list[str]  # messages the caller was shown (the feed listener printed them into its turn)
 
 
 class ArtifactIn(BaseModel):
@@ -286,7 +329,7 @@ class SessionSpawnIn(BaseModel):
     ticket_id: str | None = None  # for architect authz (target seat's epic); optional for owner
     parent_session: str | None = None
     model: str | None = None   # a seat name ("astra") or exact id; omitted = the epic's seat choice
-    effort: str | None = None  # low | medium | high; omitted = the epic's seat choice (Claude capped at medium)
+    effort: str | None = None  # low | medium | high; omitted = the epic's seat choice (clamped to the model's effort cap)
     mode: str | None = None
     assign: bool = False       # S-ROLES Spawn seat: the spawned seat becomes the ticket's assignee
 
@@ -296,7 +339,7 @@ class QuickTaskIn(BaseModel):
     title: str
     words: str
     model: str | None = None   # an engineer-catalog id; omitted = the engineer catalog default
-    effort: str | None = None  # S-UI: low|medium|high for the engineer; Claude is capped at medium
+    effort: str | None = None  # S-UI: low|medium|high for the engineer, clamped to the model's cap
     tags: list[str] = []       # t-683d0033bb: plain words for the Library auto-link; seat keys are dropped
     description: str = ""
     work_type: WorkType = WorkType.feature
@@ -390,11 +433,36 @@ def public_startup_error(admin_token: str | None, tokens_path: Path | None = Non
 # ----------------------------------------------------------------------------- app
 
 
+def _doc_mirror_wanted(store: Any) -> bool:
+    """The docs mirror belongs to the board that owns this home's data: its database sits in the data dir. A
+    test or private board on a temp database never writes into the real agent home. EDP8_DOC_MIRROR=0/1 forces."""
+    forced = os.environ.get("EDP8_DOC_MIRROR")
+    if forced in ("0", "1"):
+        return forced == "1" and getattr(store, "path", ":memory:") != ":memory:"
+    path = getattr(store, "path", ":memory:")
+    if path == ":memory:":
+        return False
+    try:
+        Path(path).resolve().relative_to(Path(settings.data_dir()).resolve())
+    except (ValueError, OSError):
+        return False
+    # a source checkout used as the agent home (dev: v8/) keeps its own tracked docs/ folder; never mix board docs in
+    return not (Path(settings.agent_home()) / "pyproject.toml").is_file()
+
+
 def create_app(board: Board | None = None, admin_token: str | None = None) -> FastAPI:
     if board is None:
         # S12 (m-cea5526782) + t-96df382440: every real board start creates the data-dir catalog when it is
         # missing (no `init`: e2e homes, pre-S12 homes, a deleted file) and merges newer shipped rows into it
         log = logging.getLogger("edp8.service")
+        try:  # RC2 item 1: an upgrade never re-runs init; the agent home follows the installed version here
+            from . import materialise
+            rep = materialise.refresh()
+            if rep is not None and (rep.written or rep.updated or rep.conflicts):
+                log.warning("agent home: %d new, %d updated, %d kept as edited (%s)", len(rep.written),
+                            len(rep.updated), len(rep.conflicts), ", ".join(rep.new_written) or "no .new files")
+        except (OSError, ValueError) as e:
+            log.warning("agent home: refresh failed, seats keep the current home: %s", e)
         try:
             from . import model_catalog
             for change in model_catalog.ensure():
@@ -427,10 +495,25 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             except Exception as e:  # search degrades to nothing; the board keeps running, loudly
                 logging.getLogger("edp8.service").warning("search index rebuild failed: %s", e)
     admin_token = admin_token or settings.admin_token()
+    if _doc_mirror_wanted(board.store):
+        try:  # s-bdc00a9ed2: the read-only docs mirror, <agent-home>/docs/<scope>/<id>.md; one backfill per start
+            from . import doc_mirror
+            board.store.mirror_root = doc_mirror.mirror_root(settings.agent_home())
+            logging.getLogger("edp8.service").info("docs mirror backfill: %s",
+                                                   doc_mirror.backfill(board.store, board.store.mirror_root))
+        except Exception as e:  # noqa: BLE001 - the mirror is a convenience copy; the board keeps running
+            board.store.mirror_root = None
+            logging.getLogger("edp8.service").warning("docs mirror disabled: %s", e)
     try:
         board.ensure_epic_ids()
     except Exception as e:  # noqa: BLE001
         logging.getLogger("edp8.service").warning("epic_id backfill failed: %s", e)
+    try:  # s-aa76c83998: the retired asks ledger is archived once (idempotent), never deleted
+        archived = requirements_mod.archive_asks(board)
+        if archived["archived"]:
+            logging.getLogger("edp8.service").info("asks ledger archived: %s", archived)
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger("edp8.service").warning("asks archive failed: %s", e)
     try:  # S18 §9 c7: the RSI tables exist on any DB (Store init); the incumbent policy p-0 is written once
         rsi.ensure_p0(board.store)
     except Exception as e:  # noqa: BLE001 — never block startup on the monitor's bookkeeping
@@ -443,6 +526,43 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         logging.getLogger("edp8.service").warning("migrated a removed role -> qa: %s", moved)
     app = FastAPI(title="edp8 board", version=__version__)
     app.state.board = board
+
+    def _is_text(ctype: str) -> bool:
+        c = ctype.split(";", 1)[0].strip().lower()
+        return c.startswith("text/") or c in ("application/json", "application/xml", "application/yaml",
+                                              "application/x-yaml", "application/toml", "application/x-sh")
+
+    def _guest_rows(a: Participant, rows: list[Any]) -> list[Any]:
+        scope = guest_scope.scope_for(board, a)
+        return rows if scope is None else guest_scope.redact_ids(scope, rows)
+
+    @app.middleware("http")
+    async def _guest_redact(request: Request, call_next):
+        """e0cec S5: a guest's scoped JSON answer never names an object outside its member epics. The actor
+        dependency put the scope on request.state (guest_scope.guard_route); every list row naming a foreign id
+        is dropped from `value` (guest_scope.redact_ids) — the per-route filters are the first line, this is
+        the one that covers every section of every view, including ones added later."""
+        advice_mod.take()  # advice is per reply: a request starts with none, whatever a direct board call left
+        resp = await call_next(request)
+        scope = getattr(request.state, "guest_scope", None)
+        if scope is None or "application/json" not in resp.headers.get("content-type", ""):
+            return resp
+        body = b"".join([chunk async for chunk in resp.body_iterator])
+        try:
+            doc = json.loads(body)
+        except ValueError:
+            return Response(content=body, status_code=resp.status_code, media_type="application/json")
+        if request.method != "GET":  # a write may have grown the closure (the guest's own new message)
+            p = board.store.get("participant", scope.participant_id)
+            scope = (guest_scope.scope_for(board, p) if p is not None else None) or scope
+        if isinstance(doc, dict) and "value" in doc:
+            # review m-33154269a9 #7: the READ-side secret screen — whatever text a guest reads (notes, titles,
+            # criteria, gate notes, quotes, linked docs, text written before it joined) is withheld on a match
+            # an upload answers with the guest's OWN staged file (in no ticket yet): its id goes back unredacted
+            own = request.url.path in ("/v1/artifacts/upload", "/v1/artifacts/upload-authorize")
+            doc["value"] = secret_screen.withhold(doc["value"] if own else guest_scope.redact_ids(scope, doc["value"]))
+        headers = {k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "content-type")}
+        return JSONResponse(content=doc, status_code=resp.status_code, headers=headers)
 
     # Reach-from-another-machine (S17, design §15). Public mode fails closed BEFORE the app is
     # usable: no default admin token, credentials for every participant type, and header-only
@@ -522,10 +642,11 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             return f"X-Token required for {p.type} participant {p.handle!r}"
         return None
 
-    def topic_actor(x_participant: str | None = Header(default=None),
+    def topic_actor(request: Request, x_participant: str | None = Header(default=None),
                     x_token: str | None = Header(default=None)) -> Participant:
         """Every authenticated participant, experts included — only the topic routes use it, and they
-        scope an expert to its own topic (api_topics)."""
+        scope an expert to its own topic (api_topics). A guest reaches only the operations
+        guest_scope classifies scoped/allowed (fail closed: unclassified = 403, e0cec S5)."""
         if not x_participant:
             raise HTTPException(401, "X-Participant header missing (participant id or @handle)")
         try:
@@ -536,11 +657,26 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         if err:
             raise HTTPException(401, err)
         _last_seen.touch(p.id)
+        guest_scope.guard_route(p, request, board)
         return p
 
-    def actor(x_participant: str | None = Header(default=None),
+    from .doc_tools import ReadLedger
+    read_ledger = ReadLedger()
+
+    def _served(a: Participant, d: Any, fresh: bool):
+        """The already-read hook for an agent's doc read (note-e6ddb85977 §3); people and fresh=true get it all."""
+        if a.type != "agent":
+            return None
+        if fresh:
+            def whole(lo: int, hi: int) -> tuple[int, int, None]:
+                read_ledger.record(a.id, d.id, d.version, lo, hi)
+                return lo, hi, None
+            return whole
+        return lambda lo, hi: read_ledger.serve(a.id, d.id, d.version, lo, hi)
+
+    def actor(request: Request, x_participant: str | None = Header(default=None),
               x_token: str | None = Header(default=None)) -> Participant:
-        p = topic_actor(x_participant, x_token)
+        p = topic_actor(request, x_participant, x_token)
         if p.role == Role.expert:  # S-SME-SURFACE: an expert's token reaches its topic and nothing else
             raise HTTPException(403, f"expert {p.handle!r} reaches only its Library topic (/v1/topics/<id>)")
         return p
@@ -612,7 +748,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     # §24 finding 4: auto-paired qa seats spawn through the board, so give the board the
     # same token minter the service spawn route uses — the seat gets its EDP8_TOKEN injected and can
     # authenticate in public mode (trusted mode mints None and injects nothing, unchanged).
-    board._mint_token = _mint_agent_token
+    # p-451a2390: get-or-mint, never rotate. Rotating here locked out a seat the board then resumed: the pool
+    # relaunched it with the secret stored at its first spawn, and its MCP client listed no tools.
+    board._mint_token = lambda handle: _seat_secret(handle)
 
     def admin(x_admin: str | None = Header(default=None)) -> None:
         if x_admin != admin_token:
@@ -664,12 +802,16 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             return
         if a.role == Role.architect:
             epic = _target_epic(participant_id, ticket_id)
-            if epic and epic in board.my_epics(a):
+            # F1: the caller's ticket_id never overrides the seat's own epic; both must be this architect's
+            seat_epic = _target_epic(participant_id, None) if participant_id else None
+            if epic and epic in board.my_epics(a) and (seat_epic is None or seat_epic in board.my_epics(a)):
                 return
+            belongs = (f"; {participant_id!r} belongs to {seat_epic}, not to {epic} ({ticket_id})"
+                       if epic and seat_epic and seat_epic != epic else "")
             raise HTTPException(403, json.dumps({
                 "message": f"architect {a.handle!r} may only operate seats in its own epic"
                            + (f" (target epic {epic})" if epic else "; target epic could not be resolved"
-                              " — pass ticket_id"),
+                              " — pass ticket_id") + belongs,
                 "allowed": allowed}))
         raise HTTPException(403, json.dumps({
             "message": f"role {a.role.value!r} may not operate the pool control plane", "allowed": allowed}))
@@ -700,7 +842,11 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.exception_handler(BoardError)
     async def _board_error(_: Request, e: BoardError):
+        # e0cec S5 (architect m-6aec8c2abb): not_found is 404 board-wide, with one body for "missing" and
+        # "outside a guest's scope" (guest_scope.not_found raises this same error)
         status = (409 if e.code in ("transition", "conflict", "version_mismatch") else 403 if e.code == "forbidden"
+                  else 404 if e.code == "not_found"
+                  else 422 if e.code == "secret"
                   else 422 if e.code in ("quote_mismatch", "quote_source_missing", "too_long") else 400)
         return JSONResponse(status_code=status, content=e.to_dict())
 
@@ -787,7 +933,10 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.get("/v1/inbox")
     def inbox(a: Participant = Depends(actor)):
+        from .admin import access as access_admin
+        access_admin.reconcile_expired(board)  # a lapsed access request settles its owner notice (review F5)
         rows = board.inbox(a)
+        records.safely(board.note_seen, a, [r["id"] for r in rows])  # a listed ask is a read ask (close-hint receipt)
         return ok(rows, "" if rows else "inbox clear")
 
     @app.get("/v1/close_check")
@@ -827,11 +976,27 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         return ok(_dump(board.participant(id_)))
 
     # tickets ------------------------------------------------------------------
+    def _section_reminder(t) -> str:
+        """note-e6ddb85977 §2: a story whose design (its own design_ref, else its parent's) has headings its
+        description never names gets a hint; a write is never refused for it."""
+        if t.kind != TicketKind.story:
+            return ""
+        ref = t.design_ref
+        if not ref and t.parent_id:
+            parent = board.store.get("ticket", t.parent_id)
+            ref = getattr(parent, "design_ref", None)
+        doc = board.store.get("doc", ref) if ref else None
+        if doc is None:
+            return ""
+        from .doc_tools import section_hint
+        return section_hint(t.description, doc)
+
     @app.post("/v1/tickets")
     def ticket_create(b: TicketIn, a: Participant = Depends(actor)):
         t = board.ticket_create(a, kind=b.kind, work_type=b.work_type, title=b.title,
                                 parent_id=b.parent_id, assignee=b.assignee, description=b.description,
-                                tags=b.tags, words=b.words, workflow=b.workflow)
+                                tags=b.tags, words=b.words, workflow=b.workflow, serves=b.serves,
+                                cap_lift_message=b.cap_lift_message)
         if t.kind == TicketKind.epic:
             hint = "epic created; an architect designs it (doc_create design, criteria, stories)"
         elif t.kind == TicketKind.task:
@@ -839,16 +1004,43 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                     "evidence lands on the story's criteria")
         else:
             hint = "add criteria before it becomes ready"
-        return ok(_dump(t), hint)
+        return ok(_dump(t), "; ".join(x for x in (hint, _section_reminder(t)) if x))
+
+    # epic people (e0cec S5, design §4.B): the owner edits who a guest-shared epic is shared with
+    def _member_rows(epic) -> list[dict[str, Any]]:
+        rows = []
+        for pid in epic.members:
+            p = board.store.get("participant", pid)
+            if p is not None:
+                rows.append({"id": p.id, "handle": p.handle, "display": guest_scope.display_handle(p),
+                             "role": p.role.value, "type": p.type, "retired": getattr(p, "retired", False)})
+        return rows
+
+    @app.get("/v1/epics/{epic_id}/members")
+    def epic_members(epic_id: str, a: Participant = Depends(actor)):
+        epic = board.ticket(epic_id)
+        if epic.kind != TicketKind.epic:
+            raise BoardError("invalid", f"{epic_id} is a {epic.kind}, not an epic", "members are per epic")
+        return ok({"epic_id": epic.id, "members": _member_rows(epic)},
+                  "a guest member reads this epic's tree; PUT the full list to change it (owner)")
+
+    @app.put("/v1/epics/{epic_id}/members")
+    def epic_members_put(epic_id: str, b: MembersIn, a: Participant = Depends(actor)):
+        epic = board.epic_members_set(a, epic_id, b.members)
+        return ok({"epic_id": epic.id, "members": _member_rows(epic)},
+                  "saved; a removed guest's open feed ends with a resync and its next read is a 404")
 
     @app.get("/v1/tickets/{id_}")
     def ticket_get(id_: str, include: str | None = None, thread_limit: int = Query(default=20, ge=0, le=200),
-                   a: Participant = Depends(actor)):
-        view = board.ticket_view(id_, include=include.split(",") if include else None, thread_limit=thread_limit)
+                   before_seq: int | None = Query(default=None, ge=0), a: Participant = Depends(actor)):
+        guest_scope.require(board, a, "ticket", id_)
+        view = board.ticket_view(id_, include=include.split(",") if include else None, thread_limit=thread_limit,
+                                 before_seq=before_seq)
         # flat ticket fields at the top level (back-compat) + every section
         return ok({**view["ticket"], **{k: v for k, v in view.items() if k != "ticket"}},
                   "one read: chain, criteria, docs(+relation), children(+assignee_role), blockers, open_gates, "
-                  "thread tail (thread_seq = newest seq; message_query(since_seq=…) for what follows)")
+                  "thread tail (thread_seq = newest seq; message_query(since_seq=…) for what follows; "
+                  "before_seq=<seq> pages the tail back, thread_before_seq names the next page)")
 
     @app.get("/v1/tickets")
     def ticket_query(kind: TicketKind | None = None, work_type: WorkType | None = None,
@@ -869,12 +1061,13 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     @app.patch("/v1/tickets/{id_}")
     def ticket_update(id_: str, b: TicketPatch, a: Participant = Depends(actor)):
         t = board.ticket_update(a, id_, status=b.status, assignee=b.assignee, design_ref=b.design_ref,
-                                description=b.description, tags=b.tags, title=b.title)
+                                description=b.description, tags=b.tags, title=b.title,
+                                work_type=b.work_type)
         hint = ""
         if b.status == TicketStatus.in_progress and t.kind == TicketKind.story:
             hint = ("bigger than one sitting? split it into task tickets NOW (ticket_create kind=task) — "
                     "a compaction/respawn resumes from the task list, not from lost context")
-        return ok(_dump(t), hint)
+        return ok(_dump(t), "; ".join(x for x in (hint, _section_reminder(t)) if x))
 
     # criteria -----------------------------------------------------------------
     @app.post("/v1/criteria")
@@ -887,7 +1080,13 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                     f"ticket (design §24.1); an owner override needs override_reason")
         elif b.checked_by and b.checked_by == c.checked_by and a.role == Role.owner and b.override_reason:
             hint = f"owner override recorded: checked_by={c.checked_by}"
-        return ok(_dump(c), hint)
+        value = _dump(c)
+        decisions = epic_work.touched_decisions(board, a, c)  # S4 E4
+        if decisions:
+            value["binding_decisions"] = decisions
+            hint = "; ".join(x for x in (hint, "binding decisions this text touches: the criterion must honour them, "
+                                                "or reword it — lookup(scope=<epic>, id=<dec id>) reads one") if x)
+        return ok(value, hint)
 
     @app.get("/v1/criteria")
     def criterion_query(ticket_id: str, a: Participant = Depends(actor)):
@@ -904,31 +1103,86 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                 "all criteria passed; the ticket can be marked done by its checker")
         return ok(_dump(c), "; ".join([hint, *warnings]))
 
+    # requirements (s-aa76c83998, design-63db8a7d42 item H) -------------------------
+    @app.get("/v1/epics/{epic_id}/requirements")
+    def requirements_list(epic_id: str, state: str | None = None, a: Participant = Depends(actor)):
+        scope = guest_scope.scope_for(board, a)
+        if scope is not None:  # a guest reads the requirements it marked on a member epic; no digests, no epic tally
+            guest_scope.require(board, a, "ticket", epic_id)
+            rows = [requirements_mod.row(board, x) for x in board.requirements(epic_id, state=state)
+                    if a.id in (x.marked_by or [x.created_by])]
+            return ok({"requirements": rows, "digests": []}, f"{len(rows)} of your requirements on {epic_id}")
+        rows = [requirements_mod.row(board, x) for x in board.requirements(epic_id, state=state)]
+        out: dict[str, Any] = {"requirements": rows, "digests": epic_work.epic_digests(board, epic_id)}
+        held = requirements_mod.blocked_reason(board, epic_id)  # why the epic cannot finish, the board's own text
+        if held:
+            out["blocked_reason"] = held
+        return ok(out, held or "")
+
+    @app.post("/v1/requirements")
+    def requirement_mark(b: RequirementMarkIn, a: Participant = Depends(actor)):
+        x = board.requirement_mark(a, message_id=b.message_id, char_start=b.char_start, char_end=b.char_end,
+                                  text=b.text)
+        return ok(requirements_mod.row(board, x), "marked; sends no message. The architect links it to a criterion "
+                                                   "or a design section")
+
+    @app.post("/v1/requirements/{req_id}/link")
+    def requirement_link(req_id: str, b: RequirementLinkIn, a: Participant = Depends(actor)):
+        x = board.requirement_link(a, req_id, criterion=b.criterion, doc=b.doc, version=b.version, heading=b.heading)
+        return ok(requirements_mod.row(board, x), f"{x.id} linked; {len(requirements_mod.open_ids(board, x.epic_id))} open")
+
     # docs / links / artifacts ---------------------------------------------------
     @app.post("/v1/docs")
     def doc_create(b: DocIn, a: Participant = Depends(actor)):
         d = board.doc_create(a, doc_type=b.doc_type, title=b.title, body_md=b.body_md, scope=b.scope,
-                             tags=b.tags, status=b.status, proposes=b.proposes, ticket_id=b.ticket_id)
+                             tags=b.tags, status=b.status, proposes=b.proposes, ticket_id=b.ticket_id,
+                             layout=b.layout)
+        if a.type == "agent":
+            read_ledger.wrote(a.id, d.id, d.version)
+        from .doc_tools import legacy_note
+        rec = {**_dump(d), **legacy_note(d)}  # S13 F10: a legacy layout warns on the create echo too
         if d.status == DocStatus.proposed:
-            return ok(_dump(d), "proposed: the owner approves or rejects it in the Library (POST /v1/docs/{id}/approve|reject)")
+            return ok(rec, "proposed: the owner approves or rejects it in the Library (POST /v1/docs/{id}/approve|reject)")
         if b.doc_type in (DocType.strategy_hl, DocType.strategy_ll):
-            hint = ("link it: extends -> its parent layer (doc), uses_strategy -> the epic; "
-                    "assemble_ruleset composes the chain at read time")
+            hint = "link it: extends -> its parent layer (doc), uses_strategy -> the epic"
         else:
             hint = ("link it: link_create(from_id=<ticket>, to_id=<doc>, "
                     "relation=designed_by|uses_strategy|uses_domain|evidence_for)")
-        return ok(_dump(d), hint)
+        if b.doc_type == DocType.design:  # e0cec S6: recalled lessons the design does not cite (advisory)
+            from . import records
+            nudge = records.design_nudge(board.store, b.scope, b.body_md)
+            hint = f"{hint}. {nudge}" if nudge else hint
+        return ok(rec, f"{hint}. {DOC_WRITE_HINT}")
 
     @app.get("/v1/docs/{id_}")
     def doc_get(id_: str, version: int | None = None, offset: int | None = None,
-                limit: int | None = None, section: str | None = None, a: Participant = Depends(actor)):
+                limit: int | None = None, section: str | None = None, all: bool = False,
+                include_children: bool = False, fresh: bool = False, a: Participant = Depends(actor)):
+        """S17 decision 3: head-first. No range args = the first page + heading map + continuation (head_read);
+        offset/limit/section = a version-pinned range; all=true = the whole record plus its version list, for
+        people only (the web Library editor and the VS Code reader ask for it; S13 F11: an agent gets the head
+        and a note). A legacy doc carries the warning line on each."""
+        from .doc_tools import bounded_read, head_read, legacy_note
+        guest_scope.require(board, a, "doc", id_)
         d = board.doc(id_, version)
+        served = _served(a, d, fresh)
+        if all and a.type == "human":
+            return ok({**_dump(d), **legacy_note(d), "versions": board.store.doc_versions(id_)})
         if offset is not None or limit is not None or section is not None:
-            from .doc_tools import bounded_read
             if (offset is not None and offset < 0) or (limit is not None and not 1 <= limit <= 32768):
                 raise BoardError("range", "offset must be >=0 and limit must be 1..32768 characters")
-            return ok(bounded_read(d, offset=offset or 0, limit=limit or 8192, section=section))
-        return ok({**_dump(d), "versions": board.store.doc_versions(id_)})
+            return ok(bounded_read(d, offset=offset or 0, limit=limit or 8192, section=section,
+                                   include_children=include_children, served=served))
+        head = head_read(d, served=served)
+        versions = board.store.doc_versions(id_)
+        return ok({**head, "versions": versions} if len(versions) > 1 else head,
+                  "all=true is for people; an agent reads the head, then sections or pages" if all else "")
+
+    @app.post("/v1/docs/reads/reset")
+    def doc_reads_reset(a: Participant = Depends(actor)):
+        """resume_self: this participant no longer holds what it read (note-e6ddb85977 §3)."""
+        read_ledger.clear(a.id)
+        return ok({"cleared": True})
 
     @app.get("/v1/docs")
     def doc_query(doc_type: DocType | None = None, scope: str | None = None, owner_role: Role | None = None,
@@ -969,13 +1223,31 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     @app.patch("/v1/docs/{id_}")
     def doc_update(id_: str, b: DocPatch, a: Participant = Depends(actor)):
         from .doc_tools import receipt
-        d = board.doc_update(a, id_, body_md=b.body_md, title=b.title, tags=b.tags)
-        return ok(receipt(d, [k for k in ("body_md", "title", "tags") if getattr(b, k) is not None])
-                  if b.compact else _dump(d))
+        from .doc_tools import legacy_note
+        d = board.doc_update(a, id_, body_md=b.body_md, title=b.title, tags=b.tags, layout=b.layout)
+        if a.type == "agent":
+            read_ledger.wrote(a.id, id_, d.version)
+        # S13 F11: the full record is a people's echo; an agent always gets the bounded receipt
+        if b.compact or a.type != "human":
+            return ok(receipt(d, [k for k in ("body_md", "title", "tags", "layout") if getattr(b, k) is not None]),
+                      DOC_WRITE_HINT)
+        return ok({**_dump(d), **legacy_note(d)}, DOC_WRITE_HINT)
 
     @app.post("/v1/docs/{id_}/edit")
     def doc_edit(id_: str, b: DocEdit, a: Participant = Depends(actor)):
-        return ok(board.doc_edit(a, id_, b), "doc_read(id, version) for the resulting body")
+        unserved = False
+        if b.expected_version is None:  # the version this reader was last served; none served -> the latest
+            b.expected_version = read_ledger.last_version(a.id, id_)
+            unserved = b.expected_version is None
+        r = board.doc_edit(a, id_, b)
+        if a.type == "agent":
+            read_ledger.wrote(a.id, id_, r["version"])
+        if unserved:  # a native Read of the mirror file serves nothing to the board, so it pins no version
+            r = {**r, "version_pin": "none: applied to the latest version (no doc_read was served to you)"}
+            return ok(r, "no doc_read was served to you, so this edit applied to the latest version. A native Read of "
+                         "docs/<scope>/<id>.md pins nothing: pass expected_version from its front-matter `version:` "
+                         "to be refused if the doc moved on")
+        return ok(r, "doc_read(id, version) for the resulting body")
 
     @app.post("/v1/links")
     def link_create(b: LinkIn, a: Participant = Depends(actor)):
@@ -1002,7 +1274,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         secret = (humans if a.type == 'human' else agents).get(a.handle.lstrip('@'))
         if not secret or not x_token or not hmac.compare_digest(secret.encode(), x_token.encode()):
             raise HTTPException(401, 'configured participant credential required for HTTP file access')
-        return ok({'participant_id': a.id})
+        return ok({'participant_id': a.id, 'type': a.type})
 
     @app.post("/v1/artifacts/upload")
     async def artifact_upload(file: UploadFile = File(...), note: str = Form(default=""),
@@ -1061,6 +1333,15 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         arts = board.artifact_finalise(a, artifact_ids=b.artifact_ids, ticket_id=b.ticket_id)
         return ok([_dump(x) for x in arts], "attached to the ticket")
 
+    @app.get("/v1/artifacts/search")
+    def artifact_search(q: str = "", epic_id: str | None = None, limit: int = 40, a: Participant = Depends(actor)):
+        """The one `$` picker source (web composer and VS Code): finalised artifacts this caller may read,
+        `epic_id`'s own first (group=scope), every other readable one after (group=board), each row naming
+        its epic. Matches q on id, title (filename/note/uri) and epic title."""
+        from . import artifact_search as asearch
+        return ok(asearch.search(board, a, q=q, epic_id=epic_id, limit=limit),
+                  "rows carry id, title, form, epic_id, epic_title; `$<id>` in a message links one")
+
     @app.get("/v1/artifacts/{id_}/content")
     def artifact_content(id_: str, a: Participant = Depends(actor)):
         """Serve an uploaded artifact's bytes with the sniffed type. Never sniffs in the browser
@@ -1068,6 +1349,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         image types and mp4/webm video — an uploaded SVG is thus never rendered (design §18.1).
         Range requests get 206 partial content (FileResponse), so a <video> can seek."""
         from . import uploads
+        guest_scope.require(board, a, "artifact", id_)
         art = board._get("artifact", id_, "artifact")
         if getattr(art, "staged", False) and art.created_by != a.id:  # §18.1: a staged upload is
             raise HTTPException(404, f"{id_!r} is not an artifact")  # invisible until its owner attaches it
@@ -1076,7 +1358,18 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         if not path.exists():
             raise BoardError("not_found", f"artifact {id_} has no stored content")
         disp = "inline" if uploads.is_inline_image(ctype) or uploads.is_inline_video(ctype) else "attachment"
-        name = art.filename or path.name
+        # S13 F1: the JSON screen never sees headers, so a guest's download is named by the artifact (its id and
+        # stored extension) on every branch; owners and seats keep the uploader's filename
+        name = path.name if guest_scope.is_guest(a) else (art.filename or path.name)
+        if guest_scope.is_guest(a) and _is_text(ctype):
+            # e0cec S5 review round 3 #1: a text file uploaded before the guest joined passes the same read-side
+            # screen as thread text; a match is withheld whole. Binary content (pdf, zip, images) is out of scope.
+            text = path.read_bytes().decode("utf-8", errors="replace")
+            cls = secret_screen.match(text)
+            if cls:
+                return Response(content=secret_screen.WITHHELD.format(cls=cls), media_type="text/plain",
+                                headers={"X-Content-Type-Options": "nosniff",
+                                         "Content-Disposition": uploads.content_disposition("attachment", name)})
         return FileResponse(path, media_type=ctype, headers={
             "X-Content-Type-Options": "nosniff",
             # RFC 6266: a non-Latin or quoted filename must not raise (finding 14).
@@ -1084,6 +1377,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.get("/v1/artifacts/{id_}")
     def artifact_get(id_: str, a: Participant = Depends(actor)):
+        guest_scope.require(board, a, "artifact", id_)
         art = board._get("artifact", id_, "artifact")
         if getattr(art, "staged", False) and art.created_by != a.id:  # §18.1 finding 4: staged uploads
             raise HTTPException(404, f"{id_!r} is not an artifact")  # are invisible to everyone but the uploader
@@ -1097,7 +1391,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     from . import broker_adapter, delivery
 
     @app.post("/v1/messages")
-    def message_send(b: MessageIn, a: Participant = Depends(actor)):
+    def message_send(b: MessageIn, a: Participant = Depends(actor), idempotency_key: str | None = Header(default=None)):
         from . import views
         # §18.1: finalise any staged uploads BEFORE the message posts — all-or-nothing, so a bad
         # artifact id raises here and nothing (message or artifact) becomes visible.
@@ -1111,26 +1405,46 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             board.artifact_finalise(a, artifact_ids=b.artifacts, ticket_id=b.ticket_id)
         try:
             m = board.message_send(a, ticket_id=b.ticket_id, to=b.to, kind=b.kind, text=b.text, reply_to=b.reply_to,
-                                   artifacts=b.artifacts, code_context=code_context, quotes=quotes)
+                                   artifacts=b.artifacts, code_context=code_context, quotes=quotes,
+                                   resolves=b.resolves)
         except Exception:
             if was_staged:  # all-or-nothing: the message failed, so nothing it carried becomes visible
                 board.artifact_unfinalise(artifact_ids=was_staged, ticket_id=b.ticket_id)
             raise
-        delivery.after_message(board, a.id, m)
+        # a closed addressee is not revived: the architect is hinted; say so. A spawn's first steer is posted just
+        # BEFORE its seat launches (bundles.spawn): that seat is starting, not closed, so it earns no hint.
+        spawn_steer = (idempotency_key or "").startswith("spawn-steer-")
+        closed = delivery.after_message(board, a.id, m, starting=spawn_steer)
         note = getattr(board, "last_send_note", "")
-        hint = "delivered to the recipient's feed; end your turn if you are waiting for an answer"
+        hint = ("; ".join(closed.values()) if closed else "delivered to the recipient's feed") \
+            + "; end your turn if you are waiting for an answer"
+        if m.kind in (MessageKind.question, MessageKind.steer, MessageKind.deviation):
+            if m.to and getattr(board.store.get("participant", m.to), "type", None) == "human":
+                hint = ("delivered; an ask to a person never blocks you: carry on with your best recommendation "
+                        "(record_claim it). It clears when anyone answers or quotes it, when a message names it in "
+                        "resolves=[id], when the ticket moves on, or when the owner writes on this ticket")
+            else:
+                hint += "; a later message settles an ask with resolves=[ask id] (or reply_to / a quote of it)"
         # unresolved_mentions: @handles that match no participant — the message posted, but nobody
         # was woken for these (design §4.1). The caller surfaces them so a typo'd @handle is visible.
         return ok({**_dump(m), "seq": board.store.seq_of("message", m.id),  # T6 N2: the receipt names its seq
-                   "unresolved_mentions": views.unresolved_mentions(board, b.text, m.quotes)},
+                   "unresolved_mentions": views.unresolved_mentions(board, b.text, m.quotes, a)},
                   f"{note}; {hint}" if note else hint)
 
     @app.post("/v1/status")
     def record_status(b: StatusIn, a: Participant = Depends(actor)):
         m, recipients = board.record_status(a, status=b.status, note=b.note, to=b.to, ticket_id=b.ticket_id)
         told = delivery.after_status(board, a.id, m, recipients)
-        return ok({"message": _dump(m), "told": told},
-                  "status recorded; next: close_self() (resident seats: keep listening)")
+        value: dict[str, Any] = {"message": _dump(m), "told": told}
+        hint = "status recorded; next: close_self() (resident seats: keep listening)"
+        if b.status in (StatusValue.done, StatusValue.handed_off, StatusValue.reviewed):
+            # pain p-892b786f: a hand-off names who checks it (a quick task: the owner, on the ticket page)
+            checker = board.checker_receipt(board.ticket(m.ticket_id))
+            if checker:
+                value["checker"] = checker
+                hint = "status recorded; checked by: " + "; ".join(f"{r['checked_by']} → {r['who']}" for r in checker) \
+                       + ". Next: close_self() (resident seats: keep listening)"
+        return ok(value, hint)
 
     @app.post("/v1/decisions")
     def record_decision(b: DecisionIn, a: Participant = Depends(actor)):
@@ -1147,8 +1461,22 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.post("/v1/lessons")
     def record_lesson(b: LessonIn, a: Participant = Depends(actor)):
-        le = board.record_lesson(a, domain=b.domain, topic=b.topic, text=b.text, evidence=b.evidence)
-        return ok(_dump(le), "lesson recorded; lookup shows it under 'Lessons from elsewhere' from any epic")
+        le = board.record_lesson(a, domain=b.domain, topic=b.topic, text=b.text, evidence=b.evidence,
+                                 scope_kind=b.scope_kind, project=b.project, domains=b.domains,
+                                 ticket_id=b.ticket_id)
+        where = f"epics of project {le.project!r}" if le.scope_kind == "project" else "framework epics"
+        return ok(_dump(le), f"lesson recorded; lookup shows it under 'Lessons from elsewhere' in {where}")
+
+    @app.post("/v1/lessons/{id_}/retire")
+    def retire_lesson(id_: str, b: WithdrawIn, a: Participant = Depends(actor)):
+        le = board.retire_lesson(a, lesson_id=id_, reason=b.reason)
+        return ok(_dump(le), "lesson retired; lookup, recall and search no longer return it")
+
+    @app.post("/v1/lessons/backfill")
+    def backfill_lessons(b: LessonBackfillIn, a: Participant = Depends(actor)):
+        """Classify every live lesson as framework|project and retire the ones that cite a retired tool."""
+        return ok(board.backfill_lesson_scopes(a, dry_run=b.dry_run),
+                  "dry_run lists the changes without writing; a second run changes nothing")
 
     @app.post("/v1/decisions/{id_}/withdraw")
     def withdraw_decision(id_: str, b: WithdrawIn, a: Participant = Depends(actor)):
@@ -1185,7 +1513,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     @app.get("/v1/recall")
     def recall(ticket_id: str, a: Participant = Depends(actor)):
         """S-IMPLICIT: the ticket's recall section (records.recall — FTS + graph, capped, no model call);
-        assemble_ruleset appends it to the brief."""
+        context() carries it."""
         from . import records
         board.ticket(ticket_id)  # 404 on an unknown ticket
         return ok(records.recall(board.store, ticket_id), "decisions/claims/lessons for this ticket, capped")
@@ -1232,9 +1560,19 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     @app.get("/v1/messages")
     def message_query(ticket_id: str | None = None, to: str | None = None, kind: MessageKind | None = None,
                       created_by: str | None = None, since_seq: int | None = None, limit: int = 50,
+                      around: str | None = None, window: int | None = Query(default=None, ge=0),
                       a: Participant = Depends(actor)):
+        if around:  # e0cec S3: N before + the target (whole text) + N after, in seq order
+            rows = board.messages_around(around, window, ticket_id=ticket_id)
+            n = len(rows)
+            return ok(rows, f"{n} messages in seq order; the one with target=true is {around} (window "
+                            f"{board.AROUND_DEFAULT if window is None else min(window, board.AROUND_MAX)}, max "
+                            f"{board.AROUND_MAX}); message_query(ticket_id, since_seq={rows[-1]['seq']}) reads on")
         rows = board.store.query_seq("message", {"ticket_id": ticket_id, "to": to, "kind": kind,
-                                                 "created_by": created_by}, since_seq=since_seq, limit=100000)
+                                                  "created_by": created_by}, since_seq=since_seq, limit=100000)
+        scope = guest_scope.scope_for(board, a)
+        if scope is not None:  # round 3 #2: last_seq (a hint, outside `value`) comes from the guest's rows only
+            rows = [(s, m) for s, m in rows if scope.has(m.id)]
         rows = rows[-limit:] if since_seq is None else rows[:limit]
         from .quotes import with_quotes
         out = [with_quotes({**_dump(m), "seq": seq}, m) for seq, m in rows]  # C18: quotes rendered above text
@@ -1247,9 +1585,17 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         return ok(r, "wake preview only — nothing was sent; `wakes`/`plan` are the same list "
                      "(each {recipient, reason, why}); an empty list means nobody is woken")
 
+    @app.post("/v1/messages/seen")
+    def message_seen(b: SeenIn, a: Participant = Depends(actor)):
+        ids = [i for i in dict.fromkeys(b.ids)][:100]
+        board.note_seen(a, [i for i in ids if board.store.get("message", i) is not None], via="listener")
+        return ok({"seen": len(ids)})
+
     @app.get("/v1/messages/{id_}")
     def message_get(id_: str, a: Participant = Depends(actor)):
-        return ok(board.message_read(id_))
+        row = board.message_read(id_)
+        records.safely(board.note_seen, a, [id_])  # a read receipt for the close sweep
+        return ok(row)
 
     @app.get("/v1/tickets/{id_}/contextual")
     def ticket_contextual(id_: str, category: HistoryCategory = "all", a: Participant = Depends(actor)):
@@ -1266,7 +1612,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.get("/v1/docs/{id_}/comments")
     def doc_comments(id_: str, version: int | None = None, a: Participant = Depends(actor)):
-        rows = board.doc_comments(id_, version)
+        rows = _guest_rows(a, board.doc_comments(id_, version))  # round 3 #2: the hint counts scoped rows
         return ok(rows, f"{len(rows)} comment(s) on {id_}{f' v{version}' if version else ''}: design-review "
                         "comments and messages quoting it")
 
@@ -1289,6 +1635,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.post("/v1/docs/comments")
     def document_comment(b: DocumentComment, a: Participant = Depends(actor)):
+        guest_scope.require(board, a, "doc", b.design_ref)  # e0cec S5: a guest comments on its epics' docs only
         result, fresh = comment(board, a, b)
         if fresh:
             delivery.after_message(board, a.id, board._get("message", result["message_id"]))
@@ -1320,16 +1667,22 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     @app.get("/v1/events")
     def events(subject_id: str | None = None, since: int = 0, limit: int = 200, watch: bool = False,
                a: Participant = Depends(actor)):
+        scope = guest_scope.scope_for(board, a)
+        keep = None if scope is None else (lambda e: guest_scope.visible(scope, "event", e))
         if subject_id:  # seq on every row and `since` honoured, so a capped page can resume (S23 no-loss)
             return ok([{"seq": s, **_dump(e)} for s, e in
-                       board.store.query_seq("event", {"subject_id": subject_id}, since_seq=since, limit=limit)])
-        return ok([{"seq": s, **_dump(e)} for s, e in board.iter_replay(a, since, watch=watch, limit=limit)])
+                       board.store.query_seq("event", {"subject_id": subject_id}, since_seq=since, limit=limit)
+                       if keep is None or keep(e)])
+        return ok([{"seq": s, **_dump(e)} for s, e in board.iter_replay(a, since, watch=watch, limit=limit, keep=keep)])
 
     @app.get("/v1/find")
     def find(q: str, k: int = 10, types: str | None = None, epic_id: str | None = None,
              a: Participant = Depends(actor)):
-        return ok(board.find(q, k=k, types=types.split(",") if types else None, epic_id=epic_id),
-                  "hits carry ticket_id/epic_id; ticket_read(id) or doc_read(id) for the full object")
+        scope = guest_scope.scope_for(board, a)
+        keep = None if scope is None else (lambda h: guest_scope.visible(scope, "hit", h))
+        return ok(board.find(q, k=k, types=types.split(",") if types else None, epic_id=epic_id, keep=keep,
+                             scope=scope),
+                  "hits carry ticket_id/epic_id; a doc hit names its section: doc_read(id, section=<it>) reads it")
 
     # sessions (pool, admin) -----------------------------------------------------
     @app.put("/v1/sessions/{id_}", dependencies=[Depends(admin)])
@@ -1338,6 +1691,10 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         s = board.session_upsert(id_=id_, participant_id=b.participant_id, ticket_id=b.ticket_id,
                                  pool_id=b.pool_id, state=b.state, resume_token=b.resume_token,
                                  reason=b.reason, presence_stale=b.presence_stale)
+        if s.state == SessionState.dead and (prev is None or prev.state != s.state):
+            # t-732cf1dd92 ruling 1a: the ended seat's browser session (its own context) is closed now, not at idle
+            from . import browser_proxy
+            browser_proxy.notify_session_end(id_)
         # a death/stall TRANSITION is crucial: besides the shell_dead feed event, drop a durable
         # crashed notice in the owner's broker inbox (the recovery seat wakes even if its feed
         # stream happened to be down at that moment). Clean closes (finish/reap/clean exit)
@@ -1345,14 +1702,15 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         # A presence-stale upsert is a MISSED PROBE, not a death: the state did not change and
         # no crashed notice is sent (design §18.3 — silence is never rendered as Closed).
         if (not b.presence_stale and s.state in (SessionState.dead, SessionState.stalled)
-                and (prev is None or prev.state != s.state)):
-            clean = any(k in (b.reason or "").lower() for k in ("closed by self", "reaped", "clean exit"))
-            who = board.recovery_seat(b.ticket_id, exclude={b.participant_id}) if b.ticket_id else None
-            if who:  # THIS epic's human owner, else its live resident architect — never a shared handle
+                and (prev is None or prev.state != s.state)
+                and "interrupted" not in (b.reason or "").lower()):  # a force quit is the owner's act, never a crash page
+            clean = any(k in (b.reason or "").lower() for k in CLEAN_CLOSE_REASONS)
+            who = board.pool_event_recipient(b.ticket_id, exclude={b.participant_id}) if b.ticket_id else None
+            if who:  # F: THIS epic's live resident architect, who heals it; never the owner, never a shared handle
                 broker_adapter.publish("pool", who, "fyi" if clean else "crashed",
                                        {"participant": b.participant_id, "ticket_id": b.ticket_id,
                                         "session_id": id_, "state": b.state.value,
-                                        "reason": b.reason, "clean": clean})
+                                        "reason": b.reason, "clean": clean, "run": s.started_seq})
         return ok(_dump(s))
 
     @app.get("/v1/sessions")
@@ -1394,13 +1752,19 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         if p is None or p.type != "agent" or str(p.role) not in board.workflow_of(b.ticket_id).spawnable:
             raise BoardError("scope", f"{b.participant_id!r} is not a registered seat of a spawnable role",
                              "register the seat first (spawn does), then ask for its token")
+        sme_off = board.sme_spawn_refusal(p.role.value, _target_epic(b.participant_id, b.ticket_id))
+        if sme_off:  # e0cec S6: SMEs are opt-in per epic
+            raise BoardError("scope", sme_off, "the owner or the epic's architect tags the epic sme:on")
         refused = board.fable_refusal(p.role.value, b.model)
         if refused:  # S4 §4.11: the MCP spawn tool's path, gated like POST /v1/sessions/spawn
             raise BoardError("scope", refused, "a human acknowledges it once: POST /v1/harness/fable-ack")
+        qa_wait = board.qa_spawn_refusal(p.role, b.ticket_id, b.participant_id)  # S4 C1: the MCP path too
+        if qa_wait:  # design-63db8a7d42 I: the architect decides; the spawn goes ahead and says so
+            advice_mod.advise(f"{qa_wait}; qa normally spawns once every story is in_review or done; spawned anyway")
         token = _seat_secret(b.participant_id)
         env = {"EDP8_TOKEN": token} if token else {}
         env.update(board.seat_spawn_spec(b.ticket_id, p.role.value)["env"])  # S13: the pinned version's card
-        return ok({"env": env or None},
+        return ok({"env": env or None, "advised": advice_mod.take()},
                   "pass value.env to the pool spawn; null = trusted mode (no tokens.json), header-only seat")
 
     @app.post("/v1/sessions/spawn")
@@ -1418,6 +1782,12 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             if pe and te and pe != te:
                 raise BoardError("scope", f"{b.participant_id!r} belongs to {pe}, not to {te} ({b.ticket_id})",
                                  "name a ticket in the seat's own epic")
+        qa_wait = board.qa_spawn_refusal(b.role, b.ticket_id, b.participant_id)  # S4 C1 (dec-40efecb36c)
+        if qa_wait:  # design-63db8a7d42 I: advice, not a refusal
+            advice_mod.advise(f"{qa_wait}; qa normally spawns once every story is in_review or done; spawned anyway")
+        sme_off = board.sme_spawn_refusal(b.role.value, _target_epic(b.participant_id, b.ticket_id))
+        if sme_off:  # e0cec S6: SMEs are opt-in per epic, refused before the pool or any seat is touched
+            raise BoardError("scope", sme_off, "the owner or the epic's architect tags the epic sme:on")
         if b.assign and b.role in (Role.qa, Role.adversary):
             # S-QUICK (owner m-6914670391): a checker spawns with the ticket as its scope, never as its doer
             raise BoardError("scope", f"a {b.role.value} seat checks the ticket and never becomes its assignee",
@@ -1429,8 +1799,12 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             return {**cached, "hint": "idempotent replay: same session, no second shell"}
         out = _spawn_seat(a, b)
         if out.get("ok"):
+            said = "; ".join(advice_mod.take())
+            if said:
+                out = {**out, "hint": "; ".join(x for x in (out.get("hint"), said) if x)}
             _idem_put(a, idempotency_key, out)
             return out
+        advice_mod.take()
         return _pool_result(out)
 
     def _spawn_seat(a: Participant, b: SessionSpawnIn) -> dict[str, Any]:
@@ -1455,11 +1829,13 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                                          model=choice.model)
             except BoardError:
                 pass
-        token = _mint_agent_token(b.participant_id)
+        token = _seat_secret(b.participant_id)  # p-451a2390: never rotate a seat's secret on spawn
         env = {"EDP8_TOKEN": token} if token else None
         spec = board.seat_spawn_spec(b.ticket_id, b.role.value)  # S13: the pinned version's card + capacity
         if spec["env"]:
             env = {**(env or {}), **spec["env"]}
+        if b.ticket_id:  # pain p-a05affa0: the spawn ticket rides the pool session, so a custom id resolves its epic
+            env = {**(env or {}), pool_adapter.SPAWN_TICKET_ENV: b.ticket_id}
         out = pool_adapter.spawn(b.role.value, b.participant_id, parent_session=b.parent_session,
                                  model=choice.pool_model, mode=b.mode, env=env, effort=choice.effort,
                                  **spec["capacity"])
@@ -1522,7 +1898,8 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             return {**cached, "hint": "idempotent replay"}
         # The pool owns state and session continuity. A board-side guess based on
         # any old done row can select the wrong branch for a newer live seat.
-        out = pool_adapter.resume(b.participant_id)
+        token = _seat_secret(b.participant_id)  # p-451a2390: the resumed shell gets the current secret
+        out = pool_adapter.resume(b.participant_id, env={"EDP8_TOKEN": token} if token else None)
         if out.get("ok"):
             value = out.get("value") or {}
             if not value.get("resumed") and not value.get("no_op"):
@@ -1553,7 +1930,14 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         cached = _idem_get(a, idempotency_key)
         if cached is not None:
             return {**cached, "hint": "idempotent replay"}
-        out = pool_adapter.close(b.participant_id, b.reason or "closed via board")
+        # G/F5: the close is attributed to the AUTHENTICATED actor ("closed by owner" / "closed by architect"), which the
+        # upsert reads as a clean close (no crash page, no checker requeue). A caller cannot claim another's act (F1).
+        who = "owner" if a.role == Role.owner else "architect"
+        if "closed by" in (b.reason or "").lower():  # R1: no caller text may name an actor, mixed or not
+            raise BoardError("scope", "a close reason cannot say who closed the seat; the board records that itself",
+                             f"leave out 'closed by': the board writes 'closed by {who}' and appends your text")
+        reason = f"closed by {who}: {b.reason}" if b.reason else f"closed by {who}"
+        out = pool_adapter.close(b.participant_id, reason)
         if out.get("ok"):
             _idem_put(a, idempotency_key, out)
             return out
@@ -1844,10 +2228,19 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         # `watch=true` is the web page's view feed (S19 chat freeze): every event, each still
         # tagged with `why` (None when it does not page this viewer) so the page can tell its
         # own pages apart. Default stays the wake-filtered seat feed.
+        guest = guest_scope.is_guest(a)
+
         def frame(s: int | None, e) -> bytes:
             # every event carries WHY this subscriber was woken (design §16.2 rule 5) so a seat
             # can tell a page from a courtesy copy
-            return f"data: {json.dumps({'seq': s, 'why': board.why(e, a), **_dump(e)})}\n\n".encode()
+            body = {'seq': s, 'why': board.why(e, a), **_dump(e)}
+            if guest:  # e0cec S5 review #7: a guest's frames pass the read-side secret screen too
+                body = secret_screen.withhold(body)
+            return f"data: {json.dumps(body)}\n\n".encode()
+
+        # e0cec S5: a guest's stream carries only its member epics' events, replay and live alike: iter_replay
+        # scopes a guest's replay, and the guest's queue carries a StreamScope that _fanout applies, recomputes
+        # on scope-changing events and turns into a resync when the guest's membership is revoked.
 
         async def gen() -> AsyncIterator[bytes]:
             q = board.subscribe(a.id, watch=watch)
@@ -1918,12 +2311,47 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     from .webapp import mount_spa
     from .webapp.serve import CollapseLeadingSlashes
 
-    app.add_middleware(IdempotencyMiddleware, store=board.store)  # T3 F2: innermost, sees the raw JSON reply
+    def _replay_refusal(scope: dict, body: bytes, first: bytes) -> tuple[int, bytes] | None:
+        """S13 F3: a cached reply is returned only to a caller who could make the request now: the same route
+        gate (token, role, guest route class) and, for a guest, every object the request or its reply names."""
+        req = Request(scope)
+        try:
+            gate = topic_actor if scope["path"].startswith("/v1/topics") else actor
+            p = gate(req, req.headers.get("x-participant"), req.headers.get("x-token"))
+            if guest_scope.is_guest(p):
+                def parsed(src: bytes) -> Any:
+                    try:
+                        return json.loads(src)
+                    except ValueError:
+                        return None
+                reply = parsed(first)
+                reply = reply.get("value", reply) if isinstance(reply, dict) else None
+                guest_scope.require_replay(board, p, parsed(body), reply)
+        except HTTPException as e:
+            code = {401: "unauthorized", 403: "forbidden", 404: "not_found"}.get(e.status_code, "refused")
+            return e.status_code, json.dumps({"ok": False, "error": {"code": code, "message": str(e.detail)}}).encode()
+        except BoardError as e:
+            return (404 if e.code == "not_found" else 403), json.dumps(e.to_dict()).encode()
+        return None
+
+    app.add_middleware(IdempotencyMiddleware, store=board.store, authorize=_replay_refusal)  # T3 F2: innermost
     app.add_middleware(CollapseLeadingSlashes)  # t-67dad8c6aa: `//ui/…` redirects to `/ui/…`, never a bare 404
     # S22: nothing was compressed — an epic page is ~220 KB of JSON refetched on every feed event, the SPA entry
     # ~290 KB; over the tailnet that was the lag. GZip skips text/event-stream (the feed), images and video.
     from starlette.middleware.gzip import GZipMiddleware
-    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
+
+    class _GZipButArtifactBytes(GZipMiddleware):
+        """RC2 (t-e338298d88): an artifact's bytes go out as stored, with Content-Length and Range intact. GZip
+        compressed them (a FileResponse streams in chunks, so minimum_size never applied): the length header
+        fell away and the VS Code chat showed a 34 B notes file as "0 B"."""
+
+        async def __call__(self, scope, receive, send):
+            path = scope.get("path", "") if scope.get("type") == "http" else ""
+            if path.startswith("/v1/artifacts/") and path.endswith("/content"):
+                return await self.app(scope, receive, send)
+            return await super().__call__(scope, receive, send)
+
+    app.add_middleware(_GZipButArtifactBytes, minimum_size=1024, compresslevel=6)
     from . import timing
     if timing.enabled():  # S22: per-request route/ms/bytes to <logs>/timing.jsonl (off by default)
         app.add_middleware(timing.TimingMiddleware)

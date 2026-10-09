@@ -10,8 +10,8 @@ edit, no prose convention, no per-guide model names.
 
 RULES ENFORCED BY THE VALIDATOR (not by convention):
   * EXACT pinned model ids, never aliases (existing MODEL_TIERS doctrine).
-  * Claude effort is capped at MEDIUM fleet-wide (user ruling): an entry
-    asking for high/xhigh is a config ERROR, loudly, at stack start.
+  * Effort is capped at HIGH fleet-wide (owner §6 words, "max effort high"): an entry asking for
+    xhigh/max is a config ERROR, loudly, at stack start.
   * auto_compact must sit BELOW the context window (a planned compact at a
     turn boundary beats an unplanned one mid-work).
   * Every role must resolve to a declared seat; an unknown seat is an error
@@ -32,11 +32,112 @@ from . import settings
 
 _CONFIG_ENV = "EDP_MODELS_CONFIG"
 
-#: The fleet-wide Claude effort cap (user ruling 2026-08-04).
-ALLOWED_EFFORT = ("low", "medium")
-#: Non-Claude seats (a `harness` such as `pi`) may ask for high — the Claude cap is a ruling about
-#: Claude models, not about GPT thinking levels (owner 2026-09-17: "include effort high as well").
-HARNESS_EFFORT = ("low", "medium", "high")
+#: Every effort a seat may be given, lowest first. No seat runs above `high` (owner §6 words "max effort high", epic-0cec8d1c31):
+#: Claude's own xhigh/max levels are never passed.
+EFFORT_LEVELS = ("low", "medium", "high")
+#: What a seat runs at when nothing names an effort; clamped to the model's cap like any other.
+DEFAULT_EFFORT = "medium"
+#: Claude seats and harness seats share one ceiling now (the owner's §6 words, "max effort high", lifted the old Claude-only medium cap).
+ALLOWED_EFFORT = EFFORT_LEVELS
+HARNESS_EFFORT = EFFORT_LEVELS
+
+
+#: Claude Code runs a model's 1M window only when the id carries this suffix; without it the window is ~200K
+#: whatever the catalog row says (les-fc5068b78a), so auto_compact above 200K never fires in time.
+ONE_M_SUFFIX = "[1m]"
+ONE_M_WINDOW = 1_000_000
+CLAUDE_DEFAULT_WINDOW = 200_000
+
+
+def catalog_keys(model: str) -> list[str]:
+    """The catalog keys a launch id may name: itself, then without the `[1m]` the launcher appends (qa
+    m-1b272db80b: `claude-opus-5-5[1m]` is the `claude-opus-5-5` row). A row keyed with the suffix still wins."""
+    if model.lower().endswith(ONE_M_SUFFIX):
+        return [model, model[:-len(ONE_M_SUFFIX)]]
+    return [model]
+
+
+def wants_one_m(model: str | None, row: dict | None) -> bool:
+    """A Claude row whose `context_window` is at least 1M: the launcher appends `[1m]` to its id."""
+    return (isinstance(row, dict) and row.get("harness", "claude") == "claude"
+            and isinstance(row.get("context_window"), int) and row["context_window"] >= ONE_M_WINDOW)
+
+
+def window_problems(models: dict) -> list[dict]:
+    """PURE. What the doctor warns about in a catalog's Claude rows, as {model, code, what, fix}:
+    `compact_above_window` — auto_compact above the window the seat really gets (a row that will not be
+    launched as 1M has Claude's ~200K, whatever its context_window says), and `one_m_without_window` — an id
+    that names `[1m]` on a row whose context_window is under 1M."""
+    out: list[dict] = []
+    for mid, row in (models or {}).items():
+        if not isinstance(row, dict) or row.get("harness", "claude") != "claude":
+            continue
+        window = row.get("context_window") if isinstance(row.get("context_window"), int) else None
+        compact = row.get("auto_compact") if isinstance(row.get("auto_compact"), int) else None
+        named_1m = str(mid).lower().endswith(ONE_M_SUFFIX)
+        if named_1m and (window or 0) < ONE_M_WINDOW:
+            out.append({"model": mid, "code": "one_m_without_window",
+                        "what": f"{mid} asks for the 1M window but its context_window is {window}",
+                        "fix": f"set context_window to {ONE_M_WINDOW} on {mid}, or drop the {ONE_M_SUFFIX} suffix"})
+            continue
+        real = ONE_M_WINDOW if (named_1m or wants_one_m(mid, row)) else CLAUDE_DEFAULT_WINDOW
+        if compact is not None and compact > real:
+            out.append({"model": mid, "code": "compact_above_window",
+                        "what": f"{mid} compacts at {compact} tokens but its real window is {real}, so it hits "
+                                f"the limit before it compacts",
+                        "fix": f"lower auto_compact on {mid} below {real}, or give it a 1M context_window"})
+    return out
+
+
+def effort_cap_of(row: dict | None) -> str:
+    """The highest effort a catalog row (or legacy seat) allows: its `effort_cap`, else `high` for a
+    Pi/Codex row and `medium` for anything else. Unknown or out-of-range caps fall to `medium`."""
+    if not isinstance(row, dict):
+        return DEFAULT_EFFORT
+    cap = str(row.get("effort_cap") or ("high" if row.get("harness") in ("pi", "codex") else DEFAULT_EFFORT))
+    return cap if cap in EFFORT_LEVELS else DEFAULT_EFFORT
+
+
+def clamp_effort(effort: str | None, cap: str) -> tuple[str | None, str | None]:
+    """PURE. (effort, note): `effort` lower-cased; a value outside low/medium/high is dropped (None); one
+    above `cap` is lowered to it with a note. The one clamp the board and the pool both use."""
+    e = (effort or "").strip().lower() or None
+    if e not in EFFORT_LEVELS:
+        return None, None
+    if cap in EFFORT_LEVELS and EFFORT_LEVELS.index(e) > EFFORT_LEVELS.index(cap):
+        return cap, f"effort {e} capped to {cap} (catalog entry cap)"
+    return e, None
+
+
+#: the per-harness env vars that carry an effort level into a codex or Pi seat (S13 F4)
+HARNESS_EFFORT_VARS = ("EDP_SEAT_EFFORT", "EDP_CODEX_EFFORT", "EDP_PI_THINKING")
+_ABOVE_HIGH = ("xhigh", "max")
+
+
+def cap_env_effort(env: dict, cap: str) -> list[str]:
+    """S13 F4: lower every effort var in `env` (HARNESS_EFFORT_VARS) that is above `cap`, in place, whatever set
+    it (the spawn, a harness default, a pass-through env value). A level below the ladder (e.g. `minimal`) is
+    left as is. Returns a note per lowered var."""
+    notes = []
+    for var in HARNESS_EFFORT_VARS:
+        v = str(env.get(var) or "").strip().lower()
+        if not v:
+            continue
+        above = v in _ABOVE_HIGH or (v in EFFORT_LEVELS and cap in EFFORT_LEVELS
+                                     and EFFORT_LEVELS.index(v) > EFFORT_LEVELS.index(cap))
+        if above:
+            env[var] = cap
+            notes.append(f"{var} {v} capped to {cap} (catalog entry cap)")
+    return notes
+
+
+def launch_effort(agent_home: str | os.PathLike | None, model: str | None,
+                  effort: str | None) -> tuple[str, str | None]:
+    """The effort a Claude seat launches at, never above its model's catalog cap: the requested one, else
+    DEFAULT_EFFORT, clamped. (effort, note). An unknown model (no catalog row) is capped at medium."""
+    row = model_entry(agent_home, model) if agent_home and model else None
+    clamped, note = clamp_effort(effort or DEFAULT_EFFORT, effort_cap_of(row))
+    return clamped or DEFAULT_EFFORT, note
 
 
 class SeatsError(ValueError):
@@ -85,12 +186,10 @@ def parse(raw: dict) -> tuple[dict[str, Seat], dict[str, str]]:
                 f"'latest'); remixing later is editing this file.")
         effort = str(row.get("effort", "medium"))
         harness = str(row["harness"]) if row.get("harness") else None
-        allowed = HARNESS_EFFORT if harness else ALLOWED_EFFORT
-        if effort not in allowed:
+        if effort not in EFFORT_LEVELS:
             raise SeatsError(
-                f"seat {name!r}: effort {effort!r} exceeds the fleet-wide "
-                f"MEDIUM cap (user ruling 2026-08-04: higher is waste on "
-                f"Claude models). Allowed: {allowed}.")
+                f"seat {name!r}: effort {effort!r} is above the HIGH cap "
+                f"(the owner's §6 words: no seat runs above high). Allowed: {EFFORT_LEVELS}.")
         cw = int(row.get("context_window", 1_000_000))
         ac = int(row.get("auto_compact", 350_000))
         if ac >= cw:
@@ -154,10 +253,11 @@ def model_entry(agent_home: str | os.PathLike, model: str | None) -> dict | None
         raw = json.loads(f.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    for key in ("models", "seats"):
-        row = (raw.get(key) or {}).get(model)
-        if isinstance(row, dict):
-            return row
+    for mid in catalog_keys(model):
+        for key in ("models", "seats"):
+            row = (raw.get(key) or {}).get(mid)
+            if isinstance(row, dict):
+                return row
     return None
 
 

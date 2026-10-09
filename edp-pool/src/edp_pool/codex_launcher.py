@@ -156,6 +156,10 @@ class CodexSpawner:
         effort = str((extra_env or {}).get("EDP_SEAT_EFFORT") or "").strip().lower()
         if effort in CODEX_EFFORTS:  # the spawn's own effort wins over the seat default
             env["EDP_CODEX_EFFORT"] = effort
+        # S13 F4: the effective effort, whoever set it (spawn, seat default, EDP_CODEX_EFFORT passed through or in
+        # extra_env), never exceeds the catalog cap of the model this launch or resume runs
+        from edp_contracts.seats import cap_env_effort, effort_cap_of
+        cap_env_effort(env, effort_cap_of(entries[0] if entries else {"harness": "codex"}))
         log_path = None
         if self._log_dir:
             Path(self._log_dir).mkdir(parents=True, exist_ok=True)

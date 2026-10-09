@@ -37,7 +37,7 @@ def test_resume_self_is_in_every_role_bundle_and_regenerates_the_boot_from_the_b
     v = out["value"]
     assert v["identity"]["id"] == "engineer.s-1"
     assert "edp8.feed_driver --participant engineer.s-1" in v["monitor_cmd"]
-    assert v["cron"]["expr"] == "*/30 * * * *"
+    assert "cron" not in v and "cron" not in " ".join(v["steps"]).lower()  # S8: the feed driver owns the heartbeat
     assert v["open_asks"][0]["id"] == "m-1"
     assert len(v["steps"]) == 4 and v["steps"][0].startswith("1. Arm")
     assert "1 open ask" in v["steps"][1]

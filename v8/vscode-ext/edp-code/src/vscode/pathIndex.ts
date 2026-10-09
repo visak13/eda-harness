@@ -8,6 +8,7 @@
 import { execFile } from 'node:child_process';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { requireTrust } from './trust';
 import type { PathHit, PathKind } from '../core/chatProtocol';
 import { excluder, findLevel, indexRows, parseLsFilesZ, type Level } from '../core/paths';
 import { gitApi } from './repo';
@@ -21,6 +22,7 @@ type Root = { uri: vscode.Uri; rows: PathHit[]; home: string };
 
 function lsFiles(exe: string, cwd: string): Promise<string> {
   return new Promise((res, rej) => {
+    try { requireTrust(); } catch (e) { rej(e); return; }
     const p = execFile(exe, ['-c', 'core.quotepath=false', 'ls-files', '-z', '--full-name', '--cached', '--others', '--exclude-standard'],
       { cwd, windowsHide: true, maxBuffer: 64 << 20, encoding: 'utf8', timeout: GIT_TIMEOUT_MS },
       (e, out, err) => (e ? rej(new Error((err || e.message).trim().slice(0, 300))) : res(out)));

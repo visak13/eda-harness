@@ -2,7 +2,8 @@
    active row = accent wash + 2px offset shadow; lower group = Find · account (S19: no Usage). */
 .shell { min-height: 100vh; background: var(--bg); color: var(--ink); }
 .sidebar { position: fixed; inset: 0 auto 0 0; width: 192px; background: var(--rail); border-right: 1.5px solid var(--strongline); padding: 22px 12px 16px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
-.brand { display: flex; align-items: center; gap: 10px; font-size: 24px; font-weight: 800; margin: 0 4px 12px; }
+/* S12-ui2 (qa m-da89ef8294 m6): the wordmark and the collapse arrow keep a gap; at 24px "Heronry" ran under the arrow */
+.brand { display: flex; align-items: center; gap: 8px; font-size: 22px; font-weight: 800; margin: 0 0 12px; }
 .brandmark { display: block; flex: none; width: 28px; height: 28px; border-radius: 7px; }
 .nav { display: flex; flex-direction: column; gap: 6px; }
 .navItem, .railBtn {
@@ -39,7 +40,7 @@
 
 /* S17 c-33ffd96baf: rail toggle (full 192 ↔ 64px icon rail). Collapsed, labels leave the visual
    flow but keep their accessible names (clip, not display:none); counts ride the icon corner. */
-.brandText { flex: 1; min-width: 0; }
+.brandText { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .railToggle {
   flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0;
   border: 1.5px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer;
@@ -83,6 +84,8 @@
 .helpFab:hover .helpTip, .helpFab:focus-visible .helpTip { opacity: 1; visibility: visible; }
 .tipKey { margin-left: 6px; font: 11px Consolas, monospace; opacity: 0.8; }
 @media (min-width: 768px) { .main { padding-right: 72px; } }
+/* a phone: the help button scrolls away with the page instead of floating over whatever is under it (the Effort select) */
+@media (max-width: 767px) { .helpFab { position: absolute; } }
 @media (max-width: 767px) {
   .shell { display: flex; flex-direction: column; }
   .mobileBar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); }

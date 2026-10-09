@@ -26,6 +26,7 @@ from edp8.schemas import (
     MessageKind,
     Reason,
     Role,
+    SessionState,
     StatusValue,
     TicketKind,
     Verdict,
@@ -197,11 +198,31 @@ def test_owner_hears_criterion_fail_by_other_not_self(rig):
 
 
 @pytest.mark.parametrize("kind", [EventKind.shell_dead, EventKind.shell_stalled])
-def test_owner_and_architect_hear_dying_shells_scoped(rig, kind):
+def test_architect_hears_dying_shells_scoped_and_owner_does_not(rig, kind):
+    """design-63db8a7d42 F: a pool event goes to the epic's architect (scoped to its epic); the owner is not paged."""
     b, P, I = rig["b"], rig["p"], rig["ids"]
+    _live_architect(rig)
     ev = synth(I["s1"], kind, participant=P["e1e"].id)
-    assert b.relevant(ev, P["owner"]) and b.relevant(ev, P["a1"])
-    assert not b.relevant(ev, P["owner2"]) and not b.relevant(ev, P["a2"])
+    assert b.relevant(ev, P["a1"])
+    assert not b.relevant(ev, P["owner"]) and not b.relevant(ev, P["owner2"]) and not b.relevant(ev, P["a2"])
+
+
+def _live_architect(rig):
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    b.session_upsert(id_="s-a1", participant_id=P["a1"].id, ticket_id=I["e1"], pool_id="p", state=SessionState.alive)
+
+
+@pytest.mark.parametrize("arch_state", [None, SessionState.dead, SessionState.stalled])
+def test_q1_with_no_live_architect_the_owner_gets_a_chat_message_not_the_event(rig, arch_state):
+    """Q1 (architect ruling on s-341902c31f, R4): nobody else can heal it, so the epic's owner is told in plain chat;
+    the shell event itself pages the owner in no case."""
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    if arch_state is not None:
+        b.session_upsert(id_="s-a1", participant_id=P["a1"].id, ticket_id=I["e1"], pool_id="p", state=arch_state)
+    crash = synth(I["s1"], EventKind.shell_dead, participant=P["e1e"].id)
+    assert not b.relevant(crash, P["owner"]) and not b.relevant(crash, P["owner2"])
+    assert b.pool_event_recipient(I["s1"]) == "owner"  # the broker wake goes to the owner
+    assert b.pool_event_recipient(I["s1"], exclude={"owner"}) is None
 
 
 # --------------------------------------------------------------------------- overlap & negatives
@@ -298,14 +319,15 @@ def test_architect_not_paged_for_clean_status(rig, status):
     assert not b.relevant(ev, P["a1"]), f"architect must not be paged for a clean {status} status"
 
 
-def test_clean_shell_dead_pages_neither_owner_nor_architect(rig):
-    """rule 1+2 (v21): a CLEAN self-close (clean=true) wakes nobody; an unclean death still pages
-    both the epic's architect and its human owner."""
+def test_every_shell_dead_reaches_the_architect_and_none_pages_the_owner(rig):
+    """design-63db8a7d42 F: a clean close (closed by owner / self) and a crash both reach the epic's architect,
+    who decides whether to heal; the owner is paged for neither."""
     b, P, I = rig["b"], rig["p"], rig["ids"]
+    _live_architect(rig)
     clean = synth(I["s1"], EventKind.shell_dead, participant=P["e1e"].id, clean=True)
-    assert not b.relevant(clean, P["a1"]) and not b.relevant(clean, P["owner"])
+    assert b.relevant(clean, P["a1"]) and not b.relevant(clean, P["owner"])
     unclean = synth(I["s1"], EventKind.shell_dead, participant=P["e1e"].id)
-    assert b.relevant(unclean, P["a1"]) and b.relevant(unclean, P["owner"])
+    assert b.relevant(unclean, P["a1"]) and not b.relevant(unclean, P["owner"])
 
 
 def test_architect_not_paged_for_passing_criterion_check(rig):

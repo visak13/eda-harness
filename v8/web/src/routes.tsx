@@ -54,8 +54,8 @@ export const appRoutes: RouteObject[] = [
     // t-b2f8859d30: one pathless layout route holds every page, so a page's render error shows PageError in the
     // page's place (inside the shell's Outlet) and the rail keeps working, never the router's full-screen error.
     children: [{ errorElement: <PageError />, children: [
-      // S20 (design-e963c656f5 §4.18): the Needs you page is gone; what waits on you is a trail of dots from the
-      // Epics list (v34: the rail's Waiting on you entry is gone too). Old /me links land on the Epics list.
+      // S20 (design-e963c656f5 §4.18): the decisions page is gone; what waits is a trail of dots from the
+      // Epics list (v34: the rail's waiting entry is gone too). Old /me links land on the Epics list.
       { index: true, element: <RedirectTo to="/epics" /> },
       { path: "me", element: <RedirectTo to="/epics" /> },
       { path: "epics", element: <EpicsPage /> },

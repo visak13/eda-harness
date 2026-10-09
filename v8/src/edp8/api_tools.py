@@ -1,7 +1,8 @@
 """S23 routes behind the framework tools that replaced shell workarounds (report-e517e9e87e coverage gaps):
 
-- `/v1/pains` — query, read, file and resolve over the append-only pain log (edp8.pains); any seat files
-  and reads; resolve is the owner's, the doctor's or an admin's.
+- `/v1/pains` — query, read, file and resolve over the board's pain records (edp8.pains; e0cec S6: one store,
+  the jsonl files are imported); any seat files and reads; resolve is the owner's, the doctor's, an admin's,
+  or an epic's architect for `fixed` with a commit reachable from main.
 - `GET /v1/services/status` — read-only launcher view of the host services (run_state.snapshot) for the
   owner, the architect and the doctor. Mutating service control stays human (edp.ps1 / admin routes).
 - `GET /v1/harvest/cost` — one seat's harvest token cost (edp8.harvest_cost) for qa and the owner.
@@ -42,7 +43,10 @@ class PainIn(BaseModel):
 class PainResolveIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: str
-    by: str = Field(default="", max_length=200)
+    by: str = Field(default="", max_length=200)  # legacy: a commit sha, read as `commit` when that is empty
+    commit: str = Field(default="", max_length=64)
+    ticket_id: str = Field(default="", max_length=64)
+    dup_of: str = Field(default="", max_length=64)
     note: str = Field(default="", max_length=1000)
 
 
@@ -60,27 +64,45 @@ def _role(a: Participant) -> str:
 def tools_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
     r = APIRouter()
 
+    def _synced() -> None:
+        pains.sync(board)  # the repo + installed jsonl stores, mtime-gated; a no-op once imported
+
     @r.get("/v1/pains")
     def pain_query(status: str | None = "open", area: str | None = None, q: str | None = None,
                    a: Participant = Depends(actor)):
-        rows = _pain_call(lambda: pains.query(status=status, area=area, q=q))
+        _synced()
+        rows = _pain_call(lambda: pains.query(board.store, status=status, area=area, q=q))
         return _ok(rows, "pain(action='read', id=...) for one record with its resolution and duplicates")
 
     @r.get("/v1/pains/{pain_id}")
     def pain_read(pain_id: str, a: Participant = Depends(actor)):
-        return _ok(_pain_call(lambda: pains.read(pain_id)))
+        _synced()
+        return _ok(_pain_call(lambda: pains.read(board.store, pain_id)))
 
     @r.post("/v1/pains")
     def pain_file(b: PainIn, a: Participant = Depends(actor)):
-        rec = _pain_call(lambda: pains.file(b.model_dump(), role=_role(a), handle=a.handle))
+        _synced()
+        rec = _pain_call(lambda: pains.file(board.store, b.model_dump(), role=_role(a), handle=a.handle))
         return _ok(rec, "filed; query first next time (pain action=query, q=<words>) and pass dup_of for a repeat")
 
     @r.post("/v1/pains/{pain_id}/resolve")
     def pain_resolve(pain_id: str, b: PainResolveIn, a: Participant = Depends(actor)):
-        if _role(a) not in (Role.owner.value, Role.doctor.value) and not is_admin(a):
-            raise BoardError("forbidden", f"role {_role(a)!r} may not resolve pain records",
-                             "the owner, the doctor or an admin resolves; file a fix note on your ticket instead")
-        return _ok(_pain_call(lambda: pains.resolve(pain_id, b.status, by=b.by or a.handle, note=b.note)))
+        _synced()
+        try:
+            has_epic = bool(board.my_epics(a)) if _role(a) == Role.architect.value else False
+        except BoardError:
+            has_epic = False
+        out = _pain_call(lambda: pains.resolve(
+            board.store, pain_id, b.status, who=a.handle, role=_role(a), admin=is_admin(a), has_epic=has_epic,
+            commit=b.commit or b.by, ticket_id=b.ticket_id, dup_of=b.dup_of, note=b.note))
+        return _ok(out, "the board records who resolved it and the commit, ticket or original it names")
+
+    @r.post("/v1/pains/import")
+    def pain_import(a: Participant = Depends(actor)):
+        if _role(a) not in (Role.owner.value, Role.architect.value, Role.doctor.value) and not is_admin(a):
+            raise BoardError("forbidden", f"role {_role(a)!r} may not re-import the pain files",
+                             "the owner, an architect, the doctor or an admin runs it")
+        return _ok(pains.sync(board, force=True), "the jsonl stores are imported once per id; the board rows win")
 
     @r.get("/v1/services/status")
     def services_status(a: Participant = Depends(actor)):
@@ -103,12 +125,21 @@ def tools_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
         from .library import knowledge_view
         try:
             out = hc.compute(participant_id, since=since, until=until, knowledge=knowledge_view(board))
+        except hc.BadTime as e:
+            raise BoardError("invalid", f"since/until: {e}", "an ISO-8601 time such as 2026-09-24T10:00:00Z, "
+                                                           "or epoch seconds") from e
         except hc.NoLog as e:
             raise BoardError("not_found", str(e), "check the participant id (a seat with no transcript has no cost); "
                                                   "the board searches EDP8_HARVEST_LOG_ROOTS, else the Claude and "
                                                   "codex log roots named here") from e
+        except hc.LogUnreadable as e:
+            raise BoardError("unavailable", str(e), "the pool may be writing it; retry, or run "
+                                                    "scripts/harvest_cost.py on the host") from e
         except LookupError as e:
             raise BoardError("not_found", str(e), "pass since (ISO) when the harvest trigger is not in the log") from e
+        except Exception as e:  # a seat log is untrusted input: a malformed one is an error body, never a bare 500
+            raise BoardError("internal", f"harvest_cost failed on {participant_id}'s log: {e.__class__.__name__}: {e}",
+                             "pass since/until to narrow the window, or run scripts/harvest_cost.py on the host") from e
         return _ok(out)
 
     return r

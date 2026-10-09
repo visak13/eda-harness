@@ -9,6 +9,7 @@ import { Composer } from "./Composer";
 import { MentionInput } from "./MentionInput";
 import { linkifyMessageHtml } from "./Markdown";
 import { RefText } from "./RefText";
+import { MessageText } from "./ArtifactLink";
 
 // C24 (s-5d1b171d57): the $ picker in the composer and in a quote note (board UI), and the chips.
 const EPIC = "epic-52edacd059";
@@ -18,6 +19,17 @@ const tickets = [
   { id: "s-93ddb7fd1a", kind: "story", title: "C23 Quote notes take @mentions", status: "in_review", epic_id: EPIC },
 ];
 let findCalls: string[] = [];
+let artifactCalls: URLSearchParams[] = [];
+let artifactRowsNow: unknown[] = [];
+// the board's one artifact route (S16): this epic's own first (group scope), others after, each naming its epic
+const ART_ROWS = [
+  { id: "art-aaaaaaaaaa", form: "image", title: "alpha-shot.png", uri: "/v1/artifacts/art-aaaaaaaaaa/content", content_type: "image/png",
+    epic_id: EPIC, epic_title: "EDP chat in VS Code", ticket_id: "s-5d1b171d57", created_at: "2026-10-02T01:00:00Z", group: "scope" },
+  { id: "art-bbbbbbbbbb", form: "url", title: "Bravo report page", uri: "https://example.test/bravo", content_type: "",
+    epic_id: "epic-91fcd3b370", epic_title: "Code tab C2 other", ticket_id: "s-0000000009", created_at: "2026-10-02T02:00:00Z", group: "board" },
+  { id: "art-cccccccccc", form: "url", title: "loose link", uri: "https://example.test/loose", content_type: "",
+    epic_id: null, epic_title: null, ticket_id: null, created_at: "2026-10-02T03:00:00Z", group: "board" },
+];
 
 function wrap(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -32,7 +44,14 @@ function typeAt(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
 
 beforeEach(() => {
   findCalls = [];
+  artifactCalls = [];
+  artifactRowsNow = [];
   server.use(
+    http.get("/v1/artifacts/search", ({ request }) => {
+      artifactCalls.push(new URL(request.url).searchParams);
+      return HttpResponse.json({ ok: true, value: artifactRowsNow });
+    }),
+    http.get("/v1/artifacts/:id", ({ params }) => HttpResponse.json({ ok: true, value: { id: params.id, form: "url", uri: "https://example.test/x", note: "", has_content: false } })),
     http.get("/v1/me/people", () => HttpResponse.json({ ok: true, value: [] })),
     http.post("/v1/messages/resolve", () => HttpResponse.json({ ok: true, value: { to: null, wakes: [], plan: [], note: "" } })),
     http.get("/v1/tickets/:id", ({ params }) => HttpResponse.json({ ok: true, value: tickets.find((t) => t.id === params.id) })),
@@ -107,6 +126,51 @@ describe("$ picker in a quote note", () => {
   });
 });
 
+describe("$ picker lists artifacts", () => {
+  it("'$art' lists this epic's artifacts first, then other epics', each row naming its epic; Enter inserts $art-<id> (<title>)", async () => {
+    artifactRowsNow = ART_ROWS;
+    wrap(<Note />);
+    const el = screen.getByTestId("note") as HTMLInputElement;
+    await waitFor(() => {
+      typeAt(el, "see $art");
+      expect(screen.getAllByRole("option").map((r) => r.getAttribute("data-ref"))).toEqual(["art-aaaaaaaaaa", "art-bbbbbbbbbb", "art-cccccccccc"]);
+    });
+    const rows = screen.getAllByRole("option");
+    expect(rows.map((r) => r.getAttribute("data-group"))).toEqual(["scope", "board", "board"]);
+    expect(rows[0].textContent).toContain("artifact $art-aaaaaaaaaa");
+    expect(rows[0].textContent).toContain("alpha-shot.png");
+    expect(rows.map((r) => r.querySelector("[data-testid=ref-epic]")?.textContent)).toEqual([
+      " · EDP chat in VS Code", " · Code tab C2 other", " · no epic"]);
+    expect(rows[1].getAttribute("aria-label")).toContain("in Code tab C2 other");
+    expect(artifactCalls.at(-1)?.get("epic_id")).toBe(EPIC);
+    expect(artifactCalls.at(-1)?.get("q")).toBe("art");
+    fireEvent.keyDown(el, { key: "ArrowDown" });
+    fireEvent.keyDown(el, { key: "Enter" });
+    expect(el.value).toBe("see $art-bbbbbbbbbb (Bravo report page) ");
+  });
+
+  it("a query matching a title or an epic title finds the artifact (the server ranks, the client keeps its order)", async () => {
+    artifactRowsNow = ART_ROWS;
+    wrap(<Note />);
+    const el = screen.getByTestId("note") as HTMLInputElement;
+    await waitFor(() => {
+      typeAt(el, "$Bravo");
+      expect(screen.getAllByRole("option").map((r) => r.getAttribute("data-ref"))).toEqual(["art-bbbbbbbbbb"]);
+    });
+    await waitFor(() => { typeAt(el, "$Code"); expect(screen.getAllByRole("option").map((r) => r.getAttribute("data-ref"))).toContain("art-bbbbbbbbbb"); });
+  });
+
+  it("a failed artifact read leaves the other rows (an empty list, never an error in the picker)", async () => {
+    server.use(http.get("/v1/artifacts/search", () => HttpResponse.json({ ok: false, error: { code: "boom", message: "x" } }, { status: 500 })));
+    wrap(<Note />);
+    const el = screen.getByTestId("note") as HTMLInputElement;
+    await waitFor(() => {
+      typeAt(el, "see $C2");
+      expect(screen.getAllByRole("option").map((r) => r.getAttribute("data-ref"))).toEqual(["s-5d1b171d57", "s-93ddb7fd1a", "s-0000000001", "epic-91fcd3b370"]);
+    });
+  });
+});
+
 describe("$ picker in the composer", () => {
   it("picks a decision; the sent text carries $<id>", async () => {
     let sent: { text?: string } = {};
@@ -145,6 +209,22 @@ function Where() {
 }
 
 describe("$ chips", () => {
+  it("$art-<id> (label) renders as a link to the artifact page in a markdown message and in a plain message", () => {
+    const html = linkifyMessageHtml("<p>proof $art-aaaaaaaaaa (alpha-shot.png) and $art-bbbbbbbbbb; <code>$art-cccccccccc</code></p>");
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const chips = Array.from(doc.querySelectorAll("a.ref-chip"));
+    expect(chips.map((a) => [a.getAttribute("data-ref"), a.getAttribute("data-kind"), a.textContent])).toEqual([
+      ["art-aaaaaaaaaa", "artifact", "artifact · alpha-shot.png"], ["art-bbbbbbbbbb", "artifact", "$art-bbbbbbbbbb"]]);
+    expect(chips.map((a) => a.getAttribute("href"))).toEqual([expect.stringMatching(/\/artifact\/art-aaaaaaaaaa$/), expect.stringMatching(/\/artifact\/art-bbbbbbbbbb$/)]);
+    expect(doc.querySelector("code")?.textContent).toBe("$art-cccccccccc");
+    wrap(<MessageText text="proof $art-aaaaaaaaaa (alpha-shot.png) done" />);
+    const link = screen.getByTestId("artifact-link");
+    expect(link.getAttribute("data-artifact")).toBe("art-aaaaaaaaaa");
+    expect(link.textContent).toBe("artifact · alpha-shot.png");
+    expect(link.getAttribute("href")).toMatch(/\/artifact\/art-aaaaaaaaaa$/);
+    expect(document.body.textContent).not.toContain("$art-");
+  });
+
   it("a message body renders each $<id> as a chip with its target", () => {
     const html = linkifyMessageHtml("<p>see $s-5d1b171d57 (C24 refs), $epic-52edacd059, $design-10b21760d9 and $dec-bf6aab8b73; <code>$s-93ddb7fd1a</code> costs $5</p>");
     const doc = new DOMParser().parseFromString(html, "text/html");

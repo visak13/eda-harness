@@ -3,8 +3,8 @@
 // into src/code-facts.json by scripts/code-facts.mjs; env EDP8_CONTEXT_BUDGET_B; messages addressed to the
 // seat ride first, board._for_you, dec-7581ebda87),
 // context_delta.ContextReader.delta (signed cursor, only what changed), records.recall (up to 8
-// one-line decisions/claims/lessons) and ruleset.assemble_ruleset (layered strategy docs, enforced
-// lines inlined, each doc one index line).
+// one-line decisions/claims/lessons) and the ticket's layered strategy docs, each read head-first
+// (doc_read: page 1 + heading map; S17).
 import React from "react";
 import { interpolate, useCurrentFrame } from "remotion";
 import { C, FONT } from "../theme";
@@ -96,7 +96,7 @@ export const Ch4Context: React.FC = () => {
           );
         })}
         <div style={{ marginTop: 18, marginLeft: 52, opacity: interpolate(frame, [300, 315], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }) }}>
-          <Pill color={C.accent} size={18}>assemble_ruleset → enforced lines + index</Pill>
+          <Pill color={C.accent} size={18}>doc_read → summary + heading map</Pill>
         </div>
       </div>
     </Chapter>

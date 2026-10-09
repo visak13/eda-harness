@@ -39,7 +39,8 @@ export type TicketKind = (typeof TICKET_KINDS)[number];
 export const WORK_TYPES = ["feature", "bug", "rnd", "creative", "review", "knowledge", "chore"] as const;
 export type WorkType = (typeof WORK_TYPES)[number];
 
-export const GATE_KINDS = ["design_signoff", "poc", "demo", "adversarial", "budget", "acceptance", "scope"] as const;
+// 0.10.5 (design-63db8a7d42 row C): the board no longer opens an acceptance gate, so it is not a kind a person can raise or a card to gloss
+export const GATE_KINDS = ["design_signoff", "scope"] as const;
 export type GateKind = (typeof GATE_KINDS)[number];
 
 export const ROLES = [
@@ -49,7 +50,7 @@ export type Role = (typeof ROLES)[number];
 /** Every role the board knows (edp8.schemas.Role), including the ones no picker offers: `expert` (a named
  *  person on one Library topic) and `doctor` (the Help seat). roleIcons.test.ts holds this equal to the
  *  board's enum and renders each one's icon (t-20f0718990). */
-export const BOARD_ROLES = [...ROLES, "expert", "doctor"] as const;
+export const BOARD_ROLES = [...ROLES, "expert", "doctor", "guest"] as const;
 export type BoardRole = (typeof BOARD_ROLES)[number];
 
 export const CHECKS = ["command", "path", "look", "verdict"] as const;
@@ -206,6 +207,8 @@ export interface PersonRow {
  *  presence signal (design §18.3). `null` on a seat that has recorded nothing. */
 export interface SeatStatus {
   text: string;
+  /** S12-ui2: the note rendered by the board's message markdown renderer (absent on an older board). */
+  html?: string;
   status: string | null;
   role: string | null;
   at: ISODateString;
@@ -363,6 +366,11 @@ export interface KnowledgeLesson {
   topic: string;
   text: string;
   status: string;
+  /** Who the lesson reaches: Heronry's own epics (framework) or the epics of one project (absent on an older board). */
+  scope_kind?: "framework" | "project";
+  project?: string;
+  domains?: string[];
+  retired_reason?: string;
   created_by: string;
   created_at: ISODateString;
 }
@@ -425,6 +433,7 @@ export interface ModelMeta {
   harness: string;
   provider?: string;
   effort_cap?: string | null;
+  context_window?: number | null;
 }
 
 export interface ThreadPage {
@@ -441,6 +450,10 @@ export interface EpicPage extends ThreadPage {
   seat_choice?: SeatChoice;
   /** S-ROLES: the model each catalog role of this epic runs on (null = the pool's roles column). */
   role_models?: Record<string, string | null>;
+  /** S7: each role's option list from the epic's `model:<role>=` tags (first = the default). */
+  role_options?: Record<string, { model: string; effort: string | null }[]>;
+  /** S7: each story's `seat:<role>=` picks, `{story_id: {role: {model, effort}}}`. */
+  story_picks?: Record<string, Record<string, { model: string; effort: string | null }>>;
   /** The live resident architect (the architect assignee, else architect.<epic>) and its seat state. */
   architect?: { id: string; state: string | null } | null;
   /** S13: the workflow version the epic is pinned to (from workflow_pins; absent on an older board). */
@@ -519,6 +532,11 @@ export interface DocHtml {
   version: number;
   versions: number[];
   html: string; // sanitised
+  /** S17: legacy docs carry the warning; map = every #..### heading with its section size (chars). */
+  layout?: "legacy" | "summary_first";
+  warning?: string;
+  map?: { h: string; level: number; chars: number }[];
+  total_chars?: number;
   signoff_criterion: { id: string; text: string; ticket_id: string } | null;
   /** Every pending criterion the viewer checks that cites this doc (finding #8); optional for old boards. */
   signoff_criteria?: { id: string; text: string; ticket_id: string; checked_by?: string | null }[];
@@ -669,6 +687,8 @@ export interface TopicFetch {
 export interface TopicPage {
   topic: TopicRow;
   seed_url: string | null;
+  /** hosts the sme may fetch: the board's base hosts plus the seed URL's */
+  allowlist?: string[];
   tags_set_by: { by: string | null; at: string | null } | null;
   docs: TopicDoc[];
   thread: TopicMessage[];
@@ -694,9 +714,12 @@ export interface CodeStatus {
   default_folder: string;
   /** S21: `heronry start code`, the same command on every OS */
   start_command: string;
-  /** S21: a code-server is there to start; when not, install_hint is the official install command for this OS */
+  /** S21: a code-server is there to start; when not, install_hint says what to do (a command for this OS, or on
+   *  Windows x64 that the first start downloads the pinned release itself: S16) */
   installed?: boolean;
   install_hint?: string | null;
+  /** S16: not installed, but `heronry start code` downloads the pinned release (so Start is offered) */
+  downloadable?: boolean;
 }
 
 /** POST /v1/code/session (s-17c13096e5): a one-time, short-lived login token for the code guard,
@@ -706,9 +729,25 @@ export interface CodeSession {
   expires_at: number;
 }
 
-/** GET /v1/code/faq: guides/code-tab-faq.md rendered by the board's sanitised markdown path. */
+/** GET /v1/code/faq: docs/operator/code-tab-faq.md rendered by the board's sanitised markdown path. */
 export interface CodeFaq {
   name: string;
   path: string;
   html: string;
+}
+
+// e0cec S6: the board's one pain store (GET /v1/pains). `commit_url` is the public repo's page for a fixed commit.
+export type PainStatus = "open" | "fixed" | "ticket" | "duplicate" | "invalid";
+export interface PainRow {
+  id: string;
+  ts: string;
+  severity: "low" | "medium" | "high" | string;
+  area: string;
+  role: string;
+  symptom: string;
+  status: PainStatus;
+  fixed_commit?: string;
+  commit_url?: string;
+  ticket_ref?: string;
+  dup_of?: string;
 }

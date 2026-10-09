@@ -1,0 +1,123 @@
+{
+ "must": {
+  "A1-m1": {
+   "v": "present",
+   "why": "Step 2: branches '<type>/A1-<slug>' with type feat; commits '<type>(<scope>): <summary> [A1]'; must_not bans old 'A1: Summary' format"
+  },
+  "A1-m2": {
+   "v": "present",
+   "why": "Step 20: unit tests for all changed behaviour, Postgres integration tests for the endpoint and new table, GatewayFake, 85% changed-line coverage; must_not bans sandbox/real gateway in tests and follow-up-only tests"
+  },
+  "A1-m3": {
+   "v": "present",
+   "why": "Step 21: 'one non-author Ledger Guild approval plus a second approval from a CODEOWNERS ledger owner because refunds.py is under tallyline/ledger/posting/'"
+  },
+  "A1-m4": {
+   "v": "present",
+   "why": "Step 10: integer amount_minor, 'Convert amounts to Money at the schema boundary'; step 13: Money.allocate(); must_not: 'Do not use float or Decimal internally'"
+  },
+  "A1-m5": {
+   "v": "present",
+   "why": "Step 15: 'post exactly one refund_paid journal through LedgerPoster'; must_not bans updating/deleting ledger_entries/ledger_journals and per-line journals"
+  },
+  "A1-m6": {
+   "v": "present",
+   "why": "Steps 13-15: commit before the gateway call, call GatewayClient.refund() outside any transaction with idempotency_key_for(...) from the refund id, then record the outcome in a new transaction; must_not bans random/timestamp keys"
+  },
+  "A1-m7": {
+   "v": "present",
+   "why": "Step 13: 'lock the payment row with SELECT ... FOR UPDATE and re-sum its pending and succeeded refunds. Enforce the captured-amount limit there'; must_not bans checking only before the transaction"
+  },
+  "A1-m8": {
+   "v": "present",
+   "why": "Steps 10-12, 19: /v2/, refunds:write, openapi.yaml with schemas, errors and examples, make contract-tests committed, problem+json with errors.tallyline.example URI and snake_case code, {amount_minor, currency}, Idempotency-Key 400/replay/409"
+  },
+  "A1-m9": {
+   "v": "present",
+   "why": "Step 19: 'Record both public API changes only in docs/api/changes.md under Unreleased, naming v2, each operation ... with entries ending [A1]'"
+  },
+  "A1-m10": {
+   "v": "present",
+   "why": "Steps 3 and 5: make new-migration, the dbmate filename, lock_timeout/statement_timeout first under migrate:up, empty migrate:down, nullable kind, refund_lines with its index, make rehearse-migration, DB engineer sign-off linked in the Links field"
+  },
+  "A1-m11": {
+   "v": "present",
+   "why": "Step 4: migration in its own PR; step 6: 'Release the expand schema to production before any release containing code that uses it'; step 22"
+  },
+  "A1-m12": {
+   "v": "present",
+   "why": "Steps 7-8: separate script in db/backfills/ named after the migration, at most 10,000 rows per batch with a commit per batch, twice-run test, resumable, run after the migration is live and completed before dependent code is released"
+  },
+  "A1-m13": {
+   "v": "present",
+   "why": "Steps 9, 10, 24: flagpole create before merge, off in production, A1 in the description, 404 when off, cleanup ticket opened with the PR, removal 60 days after fully on"
+  },
+  "A1-m14": {
+   "v": "present",
+   "why": "Steps 17-18: emit_event for the three events with schemas in tallyline/common/events/schemas/, customer_id plus ids in logs, counter labelled only by outcome and currency, panel in ops/dashboards/, >1%/10 min alert in ops/alerts/"
+  },
+  "A1-m15": {
+   "v": "present",
+   "why": "Steps 16 and 19: GET gains kind; openapi.yaml updated 'for the new POST and changed GET', contract tests regenerated, both changes recorded in changes.md"
+  },
+  "A1-m16": {
+   "v": "present",
+   "why": "Step 12 defines 409 payment_not_refundable, 422 refund_currency_mismatch and 422 refund_amount_invalid; step 10 gives the closed reason list; currency mismatch is enforced"
+  },
+  "A1-m17": {
+   "v": "present",
+   "why": "Step 13: re-sum pending+succeeded, insert pending refund with kind full/partial rule and refund_lines; step 15: 'on failure, mark it failed with the gateway reason code'"
+  },
+  "A1-m18": {
+   "v": "present",
+   "why": "Step 9: flagpole create with owner set to the Ledger Guild; step 23: 'Tell the guild channel when enabling it'"
+  }
+ },
+ "must_not": {
+  "A1-n1": {
+   "v": "ok",
+   "why": "Must_not: 'Do not duplicate A1's public API change entries in CHANGELOG.md'"
+  },
+  "A1-n2": {
+   "v": "ok",
+   "why": "Step 3 leaves migrate:down empty; must_not bans Flyway V/U and reverse SQL"
+  },
+  "A1-n3": {
+   "v": "ok",
+   "why": "Must_not: 'Do not ... release them together behind an off flag'"
+  },
+  "A1-n4": {
+   "v": "ok",
+   "why": "Must_not: 'Do not write business events as EVENT: INFO lines'"
+  },
+  "A1-n5": {
+   "v": "ok",
+   "why": "Must_not bans date/header-based versioning and changes to /v1/"
+  },
+  "A1-n6": {
+   "v": "ok",
+   "why": "Must_not: 'Do not run or require the retired QA guild release checklist/sign-off'"
+  },
+  "A1-n7": {
+   "v": "ok",
+   "why": "Step 17: 'Log gateway status/reason only'; must_not bans raw gateway payloads and request bodies"
+  }
+ },
+ "order": {
+  "A1-o1": {
+   "v": "kept",
+   "why": "Step 5 gets the sign-off; step 6: 'release-captain approval after rehearsal sign-off'"
+  },
+  "A1-o2": {
+   "v": "kept",
+   "why": "Steps 6 and 8 put the migration live and the backfill complete before step 22 releases the feature code"
+  },
+  "A1-o3": {
+   "v": "kept",
+   "why": "Step 23: 'Verify the dashboard and alert are merged and live, then enable tallyline-refunds-partial'"
+  }
+ },
+ "extras": [
+  "422 refund_exceeds_captured_amount when the requested amount exceeds the remaining amount (step 12 / A1-c2 check) \u2014 not among the key's defined error outcomes"
+ ]
+}

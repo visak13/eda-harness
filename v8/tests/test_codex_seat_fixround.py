@@ -28,7 +28,7 @@ from edp8.codex_seat.tools import CRON_EXPIRE_MS, Clock, Delivery, SeatTools, wr
 V8 = Path(__file__).resolve().parents[1]
 HERE = Path(__file__).resolve().parent / "codex_seat"
 FAKE = HERE / "fake_app_server.py"
-DESC = V8 / "guides" / "harness-parity" / "descriptions.ours.json"
+DESC = V8 / "src" / "edp8" / "codex_seat" / "descriptions.ours.json"
 REAL_CODEX = shutil.which("codex")
 
 

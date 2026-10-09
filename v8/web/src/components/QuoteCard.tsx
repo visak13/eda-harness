@@ -1,6 +1,9 @@
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import type { Quote } from "../api/types";
 import { getMessage } from "../api/endpoints";
+import { markRequirement } from "../api/requirements";
 import { CodeCard } from "./CodeCard";
 import { Icon } from "./Icon";
 import { MentionInput } from "./MentionInput";
@@ -40,6 +43,52 @@ export function scrollToMessage(id: string): boolean {
   el.setAttribute("data-flash", "1");
   setTimeout(() => el.removeAttribute("data-flash"), 2000);
   return true;
+}
+
+/** s-aa76c83998 (owner m-45541e67b1): the quote card's second button. It sends no message: it records the quoted span
+ *  (the message id and its character range) as a requirement of the epic the message sits on. Owners and guests both. */
+export interface MarkSpan { messageId: string; charStart?: number | null; charEnd?: number | null; text?: string }
+
+/** The Mark-as-requirement button. `resolve` yields the span to record (async, so the selection popup can locate it first). */
+export function MarkButton({ resolve, testid = "quote-mark-requirement", className, onError, onDone }:
+  { resolve: () => Promise<MarkSpan | { error: string }>; testid?: string; className?: string;
+    /** The host shows the failure itself (the selection popover's single error line); the button then renders none. */
+    onError?: (message: string) => void;
+    /** Called once the requirement is recorded: the selection popover closes and says so in a toast (qa fail 8). */
+    onDone?: () => void }): React.JSX.Element {
+  const qc = useQueryClient();
+  const [state, setState] = useState<"idle" | "busy" | "done" | "error">("idle");
+  const [error, setError] = useState("");
+  const fail = (message: string) => { setState("error"); setError(message); onError?.(message || "Could not mark it"); };
+  const mark = () => {
+    setState("busy");
+    setError("");
+    onError?.("");
+    void resolve()
+      .then((s) => {
+        if ("error" in s) { fail(s.error); return undefined; }
+        return markRequirement(s).then((r) => { setState("done"); void qc.invalidateQueries({ queryKey: ["epic", r.epic, "requirements"] }); onDone?.(); });
+      })
+      .catch((e: Error) => fail(e.message));
+  };
+  return (
+    <>
+      <button type="button" className={className ?? styles.mark} data-testid={testid} onClick={mark}
+        disabled={state === "busy" || state === "done"} aria-live="polite">
+        {state === "done" ? "Marked as requirement" : state === "busy" ? "Marking…" : "Mark as requirement"}
+      </button>
+      {state === "error" && !onError ? <span className={styles.markError} role="alert" data-testid="quote-mark-error">{error || "Could not mark it"}</span> : null}
+    </>
+  );
+}
+
+export function spanOf(q: { id?: string | null; locator?: object; text?: string | null }): MarkSpan {
+  return { messageId: q.id ?? "", charStart: (q.locator as { char_start?: number | null } | undefined)?.char_start, charEnd: (q.locator as { char_end?: number | null } | undefined)?.char_end, text: q.text ?? undefined };
+}
+
+function MarkRequirement({ q }: { q: Quote }): React.JSX.Element | null {
+  if (q.source !== "message" || !q.id) return null;
+  return <MarkButton resolve={() => Promise.resolve(spanOf(q))} />;
 }
 
 export function QuoteCard({ q }: { q: Quote }): React.JSX.Element {
@@ -83,7 +132,7 @@ export function QuoteCard({ q }: { q: Quote }): React.JSX.Element {
   return (
     <figure className={styles.card} data-testid="quote-card" data-source={q.source}>
       <blockquote className={styles.passage} data-testid="quote-passage" title={q.text}>{displayPassage(q.text)}</blockquote>
-      <figcaption className={styles.foot}>{link}</figcaption>
+      <figcaption className={styles.foot}>{link}<MarkRequirement q={q} /></figcaption>
       {note}
     </figure>
   );
@@ -107,6 +156,7 @@ export function QuoteChips({ ticketId, disabled, invalid }: { ticketId: string; 
               data-testid="quote-chip-remove" onClick={() => quoteTray.remove(ticketId, r.key)}><Icon name="close" size={16} /></button>
           </div>
           <p className={styles.chipText} data-testid="quote-chip-text">{clip(displayPassage(r.quote.text), 160)}</p>
+          {r.quote.source === "message" ? <MarkButton testid="quote-chip-mark" resolve={() => Promise.resolve(spanOf(r.quote))} /> : null}
           <MentionInput className={styles.chipNote} value={r.quote.note ?? ""} maxLength={2000} disabled={disabled}
             placeholder="Note (optional). @ to notify someone" aria-label={`Note on quote ${i + 1}`} data-testid="quote-chip-note"
             onValue={(v) => quoteTray.setNote(ticketId, r.key, v)} />

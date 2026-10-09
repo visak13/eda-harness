@@ -1,0 +1,2 @@
+exit 0
+toast raised: Heronry Desktop: Raised by `heronry notify-test` from the command line.

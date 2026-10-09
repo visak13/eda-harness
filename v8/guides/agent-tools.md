@@ -1,66 +1,22 @@
 # Agent tool workflows
 
-Discover names with `describe_objects()`; `describe(type=...)` remains compatible. Discovery
-links schemas, relationships and skills rather than embedding their manuals. `describe('enums')`
-lists fixed domains. IDs, scope names, tags, models and free text stay dynamic.
+`describe_objects()` lists object names; `describe(<type>)` gives one; `describe('enums')` lists the fixed vocabularies. IDs, tags, models and free text are never enums.
 
-For documents: doc_create → link_create → doc_read → doc_edit(id, expected_version, edits) (architect/engineer/qa/adversary only).
-Every old_text is matched uniquely against the ORIGINAL current body; overlaps or missing /
-ambiguous matches and stale versions write nothing. One success creates one version and a
-compact receipt. doc_update returns a receipt too (compact=false: the doc). Every write tool
-(doc_create, message_send, ticket_create/update, criterion_create, record_*, topic_propose) echoes a
-body over 240 chars clipped, with `echo.bytes` and `echo.read`, the exact call that returns it whole. Request
-`doc_read(limit=8192)` for bounded character ranges; follow the returned continuation exactly,
-including version. Section is a unique exact Markdown heading line, offsets section-relative.
-Without range arguments doc_read keeps the old full-body default. Related skills: methodology,
-verify, handoff.
+## Docs
+doc_create → link_create → doc_read → doc_edit(id, expected_version, edits) (architect/engineer/qa/adversary only). Each `old_text` must match the ORIGINAL body exactly once; an overlap, a miss, an ambiguity or a stale version writes nothing. One success is one new version. doc_update also returns a receipt (`compact=false` returns the doc). Every write tool echoes a body over 240 chars clipped, with `echo.bytes` and `echo.read`, the exact call that returns it whole. `doc_read(limit=8192)` reads a range: follow the returned continuation exactly, version included; `section` is a unique Markdown heading line and offsets are relative to it. Without range arguments doc_read returns the whole body.
 
-For files (architect/engineer/adversary only): artifact_upload(path, note) → message_send(artifacts=[id], ...). Upload is staged
-until the message finalizes it. The caller owns the upload; existing MIME sniffing/25 MB/auth
-rules remain. Never paste image base64 into a model tool argument. Related skill: demo.
-MCP artifact_upload refuses (`unavailable`: HTTP uploads disabled or the request is not local)? Say so
-on your ticket thread (`message_send(kind='deviation', to='architect')`) with the path — never curl the board with a token
-and never a `workspace:` artifact_create ref (the board holds no bytes for one).
-(engineer/qa/adversary only) `artifact_read(id)` returns the file too: an image as an image block, text inline 6 KB at a time (`offset=next_offset`).
+## Files
+artifact_upload(path, note) stages a file; message_send(artifacts=[id]) finalizes it (architect/engineer/adversary only). If artifact_upload answers `unavailable`, post `message_send(kind='deviation', to='architect')` with the path: never curl the board with a token, never a `workspace:` artifact_create ref (the board holds no bytes for one). Uploads go through artifact_upload only; no `artifact_id` back means it is not attached, so retry before claiming it.
+(engineer/qa/adversary only) `artifact_read(id)` returns an image as an image block and text 6 KB at a time (`offset=next_offset`). Never paste image base64 into an argument.
 
 ## Retrying a create
-Every create tool (ticket_create, doc_create, artifact_create, criterion_create, message_send, record_decision,
-record_claim, record_lesson, topic_propose, propose_fix) takes an optional `idempotency_key`. Retrying with the
-same key and args returns the FIRST result (`value.replay: true`, same id) for 24 h; the board keeps the key, so
-it holds across an MCP-proxy restart. The same key with different args is a `conflict`. Without a key, an
-identical create by the same seat within 10 minutes also replays, but that window resets when the proxy
-restarts. Pass a key whenever you retry after a timeout; pass a new key to make a deliberate twin.
+ticket_create, doc_create, artifact_create, criterion_create, message_send, record_decision, record_claim, record_lesson, topic_propose and propose_fix take an optional `idempotency_key`. The same key and args return the FIRST result (`value.replay: true`, same id) for 24 h; the same key with different args is a `conflict`. Without a key an identical create by the same seat within 10 minutes also replays, but that window resets when the MCP proxy restarts. Pass a key whenever you retry after a timeout; a new key makes a deliberate twin.
 
-## Explicit review handoff
-Evidence refs may describe incomplete or failed work. Attaching them, editing a doc, or posting
-a status/note never moves ready/in_progress work into review. After verification, the assignee
-deliberately calls `ticket_update(status='in_review')`; all criteria still need evidence. The
-transition remains permission-checked/audited. Passing checker verdicts after this handoff still complete work automatically, and
-parent/dependency/gate/acceptance/single-QA automation remains active. Returning work to
-in_progress requires a new explicit handoff even when old evidence refs remain.
+## Review handoff
+Attaching evidence, editing a doc or posting a status never moves work to review. After you verify, call `ticket_update(status='in_review')`; every criterion needs evidence. Returning work to in_progress needs a new explicit hand-off even when old evidence refs remain.
 
-## Transport matrix
-- Pi extension: local interception uses per-call trusted ctx.cwd and the installed Python helper;
-  bounded multipart directly to the board with seat credentials. No proxy path reads.
-- Seat-local stdio MCP: operator explicitly sets EDP8_UPLOAD_ROOT; same handle-verified boundary.
-- Shared HTTP MCP: default typed unavailable. Operator may explicitly enable the single-host
-  authenticated policy in `guides/http-upload-policy.md`; it supports Claude HTTP clients without
-  a per-seat MCP process. No root inferred from proxy cwd or caller-provided headers. Remote or
-  proxied deployments remain unsupported and fail closed.
-
-Activation requires owner-coordinated board/MCP deployment and new/reloaded Pi sessions. This
-code does not reload services, edit live crons or change active CLI configuration. Old clients
-remain compatible. Rollback scoped tool/adapter code together; existing doc versions and
-artifact records stay readable. A lost upload response may leave a staged file; do not blindly
-claim attachment success (existing staging sweep handles abandoned uploads).
-
-## Fixed-domain audit
-Tool enums: roles; ticket kind/work type/status; criterion check/checker/verdict; doc type;
-link relation; message kind; status result; gate; artifact form;
-spawn effort (low/medium/high), mode (headless/monitor), session state. Boolean switches and
-bounded numeric ranges remain their native schema types. No fixed string domain remains
-in single-choice arguments. describe type is an extensible object/enum registry name; get_guide
-name is a file-backed registry. ticket_read include and find types are legacy comma-separated
-projections, not single choices: retaining their string contracts avoids breaking existing
-clients. Arbitrary IDs, URIs, model registry names, scope, text, tags, recipients, filters and
-paths must never be narrowed to fabricated enums.
+## Feed lines
+`subscribe()` gives one NDJSON line per item; no line means wait on the monitor, never poll harder.
+- `{"event": {subject_id, kind, data}}`: `status_changed`, `assigned`, `doc_updated` are board state (act only if they make work ready for you); `gate_opened` is a human decision (answer if you are the owner, else hold); `gate_answered` means proceed; `shell_dead` / `shell_stalled` means a child session needs `resume()` or `reap()` (owner/architect only).
+- `{"message": {ticket_id, to, kind, text, reply_to}}`: `question`, `steer`, `deviation`, `finding` need a reply on the same thread; `answer`, `status`, `note` need none.
+- `{"heartbeat": {reason, changes, ticket, next}}`: `changes` → `context_delta(cursor=…)`; `resync` → `context()`; `liveness` (doing seats with an in_progress ticket only) → resume the next unbuilt item of your plan. A quiet tick prints nothing.

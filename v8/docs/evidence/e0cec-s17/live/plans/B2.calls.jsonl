@@ -1,0 +1,27 @@
+{"t": 1790991641.4159853, "tool": "ticket_read", "args": {"ticket_id": "s-3a9fa6392c"}, "chars": 5815}
+{"t": 1790991648.7338455, "tool": "doc_read", "args": {"id": "design-807827e39a"}, "chars": 11188}
+{"t": 1790991648.7537413, "tool": "doc_read", "args": {"id": "strategyll-0b4d658fc0"}, "chars": 9497}
+{"t": 1790991648.779111, "tool": "doc_read", "args": {"id": "strategyll-2452733595"}, "chars": 8982}
+{"t": 1790991648.8048215, "tool": "doc_read", "args": {"id": "strategyll-8ed6eb39b8"}, "chars": 9013}
+{"t": 1790991648.8332453, "tool": "doc_read", "args": {"id": "strategyll-a1ebb292cb"}, "chars": 15825}
+{"t": 1790991648.8777215, "tool": "ticket_read", "args": {"ticket_id": "s-3a9fa6392c", "include": "chain,criteria,docs,children,blockers,gates,thread,links"}, "chars": 6840}
+{"t": 1790991655.8016863, "tool": "doc_read", "args": {"id": "strategyll-0b4d658fc0"}, "chars": 9497}
+{"t": 1790991655.821668, "tool": "doc_read", "args": {"id": "strategyll-2452733595"}, "chars": 8982}
+{"t": 1790991655.840257, "tool": "doc_read", "args": {"id": "strategyll-8ed6eb39b8"}, "chars": 9013}
+{"t": 1790991655.8627126, "tool": "doc_read", "args": {"id": "strategyll-a1ebb292cb"}, "chars": 15825}
+{"t": 1790991662.8160753, "tool": "doc_read", "args": {"id": "design-807827e39a", "version": 1, "offset": 8174, "limit": 10000}, "chars": 9549}
+{"t": 1790991662.8384144, "tool": "doc_read", "args": {"id": "strategyll-0b4d658fc0", "version": 1, "offset": 5400, "limit": 12000}, "chars": 11294}
+{"t": 1790991662.8611646, "tool": "doc_read", "args": {"id": "strategyll-2452733595", "version": 1, "offset": 4300, "limit": 10000}, "chars": 9082}
+{"t": 1790991662.8853686, "tool": "doc_read", "args": {"id": "strategyll-8ed6eb39b8", "version": 1, "offset": 4200, "limit": 10000}, "chars": 9104}
+{"t": 1790991668.0762603, "tool": "doc_read", "args": {"id": "strategyll-a1ebb292cb", "version": 1, "offset": 0, "limit": 16000}, "chars": 16411}
+{"t": 1790991668.096904, "tool": "doc_read", "args": {"id": "strategyll-a1ebb292cb", "version": 1, "offset": 16000, "limit": 16000}, "chars": 16560}
+{"t": 1790991676.214325, "tool": "doc_read", "args": {"id": "strategyll-a1ebb292cb", "version": 1, "offset": 32000, "limit": 17000}, "chars": 17582}
+{"t": 1790991676.268513, "tool": "find", "args": {"query": "process scope schema migration security secrets", "k": 10, "types": "doc"}, "chars": 2234}
+{"t": 1790991683.7842813, "tool": "doc_read", "args": {"id": "strategyll-a1ebb292cb", "version": 1, "offset": 49000, "limit": 17000}, "chars": 17580}
+{"t": 1790991683.8038952, "tool": "doc_read", "args": {"id": "strategyll-fc8a945fbd", "section": "## 1. Scope and precedence"}, "chars": 731}
+{"t": 1790991683.8204741, "tool": "doc_read", "args": {"id": "strategyll-abd22b982c", "section": "## 1. Scope"}, "chars": 221}
+{"t": 1790991688.9498084, "tool": "doc_read", "args": {"id": "strategyll-a1ebb292cb", "version": 1, "offset": 66000, "limit": 17000}, "chars": 16111}
+{"t": 1790991688.9688797, "tool": "doc_read", "args": {"id": "strategyll-abd22b982c"}, "chars": 9350}
+{"t": 1790991695.0305834, "tool": "find", "args": {"query": "B2 field merge process exception amendment", "k": 30}, "chars": 3244}
+{"t": 1790991695.048458, "tool": "ticket_read", "args": {"ticket_id": "epic-412d751881", "include": "chain,docs,thread,links"}, "chars": 989}
+{"t": 1790991700.1526508, "tool": "doc_read", "args": {"id": "strategyll-fc8a945fbd", "section": "## 6. Security controls and feature flags"}, "chars": 1668}

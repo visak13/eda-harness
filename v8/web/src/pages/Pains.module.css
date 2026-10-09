@@ -1,0 +1,55 @@
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.count {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 8px 12px 8px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
+.table th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.symptom {
+  max-width: 520px;
+}
+
+.sev {
+  text-transform: capitalize;
+}
+
+.ref a,
+.ref code {
+  font-family: var(--mono, Consolas, monospace);
+  font-size: 13px;
+}
+/* qa m11: a commit or ticket ref reads as a link (the app's link styling); a commit with no URL yet stays muted */
+.ref a {
+  color: var(--accentink);
+  text-decoration: underline;
+}
+.ref code {
+  color: var(--muted);
+}

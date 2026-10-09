@@ -1,0 +1,13 @@
+   fleet before: board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+PASS  pre-check: every record in <repo>\v8\.data\s2-spike\home\.run names a private (or dead) pid
+   ports board=55585 pool=55588 mcp=55586 broker=55589; home <repo>\v8\.data\s2-spike\home
+== 08:51:36 clean: stop, uninstall the spike product
+   private pids: 22920:heronry.exe 13148:heronry.exe 32964:heronry.exe 20256:heronry.exe 29360:OpenConsole.exe 5832:cmd.exe 15596:heronry.exe 36028:python.exe 11272:python.exe
+   private pids left: 0
+   msiexec /x {5512910A-7FDC-475F-BAE7-32A6C5FDF4D6} exit 0
+PASS  no spike product installed
+PASS  no process runs from the private folders (0)
+   fleet after:  board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+PASS  fleet pids unchanged
+elapsed 80s
+RESULT: all checks passed

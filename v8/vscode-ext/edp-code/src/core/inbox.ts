@@ -1,6 +1,6 @@
-// The Inbox tab's data (C15 s-e14d316891; design-10b21760d9 §14.2, §14.4). The board already derives what
-// waits on the viewer in `GET /v1/me/decisions` (sign-offs they must rule, questions in their inbox, open
-// gates they can answer); this module keeps only the picked scope's rows (owner m-db09472a68: every tab is
+// The Inbox tab's data (C15 s-e14d316891; design-10b21760d9 §14.2, §14.4). The board lists what waits on the
+// viewer in `GET /v1/inbox` (the asks addressed to them; s-aa76c83998 retired /v1/me/decisions, so sign-offs and
+// gates no longer arrive as rows); this module keeps only the picked scope's rows (owner m-db09472a68: every tab is
 // scoped, no all-epics view) and shapes them for the view. The board lists only rows the viewer may act on,
 // so a listed row is a row with write controls; the server enforces every write regardless.
 // Pure: no vscode import. The host resolves every write from its own last list, by row key, never from a
@@ -12,7 +12,7 @@ export const INBOX_TEXT_MAX = 16_384;
 export const VERDICTS = ['pass', 'fail'] as const;
 export type InboxVerdict = (typeof VERDICTS)[number];
 
-// -- the board's rows (views.decisions_for), only the fields read here -----------------------------------
+// -- the board's rows (board.inbox rows), only the fields read here -----------------------------------
 export type BoardSignoff = {
   criterion: { id: string; text: string; check?: string; checked_by?: string | null; verdict?: string; evidence_ref: string | null; evidence_version?: number | null };
   ticket: { id: string; title: string; epic_id?: string; epic_title?: string; assignee: string | null; quick?: boolean };
@@ -22,6 +22,8 @@ export type BoardSignoff = {
 export type BoardQuestion = {
   id: string; ticket_id: string; created_by: string; created_at?: string; to?: string | null; kind: string; text: string;
   why?: string; asker?: { type?: string; role?: string; seat_state?: string | null; note?: string };
+  /** what GET /v1/inbox says of the sender on the row itself (qa 0.10.8: the card read "owner unknown") */
+  from_type?: string; from_role?: string;
 };
 export type BoardGate = { event_id?: string; ticket_id: string; gate: string; by?: string | null; note?: string | null; opened_at?: string; epic?: string };
 export type DecisionsHome = { signoffs?: BoardSignoff[]; questions?: BoardQuestion[]; gates?: BoardGate[] };
@@ -53,7 +55,7 @@ export type InboxItem = InboxQuestion | InboxSignoff | InboxGate;
 export type InboxState = { scope: string; items: InboxItem[]; loading: boolean; error: string | null };
 
 /** An asker whose shell has closed cannot receive the answer: not an item that waits on a human act (the
- *  board UI's Needs you rule, design §18.2); it stays readable on the thread. */
+ *  board's own rule, design §18.2); it stays readable on the thread. */
 const GONE = new Set(['dead', 'reaped', 'closed', 'done']);
 
 export const questionKey = (id: string) => `q:${id}`;
@@ -90,7 +92,7 @@ export function scopeInbox(home: DecisionsHome | null | undefined, scope: Readon
     if (!q || typeof q.id !== 'string' || typeof q.ticket_id !== 'string' || !scope.has(q.ticket_id)) continue;
     if (GONE.has(q.asker?.seat_state ?? '')) continue;
     add({ type: 'question', key: questionKey(q.id), id: q.id, ticketId: q.ticket_id, ticketTitle: titles.get(q.ticket_id) ?? null,
-      by: String(q.created_by), byHuman: q.asker?.type === 'human', byRole: str(q.asker?.role) ?? 'unknown', kind: String(q.kind ?? 'question'),
+      by: String(q.created_by), byHuman: (q.asker?.type ?? q.from_type) === 'human', byRole: str(q.asker?.role) ?? str(q.from_role) ?? 'unknown', kind: String(q.kind ?? 'question'),
       text: String(q.text ?? ''), at: str(q.created_at), why: str(q.why), note: str(q.asker?.note) });
   }
   return out;
@@ -104,7 +106,7 @@ export function inboxBadge(inbox: InboxState | null | undefined): { text: string
 }
 
 // -- the three writes, built from the host's own row --------------------------------------------------------
-/** A question's reply: an answer to the asker, threaded under the question (the board's Needs you reply). */
+/** A question's reply: an answer to the asker, threaded under the question (the board's reply). */
 export const answerBody = (q: InboxQuestion, text: string) =>
   ({ ticket_id: q.ticketId, to: q.by, kind: 'answer', text, reply_to: q.id });
 

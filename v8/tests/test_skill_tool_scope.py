@@ -111,7 +111,7 @@ def test_the_scan_sees_calls_scopes_and_role_limits():
     # naming them for those roles must be caught.
     have = {r: {t.name for t in tools_for_role(r)} for r in SEAT_ROLES}
     assert "artifact_create" not in have["qa"]
-    assert "find" not in have["sme"]
+    assert "ticket_create" not in have["sme"]  # e0cec S6: the sme card requires `find`, so it is no longer a gap
     assert "gates" not in have["engineer"]
     # Every skill a card lists exists, so no skill silently falls out of the scan.
     for skill in _card_skills():
@@ -119,3 +119,28 @@ def test_the_scan_sees_calls_scopes_and_role_limits():
     assert _narrow("`inbox()` (not architect)", set(SEAT_ROLES)) == set(SEAT_ROLES) - {"architect"}
     assert "owner" not in SEAT_ROLES  # the owner is a person: no seat, no card
     assert _CALL.findall("manual `f.close()` or x.close() calls") == []
+
+
+def test_every_skill_a_tool_names_is_bound_on_every_card_holding_that_tool():
+    """astra F4 (architect m-bbd09fc118): a tool's own description that points at a /skill is a binding the seat must
+    have, so every card of every role whose bundle holds that tool lists the skill on its SKILLS line, per card
+    (engineer-quick.md is checked on its own). The SKILL.md file exists for each one."""
+    gaps = []
+    for role, card in _cards():
+        line = next((l for l in card.read_text(encoding="utf-8").splitlines() if l.startswith("**SKILLS**")), "")
+        bound = set(re.findall(r"/([a-z-]+)", line))
+        for tool in tools_for_role(role):
+            for skill in re.findall(r"(?<![\w/])/([a-z][a-z-]+)\b", tool.description):
+                assert (V8 / ".claude" / "skills" / skill / "SKILL.md").is_file(), (tool.name, skill)
+                if skill not in bound:
+                    gaps.append(f"{card.name}: {tool.name} names /{skill}")
+    assert not gaps, gaps
+
+
+def test_describe_skills_are_an_index_and_say_so():
+    """astra F5 ruling: describe's object-level skills are a discovery index, not a per-role binding."""
+    from edp8.bundles import _links_for
+    d = ALL_TOOLS["describe"]
+    out = _links_for("ticket")  # what describe(ticket) and describe(<local object>) merge into their value
+    assert "skills" not in out and out["related_skills"] == ["/ticket"]
+    assert "related_skills index" in d.description and "SKILLS line binds" in d.description

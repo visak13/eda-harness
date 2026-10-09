@@ -61,7 +61,7 @@ def test_every_status_gate_and_move_in_the_skill_exists_in_the_standard_workflow
 def test_ticket_skill_covers_both_a_story_and_a_standalone_quick_ticket():
     text = SKILLS["ticket"].read_text(encoding="utf-8")
     assert "Story inside an epic" in text and "Standalone quick ticket" in text
-    assert "gate_open(design_signoff)" in text and "checker_for" in text
+    assert "`engineer-quick.md`: plan note" in text and "checker_for" in text  # N: the quick design gate is gone
 
 
 @pytest.mark.parametrize("card,skill", [("architect", "/epic"), ("engineer", "/ticket"),

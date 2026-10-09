@@ -1,0 +1,34 @@
+   fleet before: board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+PASS  pre-check: every record in <repo>\v8\.data\s2-spike\home\.run names a private (or dead) pid
+   ports board=55585 pool=55588 mcp=55586 broker=55589; home <repo>\v8\.data\s2-spike\home
+== 09:22:31 c-1ccf55aec4: a private stop only stops the private install, while the fleet runs
+   health 0.9.1; seat engineer.s2-drill row active pid 35196 liveness alive
+PASS  the private stack is running (9 processes under the private folders)
+PASS  the fleet is running (board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up)
+   | heronry stop: refused: EDP_HOME is <repo>\v8\.data\s2-spike\home but EDP8_RUN_DIR=<repo>\v8\.data\s2-spike\decoy-run points outside it; this would act on another home's services. Unset those variables; nothing changed
+PASS  stop with EDP8_RUN_DIR outside EDP_HOME is refused (exit 2)
+PASS  the process the foreign run dir named is still alive
+PASS  the private stack was not touched by the refused stop
+   | pool stop takes these 1 seat(s) offline:
+   |   - engineer.s2-drill (pid 35196, active)
+   | supervisor stopped
+   | bridge     not running
+   | mcp        stopped
+   | pool       stopped
+   | broker     stopped
+   | board      stopped
+PASS  the private stop --force exits 0
+PASS  no private service is left (0)
+   board      started          pid 2692  http://127.0.0.1:55585
+   broker     started          pid 35632  http://127.0.0.1:55589
+   pool       started          pid 31344  http://127.0.0.1:55588
+   mcp        started          pid 13628  http://127.0.0.1:55586
+   bridge     skipped          (no slack map configured)
+   supervisor started          pid 29632
+   setup      first run: finish setup at http://127.0.0.1:55585/ui/setup?code=<redacted>  (the link signs you in once, within 24 h)
+   spawned stub seat engineer.s2-drill : {"session_id":"engineer:abdac1b1-3c61-4d1e-ac2a-dc06f84a9c3f"}
+   health 0.9.1; seat engineer.s2-drill row active pid 34500 liveness alive
+   fleet after:  board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+PASS  fleet pids unchanged
+elapsed 39s
+RESULT: all checks passed

@@ -6,8 +6,9 @@
 What one /harvest cost, measured from the seat's own session log, and who else wrote self-improvement
 records in that window:
 
-- the seat's log: a Claude seat's transcript (edp-pool/.claude-pool/projects/**.jsonl, the one whose
-  whoami result names the participant) or a codex seat's app-server mirror (.logs/**/codex-seat.<pid>.jsonl);
+- the seat's log: a Claude seat's transcript (<pool claude config>/projects/**.jsonl, the one whose
+  whoami result names the participant) or a codex seat's app-server mirror (<shell log dir>/**/codex-seat.<handle>.jsonl);
+  the roots follow the settings (installed data/claude-pool and data/logs, the old repo layout, ~/.claude);
 - the window: from the harvest trigger (Claude: the Skill("harvest") call or a Read of harvest/SKILL.md;
   codex: the first item naming harvest/SKILL.md; else the first harvest record call) to the seat's
   close_self (else the end of the log); `--since/--until` override it;
@@ -28,8 +29,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from edp8.harvest_cost import (  # noqa: E402,F401 — re-exported for tests/test_harvest.py
-    BOARD_AUTHOR, CLAUDE_ROOTS, CODEX_ROOTS, V8, _iso, _rows, _ts, board_records, claude_tokens, claude_window,
-    codex_tokens, codex_window, find_log, records_in_window)
+    BOARD_AUTHOR, BadTime, _iso, _roots, _rows, _ts, board_records, claude_tokens, claude_window, codex_tokens,
+    codex_window, find_log, records_in_window)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -51,12 +52,17 @@ def main(argv: list[str] | None = None) -> int:
     else:
         hit = find_log(a.participant)
         if hit is None:
-            print(f"no session log found for {a.participant}", file=sys.stderr)
+            roots = ", ".join(str(r) for r in dict.fromkeys((*_roots()[0], *_roots()[1])))
+            print(f"no session log found for {a.participant} under {roots}", file=sys.stderr)
             return 2
         kind, path = hit
     rows = _rows(path)
     start, end = (claude_window if kind == "claude" else codex_window)(rows)
-    since, until = _ts(a.since), _ts(a.until)
+    try:
+        since, until = _ts(a.since), _ts(a.until)
+    except BadTime as exc:
+        print(f"--since/--until: {exc}", file=sys.stderr)
+        return 2
     start = since if since is not None else start
     end = until if until is not None else end
     if start is None:

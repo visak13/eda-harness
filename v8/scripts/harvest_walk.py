@@ -104,12 +104,11 @@ def main() -> int:
         log(f"seeded: finished={finished} next={nxt} story={story} doc={doc['id']} v{doc['version']}")
 
         def brief(tag: str) -> list[str]:
-            set_client(BoardClient(base_url=base, participant="owner"))
-            tool = ALL_TOOLS["assemble_ruleset"]
-            out = tool.handler(tool.args_model(ticket_id=story))
+            # S17: the brief is the linked doc itself (the ruleset tool is gone): its current bars, read whole
+            out = BoardClient(base_url=base, participant="owner").doc_read(doc["id"], all=True)
             assert out["ok"], out
             (OUT / f"brief-{tag}.json").write_text(json.dumps(out["value"], indent=2), encoding="utf-8")
-            lines = [x["text"] for x in out["value"]["enforced"]]
+            lines = [ln[2:] for ln in out["value"]["body_md"].splitlines() if ln.startswith("- ")]
             log(f"brief {tag}: enforced={lines}")
             return lines
 
@@ -144,8 +143,8 @@ def main() -> int:
         approved = brief("1-after-approve")
         ui("reject", bad["id"])
         after = brief("2-after-reject")
-        target = call("owner", "GET", f"/v1/docs/{doc['id']}")
-        g, b = call("owner", "GET", f"/v1/docs/{good['id']}"), call("owner", "GET", f"/v1/docs/{bad['id']}")
+        target = call("owner", "GET", f"/v1/docs/{doc['id']}?all=true")
+        g, b = call("owner", "GET", f"/v1/docs/{good['id']}?all=true"), call("owner", "GET", f"/v1/docs/{bad['id']}?all=true")
         log(f"target {doc['id']}: v{target['version']} versions={target['versions']}")
         log(f"approved {good['id']}: status={g['status']} resolution={g['resolution']}")
         log(f"rejected {bad['id']}: status={b['status']} resolution={b['resolution']}")

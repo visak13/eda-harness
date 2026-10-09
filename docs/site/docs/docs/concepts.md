@@ -80,13 +80,18 @@ refuses to open one when a precondition is missing, naming what is missing.
 
 | Gate | What you decide |
 |---|---|
-| Design sign-off | Whether a design can proceed |
-| Proof of concept | Whether an approach is feasible |
-| Demo | Whether a working demonstration is good enough |
-| Adversarial | Whether the work holds up to a hostile challenge |
-| Budget | Whether to grant a requested resource limit |
-| Acceptance | Whether the result is accepted |
+| Design sign-off | Whether a design can proceed (the **Approve** button) |
 | Scope | Whether to raise how much work a story may take on |
+
+Everything else is a conversation. The architect decides when to run a proof of concept, a demo, an
+adversarial review or qa, and tells you in chat when the criteria pass. A reply of yours in chat can lift a
+cap: the board checks the message id and that it is yours.
+
+## Requirements
+
+Select a span in any message and press **Mark as requirement** on the quote card. It sends no message; it
+records the quoted words. The board holds the requirement open until the architect links it to a criterion
+or to a section of the design, and an epic cannot finish while one is open. Guests can mark too.
 
 ## Criteria and verdicts
 

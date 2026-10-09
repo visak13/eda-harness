@@ -25,7 +25,6 @@
       "mcp__edp8__board",
       "mcp__edp8__events_query",
       "mcp__edp8__find",
-      "mcp__edp8__assemble_ruleset",
       "mcp__edp8__session_query",
       "Monitor",
       "TaskStop",

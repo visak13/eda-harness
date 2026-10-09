@@ -149,7 +149,7 @@ seat proposes that restart.
 **You see:** a story or epic has not moved for a long time.
 
 **Likely causes:** a gate is open that nobody may answer (usually a missing precondition, such as a
-design doc or accepted criteria); the doer's seat is gone; the criteria have no checker, or the
+design doc or accepted criteria); a requirement is still open; the doer's seat is gone; the criteria have no checker, or the
 checker was never spawned; another ticket blocks it; or the seat it waits for is queued behind a full
 cap.
 

@@ -18,7 +18,8 @@ def test_http_upload_disabled_baseline(stack):
     _, result = _run(_call(stack['mcp'] + '/mcp/engineer', {'X-Participant': 'eng.s1'},
                            'artifact_upload', path='C:/not-opened.txt'))
     out = json.loads(result.content[0].text)
-    assert not out['ok'] and out['error']['code'] == 'unavailable'
+    # no credential: refused before any file is resolved, whether or not the S15 automatic agent-home root is on
+    assert not out['ok'] and out['error']['code'] in ('unavailable', 'unauthorized')
 
 
 @pytest.fixture
@@ -128,13 +129,13 @@ def test_strict_auth_refuses_header_only_legacy_agent(configured):
     assert not client.post('/v1/artifacts/upload-authorize', headers=headers).json()['ok']
 
 
-@pytest.mark.parametrize('change', ['off', 'remote_board', 'invalid_url', 'public', 'remote_bind', 'missing', 'malformed', 'broad', 'overlap'])
+@pytest.mark.parametrize('change', ['off', 'remote_board', 'invalid_url', 'remote_bind', 'missing', 'malformed', 'broad', 'overlap'])
 def test_invalid_or_remote_configuration_fails_closed(configured, monkeypatch, change):
     url = 'http://127.0.0.1:1234'
-    if change == 'off': monkeypatch.delenv('EDP8_HTTP_UPLOAD_MODE')
+    if change == 'off': monkeypatch.setenv('EDP8_HTTP_UPLOAD_MODE', 'off')
     if change == 'remote_board': url = 'https://board.example.com'
     if change == 'invalid_url': url = 'http://[invalid'
-    if change == 'public': monkeypatch.setenv('EDP8_PUBLIC_URL', 'https://board.example.com')
+    monkeypatch.setenv('EDP8_PUBLIC_URL', 'https://board.example.com')  # RC2 F3: a public URL alone never decides
     if change == 'remote_bind': monkeypatch.setenv('EDP8_MCP_HOST', '0.0.0.0')
     if change == 'missing': monkeypatch.delenv('EDP8_HTTP_UPLOAD_POLICY')
     if change == 'malformed': configured['config'].write_text('{')

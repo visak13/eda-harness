@@ -25,10 +25,13 @@ root ``models.json`` template.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import os
 import re
 import shutil
 import sqlite3
+import stat
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -244,8 +247,24 @@ def report(src: Path, items: list[Item], env: tuple[dict[str, Any], dict[str, st
             print(f"    skip     {name}: {why}")
 
 
+def _writable(p: Path) -> None:
+    """Clear a read-only flag (S10): copy2 carries the source's mode, so an imported file is read-only when the source's
+    was (a bundle or a synced folder marks them), and Windows then refuses to overwrite, replace or delete it."""
+    with contextlib.suppress(OSError):
+        if p.exists() and not os.access(p, os.W_OK):
+            p.chmod(p.stat().st_mode | stat.S_IWRITE)
+
+
+def _copy(src: Path, dst: Path) -> None:
+    """copy2 that overwrites a read-only target and leaves a writable copy (the importer's own files stay editable)."""
+    _writable(dst)
+    shutil.copy2(src, dst)
+    _writable(dst)
+
+
 def _copy_db(src: Path, dst: Path) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
+    _writable(dst)
     if dst.exists():
         backups = settings.data_dir() / "backups"
         backups.mkdir(parents=True, exist_ok=True)
@@ -259,8 +278,10 @@ def _copy_db(src: Path, dst: Path) -> None:
     # v0.9.1: a stale -wal/-shm beside the replaced file is replayed over the imported DB (the import
     # then reported 0 epics), so they go with it
     for side in ("-wal", "-shm", "-journal"):
+        _writable(dst.with_name(dst.name + side))
         dst.with_name(dst.name + side).unlink(missing_ok=True)
     tmp = dst.with_name(dst.name + ".importing")
+    _writable(tmp)
     tmp.unlink(missing_ok=True)
     source = _open_ro(src)
     target = sqlite3.connect(tmp)
@@ -273,6 +294,7 @@ def _copy_db(src: Path, dst: Path) -> None:
         target.close()
         source.close()
     tmp.replace(dst)
+    _writable(dst)
 
 
 def apply(items: list[Item], env: tuple[dict[str, Any], dict[str, str], list[tuple[str, str]]]) -> None:
@@ -290,18 +312,20 @@ def apply(items: list[Item], env: tuple[dict[str, Any], dict[str, str], list[tup
                     continue  # the .data copy wins over the legacy dir
                 d = _long(d)
                 d.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(f, d)
+                _copy(f, d)
         elif it.kind == "secret":
+            _writable(it.dst)
             it.dst.unlink(missing_ok=True)
             secret_files.write_secret(it.dst, it.src.read_text(encoding="utf-8"))
         else:
             it.dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(it.src, it.dst)
+            _copy(it.src, it.dst)
     updates, secret_vals, _ = env
     if updates:
         write_config(updates)
     if "EDP8_ADMIN_TOKEN" in secret_vals:
         f = settings.admin_token_file()
+        _writable(f)
         f.unlink(missing_ok=True)
         secret_files.write_secret(f, secret_vals["EDP8_ADMIN_TOKEN"])
 

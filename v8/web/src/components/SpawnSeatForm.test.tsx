@@ -36,6 +36,35 @@ describe("SpawnSeatForm (S-ROLES)", () => {
     expect(body).toEqual({ role: "engineer", participant_id: "engineer.s-1", ticket_id: "s-1", model: "gpt-6-sol", assign: true });
   });
 
+  it("S12-ui2: picks an effort capped by the chosen model's catalog cap and sends it in the spawn body", async () => {
+    let body: Record<string, unknown> | null = null;
+    server.use(
+      http.get("/v1/models", () => HttpResponse.json({ ok: true, hint: "", value: {
+        roles: { engineer: ["claude-opus-5-5", "gpt-6-sol"] },
+        defaults: { engineer: "claude-opus-5-5" },
+        models: { "claude-opus-5-5": { harness: "claude", effort_cap: "medium" }, "gpt-6-sol": { harness: "codex" } },
+      } })),
+      http.post("/v1/sessions/spawn", async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ ok: true, value: {}, hint: "spawned" });
+      }),
+    );
+    mount(<SpawnSeatForm ticketId="s-1" />);
+    await waitFor(() => expect(opts("spawn-seat-model")).toEqual(["", "claude-opus-5-5", "gpt-6-sol"]));
+    expect(opts("spawn-seat-effort")).toEqual(["", "low", "medium", "high"]);
+    const effort = screen.getByTestId("spawn-seat-effort") as HTMLSelectElement;
+    expect(effort.value).toBe(""); // the epic's choice
+    fireEvent.change(screen.getByTestId("spawn-seat-model"), { target: { value: "gpt-6-sol" } });
+    fireEvent.change(effort, { target: { value: "high" } });
+    expect(screen.getByTestId("spawn-seat-preview")).toHaveTextContent("Starts engineer.s-1 on GPT-6 Sol, effort high");
+    fireEvent.change(screen.getByTestId("spawn-seat-model"), { target: { value: "claude-opus-5-5" } });
+    expect(Array.from(effort.options).find((o) => o.value === "high")!.disabled).toBe(true); // above the cap
+    expect(effort.value).toBe("medium"); // clamped to the cap
+    fireEvent.click(screen.getByTestId("spawn-seat-submit"));
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body).toMatchObject({ model: "claude-opus-5-5", effort: "medium" });
+  });
+
   it("never offers a person's role (owner, expert, human), even when the catalog lists one (owner m-da9a2ae62f)", async () => {
     server.use(http.get("/v1/models", () => HttpResponse.json({ ok: true, hint: "", value: {
       roles: { owner: ["claude-opus-5-5"], expert: ["claude-opus-5-5"], human: ["claude-opus-5-5"], engineer: ["claude-opus-5-5"], qa: ["claude-fable-5"] },

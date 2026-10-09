@@ -1,0 +1,75 @@
+{
+ "calls": 45561,
+ "compactions": 195,
+ "boot_ctx_median": 47571,
+ "boot_ctx_p90": 51845,
+ "tokens_by_billing": {
+  "cache read": 8002242569.0,
+  "cache write 1h": 120117414.0,
+  "output": 31081961.0,
+  "cache write 5m": 406025.0,
+  "fresh input": 393839.0
+ },
+ "cost_by_billing": {
+  "cache read": 3976.73,
+  "cache write 1h": 1189.59,
+  "output": 769.82,
+  "cache write 5m": 2.54,
+  "fresh input": 1.97
+ },
+ "input_cost_by_content": {
+  "base (system prompt, tools, role card / summary)": 1676.01,
+  "other (attachments, framing, estimate gap)": 1265.02,
+  "tool results": 1160.74,
+  "seat output (text, thinking, tool args)": 1024.19,
+  "prompts, events, heartbeats, reminders": 44.86
+ },
+ "input_tokens_by_content": {
+  "base (system prompt, tools, role card / summary)": 2401232917.0,
+  "other (attachments, framing, estimate gap)": 2061523666.75,
+  "tool results": 1876649170.73,
+  "seat output (text, thinking, tool args)": 1709080621.19,
+  "prompts, events, heartbeats, reminders": 74673471.33
+ },
+ "input_cost_by_trigger": {
+  "human / command": 2202.23,
+  "monitor event": 1372.39,
+  "background task done": 585.05,
+  "cron heartbeat": 532.13,
+  "compaction resume": 479.01
+ },
+ "output_cost_by_trigger": {
+  "human / command": 389.69,
+  "monitor event": 147.88,
+  "background task done": 93.04,
+  "compaction resume": 91.77,
+  "cron heartbeat": 47.43
+ },
+ "tool_result_cost_top": {
+  "Bash": 393.66,
+  "Read": 189.52,
+  "mcp__edp8__context": 98.69,
+  "ToolSearch": 94.73,
+  "mcp__edp8__doc_read": 61.25,
+  "mcp__edp8__message_send": 31.36,
+  "mcp__edp8__ticket_read": 26.23,
+  "mcp__edp8__message_query": 24.39,
+  "mcp__edp8__assemble_ruleset": 23.29,
+  "mcp__edp8__message_read": 21.87,
+  "mcp__edp8__get_guide": 19.97,
+  "mcp__edp8__ticket_update": 19.64,
+  "PowerShell": 15.43,
+  "mcp__edp8__doc_create": 14.08,
+  "Grep": 13.25
+ },
+ "cache_rebuilds": {
+  "rebuild after 5m-1h idle": {
+   "count": 17,
+   "cost": 13.78
+  },
+  "rebuild after >1h idle": {
+   "count": 69,
+   "cost": 113.46
+  }
+ }
+}

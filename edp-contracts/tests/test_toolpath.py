@@ -72,3 +72,25 @@ def test_git_bash_is_found_beside_git_never_the_wsl_relay(tmp_path, monkeypatch)
     assert toolpath.git_bash() is None
     monkeypatch.setenv("EDP_BASH_BIN", r"D:\tools\bash.exe")
     assert toolpath.git_bash() == r"D:\tools\bash.exe"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="a .CMD shim runs through cmd.exe")
+def test_probe_version_is_bounded_when_the_shims_grandchild_holds_the_pipe():
+    """D9 (qa m-d1480fc0a9): cmd.exe /d /c <tool>.CMD; the timeout killed cmd.exe only, and node kept the
+    pipe open, so the probe waited for it to exit. ping stands in for node; -l tags this run's ping."""
+    import os
+    import random
+    import time
+
+    import psutil
+
+    size = str(random.randint(1000, 9999))
+    comspec = os.environ.get("COMSPEC", "cmd.exe")
+    t0 = time.monotonic()
+    got = toolpath.probe_version([comspec, "/d", "/c", f"ping -n 25 -l {size} 127.0.0.1 >nul & rem"], timeout=2.0)
+    assert got is None
+    assert time.monotonic() - t0 < 5.0
+    time.sleep(0.3)
+    left = [p for p in psutil.process_iter(["name", "cmdline"])
+            if (p.info.get("name") or "").lower() == "ping.exe" and size in (p.info.get("cmdline") or [])]
+    assert not left, left

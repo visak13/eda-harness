@@ -1,0 +1,109 @@
+{
+ "must": {
+  "B2-m1": {
+   "v": "present",
+   "why": "Step 4: 'Implement a pure three-way merge in rookery/merge\u2026'; Step 9: 'table-driven pure-function tests for every design merge rule, including conflict placement\u2026 deletion/edit races, title and membership LWW, and unchanged personal-note behavior'; c3 covers disjoint edits and positional insertions"
+  },
+  "B2-m2": {
+   "v": "present",
+   "why": "Step 6: 'In the same server PR, update protocol/spec/\u2026 Finalize the minor number at merge time'; Step 14: 'finalize protocol/VERSIONS.md listing both new fields and B2'; must_not forbids a major bump"
+  },
+  "B2-m3": {
+   "v": "present",
+   "why": "Step 6: 'generate and commit present/absent fixtures for both fields using make fixtures'; Step 9: 'Pass the full previous-minor contract suite'"
+  },
+  "B2-m4": {
+   "v": "present",
+   "why": "Step 6 gates emissions with conn.Supports(minor). Step 9 tests 'previous-minor connections receiving no new fields'. Step 10 sends merge_mode only for shared notebooks when WELCOME supports it, raises protocol_max 'in the same PR that implements handling of everything', and tests 'WELCOME selecting the previous minor'. Step 16: 'add its fleet-promotion link to the train ticket'"
+  },
+  "B2-m5": {
+   "v": "present",
+   "why": "Step 7: 'sync.negotiate.failed at WARN, unsampled, with client_version, protocol_max, and the server maximum version'; Step 9 tests 'failed negotiation producing the required event'"
+  },
+  "B2-m6": {
+   "v": "present",
+   "why": "Step 7: 'On merge errors log note_id, involved revision numbers, block counts, and block IDs without payload or block hashes'; must_not forbids payload_sha256 on the merge path"
+  },
+  "B2-m7": {
+   "v": "present",
+   "why": "Step 7: 'dotted-name events with new snake_case fields', 'Use synclog's 10% sampling'; Step 8: spans 'such as rookery.merge.three_way'; must_not: 'Do not log note content, titles\u2026'"
+  },
+  "B2-m8": {
+   "v": "present",
+   "why": "Step 3 creates the flag sync.field_merge and records the ramp plan. Step 12 names it in the PR description. Steps 3/16 keep client train builds OFF; Step 17 ramps after the train reaches users. Steps 8/17 require the Sync Overview row and error-rate alert with runbook before >1%. Step 18 removes the flag after a full train cycle at 100%, with ownership."
+  },
+  "B2-m9": {
+   "v": "present",
+   "why": "Step 13: 'achieve at least 85% line coverage in changed packages'"
+  },
+  "B2-m10": {
+   "v": "present",
+   "why": "Step 11: strings/source.yaml with translator comments, VoiceOver/TalkBack, largest font, screenshots on both platforms at default and largest, Notebook UI review"
+  },
+  "B2-m11": {
+   "v": "present",
+   "why": "Step 13: 'Pass device-ios and device-android\u2026 Add run-e2e to the quill-sync stream-handling PR and require a green sync-e2e before merge'"
+  },
+  "B2-m12": {
+   "v": "present",
+   "why": "Step 12: Rollback section, B2 and its epic-design section, Unreleased CHANGELOG.md entry in the same PR, area: summary titles, Refs: B2 footers; Step 2: B2/<short-slug> branches"
+  },
+  "B2-m13": {
+   "v": "present",
+   "why": "Step 15: 'every mobile commit independently build, pass tests\u2026 merge using rebase merge by 17:00 on the second working day before the intended train cut'; release-notes/<train>.md entry"
+  },
+  "B2-m14": {
+   "v": "present",
+   "why": "Step 5: 'Use the primary database throughout the push path. Preserve existing behavior when\u2026 the notebook is personal'"
+  },
+  "B2-m15": {
+   "v": "present",
+   "why": "Step 17: 'spending at least one full day at each stage'"
+  }
+ },
+ "must_not": {
+  "B2-n1": {
+   "v": "ok",
+   "why": "Explicitly forbidden in must_not and Step 7"
+  },
+  "B2-n2": {
+   "v": "ok",
+   "why": "must_not: 'Do not create schema migrations, backfills, retention declarations\u2026'"
+  },
+  "B2-n3": {
+   "v": "ok",
+   "why": "must_not: 'Do not require REST idempotency tests\u2026'"
+  },
+  "B2-n4": {
+   "v": "ok",
+   "why": "must_not: 'Do not add a major bump, deprecation notice\u2026'"
+  },
+  "B2-n5": {
+   "v": "ok",
+   "why": "must_not forbids client merging and per-message versions"
+  },
+  "B2-n6": {
+   "v": "ok",
+   "why": "must_not: 'Do not sample negotiation failures under the general 10% stream rule'"
+  }
+ },
+ "order": {
+  "B2-o1": {
+   "v": "kept",
+   "why": "Step 3: 'Create\u2026 sync.field_merge in every environment before any PR reading it merges'"
+  },
+  "B2-o2": {
+   "v": "kept",
+   "why": "Steps 14/16: full-fleet promotion with contract passed is confirmed 'Before the train cut'; otherwise the bump is deferred"
+  }
+ },
+ "extras": [
+  "OFF everywhere except dev",
+  "File any needed Platform alert-routing request early, allowing approximately two working days.",
+  "Check the quill-sync performance report against the under-10-second cold-start budget for 1,000 notes on the reference low-end Android device.",
+  "have revision-handling reviewers run the change locally",
+  "If a page affects sync for more than 1% of devices for over ten minutes, follow the incident declaration and post-incident review process, with review within five working days.",
+  "Do not retry a failing CI job more than once. Quarantine a flaky test with @flaky and a ticket within one working day, then fix or delete it within two weeks.",
+  "Target 26.11 only if eligible; otherwise use the next train."
+ ]
+}

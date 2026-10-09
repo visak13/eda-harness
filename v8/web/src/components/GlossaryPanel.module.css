@@ -58,9 +58,14 @@
   max-width: 62ch;
 }
 
+/* a phone: the sheet takes the width minus a 16px gutter, and each term sits above its definition */
+@media (max-width: 600px) {
+  .panel { top: 16px; right: 16px; bottom: 16px; left: 16px; width: auto; padding: 20px 16px; }
+}
+
 .cols {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr); /* one full-width term list, like Terms */
   gap: 8px 40px;
 }
 @media (max-width: 640px) {
@@ -93,6 +98,9 @@
   grid-template-columns: 130px 1fr;
   gap: 4px 12px;
   padding: 3px 0;
+}
+@media (max-width: 600px) {
+  .def { grid-template-columns: 1fr; gap: 2px; padding: 6px 0; }
 }
 .dt {
   font-size: 13px;

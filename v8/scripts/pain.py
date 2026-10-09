@@ -1,5 +1,8 @@
 """pain.py — the pain-point file with a lifecycle (stdlib only; 2026-09-06).
 
+e0cec S6: the board is now the one pain store (`pain` MCP tool, /v1/pains, Library > Pains); the board imports this
+file once per id (POST /v1/pains/import). Use this script only from a shell outside the framework.
+
 Pain points stay OUTSIDE the board (owner ruling): they are fixed from a shell outside the
 framework. This script gives the append-only file structure instead of a new plane:
 

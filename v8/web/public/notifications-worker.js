@@ -113,7 +113,7 @@ self.addEventListener('message', event => {
   if (event.data?.protocol !== protocol || event.data.type !== 'show') return;
   serial = serial.catch(() => {}).then(async () => {
     try { event.ports[0]?.postMessage(await show(event.source, event.data, event.data.test === true)); }
-    catch { event.ports[0]?.postMessage({ error: 'Notification unavailable. Use Needs you.' }); }
+    catch { event.ports[0]?.postMessage({ error: 'Notification unavailable. Check the epic chat and its requirements.' }); }
   });
   event.waitUntil(serial);
 });

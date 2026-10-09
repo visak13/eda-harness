@@ -4,17 +4,33 @@ import { BoardApiError } from "../../api/client";
 import { getHealthz, serviceAction } from "../../api/admin";
 import type { SettingRow, SettingValue } from "../../api/admin";
 import { Icon } from "../../components/Icon";
+import { ago } from "../../components/AttentionAsks";
 import ui from "../../components/ui.module.css";
 import styles from "./Admin.module.css";
 
 // S6 c-e834afcefc (pain p-77ab1bf1 "Approve did nothing"): every admin action shows the board's refusal.
 // One reader of the error, one element that renders it, so no mutation can fail silently.
 
-/** The words the board gave for a refusal: its error message, else its hint, else the transport error. */
+/** What every admin panel says when the board refuses an admin route (403): the board's own text names request headers. */
+export const ADMIN_ONLY = "Only an admin can manage services. Ask an admin to give you admin rights.";
+/** True for the board's refusal of an admin route to someone who is not an admin. */
+export const adminRefused = (e: unknown): boolean => e instanceof BoardApiError && e.status === 403;
+
+/** The words the board gave for a refusal: its error message, else its hint, else the transport error. The admin refusal is
+ *  mapped here, once, so no panel shows the raw header names. */
 export function errorText(e: unknown): string {
+  if (adminRefused(e)) return ADMIN_ONLY;
   if (e instanceof BoardApiError) return e.message || e.hint || `the board answered ${e.status}`;
   if (e instanceof Error) return e.message;
   return String(e);
+}
+
+/** A board timestamp in an admin table (qa m9): relative ("5 min ago", the conversation's formatter), with the
+ *  local date and time in the tooltip; "—" when there is none. */
+export function When({ at, testid }: { at: string | null | undefined; testid?: string }): React.JSX.Element {
+  const t = at ? Date.parse(at) : NaN;
+  if (!at || Number.isNaN(t)) return <span data-testid={testid}>{at || "—"}</span>;
+  return <time dateTime={at} title={new Date(t).toLocaleString()} data-testid={testid}>{ago(at)}</time>;
 }
 
 /** The board's refusal, rendered where the action was taken. Renders nothing when there is no error. */

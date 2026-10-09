@@ -36,12 +36,7 @@ def b():
 
 
 def _sign_quick_design(board, ps, t):
-    """s-ccdafcb229: the quick engineer's design note is signed off by the owner before any start."""
-    from edp8.schemas import Gate
-    d = board.doc_create(ps["eng"], doc_type=DocType.note, title="Design", body_md="what/how", scope=t.id)
-    board.ticket_update(ps["eng"], t.id, design_ref=d.id)
-    board.gate_open(t.id, Gate.design_signoff, by="eng", note="please review")
-    board.gate_answer(ps["owner"], t.id, Gate.design_signoff, "go")
+    """Retired (design-63db8a7d42 N): a quick task has no design step; kept as a no-op for the callers below."""
 
 
 def _quick(board, owner, **kw):
@@ -145,16 +140,6 @@ def test_engineer_writes_owner_checked_criteria_on_its_quick_task(b):
     s = board.ticket_create(ps["arch"], kind=TicketKind.story, work_type=WorkType.feature, title="S", parent_id=epic.id)
     with pytest.raises(BoardError, match="tasks only"):
         board.criterion_create(ps["eng"], ticket_id=s.id, text="x", check=Check.verdict)
-
-
-def test_needs_you_lists_a_quick_task_only_once_it_is_in_review(b):
-    board, ps = b
-    t, c1, c2 = _worked(board, ps)
-    assert views.decisions_for(board, ps["owner"])["signoffs"] == []  # mid-work: not the owner's yet
-    board.ticket_update(ps["eng"], t.id, status=TicketStatus.in_review)
-    rows = views.decisions_for(board, ps["owner"])["signoffs"]
-    assert {r["criterion"]["id"] for r in rows} == {c1.id, c2.id}
-    assert all(r["ticket"]["quick"] and r["ticket"]["id"] == t.id for r in rows)
 
 
 def test_owner_passes_every_criterion_and_the_quick_task_is_done_without_qa(b):
@@ -437,3 +422,15 @@ def test_adv10_the_catalog_is_a_validation_boundary(api):
                                                 "model": "gpt-does-not-exist"}, headers=OWNER)
     assert not r.json()["ok"] and "catalog for engineer is" in r.text, r.text
     assert api["calls"] == []
+
+
+def test_a_quick_task_starts_with_no_design_note_and_no_gate_and_the_removed_gates_are_gone(b):
+    from edp8 import workflow as wflow
+    from edp8.schemas import Gate
+    board, ps = b
+    t = _quick(board, ps["owner"], assignee="eng")
+    board.ticket_update(ps["eng"], t.id, status=TicketStatus.in_progress)  # no design_ref, no design_signoff gate
+    assert board.ticket(t.id).status == TicketStatus.in_progress and board.ticket(t.id).design_ref is None
+    assert not board.open_gates(t.id)
+    assert {g.value for g in Gate} == {"design_signoff", "acceptance", "scope"}
+    assert {g.id for g in wflow.build_standard().gates} == {"design_signoff", "acceptance", "scope"}

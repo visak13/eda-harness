@@ -1,0 +1,86 @@
+fleet before: board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+free RAM 2.42 GB
+   private pids stopped: 0; left: 0
+
+ports board=62501 mcp=62502 pool=62503 broker=62504
+
+   Heronry init
+     dir     config   <worktree>\v8\.data\s11-drill\home
+     dir     secrets  <worktree>\v8\.data\s11-drill\home
+     dir     data     <worktree>\v8\.data\s11-drill\home\.data
+     dir     run      <worktree>\v8\.data\s11-drill\home\.run
+     dir     logs     <worktree>\v8\.data\s11-drill\home\.data\logs
+     dir     backups  <worktree>\v8\.data\s11-drill\home\.data\backups
+     config  <worktree>\v8\.data\s11-drill\home\config.toml
+     secret  admin token <worktree>\v8\.data\s11-drill\home\admin.token
+     secret  tokens <worktree>\v8\.data\s11-drill\home\tokens.json (first human: owner)
+     agents  <worktree>\v8\.data\s11-drill\home\agent-home (61 new, 0 updated, 0 kept)
+     models  <worktree>\v8\.data\s11-drill\home\.data\models.json
+     trust   <worktree>\v8\.data\s11-drill\home\agent-home trusted for claude seats (<worktree>\v8\.data\s11-drill\home\.data\claude-pool\.claude.json)
+     claude  settings <worktree>\v8\.data\s11-drill\home\.data\claude-pool\settings.json (written)
+     harness claude
+
+   NOTICE: Codex is not selected, so the adversary role runs on Fable (claude-fable-5-1). Fable's safety safeguards are strict: an adversarial or security review may be declined or softened. Review its findings before trusting a clean result.
+
+   next: heronry doctor, then heronry start
+PASS  init exit 0
+   board      started          pid 36160  http://127.0.0.1:62501
+   broker     started          pid 6784  http://127.0.0.1:62504
+   pool       started          pid 3488  http://127.0.0.1:62503
+   mcp        started          pid 33864  http://127.0.0.1:62502
+   bridge     skipped          (no slack map configured)
+   supervisor started          pid 38456
+   setup      first run: finish setup at http://127.0.0.1:62501/ui/setup?code=<redacted>  (the link signs you in once, within 24 h)
+PASS  start exit 0
+   pre-check ok: every record in <worktree>\v8\.data\s11-drill\home\.run names a private (or dead) pid
+== 12:36:38 A. fresh engineer spawn calls whoami()
+   epic: {"ok":true,"value":{"id":"epic-c2e97ee1c9","created_at":"2026-10-02T07:06:38.687355Z","created_by":"owner","kind":"epic","work_type":"chore","title":"S11 drill epic","words":"S11 drill: prove a fresh seat calls whoami","parent_id":null,"status":"drafted","assignee":null,"design_ref":null,"description":"","tags":[],"epic_id":"epic-c2e97ee1c9","serves":[],"topic_config":null,"members":[]},"hint":"epic created; an architect designs it (doc_create design, criteria, stories)"}
+   story: s-8228c88b4e
+   spawn: ok=True {"ok":true,"value":{"session_id":"engineer:7f0d729c-7345-4da6-9e53-b3df46e17b5e","seat_choice":{"model":"claude-opus-5-5","effort":null,"note":null}},"hint":"shell for engineer.s-8228c88b4e is starting; it boots with whoami â subscribe â context"}
+   fresh seat transcript: 73d4911a-8ad7-4bc4-b887-15367bd73364.jsonl|mcp__edp8__whoami -> ok, participant engineer.s-8228c88b4e|45 transcript lines
+PASS  a fresh claude seat called whoami() and got its participant back
+   fresh seat row 10 s later: engineer:7f0d729c-7345-4da6-9e53-b3df46e17b5e state=active pid=18804
+PASS  the fresh seat stays alive
+== 12:36:59 B. an idle Help seat survives a board restart without a second start
+   doctor --agent: opened help thread topic-f938d5abfc
+  Help seat doctor.topic-f938d5abfc: queued (it answers on the thread)
+  follow it at http://127.0.0.1:62501/ui/library/topics/topic-f938d5abfc
+PASS  a help topic was opened (topic-f938d5abfc)
+PASS  the Help seat answered on its topic (it is now idle)
+   BEFORE board restart: doctor:ed8d8fa4-6264-4bd1-b47a-2c41ec849fc4 state=active pid=37380  (rows=1)
+PASS  exactly one live Help seat row before the restart
+   pre-check ok: every record in <worktree>\v8\.data\s11-drill\home\.run names a private (or dead) pid
+   board      restarted        pid 4172  http://127.0.0.1:62501
+   AFTER  board restart: doctor:ed8d8fa4-6264-4bd1-b47a-2c41ec849fc4 state=active pid=37380  (rows=1)
+PASS  the board restart left the idle Help seat's row and pid unchanged (no second start)
+   board-authored messages on the topic after the restart: 0
+PASS  the restart posted no pending-pairing ask on the Help topic (S14 0c86407a)
+== 12:38:04 C. a Help topic that OWES an answer (an ask newer than its last shell, no live seat) is not started by a restart
+   pre-check ok: every record in <worktree>\v8\.data\s11-drill\home\.run names a private (or dead) pid
+   pool       stopped
+   second ask posted while the pool is down: ok=True
+>> TerminatingError(Invoke-RestMethod): "Unable to connect to the remote server"
+   pre-check ok: every record in <worktree>\v8\.data\s11-drill\home\.run names a private (or dead) pid
+   board      restarted        pid 37660  http://127.0.0.1:62501
+   broker     restarted        pid 34600  http://127.0.0.1:62504
+   pool       restarted        pid 37616  http://127.0.0.1:62503
+   mcp        restarted        pid 9208  http://127.0.0.1:62502
+   thread: owner:question > doctor.topic-f938d5abfc:answer > owner:question
+PASS  the topic's newest ask is unanswered and no seat shell is newer (the seat is owed: S14's trigger)
+   AFTER stack restart: doctor:ed8d8fa4-6264-4bd1-b47a-2c41ec849fc4 state=done pid=37380  (rows=1 live=0)
+PASS  the stack restart did not start the owed Help seat (no live row, no new row; m-9982d31ded)
+   board-authored messages on the topic after the restart: 0
+PASS  the restart posted no pending-pairing ask on the Help topic (S14 0c86407a)
+   private pool rows with a live shell: 0
+PASS  no seat shell runs from the private install
+== 12:39:15 D. the held topic stays held across another board restart
+   pre-check ok: every record in <worktree>\v8\.data\s11-drill\home\.run names a private (or dead) pid
+   board      restarted        pid 34424  http://127.0.0.1:62501
+   AFTER : doctor:ed8d8fa4-6264-4bd1-b47a-2c41ec849fc4 state=done pid=37380  (rows=1 live=0) board-authored messages: 0
+PASS  a further board restart starts nothing and asks nothing
+== 12:39:44 stop and clean
+   seat shells of the private pool stopped: 0
+   private pids stopped: 10; left: 0
+PASS  the copied claude sign-in is deleted
+fleet after: board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+PASS  fleet pids unchanged (before: board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up)

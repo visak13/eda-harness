@@ -59,6 +59,8 @@ export function Drawer({
     if (panelRef.current?.querySelector('[data-busy="true"]')) { setHeld(true); return; }
     setHeld(false); onClose();
   }
+  const requestCloseRef = useRef(requestClose);
+  requestCloseRef.current = requestClose;
 
   useEffect(() => {
     if (!held || !open || !panelRef.current) return;
@@ -117,6 +119,20 @@ export function Drawer({
     );
     (first ?? panel).focus();
   }, [open, bare]);
+
+  // Sweep #6: focus can fall to <body> when the focused control unmounts; Esc then never reaches the
+  // panel's onKeyDown, so also close on an Escape whose target is body.
+  useEffect(() => {
+    if (!open) return;
+    const onDocKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const a = document.activeElement;
+      if (a && a !== document.body && a !== document.documentElement) return;
+      requestCloseRef.current();
+    };
+    document.addEventListener("keydown", onDocKey);
+    return () => document.removeEventListener("keydown", onDocKey);
+  }, [open]);
 
   // Esc closes; Tab / Shift+Tab is trapped within the panel.
   function onKeyDown(e: React.KeyboardEvent) {

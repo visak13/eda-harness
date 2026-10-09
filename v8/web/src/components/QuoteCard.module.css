@@ -6,6 +6,10 @@
 .foot { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 12px 6px; font-size: 13px; color: var(--muted); }
 .source { display: inline-flex; align-items: center; gap: 5px; color: var(--accentink); min-height: 28px; overflow-wrap: anywhere; }
 .source:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
+.mark { margin-left: auto; min-height: 28px; padding: 0 10px; border: 1px solid var(--strongline); border-radius: 6px; background: var(--panel); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; }
+.mark:disabled { cursor: default; color: var(--muted); }
+.mark:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
+.markError { flex-basis: 100%; color: var(--warning); font-size: 13px; overflow-wrap: anywhere; }
 .note { margin: 0; padding: 6px 12px 8px; border-top: 1px solid var(--line); font-size: 14px; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
 .note span { font-weight: 600; color: var(--muted); margin-right: 4px; }
 

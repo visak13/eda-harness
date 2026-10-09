@@ -24,8 +24,9 @@ from edp8 import settings
 
 #: What the agent home ships, relative to its root (files, or dirs taken recursively).
 #: .claude/hooks: the pool settings.json hooks run ${CLAUDE_PROJECT_DIR}/.claude/hooks/*.py from the agent home.
-PAYLOAD = (".claude/commands", ".claude/skills", ".claude/output-styles", ".claude/hooks", "guides", ".mcp.json",
-           "models.json", "CLAUDE.md")
+#: .claude/mods: Claude Code mods; the pool points CLAUDE_CODE_PLUGIN_DIRS at it (edp-wake, s-e60c3d42ad).
+PAYLOAD = (".claude/commands", ".claude/skills", ".claude/output-styles", ".claude/hooks", ".claude/mods", "guides",
+           ".mcp.json", "models.json", "CLAUDE.md")
 MANIFEST = ".manifest.json"
 NEW_SUFFIX = ".new"
 
@@ -76,10 +77,16 @@ def checkout_root() -> Path | None:
     return None
 
 
+def packaged_root() -> Path | None:
+    """The agent home this installed version ships (wheel data), else None (a source checkout)."""
+    packaged = Path(str(resources.files("edp8").joinpath("agent_home")))
+    return packaged if packaged.is_dir() else None
+
+
 def source_root() -> Path:
     """The packaged agent home, or the source checkout's root in dev mode."""
-    packaged = Path(str(resources.files("edp8").joinpath("agent_home")))
-    if packaged.is_dir():
+    packaged = packaged_root()
+    if packaged is not None:
         return packaged
     root = checkout_root()
     if root is not None:
@@ -112,7 +119,9 @@ def shipped_files(source: Path) -> dict[str, Path]:
             out[rel] = p
         elif p.is_dir():
             for f in sorted(p.rglob("*")):
-                if f.is_file() and "__pycache__" not in f.parts:
+                # `.claude-plugin/types`: Claude Code writes it into a mod it loads (generated typings, never shipped)
+                if f.is_file() and "__pycache__" not in f.parts and not (
+                        "types" in f.parts and ".claude-plugin" in f.parts):
                     out[f.relative_to(source).as_posix()] = f
     return out
 
@@ -179,6 +188,22 @@ def materialise(target: str | Path, source: str | Path | None = None, *, dry_run
         tmp.write_text(json.dumps(new_manifest, indent=1, sort_keys=True), encoding="utf-8")
         os.replace(tmp, mpath)
     return rep
+
+
+def refresh(target: str | Path | None = None) -> Report | None:
+    """RC2 item 1 (t-e338298d88): every board start brings the agent home up to the installed version. An
+    upgrade (the MSI, `heronry update`) never re-runs `init`, so without this the home kept the old role cards,
+    skills and hooks, and the old models.json the catalog merge reads. Same rule table as `materialise`
+    (edited files kept, `<file>.new` beside them). None when there is nothing to refresh from: a source
+    checkout whose root is the home itself, or no packaged agent home and no checkout."""
+    home = Path(target) if target is not None else settings.agent_home()
+    try:
+        src = source_root()
+    except FileNotFoundError:
+        return None
+    if home.resolve() == src.resolve():
+        return None
+    return materialise(home, src)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -112,7 +112,8 @@ def topics_router(board: Board, actor: Callable[..., Participant], topic_actor: 
             d = topics.doc_for(board, topic_id, doc_id)
         except BoardError as e:
             raise HTTPException(404, e.message) from e
-        return _ok(d.model_dump(mode="json"))
+        from .doc_tools import legacy_note
+        return _ok({**d.model_dump(mode="json"), **legacy_note(d)})  # S17: the full body, with the legacy warning
 
     @r.post("/v1/topics/{topic_id}/messages")
     def topic_post(topic_id: str, b: TopicMessageIn, a: Participant = Depends(topic_actor)):

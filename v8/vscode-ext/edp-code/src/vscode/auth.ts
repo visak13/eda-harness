@@ -5,7 +5,7 @@ import type { Board, Creds } from '../core/api';
 import { parseSigninLink, redeemInvite } from '../core/signinUri';
 
 const P = 'edp.participant', T = 'edp.token', C = 'edp.credentials.v1';
-const boardOrigin = () => new URL(vscode.workspace.getConfiguration('edp').get<string>('boardUrl') || 'http://127.0.0.1:9400').origin;
+const boardOrigin = () => new URL(vscode.workspace.getConfiguration('edp').get<string>('boardUrl') || 'http://127.0.0.1:19400').origin;
 
 export async function creds(ctx: vscode.ExtensionContext): Promise<Creds | undefined> {
   try {

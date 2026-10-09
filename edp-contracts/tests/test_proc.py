@@ -196,3 +196,42 @@ def test_a_zombie_is_not_live():
         assert real.live() is None and not real.alive() and real.probe() is False
     finally:
         p.wait()
+
+
+# --------------------------------------------------------------------------- run_bounded (D9, m-7998902b38)
+
+_HOLDER = ("import subprocess, sys, time; "
+           "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(25)', sys.argv[1]]); "
+           "print('started', flush=True); time.sleep(25)")
+
+
+def _marked(tag: str) -> list[psutil.Process]:
+    out = []
+    for p in psutil.process_iter(["cmdline"]):
+        if tag in " ".join(p.info.get("cmdline") or []):
+            out.append(p)
+    return out
+
+
+def test_run_bounded_returns_on_time_and_kills_the_grandchild_holding_the_pipe():
+    """subprocess.run(capture_output, timeout) waits for EOF a grandchild still holds; run_bounded does not."""
+    tag = f"rb-{RUN}"
+    t0 = time.monotonic()
+    r = proc.run_bounded([sys.executable, "-c", _HOLDER, tag], 2.0)
+    took = time.monotonic() - t0
+    assert r.timed_out and r.returncode is None
+    assert took < 5.0, took
+    assert "started" in r.stdout
+    time.sleep(0.3)
+    assert not [p for p in _marked(tag) if _alive(p.pid)]
+
+
+def test_run_bounded_passes_output_and_exit_code_through(tmp_path):
+    r = proc.run_bounded([sys.executable, "-c", "import os, sys; print(os.getcwd()); "
+                          "sys.stderr.write('e'); sys.exit(3)"], 10.0, cwd=str(tmp_path))
+    assert (r.returncode, r.stdout.strip(), r.stderr.strip(), r.timed_out) == (3, str(tmp_path), "e", False)
+
+
+def test_run_bounded_raises_oserror_for_a_missing_program(tmp_path):
+    with pytest.raises(OSError):
+        proc.run_bounded([str(tmp_path / "no-such-tool.exe")], 2.0)

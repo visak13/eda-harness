@@ -1,3 +1,4 @@
+import { hideFromGuests } from "../auth/guest";
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router";
@@ -40,7 +41,7 @@ export function parseHandles(raw: string): string[] {
 
 const badHandle = (h: string): boolean => !HANDLE.test(h) || RESERVED.has(h);
 
-export function OpenTopicDialog({ open, onClose, onOpened }: {
+function OpenTopicDialogView({ open, onClose, onOpened }: {
   open: boolean; onClose: () => void; onOpened: (id: string) => void;
 }): React.JSX.Element | null {
   const [title, setTitle] = useState("");
@@ -245,3 +246,6 @@ export function OpenTopicDialog({ open, onClose, onOpened }: {
     </div>, document.body,
   );
 }
+
+/** e0cec S5: a guest never sees this control (the board refuses it). */
+export const OpenTopicDialog = hideFromGuests(OpenTopicDialogView);

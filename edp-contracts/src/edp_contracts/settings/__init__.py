@@ -14,10 +14,13 @@ from ._core import (
     ADMIN_TOKEN_FILE,
     APP_DIR_NAME,
     REGISTRY,
-    TYPES,
-    Setting,
+    SECRET_FILES,
     SECRET_SETTINGS_FILE,
     TIERS,
+    TOKENS_FILE,
+    TYPES,
+    ForeignHome,
+    Setting,
     SettingsError,
     admin_token,
     admin_token_file,
@@ -31,8 +34,10 @@ from ._core import (
     dev_mode,
     env_raw,
     environ_copy,
+    foreign_dirs,
     get,
     home,
+    home_guard,
     is_set,
     logs_dir,
     pop_env,
@@ -47,8 +52,9 @@ from ._core import (
 )
 
 __all__ = [
-    "APP_DIR_NAME", "REGISTRY", "TIERS", "TYPES", "Setting", "SettingsError",
+    "APP_DIR_NAME", "REGISTRY", "TIERS", "TYPES", "Setting", "SettingsError", "ForeignHome", "foreign_dirs", "home_guard",
     "ADMIN_TOKEN_FILE", "admin_token", "admin_token_file", "agent_home", "all_settings", "config_dir", "config_file", "config_values",
     "data_dir", "declare", "dev_mode", "env_raw", "environ_copy", "get", "home", "is_set", "logs_dir", "pop_env", "resolve",
-    "run_dir", "SECRET_SETTINGS_FILE", "secret_settings_file", "secret_values", "secrets_dir", "set_env", "setting", "source",
+    "run_dir", "SECRET_FILES", "SECRET_SETTINGS_FILE", "TOKENS_FILE",
+    "secret_settings_file", "secret_values", "secrets_dir", "set_env", "setting", "source",
 ]

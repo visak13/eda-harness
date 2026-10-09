@@ -98,11 +98,13 @@ def _write_calls(rig) -> dict[str, tuple[str, dict]]:
     e = rig["epic"]
     story = rig["owner"]._request("POST", "/v1/tickets", json={"kind": "story", "work_type": "feature",
                                                                "title": "S", "parent_id": e})["value"]["id"]
+    rig["owner"]._request("POST", "/v1/messages", json={"ticket_id": e, "kind": "note", "text": "do the work"})
+    ask = rig["owner"]._request("GET", f"/v1/epics/{e}/asks")["value"]["asks"][-1]["id"]  # S4 E6: a task serves an ask
     return {
         "doc_create": ("owner", {"doc_type": "note", "title": "big", "body_md": BIG, "scope": e}),
         "message_send": ("owner", {"ticket_id": e, "kind": "note", "text": BIG}),
         "ticket_create": ("architect", {"kind": "task", "work_type": "chore", "title": "t", "parent_id": story,
-                                        "description": BIG}),
+                                        "description": BIG, "serves": [ask]}),
         "ticket_update": ("architect", {"ticket_id": story, "description": BIG}),
         "criterion_create": ("architect", {"ticket_id": story, "text": BIG, "check": "command"}),
         "record_decision": ("owner", {"scope": e, "text": "one line", "detail": BIG[:1000]}),
@@ -136,7 +138,19 @@ def test_receipt_read_call_returns_the_whole_body(rig):
     assert whole == BIG
     d = call(rig["owner"], "doc_create", doc_type="note", title="big", body_md=BIG, scope=rig["epic"])["value"]
     assert d["version"] == 1 and d["echo"]["bytes"]["body_md"] == len(BIG.encode())
-    assert call(rig["owner"], "doc_read", id=d["id"])["value"]["body_md"] == BIG
+    assert d["echo"]["read"] == f"doc_read(id='{d['id']}')"
+    assert _paged_body(rig, d["id"]) == BIG
+
+
+def _paged_body(rig, doc_id):
+    """The whole body an agent gets: the head read, then its page continuation to the end (S17)."""
+    v = call(rig["owner"], "doc_read", id=doc_id)["value"]
+    body, cont = v["body_md"], (v.get("continuation") or {}).get("page")
+    while cont:
+        part = call(rig["owner"], "doc_read", **cont)["value"]
+        body += part["body_md"]
+        cont = part.get("continuation") and {k: part["continuation"][k] for k in ("id", "version", "offset")}
+    return body
 
 
 def test_short_bodies_are_untouched(rig):
@@ -162,7 +176,7 @@ def test_doc_update_defaults_to_a_receipt(rig):
     assert out["ok"] and _bytes(out) < 600, out
     v = out["value"]  # S23 qa (report-bcef24a36a): the size sits behind read_ref, not in the receipt
     assert v["version"] == 2 and "bytes" not in v and v["read_ref"] == {"tool": "doc_read", "id": d["id"], "version": 2}
-    assert call(rig["owner"], "doc_read", id=d["id"])["value"]["body_md"] == BIG  # the named read loses nothing
+    assert _paged_body(rig, d["id"]) == BIG  # the named read (head + its continuation) loses nothing
     assert ALL_TOOLS["doc_update"].input_schema["properties"]["compact"] == {"default": True, "type": "boolean"}
     full = call(rig["owner"], "doc_update", id=d["id"], body_md=BIG + "!", compact=False)["value"]
     assert full["body_md"] == BIG + "!"  # the kept compatibility flag still returns the doc
@@ -278,3 +292,22 @@ def test_describe_schema_drops_only_generated_titles():
         assert len(json.dumps(lean)) < len(json.dumps(full))
     custom = {"properties": {"a_b": {"title": "Something else", "type": "string"}}}
     assert _lean_schema(custom) == custom
+
+
+@pytest.mark.parametrize("name", ["ticket_query", "doc_query"])
+def test_one_oversized_row_is_shrunk_to_the_cap_and_says_so(rig, name):
+    """Audit R2 (report-8dbe7c91c9): the first row was exempt from the cap, so 150 long tags made a ~13.9 KB page."""
+    o, e = rig["owner"], rig["epic"]
+    tags = ["tag-" + str(i) + "x" * 80 for i in range(150)]
+    if name == "ticket_query":
+        r = o._request("POST", "/v1/tickets", json={"kind": "story", "work_type": "feature", "parent_id": e,
+                                                    "title": "tagged"})
+        assert call(o, "ticket_update", ticket_id=r["value"]["id"], tags=tags)["ok"]
+        out = call(o, name, epic_id=e, kind="story")
+    else:
+        r = o._request("POST", "/v1/docs", json={"doc_type": "note", "title": "tagged", "body_md": "b", "scope": e})
+        assert call(o, "doc_update", id=r["value"]["id"], tags=tags + ["audit-wide"])["ok"]
+        out = call(o, name, scope=e, tag="audit-wide")
+    assert out["ok"], out
+    assert _bytes(out) <= tool_paging.page_cap(), _bytes(out)
+    assert out["value"]["items"] and out["value"]["page"].get("full_rows")

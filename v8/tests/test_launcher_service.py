@@ -30,8 +30,8 @@ def test_service_event_records_and_needs_admin(client):
     r = client.post("/v1/service_event", json=body, headers=ADMIN)
     assert r.status_code == 200 and r.json()["ok"], r.text
     # the event is on the board log
-    client.post("/v1/participants", json={"type": "human", "role": "owner", "handle": "o", "id": "o"}, headers=ADMIN)
-    evs = client.get("/v1/events", params={"subject_id": "service/pool"}, headers={"X-Participant": "o"}).json()
+    client.post("/v1/participants", json={"type": "human", "role": "owner", "handle": "own", "id": "own"}, headers=ADMIN)
+    evs = client.get("/v1/events", params={"subject_id": "service/pool"}, headers={"X-Participant": "own"}).json()
     kinds = [e["kind"] for e in (evs.get("value") or [])]
     assert "service_restarted" in kinds
 
@@ -40,9 +40,9 @@ def test_spawn_refuses_fast_when_pool_down(client, monkeypatch):
     monkeypatch.setattr(pool_adapter, "reachable", lambda timeout=2.0: False)
     run_state.write("pool", pid=1, port=9301, git_rev="x")
     run_state.update("pool", last_ok="2026-09-08T09:00:00+00:00")
-    client.post("/v1/participants", json={"type": "human", "role": "owner", "handle": "o", "id": "o"}, headers=ADMIN)
+    client.post("/v1/participants", json={"type": "human", "role": "owner", "handle": "own", "id": "own"}, headers=ADMIN)
     r = client.post("/v1/sessions/spawn", json={"role": "engineer", "participant_id": "engineer.s-1"},
-                    headers={"X-Participant": "o"})
+                    headers={"X-Participant": "own"})
     body = r.json()
     assert body["ok"] is False
     assert "pool is down" in body["error"]["message"] and "2026-09-08T09:00:00" in body["error"]["message"]

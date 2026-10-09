@@ -117,15 +117,16 @@ def test_adversary_cannot_write_criteria(board, rig):
     assert ei.value.code == "scope"
 
 
-def test_doer_cannot_write_criteria_on_its_own_story(board, rig):
+def test_doer_writing_criteria_on_its_own_story_is_advised_not_refused(board, rig):
+    from edp8 import advice
     epic = make_epic(board, rig)
     story = make_story(board, rig, epic)
     board.ticket_update(rig["architect"], story.id, assignee=rig["architect"].id)
-    with pytest.raises(BoardError) as ei:
-        board.criterion_create(rig["architect"], ticket_id=story.id, text="x", check=Check.command,
-                                checked_by="qa")
-    assert ei.value.code == "scope"
-    assert "doer" in ei.value.message
+    advice.take()
+    c = board.criterion_create(rig["architect"], ticket_id=story.id, text="x", check=Check.command,
+                               checked_by="qa")
+    assert c.ticket_id == story.id
+    assert any("doer" in said for said in advice.take())
 
 
 # ------------------------------------------------------------------ transitions
@@ -314,7 +315,7 @@ def test_child_in_progress_promotes_parent_epic_to_in_progress(board, rig):
     assert epic.status == TicketStatus.in_progress
 
 
-def test_all_stories_done_opens_acceptance_gate_on_epic(board, rig):
+def test_all_stories_done_moves_epic_to_in_review_and_hints_qa_without_a_gate(board, rig):
     epic = make_epic(board, rig)
     story = make_story(board, rig, epic)
     d = design_doc(board, rig, epic.id)
@@ -333,8 +334,12 @@ def test_all_stories_done_opens_acceptance_gate_on_epic(board, rig):
     board.criterion_update(rig["qa"], crit.id, verdict=Verdict.passed)
     board.ticket_update(rig["qa"], story.id, status=TicketStatus.done)
 
-    gates = board.open_gates(epic.id, Gate.acceptance)
-    assert len(gates) == 1
+    # the automatic acceptance gate is retired: the epic moves to in_review and the board hints the architect
+    assert board.open_gates(epic.id, Gate.acceptance) == []
+    assert board.ticket(epic.id).status == TicketStatus.in_review
+    hints = [e for e in board.store.query("event", {"subject_id": epic.id, "kind": EventKind.board_hint}, limit=500)
+             if e.data.get("hint") == "qa_available"]
+    assert len(hints) == 1
 
 
 def test_gate_open_is_idempotent(board, rig):
@@ -391,11 +396,12 @@ def test_context_asks_for_me_shows_unanswered_hides_answered(board, rig):
     epic = make_epic(board, rig)
     q1 = board.message_send(rig["engineer"], ticket_id=epic.id, to="owner", kind=MessageKind.question,
                              text="ship as pip package?")
-    q2 = board.message_send(rig["engineer"], ticket_id=epic.id, to="owner", kind=MessageKind.question,
-                             text="what license?")
-    # a thread reply (no addressee): v34 rule 2 would clear EVERY earlier ask of the engineer on a reply addressed to it
+    # a thread reply (no addressee) answers q1; e0cec S3 (R3): any later owner message settles the owner's open
+    # asks, so q2 is asked after it
     board.message_send(rig["owner"], ticket_id=epic.id, to=None, kind=MessageKind.answer,
                         text="yes", reply_to=q1.id)
+    q2 = board.message_send(rig["engineer"], ticket_id=epic.id, to="owner", kind=MessageKind.question,
+                             text="what license?")
 
     ctx = board.context(rig["owner"], epic.id)
     ask_ids = {a["id"] for a in ctx["asks_for_me"]}

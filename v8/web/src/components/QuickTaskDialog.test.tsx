@@ -108,3 +108,32 @@ describe("QuickTaskDialog (S-QUICK)", () => {
     expect(await screen.findByTestId("quick-task-error")).toHaveTextContent("the owner opens quick tasks");
   });
 });
+
+// S12-ui2 (qa m-da89ef8294): the Quick task dialog shares New epic's layout: heading and Cancel/Open pinned, one
+// scrolling body between them.
+describe("QuickTaskDialog layout (S12-ui2)", () => {
+  it("pins the heading and the actions outside the one scrolling body", async () => {
+    mount();
+    const dialog = await screen.findByRole("dialog", { name: "Quick task" });
+    const body = screen.getByTestId("quick-task-body");
+    const actions = screen.getByTestId("quick-task-actions");
+    expect(body.parentElement).toBe(dialog);
+    expect(actions.parentElement).toBe(dialog);
+    expect(body.contains(actions)).toBe(false);
+    expect(body.contains(screen.getByTestId("quick-task-title"))).toBe(true);
+    expect(body.contains(screen.getByTestId("quick-task-role-models"))).toBe(true);
+  });
+});
+
+// S12-ui3: the pool's capabilities take seconds on a busy host; until they answer, the dialog says it is checking,
+// never that the pool cannot start a seat.
+describe("QuickTaskDialog while the pool answers (S12-ui3)", () => {
+  it("says it is checking, not that the pool cannot start a seat", async () => {
+    mount();
+    server.use(http.get("/v1/pool/capabilities", async () => { await new Promise((r) => setTimeout(r, 300)); return HttpResponse.json({ ok: true, value: { resume_parked: true, resume_closed: false, park: true, spawn: true } }); }));
+    const preview = await screen.findByTestId("quick-task-preview");
+    expect(preview).toHaveTextContent("Checking whether the pool can start a seat");
+    expect(preview).not.toHaveTextContent("cannot");
+    await waitFor(() => expect(preview).toHaveTextContent("starts an engineer"));
+  });
+});

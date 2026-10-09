@@ -68,11 +68,13 @@ def test_addressee_note_or_mention_reply_resolves(rig):
     assert _pending_owner_request(b, epic) is False
 
 
-def test_a_third_party_note_does_not_resolve_but_an_answer_does(rig):
+def test_a_third_party_note_without_reply_to_does_not_resolve_but_a_reply_does(rig):
+    # e0cec S3 (owner R3): a reply_to/quote from ANY other seat now settles the ask (tests/test_ask_resolvers.py);
+    # a note that names nothing still does not
     b, owner, arch, qa, epic = rig
     q = b.message_send(arch, ticket_id=epic.id, to="owner", kind=MessageKind.question, text="Ship?")
-    b.message_send(qa, ticket_id=epic.id, to=None, kind=MessageKind.note, text="I think so", reply_to=q.id)
-    assert asks(b, epic) == [q.id]  # only the addressee's reply (of any kind) closes it
+    b.message_send(qa, ticket_id=epic.id, to=None, kind=MessageKind.note, text="I think so")
+    assert asks(b, epic) == [q.id]
     b.message_send(qa, ticket_id=epic.id, to=arch.id, kind=MessageKind.answer, text="answered", reply_to=q.id)
     assert asks(b, epic) == []
 
@@ -82,4 +84,6 @@ def test_human_author_and_never_shelled_agent_stay_open(rig):
     fresh = b.participant_create("agent", Role.engineer, "engineer.e", id_="engineer.e")  # no session yet
     q1 = b.message_send(owner, ticket_id=epic.id, to=fresh.id, kind=MessageKind.steer, text="start here")
     q2 = b.message_send(fresh, ticket_id=epic.id, to="owner", kind=MessageKind.question, text="which?")
-    assert set(asks(b, epic)) == {q1.id, q2.id}
+    # e0cec S3: the owner's list is owner-only, so q1 (the owner's own steer to a seat) is that seat's to answer
+    assert asks(b, epic) == [q2.id]
+    assert [a["id"] for a in b.inbox(fresh)] == [q1.id]

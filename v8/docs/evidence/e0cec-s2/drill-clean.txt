@@ -1,0 +1,13 @@
+﻿   fleet before: board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+PASS  pre-check: every record in C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home\.run names a private (or dead) pid
+   ports board=58703 pool=58707 mcp=58706 broker=58708; home C:\src\Learning\.wt-e0cec-S2\v8\.data\s2-spike\home
+== 06:03:09 clean: stop, uninstall the spike product
+   private pids: 
+   private pids left: 0
+   msiexec /x {4F0F71D0-C22E-4C48-8957-62278EF706C3} exit 0
+PASS  no spike product installed
+PASS  no process runs from the private folders (0)
+   fleet after:  board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+PASS  fleet pids unchanged
+elapsed 24s
+RESULT: all checks passed

@@ -8,6 +8,7 @@ import { ChatController } from './chat';
 import { ChatViewProvider } from './chatView';
 import { guarded } from './guardedGit';
 import { Layout } from '../core/layout';
+import { revealOnFirstStart } from '../core/firstReveal';
 import { registerLayout } from './layout';
 import { tagSelection } from './tag';
 import { openExternalTerminal } from './terminal';
@@ -19,7 +20,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
   }
   // `method path -> status (ms)` lines only: never headers, bodies or creds
   const out = vscode.window.createOutputChannel('Heronry', { log: true });
-  const boardUrl = () => vscode.workspace.getConfiguration('edp').get<string>('boardUrl') || 'http://127.0.0.1:9400';
+  const boardUrl = () => vscode.workspace.getConfiguration('edp').get<string>('boardUrl') || 'http://127.0.0.1:19400';
   const requests = new ViewerRequests(() => chat.clearViewer());
   const board = () => requests.board(boardUrl(), () => creds(ctx), line => out.info(line));
   const badge = new Badge(ctx, board, line => out.info(line));
@@ -44,6 +45,8 @@ export function activate(ctx: vscode.ExtensionContext): void {
     // S6: the invite's VS Code sign-in link, vscode://edp.edp-code/signin?board=&handle=&code=
     vscode.window.registerUriHandler({ handleUri: async (uri) => { if (await signInFromUri(ctx, board, uri)) { badge.refresh(0); void chat.restart(); } } }),
   );
+  // a fresh profile starts with Heronry Chat behind the secondary side bar's "..." : reveal it once, after the workbench is up
+  setTimeout(() => { void revealOnFirstStart(ctx.globalState, () => ChatViewProvider.reveal()).catch(() => {}); }, 2500);
   // S8: the board and this extension ship from one release; a major.minor mismatch prompts the fix
   const release = String(ctx.extension.packageJSON?.heronry?.release ?? '');
   if (release) void promptOnMismatch(release, boardUrl(), line => out.info(line));

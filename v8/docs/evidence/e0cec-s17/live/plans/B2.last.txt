@@ -1,0 +1,191 @@
+{
+  "steps": [
+    {
+      "n": 1,
+      "do": "Record B2's scope: Rookery PushNote and revision handling, quill-sync stream handling, and quill-mobile conflict cards. Use the epic's B2 design; apply the handbook, protocol policy, observability conventions, and mobile train policy. There is no schema, REST, authentication, secret, or dependency change planned. Resolve process conflicts using specific-document precedence and later amendments; the design governs product behavior.",
+      "per": "strategyll-a1ebb292cb §§0–3, §18; design-807827e39a, Story B2; strategyll-abd22b982c §1; strategyll-fc8a945fbd §1"
+    },
+    {
+      "n": 2,
+      "do": "Prepare small, sequenced PRs on B2/<short-slug> branches, each referencing exactly B2. Plan server, client library, mobile integration/UI, and operational documentation work. File any needed Platform alert-routing request early, allowing approximately two working days.",
+      "per": "strategyll-a1ebb292cb §§3, 3.1–3.2, 21"
+    },
+    {
+      "n": 3,
+      "do": "Create the new story flag sync.field_merge in every environment before any PR reading it merges, OFF everywhere except dev. Gate the new server and client behavior with it; client train builds must have a compiled-in OFF fallback and use the app-start, session-cached flag value. Record the ramp plan in B2 or the flag-introducing PR.",
+      "per": "strategyll-a1ebb292cb §§8.1–8.3, Amendment 6; strategyll-8ed6eb39b8 §4"
+    },
+    {
+      "n": 4,
+      "do": "Implement a pure three-way merge in rookery/merge using base_rev's ancestor, current server revision, and incoming blocks. Preserve edits to different blocks and insertions at different positions in positional order. For competing text edits, retain server text and insert incoming text directly below in a new block whose conflict_of points to the original. Make edits win over deletions; keep title and notebook membership last-writer-wins and personal notebooks unchanged.",
+      "per": "design-807827e39a, Story B2 / What it is, Merge rules, Notes from planning; B2-c1–B2-c4"
+    },
+    {
+      "n": 5,
+      "do": "Integrate the merge into the existing PushNote handler, reading full ancestor block lists from note_revisions and writing a normal new revision. Use the primary database throughout the push path. Preserve existing behavior when merge_mode is absent or lww, the notebook is personal, the negotiated version is older, or the feature is disabled. Wrap Go errors with context and handle them; keep any retry loops capped with jittered backoff.",
+      "per": "design-807827e39a, Story B2 / Server side, Protocol side, Merge rules; strategyll-a1ebb292cb §§4.2, 9.3; strategyll-0b4d658fc0 §2"
+    },
+    {
+      "n": 6,
+      "do": "Implement optional PUSH_NOTE.merge_mode with lww and blocks values, and ACK.merged_rev when merging produces a revision different from the incoming one. Gate every new server field emission with conn.Supports(minor). In the same server PR, update protocol/spec/ with field definitions, receiver behavior, introducing-version entries, and example declarations; generate and commit present/absent fixtures for both fields using make fixtures. Finalize the minor number at merge time.",
+      "per": "design-807827e39a, Story B2 / Protocol side; strategyll-0b4d658fc0 §§2–3, 3.3, Updates 1–2"
+    },
+    {
+      "n": 7,
+      "do": "Add structured, dotted-name events with new snake_case fields and trace_id; pass request context into any spawned goroutines. On merge errors log note_id, involved revision numbers, block counts, and block IDs without payload or block hashes. Use synclog's 10% sampling for ordinary stream events. Ensure failed negotiation logs sync.negotiate.failed at WARN, unsampled, with client_version, protocol_max, and the server maximum version. Retain payload_sha256 on failed requests/messages outside the merge-path exception.",
+      "per": "strategyll-2452733595 §§2–2.3, June Update; strategyll-0b4d658fc0 §§1, 4; strategyll-a1ebb292cb §4.3"
+    },
+    {
+      "n": 8,
+      "do": "Wrap new request/message and database paths in trace spans such as rookery.merge.three_way, with identifiers rather than content as attributes. Provide feature request-rate, error-rate, and latency panels in a collapsible Sync Overview row titled sync.field_merge, plus at least one error-rate alert routed to Inkwell on-call and linked to an updated runbook. Use bounded metric labels and current metric naming; client metrics go through SyncTelemetry aggregates. Make the panels and alerts ready before ramping beyond 1%.",
+      "per": "strategyll-2452733595 §§3–5, August Update; strategyll-a1ebb292cb §13, Amendment 6"
+    },
+    {
+      "n": 9,
+      "do": "Add table-driven pure-function tests for every design merge rule, including conflict placement and references, deletion/edit races, title and membership LWW, and unchanged personal-note behavior. Test PushNote revision persistence and any added or changed SQL against containerized Postgres. Test new server field handling, previous-minor connections receiving no new fields, and failed negotiation producing the required event. Pass the full previous-minor contract suite with byte-identical responses.",
+      "per": "design-807827e39a, Story B2 / Merge rules, Notes from planning; strategyll-a1ebb292cb §§5.1–5.3; strategyll-0b4d658fc0 §§3, 3.3–5"
+    },
+    {
+      "n": 10,
+      "do": "Implement quill-sync sending merge_mode: blocks only for shared notebooks when enabled and supported by WELCOME, and pulling the merged revision when ACK.merged_rev requires it. Raise protocol_max in the same PR that implements handling of everything introduced by that version. Test new-field handling, absent fields, personal notebooks, and WELCOME selecting the previous minor. Use Result types at Kotlin module boundaries where appropriate.",
+      "per": "design-807827e39a, Story B2 / Protocol side, Client side; strategyll-0b4d658fc0 §§3.1, 5; strategyll-a1ebb292cb §4.2"
+    },
+    {
+      "n": 11,
+      "do": "Implement conflict_of cards on iOS and Android with Keep mine, Keep theirs, and Keep both; push resolutions as ordinary edits. Add strings to quill-mobile strings/source.yaml with translator comments. Verify VoiceOver/TalkBack labels and reading order, and usable actions at the largest system font size. Include screenshots from both platforms at default and largest font sizes and request Notebook UI review.",
+      "per": "design-807827e39a, Story B2 / Client side; strategyll-8ed6eb39b8 §6; strategyll-a1ebb292cb Appendix H"
+    },
+    {
+      "n": 12,
+      "do": "For each behavior-changing PR, include what changed and why, B2 and its specific epic-design section, sync.field_merge, sequence position and related PR links, and a Rollback section describing flag disablement and whether reverting is safe. Add an Unreleased CHANGELOG.md entry in each affected repository in the same behavior-changing PR. Use area: summary PR titles and the expected imperative commit summaries under 72 characters with Refs: B2 footers. Run repository formatters before pushing.",
+      "per": "strategyll-a1ebb292cb §§4.1, 6.1–6.3, Appendix H, Amendments 2–3"
+    },
+    {
+      "n": 13,
+      "do": "Before each merge, pass applicable blocking CI jobs and achieve at least 85% line coverage in changed packages, with generated code excluded by CI. Pass device-ios and device-android for both client repositories. Add run-e2e to the quill-sync stream-handling PR and require a green sync-e2e before merge despite its non-blocking CI setting. Check the quill-sync performance report against the under-10-second cold-start budget for 1,000 notes on the reference low-end Android device. Obtain a non-author CODEOWNERS approval per PR and have revision-handling reviewers run the change locally; obtain Notebook UI review for the UI PR.",
+      "per": "strategyll-a1ebb292cb §§5.1–5.3, 7.1–7.2, 15, Appendix E, Amendments 1, 5; strategyll-8ed6eb39b8 §6"
+    },
+    {
+      "n": 14,
+      "do": "At the server wire-change merge, allocate the next available minor in actual merge order and finalize protocol/VERSIONS.md listing both new fields and B2, with matching spec and generated fixtures. Use squash merge for rookery and quill-sync. Deploy the server build to canary, allow the automated fifteen-minute analysis, then promote to the full fleet during the permitted working-hours window. Establish that contract passed on that build before treating the server release step as complete.",
+      "per": "strategyll-0b4d658fc0 §§2.1, 3, 3.2, Updates 1–2; strategyll-a1ebb292cb §§7.3–7.4, 11.1"
+    },
+    {
+      "n": 15,
+      "do": "Publish the quill-sync release and prepare the exact-version pin bump in quill-mobile with the completed UI work. Add the expected user-facing entry to release-notes/<train>.md in the PR completing client work. Make every mobile commit independently build, pass tests, and follow the commit format; merge using rebase merge by 17:00 on the second working day before the intended train cut. Target 26.11 only if eligible; otherwise use the next train.",
+      "per": "strategyll-8ed6eb39b8 §§2–3.1, 7, April Update; strategyll-a1ebb292cb §6.1; design-807827e39a §4"
+    },
+    {
+      "n": 16,
+      "do": "Before the train cut, confirm the new-version Rookery build is on the full fleet with contract passed, and add its fleet-promotion link to the train ticket. If that server release step is incomplete, defer the quill-sync bump to the next train. Keep client defaults OFF through testing and store review; release through the regular train and phased store rollout.",
+      "per": "strategyll-0b4d658fc0 §3.2; strategyll-8ed6eb39b8 §§2, 4–5, April Update"
+    },
+    {
+      "n": 17,
+      "do": "After the train reaches users, ramp sync.field_merge through 1%, 10%, 50%, and 100%, spending at least one full day at each stage. Before advancing beyond 1%, verify the Sync Overview row, error-rate alert, routing, and runbook are live. Watch the feature metrics and own the rollout. If a page affects sync for more than 1% of devices for over ten minutes, follow the incident declaration and post-incident review process, with review within five working days.",
+      "per": "strategyll-a1ebb292cb §§7.4, 8.3, 11.3, Amendment 6; strategyll-2452733595 §5, August Update; strategyll-8ed6eb39b8 §4"
+    },
+    {
+      "n": 18,
+      "do": "After the flag has remained at 100% for a full train cycle without incidents, remove the flag reads from code, then archive the flag. Retain protocol-version compatibility gates and take ownership through completion of cleanup.",
+      "per": "strategyll-a1ebb292cb §§7.4, 8.3; strategyll-0b4d658fc0 §§2, 3.3"
+    }
+  ],
+  "must_not": [
+    {
+      "rule": "Do not implement merging on the client, follow the abandoned client-merge diagram, replace the design with a CRDT library, merge titles character by character, or change personal-notebook behavior. End-to-end encryption, web-client parity, and collaborative cursors are outside this epic.",
+      "per": "design-807827e39a §1, Story B2 / Merge rules and Notes from planning, §7, Appendix A"
+    },
+    {
+      "rule": "Do not create schema migrations, backfills, retention declarations, migration-application gates, or attachment staging/sweeper work for B2. Existing note_revisions already contains the required data; query changes still require integration tests.",
+      "per": "design-807827e39a, Story B2 / Server side; strategyll-abd22b982c §1; strategyll-a1ebb292cb §§4.3, 5.3, 9"
+    },
+    {
+      "rule": "Do not import B3's security-control flag exemption, security-champion second approval, secret provisioning, cryptography, or audit-trail work into B2. B2 does not change those areas and must remain flagged; the extra auth approval applies only to rookery/auth/ changes.",
+      "per": "strategyll-fc8a945fbd §§1, 6; strategyll-a1ebb292cb §§7.1, 8.1, Amendment 4; design-807827e39a, Stories B2–B3"
+    },
+    {
+      "rule": "Do not require REST idempotency tests or an OpenAPI change for PUSH_NOTE/ACK field changes. B2 changes stream fields, not REST endpoints. The per-new-endpoint/message-type RED-metric rule is not triggered by fields on existing messages, although feature panels and alerts remain required. No new job means no job metrics or staleness alert.",
+      "per": "strategyll-a1ebb292cb §§5.4, 13, 18; strategyll-2452733595 §§3, 5; strategyll-0b4d658fc0 §1"
+    },
+    {
+      "rule": "Do not reserve a protocol minor, assume B2 must be 3.6, or share a minor with another wire-changing merge. Do not add a major bump, deprecation notice, web migration guide, or breaking-change support schedule to this additive change.",
+      "per": "strategyll-0b4d658fc0 §§2.1, 6, 8, Update 1; design-807827e39a §4; strategyll-a1ebb292cb §2"
+    },
+    {
+      "rule": "Do not hand-write golden fixtures, defer the server's protocol spec to a later PR, raise protocol_max in a preparatory PR, manually compare server version numbers, send fields above WELCOME's version, or stop accepting old shapes within the major. Do not introduce per-message versions or capability/feature-flag names on the wire.",
+      "per": "strategyll-0b4d658fc0 §§2–3.3, 7, Update 2; strategyll-a1ebb292cb §8.4"
+    },
+    {
+      "rule": "Do not log payload_sha256, payloadSha256, or any other payload/block-content hash on the shared-note merge path; its explicit exception overrides the general error-payload hash requirement. Do not log note content, titles, filenames, request bodies, email addresses, display names, or device names, including in debug output, crash reports, analytics, or trace attributes.",
+      "per": "strategyll-2452733595 §§2.1–2.2, 4, June Update; strategyll-a1ebb292cb §4.3"
+    },
+    {
+      "rule": "Do not sample negotiation failures under the general 10% stream rule; the protocol policy requires WARN and unsampled events. Do not bypass sampling for ordinary stream traffic. Do not add camelCase log fields; convert existing event fields when their package is substantially changed.",
+      "per": "strategyll-0b4d658fc0 §§1, 4; strategyll-2452733595 §§1, 2.3, June Update"
+    },
+    {
+      "rule": "Do not use IDs as metric labels, add per-event client sync analytics, create a separate feature dashboard instead of the required Sync Overview row, add StatsD calls, or add panels to graphite- dashboards. Remove dead StatsD calls when touching their file and convert touched free-text lines when substantially changing an old package.",
+      "per": "strategyll-2452733595 §§3, 5–6, 8, August Update; strategyll-a1ebb292cb §10.1"
+    },
+    {
+      "rule": "Do not use the superseded 80% coverage floor, waive the 85% floor, substitute coverage for conflict tests, skip either client device-test platform, or merge stream-handling changes without green sync-e2e. Do not add run-e2e to unrelated quill-sync PRs.",
+      "per": "strategyll-a1ebb292cb §§5.1–5.3, Appendix E, Amendments 1, 5"
+    },
+    {
+      "rule": "Do not retry a failing CI job more than once. Quarantine a flaky test with @flaky and a ticket within one working day, then fix or delete it within two weeks.",
+      "per": "strategyll-a1ebb292cb §5.5"
+    },
+    {
+      "rule": "Do not merge flag-reading code before the flag exists in every environment, even during a flag-service outage; reuse an old flag; ramp before client release; advance beyond 1% without required observability; or archive the flag before removing its reads and completing the incident-free full-cycle hold at 100%.",
+      "per": "strategyll-a1ebb292cb §§8.1–8.3, Appendix H, Amendment 6; strategyll-2452733595 §5; strategyll-8ed6eb39b8 §4"
+    },
+    {
+      "rule": "Do not treat canary alone, a feature flag, or a small client rollout as an exception to server-full-fleet-plus-contract ordering. The server step must finish before the train cut, not merely before user release. Do not use the obsolete client-merge deadline of immediately before cut; the second-working-day deadline governs.",
+      "per": "strategyll-0b4d658fc0 §§3.2, 8; strategyll-8ed6eb39b8 §5, April Update"
+    },
+    {
+      "rule": "Do not squash-merge quill-mobile, including single-commit PRs; do not rebase-merge rookery or quill-sync. Do not use emergency hotfixes for story work or override out-of-hours fleet promotion as though B2 were an incident fix.",
+      "per": "strategyll-8ed6eb39b8 §§3, 9.1, 10; strategyll-a1ebb292cb §§7.3, 11.1"
+    },
+    {
+      "rule": "Do not skip UI accessibility, screenshots, localization, or Notebook UI review by classifying B2 as sync internals. Do not hard-code new user-facing strings.",
+      "per": "strategyll-8ed6eb39b8 §6; design-807827e39a, Story B2 / Client side"
+    },
+    {
+      "rule": "Do not batch changelog entries at release, replace them with fragments, or follow a stale PR template over the handbook. Pure refactor, test-only, and generated-refresh PRs retain their changelog exemptions; expected items require a reason if omitted.",
+      "per": "strategyll-a1ebb292cb §§6.2–6.3, 17, Appendix O.5, Amendment 3"
+    },
+    {
+      "rule": "Do not treat retired QA sheets, main freezes, company-wide release emails, head-of-engineering sign-off, historical examples, mandatory pairing, 95% coverage, universal two-reviewer requirements, universal load tests, or the proposed total debug-log ban as current requirements.",
+      "per": "strategyll-a1ebb292cb §§0, 5.6, 17, Appendices A–C, L–M"
+    },
+    {
+      "rule": "Do not add an independent design-note gate for this epic story or dependency approval work without a dependency change. If a dependency is added or upgraded, require reviewer license checking and PR justification; quill-sync additions over 100 KB require tech-lead agreement.",
+      "per": "strategyll-a1ebb292cb §§4.4, 18"
+    },
+    {
+      "rule": "Do not commit real secrets or bypass secret-scan with exclusions; fixtures use obviously fake values. Prefer existing error codes; a new code is justified only by different client behavior and requires snake_case naming, documented behavior, protocol specification, and explicit quill-sync handling.",
+      "per": "strategyll-a1ebb292cb §12, Appendices E, I.1"
+    }
+  ],
+  "criteria_checks": [
+    {
+      "criterion": "B2-c1",
+      "how": "Run pure-merge tests and the client/server sync scenario with concurrent edits to different blocks of a shared note; assert both edits survive the stored revision and subsequent synchronization."
+    },
+    {
+      "criterion": "B2-c2",
+      "how": "Test that competing text edits leave server text in the original block and insert incoming text directly below with conflict_of pointing to that block. Exercise the card and all three resolution actions on both platforms, verifying each resolution synchronizes as an ordinary edit."
+    },
+    {
+      "criterion": "B2-c3",
+      "how": "Review that rookery/merge is pure and testable without a database. Run tests covering every design rule: disjoint edits, positional insertions, same-block conflict, deletion versus edit, title and membership LWW, and personal-notebook preservation. Require at least 85% coverage in changed packages."
+    },
+    {
+      "criterion": "B2-c4",
+      "how": "Pass the byte-identical previous-minor contract suite, server tests asserting no new fields on older connections, and quill-sync tests where WELCOME selects the previous minor. Test absent merge_mode and personal notebooks against existing behavior, including personal notebooks on a new-version connection."
+    }
+  ],
+  "complete": true
+}

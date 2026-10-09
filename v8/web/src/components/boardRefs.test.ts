@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { activeRef, boardRows, rankRefs, refHref, refIds, refKind, refLabel, refToken, scopeRows, splitRefs, type RefRow } from "./boardRefs";
+import { activeRef, artifactRows, boardRows, rankRefs, refHref, refIds, refKind, refLabel, refToken, scopeRows, splitRefs, type RefRow } from "./boardRefs";
 
 // C24: the $-reference contract, read from the one fixture the extension's tests read too.
 const fixture = JSON.parse(readFileSync(resolve(__dirname, "../../../tests/fixtures/ref_cases.json"), "utf-8")) as {
@@ -100,5 +100,35 @@ describe("rows from the board's routes", () => {
       [{ id: "epic-5555555555", title: "live epic", status: "in_progress" }, { id: "epic-6666666666", title: "old", status: "done" }],
     );
     expect(out.map((r) => [r.id, r.title])).toEqual([["epic-5555555555", "live epic"], ["s-1111111111", "open"], ["dec-3333333333", "the ruling text"]]);
+  });
+});
+
+describe("artifact rows (S16, GET /v1/artifacts/search)", () => {
+  const raw = [
+    { id: "art-0123456789", title: "alpha-shot.png", group: "scope", epic_title: "Alpha" },
+    { id: "art-abcdef0123", title: "Bravo report", group: "board", epic_title: null },
+    { id: "s-5d1b171d57", title: "a ticket is not an artifact row", group: "board" },
+    { id: "art-xyz", title: "malformed id", group: "board" },
+    { title: "no id", group: "board" },
+  ];
+  it("keeps well-formed artifact rows with the server's group and the epic it names", () => {
+    expect(artifactRows(raw)).toEqual([
+      { id: "art-0123456789", kind: "artifact", title: "alpha-shot.png", group: "scope", epic: "Alpha" },
+      { id: "art-abcdef0123", kind: "artifact", title: "Bravo report", group: "board", epic: null },
+    ]);
+    expect(artifactRows("nope")).toEqual([]);
+  });
+  it("an artifact id is a referenceable id: kind, label, and a link to the artifact page", () => {
+    expect(refKind("art-0123456789")).toBe("artifact");
+    expect(refKind("art-0123")).toBeNull();
+    expect(refHref("art-0123456789", "artifact", "/ticket/s-1")).toBe("/artifact/art-0123456789");
+    expect(refToken({ id: "art-0123456789", title: "alpha-shot.png" })).toBe("$art-0123456789 (alpha-shot.png) ");
+    expect(refIds("see $art-0123456789 (alpha-shot.png) and `$art-abcdef0123`")).toEqual(["art-0123456789"]);
+  });
+  it("ranks on the epic title too, scope rows first", () => {
+    const rows = artifactRows(raw);
+    expect(rankRefs("alpha", [rows[0]], [rows[1]]).map((r) => r.id)).toEqual(["art-0123456789"]);
+    expect(rankRefs("art", [rows[0]], [rows[1]]).map((r) => [r.id, r.group])).toEqual([["art-0123456789", "scope"], ["art-abcdef0123", "board"]]);
+    expect(rankRefs("zzz", [rows[0]], [rows[1]])).toEqual([]);
   });
 });

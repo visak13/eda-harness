@@ -135,7 +135,7 @@ describe("Composer wake preview + addressing", () => {
       ),
     );
     mountComposer({ to: "engineer.s-1" });
-    await waitFor(() => expect(screen.getByTestId("wake-preview")).toHaveTextContent("Will notify engineer.s-1"));
+    await waitFor(() => expect(screen.getByTestId("wake-preview")).toHaveTextContent("Will notify the engineer"));
     expect(screen.getByTestId("wake-preview").getAttribute("title")).toMatch(/engineer\.s-1 — addressed to you/);
   });
 
@@ -276,8 +276,8 @@ describe("Composer help (promise #16)", () => {
     expect(screen.queryByRole("dialog", { name: "How sending works" })).not.toBeInTheDocument();
     fireEvent.click(toggle);
     const dialog = screen.getByRole("dialog", { name: "How sending works" });
-    expect(dialog).toHaveTextContent(/wakes that seat's shell/);
-    expect(dialog).toHaveTextContent(/one running agent shell bound to one ticket, named role\.ticket/);
+    expect(dialog).toHaveTextContent(/wakes that seat:/);
+    expect(dialog).toHaveTextContent(/one running agent bound to one ticket, named role\.ticket/);
     expect(dialog).toHaveTextContent(/architect, engineer, qa, adversary, sme or owner/);
     fireEvent.click(screen.getByRole("button", { name: "Close help" }));
     expect(screen.queryByRole("dialog", { name: "How sending works" })).not.toBeInTheDocument();
@@ -302,5 +302,23 @@ describe("Composer help (promise #16)", () => {
     const roleOpt = [...toSel.options].find((o) => o.value === "architect")!;
     expect(roleOpt.title).toMatch(/wakes the architect on this epic/);
     expect(roleOpt.textContent).toMatch(/wakes the architect on this epic/);
+  });
+});
+
+// S12-ui2 (qa m-da89ef8294 m7): the board refuses the wake preview to a guest (403); a guest's composer never asks it.
+describe("Composer for a guest (S12-ui2)", () => {
+  it("asks the wake preview for a teammate, never for a guest", async () => {
+    let calls = 0;
+    const resolve = http.post("/v1/messages/resolve", () => { calls += 1; return HttpResponse.json({ ok: true, value: { to: null, wakes: [], plan: [], note: "" } }); });
+    server.use(resolve);
+    const owner = mountComposer();
+    await waitFor(() => expect(calls).toBeGreaterThan(0));
+    owner.unmount();
+    calls = 0;
+    server.use(resolve, http.get("/v1/whoami", () => HttpResponse.json({ ok: true, value: { participant: { id: "guest-1", handle: "gina", role: "guest", type: "human" }, tickets: [], admin: false } })));
+    mountComposer();
+    await screen.findAllByRole("textbox");
+    await new Promise((r) => setTimeout(r, 400));
+    expect(calls).toBe(0);
   });
 });

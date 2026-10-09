@@ -118,8 +118,9 @@ def test_listener_without_identity_is_foreign_never_killed(home, fake):
 def test_caller_with_no_home_never_claims_a_listener(home, fake, monkeypatch, tmp_path):
     # the old _ours returned True for every installed CLI (no EDP_HOME) when the argv named the module
     monkeypatch.delenv("EDP_HOME")
-    monkeypatch.setenv("EDP8_RUN_DIR", str(tmp_path / "run-nohome"))
-    # no home = the platform dirs; root them in tmp so the real profile's config.toml never answers
+    # no home = the platform dirs; root them in tmp so the real profile's config.toml never answers (a run dir
+    # outside the platform state dir is refused by the home guard: see test_update_s10)
+    monkeypatch.setenv("EDP8_RUN_DIR", str(tmp_path / "platform" / "state" / "run-nohome"))
     from types import SimpleNamespace
     from edp_contracts.settings import _core
     plat = SimpleNamespace(**{f"user_{d}_dir": str(tmp_path / "platform" / d) for d in ("config", "data", "state", "log")})
@@ -394,19 +395,94 @@ def test_stop_sweeps_this_homes_unrecorded_bundle_services_only(home, monkeypatc
     mine = str(settings.run_dir())
 
     class P:
-        def __init__(self, pid, cmdline, env):
+        def __init__(self, pid, cmdline, env, exe="/Apps/Heronry Desktop"):
             self.info = {"pid": pid, "cmdline": cmdline, "create_time": 1000.0 + pid, "name": "Heronry Desktop"}
-            self._env = env
+            self._env, self._exe = env, exe
 
         def environ(self):
             if isinstance(self._env, Exception):
                 raise self._env
             return self._env
+
+        def exe(self):
+            if isinstance(self._exe, Exception):
+                raise self._exe
+            return self._exe
     svc = ["/Apps/Heronry Desktop", launcher.SERVICE_FLAG, "supervisor"]
     procs = [P(11, svc, {"EDP8_RUN_DIR": mine}),                                  # ours, unrecorded: swept
              P(12, svc, {"EDP8_RUN_DIR": mine + "-other-home"}),                  # another home's supervisor
              P(13, svc, psutil.AccessDenied(13)),                                 # cannot attribute: never claimed
-             P(14, ["/Apps/Heronry Desktop", launcher.SERVICE_FLAG, "board"], {"EDP8_RUN_DIR": mine})]
+             P(14, ["/Apps/Heronry Desktop", launcher.SERVICE_FLAG, "board"], {"EDP8_RUN_DIR": mine}),
+             P(15, svc, {"EDP8_RUN_DIR": mine}, exe="/Other/Heronry Desktop"),    # this run dir but another install's image
+             P(16, svc, {"EDP8_RUN_DIR": mine}, exe=psutil.AccessDenied(16))]      # image unreadable: never claimed
     assert launcher.unrecorded("supervisor", procs=procs) == [ProcId(11, 1011.0, "Heronry Desktop")]
     monkeypatch.setattr(launcher, "bundled", lambda: False)
     assert launcher.unrecorded("supervisor", procs=procs) == []
+
+
+# ------------------------------------------------------------------------------------------ S2 guards
+
+def test_guard1_a_run_dir_outside_the_home_is_refused(home, tmp_path, monkeypatch):
+    # S2 incident (p-7d52c9cf): EDP_HOME was private, EDP8_RUN_DIR inherited from the fleet's shell
+    monkeypatch.setenv("EDP8_RUN_DIR", str(tmp_path / "fleet" / "run"))
+    with pytest.raises(launcher.LaunchError, match="EDP8_RUN_DIR=.*points outside it"):
+        launcher.stop("board")
+    with pytest.raises(launcher.LaunchError, match="points outside it"):
+        launcher.start("board")
+    monkeypatch.setenv("EDP8_RUN_DIR", str(home["home"] / ".run"))
+    assert launcher.foreign_dirs() == []
+
+
+def test_guard2_a_record_naming_another_homes_process_is_never_killed(home, fake, tmp_path, monkeypatch):
+    # a record in this run dir that names a process whose environment is another home's: left alone
+    other_run = tmp_path / "homeB" / ".run"
+    monkeypatch.setenv("EDP8_RUN_DIR", str(other_run))  # the fake inherits it as "its" run dir
+    lid = fake(home["port"], {"ok": True})
+    monkeypatch.setenv("EDP8_RUN_DIR", str(home["home"] / ".run"))
+    run_state.write("board", pid=lid.pid, port=None, git_rev="x")
+    assert launcher._same_home(lid) is False
+    assert launcher._targets("board") == []
+    launcher.stop("board")
+    assert lid.live() is not None
+
+
+def test_guard2_a_record_naming_this_homes_process_is_killed(home, fake, monkeypatch):
+    monkeypatch.setenv("EDP8_RUN_DIR", str(home["home"] / ".run"))
+    lid = fake(home["port"], {"ok": True})
+    run_state.write("board", pid=lid.pid, port=None, git_rev="x")
+    assert launcher._same_home(lid) is True
+    assert [t.pid for t in launcher._targets("board")] == [lid.pid]
+
+
+# ------------------------------------------------------------------------------------------ S10 (c-1ccf55aec4)
+
+def test_a_bundle_never_kills_a_process_whose_image_is_another_installs(home, fake, monkeypatch):
+    # the run dir (or home) matches, but the image is not this install's heronry.exe: left alone, fail-closed
+    monkeypatch.setenv("EDP8_RUN_DIR", str(home["home"] / ".run"))
+    lid = fake(home["port"], {"ok": True})
+    run_state.write("board", pid=lid.pid, port=None, git_rev="x")
+    monkeypatch.setattr(launcher, "bundled", lambda: True)
+    monkeypatch.setattr(launcher, "bundle_exe", lambda: str(home["home"] / "other-install" / "heronry.exe"))
+    assert launcher._same_home(lid) is False and launcher._targets("board") == []
+    monkeypatch.setattr(launcher, "bundled", lambda: False)  # not a bundle: the home check alone decides
+    assert launcher._same_home(lid) is True
+
+
+def test_every_cli_verb_but_the_four_pure_ones_refuses_a_foreign_run_dir(home, tmp_path, monkeypatch, capsys):
+    from edp8 import cli
+    monkeypatch.setenv("EDP8_RUN_DIR", str(tmp_path / "fleet" / "run"))
+    for cmd in ("status", "start", "stop", "restart", "update", "doctor", "import", "init", "gui"):
+        assert cli.main([cmd]) == 2, cmd
+        assert "points outside it" in capsys.readouterr().err, cmd
+    for cmd in ("version", "help"):
+        assert cli.main([cmd]) == 0, cmd
+    monkeypatch.setenv("EDP8_RUN_DIR", str(home["home"] / ".run"))
+    assert cli.main(["version"]) == 0 and settings.foreign_dirs() == []
+
+
+def test_the_supervisor_calls_refuse_a_foreign_run_dir(home, tmp_path, monkeypatch):
+    monkeypatch.setenv("EDP8_RUN_DIR", str(tmp_path / "fleet" / "run"))
+    with pytest.raises(launcher.LaunchError, match="points outside it"):
+        launcher.stop_supervisor()
+    with pytest.raises(launcher.LaunchError, match="points outside it"):
+        launcher.ensure_supervisor()

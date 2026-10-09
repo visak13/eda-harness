@@ -220,7 +220,8 @@ def test_heronry_load_dotenv_last_line_wins_and_the_environment_beats_the_file(t
 # ── -WhatIf: the heronry calls edp.ps1 plans ────────────────────────────────────────────────────
 
 def test_status_lists_every_service(tmp_path):
-    r = _run(["status"], _hermetic_env(tmp_path))
+    env = _hermetic_env(tmp_path) | {"EDP_HOME": str(tmp_path)}  # the home guard refuses a run dir outside EDP_HOME
+    r = _run(["status"], env)
     assert r.returncode == 0, r.stderr
     for svc in ("board", "broker", "pool", "mcp", "bridge", "supervisor"):
         assert re.search(rf"^{svc}\s+down\b", r.stdout, re.M), r.stdout

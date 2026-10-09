@@ -177,7 +177,9 @@ export function ArtifactLink({ id, label }: { id: string; label?: string }): Rea
   );
 }
 
-const TOKEN = /(art-[0-9a-f]{6,}|https?:\/\/[^\s<>"']+)/g;
+// S16: a `$art-<id>` reference (the `$` picker's insert, with its ` (label)`) is ONE artifact link, never `$` + id + text
+const TOKEN = /(\$art-[0-9a-f]{10}(?: \([^()\n]{1,80}\))?|art-[0-9a-f]{6,}|https?:\/\/[^\s<>"']+)/g;
+const DOLLAR_ART = /^\$(art-[0-9a-f]{10})(?: \(([^()\n]{1,80})\))?$/;
 
 /** Message text with artifact tokens (`art-…`) and bare URLs rendered as links (finding #5). */
 export function MessageText({ text, className }: { text: string; className?: string }): React.JSX.Element {
@@ -186,6 +188,8 @@ export function MessageText({ text, className }: { text: string; className?: str
   return (
     <div className={className}>
       {parts.map((p, i) => {
+        const ref = DOLLAR_ART.exec(p);
+        if (ref) return <ArtifactLink key={i} id={ref[1]} label={ref[2] ? `artifact · ${ref[2]}` : undefined} />;
         if (/^art-[0-9a-f]{6,}$/.test(p)) return <ArtifactLink key={i} id={p} />;
         if (/^https?:\/\//.test(p) && routed) {
           try {

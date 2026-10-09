@@ -34,15 +34,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from edp8.code_guard import mint_token  # noqa: E402
 
 V8 = Path(__file__).resolve().parents[1]
-FAQ = V8 / "guides" / "code-tab-faq.md"
+FAQ = V8 / "docs" / "operator" / "code-tab-faq.md"
 WS_TARGET = "/?reconnectionToken=probe&reconnection=false&skipWebSocketFrames=false"
 
 
-def send(port: int, host: str, target: str, extra: list[str]) -> dict:
-    raw = f"GET {target} HTTP/1.1\r\nHost: {host}\r\n" + "".join(h + "\r\n" for h in extra) + "\r\n"
+def send(port: int, host: str, target: str, extra: list[str], form: str | None = None) -> dict:
+    """GET `target`, or POST `form` to it (the guard login, RC2 F5: a token never rides a URL)."""
+    body = (form or "").encode()
+    raw = (f"{'POST' if form is not None else 'GET'} {target} HTTP/1.1\r\nHost: {host}\r\n"
+           + "".join(h + "\r\n" for h in extra)
+           + (f"Content-Type: application/x-www-form-urlencoded\r\nContent-Length: {len(body)}\r\n" if form is not None else "")
+           + "\r\n")
     data = b""
     with socket.create_connection(("127.0.0.1", port), timeout=10) as s:
-        s.sendall(raw.encode())
+        s.sendall(raw.encode() + body)
         try:
             while b"\r\n\r\n" not in data or len(data) < 4096:
                 chunk = s.recv(65536)
@@ -95,7 +100,7 @@ def main() -> int:
     evil, good = f"evil.invalid:{p}", f"127.0.0.1:{p}"
     rec = json.loads((Path(a.run_dir) / "code.json").read_text(encoding="utf-8-sig"))
     key = rec.get("mint_key") or ""
-    login = lambda tok: send(p, good, f"/__edp/login?t={tok}&next=%2F", [])  # noqa: E731
+    login = lambda tok: send(p, good, "/__edp/login", [], form=f"t={tok}&next=%2F")  # noqa: E731
     token, _ = mint_token(key)
     signed_in = login(token)
     jar = [f"Cookie: {signed_in.pop('_cookie')}"] if signed_in["_cookie"] else []

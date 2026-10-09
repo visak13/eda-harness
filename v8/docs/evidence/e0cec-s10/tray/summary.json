@@ -1,0 +1,28 @@
+{
+    "from":  "0.9.1",
+    "to":  "0.9.2.dev0",
+    "state":  "ok",
+    "reason":  "",
+    "timings":  {
+                    "parked":  0.5,
+                    "stopped":  6.4,
+                    "holders_checked":  45.4,
+                    "installed":  217.0,
+                    "relaunched":  242.1,
+                    "resumed":  242.1
+                },
+    "parked":  [
+                   "engineer.s2-drill"
+               ],
+    "resumed":  [
+                    "engineer.s2-drill"
+                ],
+    "installed":  "0.9.2",
+    "health_version":  "0.9.2.dev0",
+    "recover_hint":  "reinstall 0.9.1 from its cached installer: msiexec /i \"<repo>\\v8\\.data\\s2-spike\\home\\.data\\updates\\0.9.1\\Heronry S2 Spike-0.9.1.msi\" MSIINSTALLPERUSER=1, then `heronry start`",
+    "finished_at":  "2026-10-02T03:34:07+00:00",
+    "installed_before":  "{015FD807-D012-4E4E-A414-93FC737F76F7}=0.9.1",
+    "installed_after":  "{5512910A-7FDC-475F-BAE7-32A6C5FDF4D6}=0.9.2",
+    "seat_after":  "alive",
+    "drill_seconds":  276.6
+}

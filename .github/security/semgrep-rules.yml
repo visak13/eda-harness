@@ -1,0 +1,62 @@
+# Local semgrep rules for the CI `security` job: offline, pinned to this file (no registry ruleset drifting under
+# the build). High-signal patterns only; an accepted hit carries `# nosemgrep: <rule-id>  # reason` on its line.
+rules:
+  - id: shell-true
+    languages: [python]
+    severity: ERROR
+    message: subprocess with shell=True runs its argument through a shell; pass an argv list.
+    pattern: subprocess.$FUNC(..., shell=True, ...)
+  - id: os-system
+    languages: [python]
+    severity: ERROR
+    message: os.system / os.popen run a shell command line; use subprocess with an argv list.
+    pattern-either:
+      - pattern: os.system(...)
+      - pattern: os.popen(...)
+  - id: eval-exec
+    languages: [python]
+    severity: ERROR
+    message: eval / exec of a string runs arbitrary code.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: exec(...)
+  - id: unsafe-deserialise
+    languages: [python]
+    severity: ERROR
+    message: pickle / marshal / yaml.load of untrusted data runs code; use json or yaml.safe_load.
+    pattern-either:
+      - pattern: pickle.load(...)
+      - pattern: pickle.loads(...)
+      - pattern: marshal.load(...)
+      - pattern: marshal.loads(...)
+      - pattern: yaml.load($X)
+  - id: tls-verify-disabled
+    languages: [python]
+    severity: ERROR
+    message: TLS certificate verification is switched off.
+    pattern-either:
+      - pattern: $MOD.$FUNC(..., verify=False, ...)
+      - pattern: ssl._create_unverified_context(...)
+      - pattern: $X.verify_mode = ssl.CERT_NONE
+  - id: tempfile-mktemp
+    languages: [python]
+    severity: ERROR
+    message: tempfile.mktemp is racy; use mkstemp / NamedTemporaryFile / mkdtemp.
+    pattern: tempfile.mktemp(...)
+  - id: weak-hash-for-security
+    languages: [python]
+    severity: ERROR
+    message: md5 / sha1 without usedforsecurity=False; use sha256, or say the hash is not a security control.
+    patterns:
+      - pattern-either:
+          - pattern: hashlib.md5(...)
+          - pattern: hashlib.sha1(...)
+      - pattern-not: hashlib.md5(..., usedforsecurity=False, ...)
+      - pattern-not: hashlib.sha1(..., usedforsecurity=False, ...)
+  - id: sql-concat
+    languages: [python]
+    severity: ERROR
+    message: SQL text built with % or + ; bind values with ? placeholders.
+    pattern-either:
+      - pattern: $CUR.execute("..." % ...)
+      - pattern: $CUR.execute("..." + $V)

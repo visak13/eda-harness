@@ -77,12 +77,7 @@ const work_type: Table = {
 
 const gate: Table = {
   design_signoff: { label: "Design sign-off", meaning: "Decide whether a design can proceed." },
-  poc: { label: "Proof of concept", meaning: "Check that an approach is feasible." },
-  demo: { label: "Demo", meaning: "Judge a working demonstration." },
-  adversarial: { label: "Adversarial", meaning: "Challenge the work for hidden faults." },
-  budget: { label: "Budget", meaning: "Decide on a requested resource limit." },
-  acceptance: { label: "Acceptance", meaning: "Decide whether the result is accepted." },
-  scope: { label: "Scope", meaning: "Raise the limit on how much work a story may take on." },
+  scope: { label: "Scope", meaning: "Lift the limit on how many stories this epic may hold." },
 };
 
 const message_kind: Table = {
@@ -103,6 +98,7 @@ const role: Table = {
   sme: { label: "SME", meaning: "Advises on a specialist domain." },
   adversary: { label: "Adversary", meaning: "Hostile review that hunts for hidden faults." },
   expert: { label: "Expert", meaning: "A person from your team linked to one Library topic." },
+  guest: { label: "Guest", meaning: "An outside person (shown as ext:<handle>) who reads, asks and uploads on the epics they are added to." },
   doctor: { label: "Help", meaning: "The read-only Help seat: diagnoses problems and proposes fixes an admin approves." },
 };
 
@@ -122,19 +118,20 @@ const verdict: Table = {
 // The pool shell lifecycle (schemas.py SessionState) shown on Seats. "dead" reads "Closed" — a
 // recorded end, not a guess from silence; the presence rule (presence.ts) handles staleness apart.
 const session_state: Table = {
-  alive: { label: "Alive", meaning: "The shell is running right now." },
-  stalled: { label: "Stalled", meaning: "The shell is up but has gone quiet." },
-  dead: { label: "Closed", meaning: "The shell has ended and recorded why." },
-  parked: { label: "Parked", meaning: "The shell is paused and can be resumed." },
+  alive: { label: "Alive", meaning: "The seat is running right now." },
+  stalled: { label: "Stalled", meaning: "The seat is running but has gone quiet." },
+  dead: { label: "Closed", meaning: "The seat has ended and recorded why." },
+  parked: { label: "Parked", meaning: "The seat is paused and can be resumed." },
 };
 
 // Concept words the plate footer explains — not a board enum, so not gated by the table test, but
 // listed in the help panel so a reader meets "seat", "wake", "presence" in plain words.
 const concept: Table = {
   seat: { label: "Seat", meaning: "An agent assigned to work." },
-  wake: { label: "Wake", meaning: "Notify a seat's shell so it acts." },
-  alive: { label: "Alive", meaning: "The shell is running — this describes the shell, not progress." },
-  presence: { label: "Presence", meaning: "What we last heard about a seat's shell; silence is not death." },
+  wake: { label: "Wake", meaning: "Notify a seat so it acts." },
+  alive: { label: "Alive", meaning: "The seat is running — this says nothing about progress." },
+  requirement: { label: "Requirement", meaning: "A span the owner or a guest marked. It holds the epic open until it is linked." },
+  presence: { label: "Presence", meaning: "What we last heard from a seat. Silence does not mean it is closed." },
 };
 
 export const GLOSSARY: Record<GlossaryCategory, Table> = {

@@ -10,7 +10,6 @@ import SETTINGS from "../../test/fixtures/admin-settings.json";
 import type { ServiceRow, SettingsView } from "../../api/admin";
 import { AdminPage } from "./Admin";
 import { actionsFor } from "./Services";
-import { attentionHandler } from "../../test/attentionFixture";
 import purposeSvg from "../../../../assets/guides/remote-access-1-purpose.svg?raw";
 import installSvg from "../../../../assets/guides/remote-access-2-install.svg?raw";
 import signinSvg from "../../../../assets/guides/remote-access-3-signin.svg?raw";
@@ -82,6 +81,7 @@ function adminHandlers(who: unknown = WHO_ADMIN) {
     http.get("/v1/admin/services", () => ok(SERVICES)),
     http.get("/v1/admin/capacity", () => ok(CAPACITY)),
     http.get("/v1/admin/updates", () => ok(UPDATES)),
+    http.get("/v1/admin/release", () => ok({ can_cut: false, reason: "only the owner (owner) can cut a release", repo: "acme/fork", default_ref: "main", token_set: true, last: null })),
     http.get("/v1/admin/settings", () => ok(SETTINGS)),
     http.get("/v1/admin/teammates", () => ok(TEAM)),
     http.get("/v1/admin/tokens/agents", () => ok([{ handle: "eng.x", participant_id: "eng.x", role: "engineer", model: null, last_seen: null, revoked: false }])),
@@ -306,13 +306,24 @@ describe("Services", () => {
 
   it("S21: a missing code-server says how to install it and offers nothing to start", async () => {
     const rows = SERVICES.services.map((r) => r.service === "code-server"
-      ? { ...r, state: "not_installed", health: "not installed", installed: false, install_hint: "npm install -g code-server",
-          note: "code-server is not installed. Install it: npm install -g code-server" } : r);
+      ? { ...r, state: "not_installed", health: "not installed", installed: false, install_hint: "brew install code-server",
+          note: "code-server is not installed. Install it: brew install code-server" } : r);
     mount("services", [http.get("/v1/admin/services", () => ok({ ...SERVICES, services: rows }))]);
     const row = await screen.findByTestId("service-code-server");
-    expect(row).toHaveTextContent("npm install -g code-server");
+    expect(row).toHaveTextContent("brew install code-server");
     expect(row).toHaveTextContent("not installed");
     expect(within(row).queryByRole("button")).toBeNull();
+  });
+
+  it("S16: where the pinned code-server is downloaded on first start, the row says so and Start is offered (no npm)", async () => {
+    const hint = "nothing to install: the first start downloads the pinned code-server 4.138.0 (207 MB, with its own node) and checks its sha256";
+    const rows = SERVICES.services.map((r) => r.service === "code-server"
+      ? { ...r, state: "down", health: "down", installed: false, downloadable: true, install_hint: hint, note: `Start downloads the pinned code-server first: ${hint}` } : r);
+    mount("services", [http.get("/v1/admin/services", () => ok({ ...SERVICES, services: rows }))]);
+    const row = await screen.findByTestId("service-code-server");
+    expect(row).toHaveTextContent("first start downloads the pinned code-server 4.138.0");
+    expect(row.textContent ?? "").not.toMatch(/npm/i);
+    expect(within(row).getByTestId("service-code-server-start")).toBeEnabled();
   });
 
   it("S21 steer: each row shows only the actions that apply (up: Stop + Restart, down: Start) on one line", async () => {
@@ -375,6 +386,16 @@ describe("Capacity (c-002a8ba1b5)", () => {
 });
 
 describe("Teammates", () => {
+  it("m9: Last seen reads relative, with the local date and time in its tooltip", async () => {
+    const at = new Date(Date.now() - 3 * 3600_000).toISOString();
+    mount("teammates", [http.get("/v1/admin/teammates", () => ok([TEAM[0], { ...TEAM[1], last_seen: at }]))]);
+    const seen = await screen.findByTestId("teammate-carol-seen");
+    expect(seen).toHaveTextContent("3 h ago");
+    expect(seen).toHaveAttribute("title", new Date(at).toLocaleString());
+    expect(seen).toHaveAttribute("datetime", at);
+    expect(screen.getByTestId("teammate-owner-seen")).toHaveTextContent("—");
+  });
+
   it("an invite shows the one-time link and the VS Code deep link, each with a copy button", async () => {
     mount("teammates", [REMOTE_ON, http.post("/v1/admin/teammates", () => ok({ teammate: { ...TEAM[1], handle: "dan" },
       invite: { link: "http://b/ui/join?code=abc", vscode_link: "vscode://edp.edp-code/signin?board=http%3A%2F%2Fb&handle=dan&code=abc", code: "abc", expires_at: "2026-09-28T00:00:00Z" } }))]);
@@ -387,22 +408,42 @@ describe("Teammates", () => {
     expect(screen.getByTestId("invite-vscode-link-copy")).toBeInTheDocument();
   });
 
+  it("e0cec S5: the invite defaults to guest; owner access (and admin) is an explicit grant", async () => {
+    const sent: unknown[] = [];
+    mount("teammates", [REMOTE_ON, http.post("/v1/admin/teammates", async ({ request }) => {
+      sent.push(await request.json());
+      return ok({ teammate: { ...TEAM[1], handle: "dan" },
+        invite: { link: "http://b/ui/join?code=abc", vscode_link: "vscode://x", code: "abc", expires_at: "2026-09-28T00:00:00Z" } });
+    })]);
+    fireEvent.change(await screen.findByTestId("invite-handle"), { target: { value: "dan" } });
+    expect(screen.getByTestId("invite-role")).toHaveValue("guest");
+    expect(screen.getByTestId("invite-admin")).toBeDisabled();
+    await waitFor(() => expect(screen.getByTestId("invite-submit")).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId("invite-submit"));
+    await screen.findByTestId("invite-link");
+    expect(sent[0]).toEqual({ handle: "dan", role: "guest", admin: false });
+    fireEvent.change(screen.getByTestId("invite-handle"), { target: { value: "olga" } });
+    fireEvent.change(screen.getByTestId("invite-role"), { target: { value: "owner" } });
+    expect(screen.getByTestId("invite-admin")).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId("invite-admin"));
+    fireEvent.click(screen.getByTestId("invite-submit"));
+    await waitFor(() => expect(sent).toHaveLength(2));
+    expect(sent[1]).toEqual({ handle: "olga", role: "owner", admin: true });
+  });
+
   it("the Tailscale key panel is disabled with a pointer until the API is configured", async () => {
     mount("teammates", [http.get("/v1/admin/tailnet", () => ok({ ...TAILNET, auth_keys: { configured: false } }))]);
     expect(await screen.findByTestId("tailscale-keys-off")).toHaveTextContent("configure the Tailscale API");
     expect(screen.getByTestId("tailscale-key-mint")).toBeDisabled();
   });
 
-  it("S20: the Teammates tab carries the access-request dot and the waiting request is marked", async () => {
-    mount("teammates", [attentionHandler(), http.get("/v1/admin/access-requests", () => ok([
+  it("lists every pending access request, none marked as waiting", async () => {
+    mount("teammates", [http.get("/v1/admin/access-requests", () => ok([
       { id: "ar-1", created_at: "2026-09-27T01:00:00Z", name: "Dana Lee", role_wanted: "engineer", note: "", status: "pending", decided_by: null, decided_at: null, handle: null },
       { id: "ar-2", created_at: "2026-09-27T01:05:00Z", name: "Eli Park", role_wanted: "engineer", note: "", status: "pending", decided_by: null, decided_at: null, handle: null }]))]);
     const tab = await screen.findByRole("tab", { name: /Teammates/ });
-    expect(await within(tab).findByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
-    expect(within(screen.getByRole("tab", { name: /Services/ })).queryByRole("img")).toBeNull();
-    const row = await screen.findByTestId("access-request-ar-1");
-    await waitFor(() => expect(row).toHaveAttribute("data-attention", "true"));
-    expect(within(row).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    expect(within(tab).queryByRole("img")).toBeNull();
+    expect(await screen.findByTestId("access-request-ar-1")).not.toHaveAttribute("data-attention");
     expect(screen.getByTestId("access-request-ar-2")).not.toHaveAttribute("data-attention");
   });
 
@@ -601,6 +642,35 @@ describe("Seats & models (§4.11)", () => {
     await waitFor(() => expect(body).toEqual({ harnesses: ["claude"], fable_ack: true }));
   });
 
+  it("RC2 F1: while the selection loads, the boxes are not shown unticked and the 'select one' alert stays away", async () => {
+    mount("models", [http.get("/v1/admin/harnesses", () => new Promise<Response>(() => {}))]);
+    expect(await screen.findByTestId("harness-loading")).toHaveTextContent("Loading the selected harnesses");
+    expect(screen.queryByTestId("harness-neither")).toBeNull();
+    expect(screen.queryByTestId("fable-notice")).toBeNull();
+    expect(screen.getByTestId("pick-claude-input")).toBeDisabled();
+    expect(screen.getByTestId("harness-selection-save")).toBeDisabled();
+  });
+
+  it("D9: an errored load keeps Save off and shows the error with Retry, which brings the selection back", async () => {
+    let calls = 0;
+    mount("models", [http.get("/v1/admin/harnesses", () => (++calls === 1 ? refuse(504, "probe timed out") : ok(HARNESSES)))]);
+    const err = await screen.findByTestId("harness-selection-error");
+    expect(err).toHaveTextContent("Could not load the harnesses");
+    expect(err).toHaveTextContent("probe timed out");
+    expect(screen.getByTestId("harness-selection-save")).toBeDisabled();
+    expect(screen.queryByTestId("harness-neither")).toBeNull();
+    fireEvent.click(screen.getByTestId("harness-retry"));
+    await waitFor(() => expect(screen.getByTestId("pick-codex-input")).toBeChecked());
+    expect(screen.queryByTestId("harness-selection-error")).toBeNull();
+    expect(screen.getByTestId("harness-selection-save")).toBeEnabled();
+  });
+
+  it("D9: a board that never answers the harnesses becomes an error, not Loading forever", async () => {
+    const { getHarnesses } = await import("../../api/admin");
+    server.use(http.get("/v1/admin/harnesses", () => new Promise<Response>(() => {})));
+    await expect(getHarnesses(false, 50)).rejects.toThrow("The board did not answer within 0.05 s.");
+  });
+
   it("refuses to save with neither claude nor codex", async () => {
     mount("models");
     await waitFor(() => expect(screen.getByTestId("pick-codex-input")).toBeChecked());
@@ -768,7 +838,8 @@ describe("Models editor (S12)", () => {
     const adversary = screen.getByTestId("role-default-adversary");
     expect(adversary).toBeDisabled();
     expect(adversary.querySelectorAll("option:not([disabled])")).toHaveLength(0);
-    expect(screen.getByTestId("role-default-stale-adversary")).toHaveTextContent("The adversary role is unavailable until codex is selected");
+    // S12-ui (a6664c2a): role names read through the one role-label helper, so "Adversary" is capitalised
+    expect(screen.getByTestId("role-default-stale-adversary")).toHaveTextContent("The Adversary role is unavailable until codex is selected");
     // a role whose default is selected shows no warning
     expect(screen.getByTestId("role-default-qa")).toHaveValue("claude-opus-5-5");
     expect(screen.queryByTestId("role-default-stale-qa")).toBeNull();
@@ -816,12 +887,12 @@ describe("Admin UX pass 2 (t-20f0718990)", () => {
     for (const s of ["install", "signin", "ready", "serve", "restart"]) {
       await waitFor(() => expect(screen.getByTestId(`remote-step-${s}-state`)).toHaveTextContent(/^Done$/));
     }
-    expect(screen.getByTestId("remote-progress")).toHaveTextContent("5 of 5 steps done");
+    expect(screen.getByTestId("remote-progress")).toHaveTextContent("5 of 5 setup steps done");
     expect(screen.getByTestId("remote-public-url")).toHaveTextContent("https://host.tail.ts.net");
   });
 
   it("the written guide opens in place", async () => {
-    mount("remote", [http.get("/v1/admin/tailnet/guide", () => ok({ name: "remote-access", path: "guides/remote-access.md", html: "<h1>Remote access</h1><h2>1. What it is for</h2>" }))]);
+    mount("remote", [http.get("/v1/admin/tailnet/guide", () => ok({ name: "remote-access", path: "docs/operator/remote-access.md", html: "<h1>Remote access</h1><h2>1. What it is for</h2>" }))]);
     const fold = await screen.findByTestId("remote-guide");
     (fold as HTMLDetailsElement).open = true;
     fireEvent(fold, new Event("toggle"));
@@ -887,9 +958,48 @@ describe("Admin UX pass 2 (t-20f0718990)", () => {
     const high = within(screen.getByTestId("test-spawn-effort")).getByRole("option", { name: /high/ }) as HTMLOptionElement;
     expect(high.disabled).toBe(true);
     expect(high).toHaveTextContent("above cap");
-    // the add form: Claude's greyed high is explained next to the select
+    // the add form: S7 lets a Claude row carry a high cap; xhigh and max are never offered
     fireEvent.click(screen.getByTestId("model-add"));
     fireEvent.change(screen.getByTestId("model-form-harness"), { target: { value: "claude" } });
-    expect(screen.getByTestId("model-form-cap-why")).toHaveTextContent("Claude models are capped at medium");
+    expect(screen.getByTestId("model-form-cap-why")).toHaveTextContent("xhigh and max are never used");
+    const cap = screen.getByTestId("model-form-cap") as HTMLSelectElement;
+    expect(within(cap).getByRole("option", { name: "high" })).not.toBeDisabled();
+    expect([...cap.options].map((o) => o.value)).toEqual(["low", "medium", "high"]);
+  });
+
+  it("Seats & models: a failed load or a failed Codex probe shows the error with Retry, never Loading forever", async () => {
+    // qa m-da89ef8294 item 9
+    const cat = {
+      models: { "gpt-6-sol": { harness: "codex", provider: "codex", effort_cap: "high" } },
+      role_models: { engineer: ["gpt-6-sol"] },
+      selected: ["codex"],
+      warnings: [],
+      codex_probe: { ok: false, error: "codex debug models timed out after 10s" },
+    };
+    let fail = true;
+    const urls: string[] = [];
+    mount("models", [http.get("/v1/admin/models", ({ request }) => {
+      urls.push(request.url);
+      if (fail) return refuse(500, "board unavailable");
+      return ok(new URL(request.url).searchParams.get("refresh") ? { ...cat, codex_probe: { ok: true, error: null } } : cat);
+    })]);
+    const err = await screen.findByTestId("models-load-error");
+    expect(err).toHaveTextContent("Could not load the model catalog: board unavailable");
+    expect(screen.queryByText("Loading…")).toBeNull();
+    fail = false;
+    fireEvent.click(screen.getByTestId("models-retry"));
+    expect(await screen.findByTestId("models-table")).toBeInTheDocument();
+    expect(screen.queryByTestId("models-load-error")).toBeNull();
+    // the catalog loads; the probe failure is named, and Retry re-probes Codex
+    expect(screen.getByTestId("models-codex-probe")).toHaveTextContent("Codex defaults unavailable: codex debug models timed out after 10s");
+    fireEvent.click(screen.getByTestId("models-codex-retry"));
+    await waitFor(() => expect(screen.queryByTestId("models-codex-probe")).toBeNull());
+    expect(urls.some((u) => u.includes("refresh=true"))).toBe(true);
+  });
+
+  it("Seats & models: a board that never answers becomes an error, not Loading forever", async () => {
+    const { getAdminModels } = await import("../../api/admin");
+    server.use(http.get("/v1/admin/models", () => new Promise<Response>(() => {})));
+    await expect(getAdminModels(false, 50)).rejects.toThrow("The board did not answer within 0.05 s.");
   });
 });

@@ -1,0 +1,2498 @@
+{
+ "role": "engineer",
+ "model": "claude-sonnet-5-5",
+ "rows": [
+  {
+   "arm": "0-baseline",
+   "rep": 0,
+   "first_call_tokens": 35693,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 35691,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 35691,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "ade6e917-de35-4aef-a81b-0f3a6d0b6415",
+   "cost_usd": 0.007226200000000001,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 6761,
+    "deferred_tools_delta": 1970,
+    "mcp_instructions_delta": 2053,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "epic",
+    "handoff",
+    "harvest",
+    "learn",
+    "methodology",
+    "ocak",
+    "pain",
+    "ticket",
+    "verify",
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "engineer-quick",
+    "qa",
+    "sme",
+    "dataviz",
+    "update-config",
+    "keybindings-help",
+    "code-review",
+    "simplify",
+    "fewer-permission-prompts",
+    "loop",
+    "schedule",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "init",
+    "security-review",
+    "anthropic-skills:built-in-browser",
+    "anthropic-skills:chrome-browser",
+    "anthropic-skills:computer-use",
+    "anthropic-skills:deep-research",
+    "anthropic-skills:docs",
+    "anthropic-skills:docx",
+    "anthropic-skills:google-workspace",
+    "anthropic-skills:import-memory",
+    "anthropic-skills:morning",
+    "anthropic-skills:pdf",
+    "anthropic-skills:pptx",
+    "anthropic-skills:skill-creator",
+    "anthropic-skills:xlsx"
+   ],
+   "deferred": [
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "mcp__claude_ai_Claude_Docs__batch",
+    "mcp__claude_ai_Claude_Docs__create",
+    "mcp__claude_ai_Claude_Docs__delete",
+    "mcp__claude_ai_Claude_Docs__export",
+    "mcp__claude_ai_Claude_Docs__guide",
+    "mcp__claude_ai_Claude_Docs__query",
+    "mcp__claude_ai_Claude_Docs__read",
+    "mcp__claude_ai_Claude_Docs__update"
+   ],
+   "mcp_servers": [
+    "claude.ai Claude Docs"
+   ]
+  },
+  {
+   "arm": "0-baseline",
+   "rep": 1,
+   "first_call_tokens": 35693,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 35691,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 35691,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "98d21004-9d3e-4614-963a-74d349ee449b",
+   "cost_usd": 0.007226200000000001,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 6761,
+    "deferred_tools_delta": 1970,
+    "mcp_instructions_delta": 2053,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "epic",
+    "handoff",
+    "harvest",
+    "learn",
+    "methodology",
+    "ocak",
+    "pain",
+    "ticket",
+    "verify",
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "engineer-quick",
+    "qa",
+    "sme",
+    "dataviz",
+    "update-config",
+    "keybindings-help",
+    "code-review",
+    "simplify",
+    "fewer-permission-prompts",
+    "loop",
+    "schedule",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "init",
+    "security-review",
+    "anthropic-skills:built-in-browser",
+    "anthropic-skills:chrome-browser",
+    "anthropic-skills:computer-use",
+    "anthropic-skills:deep-research",
+    "anthropic-skills:docs",
+    "anthropic-skills:docx",
+    "anthropic-skills:google-workspace",
+    "anthropic-skills:import-memory",
+    "anthropic-skills:morning",
+    "anthropic-skills:pdf",
+    "anthropic-skills:pptx",
+    "anthropic-skills:skill-creator",
+    "anthropic-skills:xlsx"
+   ],
+   "deferred": [
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "mcp__claude_ai_Claude_Docs__batch",
+    "mcp__claude_ai_Claude_Docs__create",
+    "mcp__claude_ai_Claude_Docs__delete",
+    "mcp__claude_ai_Claude_Docs__export",
+    "mcp__claude_ai_Claude_Docs__guide",
+    "mcp__claude_ai_Claude_Docs__query",
+    "mcp__claude_ai_Claude_Docs__read",
+    "mcp__claude_ai_Claude_Docs__update"
+   ],
+   "mcp_servers": [
+    "claude.ai Claude Docs"
+   ]
+  },
+  {
+   "arm": "1-connectors-env",
+   "rep": 0,
+   "first_call_tokens": 33818,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 33816,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 33816,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "aeab5c73-999c-428f-bbc5-48920e5fa91d",
+   "cost_usd": 0.006851200000000001,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 6761,
+    "deferred_tools_delta": 1087,
+    "mcp_instructions_delta": 0,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "epic",
+    "handoff",
+    "harvest",
+    "learn",
+    "methodology",
+    "ocak",
+    "pain",
+    "ticket",
+    "verify",
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "engineer-quick",
+    "qa",
+    "sme",
+    "dataviz",
+    "update-config",
+    "keybindings-help",
+    "code-review",
+    "simplify",
+    "fewer-permission-prompts",
+    "loop",
+    "schedule",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "init",
+    "security-review",
+    "anthropic-skills:built-in-browser",
+    "anthropic-skills:chrome-browser",
+    "anthropic-skills:computer-use",
+    "anthropic-skills:deep-research",
+    "anthropic-skills:docs",
+    "anthropic-skills:docx",
+    "anthropic-skills:google-workspace",
+    "anthropic-skills:import-memory",
+    "anthropic-skills:morning",
+    "anthropic-skills:pdf",
+    "anthropic-skills:pptx",
+    "anthropic-skills:skill-creator",
+    "anthropic-skills:xlsx"
+   ],
+   "deferred": [
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch"
+   ],
+   "mcp_servers": []
+  },
+  {
+   "arm": "1-connectors-env",
+   "rep": 1,
+   "first_call_tokens": 33818,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 33816,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 33816,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "d99b666d-ec6c-4f41-b1ce-2e35521fb5b6",
+   "cost_usd": 0.006851200000000001,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 6761,
+    "deferred_tools_delta": 1087,
+    "mcp_instructions_delta": 0,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "epic",
+    "handoff",
+    "harvest",
+    "learn",
+    "methodology",
+    "ocak",
+    "pain",
+    "ticket",
+    "verify",
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "engineer-quick",
+    "qa",
+    "sme",
+    "dataviz",
+    "update-config",
+    "keybindings-help",
+    "code-review",
+    "simplify",
+    "fewer-permission-prompts",
+    "loop",
+    "schedule",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "init",
+    "security-review",
+    "anthropic-skills:built-in-browser",
+    "anthropic-skills:chrome-browser",
+    "anthropic-skills:computer-use",
+    "anthropic-skills:deep-research",
+    "anthropic-skills:docs",
+    "anthropic-skills:docx",
+    "anthropic-skills:google-workspace",
+    "anthropic-skills:import-memory",
+    "anthropic-skills:morning",
+    "anthropic-skills:pdf",
+    "anthropic-skills:pptx",
+    "anthropic-skills:skill-creator",
+    "anthropic-skills:xlsx"
+   ],
+   "deferred": [
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch"
+   ],
+   "mcp_servers": []
+  },
+  {
+   "arm": "2-connectors-setting",
+   "rep": 0,
+   "first_call_tokens": 33818,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 33816,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 33816,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "a16f8c72-0541-4528-8087-e2aecde46bfe",
+   "cost_usd": 0.006851200000000001,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 6761,
+    "deferred_tools_delta": 1087,
+    "mcp_instructions_delta": 0,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "epic",
+    "handoff",
+    "harvest",
+    "learn",
+    "methodology",
+    "ocak",
+    "pain",
+    "ticket",
+    "verify",
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "engineer-quick",
+    "qa",
+    "sme",
+    "dataviz",
+    "update-config",
+    "keybindings-help",
+    "code-review",
+    "simplify",
+    "fewer-permission-prompts",
+    "loop",
+    "schedule",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "init",
+    "security-review",
+    "anthropic-skills:built-in-browser",
+    "anthropic-skills:chrome-browser",
+    "anthropic-skills:computer-use",
+    "anthropic-skills:deep-research",
+    "anthropic-skills:docs",
+    "anthropic-skills:docx",
+    "anthropic-skills:google-workspace",
+    "anthropic-skills:import-memory",
+    "anthropic-skills:morning",
+    "anthropic-skills:pdf",
+    "anthropic-skills:pptx",
+    "anthropic-skills:skill-creator",
+    "anthropic-skills:xlsx"
+   ],
+   "deferred": [
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch"
+   ],
+   "mcp_servers": []
+  },
+  {
+   "arm": "2-connectors-setting",
+   "rep": 1,
+   "first_call_tokens": 33818,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 33816,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 33816,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "c90ad1bd-6f2d-4ebe-9bd5-0ee0595ed36b",
+   "cost_usd": 0.006851200000000001,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 6761,
+    "deferred_tools_delta": 1087,
+    "mcp_instructions_delta": 0,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "epic",
+    "handoff",
+    "harvest",
+    "learn",
+    "methodology",
+    "ocak",
+    "pain",
+    "ticket",
+    "verify",
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "engineer-quick",
+    "qa",
+    "sme",
+    "dataviz",
+    "update-config",
+    "keybindings-help",
+    "code-review",
+    "simplify",
+    "fewer-permission-prompts",
+    "loop",
+    "schedule",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "init",
+    "security-review",
+    "anthropic-skills:built-in-browser",
+    "anthropic-skills:chrome-browser",
+    "anthropic-skills:computer-use",
+    "anthropic-skills:deep-research",
+    "anthropic-skills:docs",
+    "anthropic-skills:docx",
+    "anthropic-skills:google-workspace",
+    "anthropic-skills:import-memory",
+    "anthropic-skills:morning",
+    "anthropic-skills:pdf",
+    "anthropic-skills:pptx",
+    "anthropic-skills:skill-creator",
+    "anthropic-skills:xlsx"
+   ],
+   "deferred": [
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch"
+   ],
+   "mcp_servers": []
+  },
+  {
+   "arm": "3-skills",
+   "rep": 0,
+   "first_call_tokens": 39821,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 39819,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 39819,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "a9dc2884-cf37-4060-9330-afede83f8361",
+   "cost_usd": 0.0080518,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 993,
+    "deferred_tools_delta": 1970,
+    "mcp_instructions_delta": 2053,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "handoff",
+    "learn",
+    "methodology",
+    "pain",
+    "ticket",
+    "verify",
+    "engineer"
+   ],
+   "deferred": [
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "mcp__claude_ai_Claude_Docs__batch",
+    "mcp__claude_ai_Claude_Docs__create",
+    "mcp__claude_ai_Claude_Docs__delete",
+    "mcp__claude_ai_Claude_Docs__export",
+    "mcp__claude_ai_Claude_Docs__guide",
+    "mcp__claude_ai_Claude_Docs__query",
+    "mcp__claude_ai_Claude_Docs__read",
+    "mcp__claude_ai_Claude_Docs__update"
+   ],
+   "mcp_servers": [
+    "claude.ai Claude Docs"
+   ]
+  },
+  {
+   "arm": "3-skills",
+   "rep": 1,
+   "first_call_tokens": 39821,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 39819,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 39819,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "a6b5fcd2-c83a-42c3-b6cc-7b59cf7b4021",
+   "cost_usd": 0.0080518,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 993,
+    "deferred_tools_delta": 1970,
+    "mcp_instructions_delta": 2053,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "handoff",
+    "learn",
+    "methodology",
+    "pain",
+    "ticket",
+    "verify",
+    "engineer"
+   ],
+   "deferred": [
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "mcp__claude_ai_Claude_Docs__batch",
+    "mcp__claude_ai_Claude_Docs__create",
+    "mcp__claude_ai_Claude_Docs__delete",
+    "mcp__claude_ai_Claude_Docs__export",
+    "mcp__claude_ai_Claude_Docs__guide",
+    "mcp__claude_ai_Claude_Docs__query",
+    "mcp__claude_ai_Claude_Docs__read",
+    "mcp__claude_ai_Claude_Docs__update"
+   ],
+   "mcp_servers": [
+    "claude.ai Claude Docs"
+   ]
+  },
+  {
+   "arm": "3a-skill-overrides-only",
+   "rep": 0,
+   "first_call_tokens": 39821,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 39819,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 39819,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "73baab26-8269-428c-8de1-833c446ff343",
+   "cost_usd": 0.0080518,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 993,
+    "deferred_tools_delta": 1970,
+    "mcp_instructions_delta": 2053,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "handoff",
+    "learn",
+    "methodology",
+    "pain",
+    "ticket",
+    "verify",
+    "engineer"
+   ],
+   "deferred": [
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "mcp__claude_ai_Claude_Docs__batch",
+    "mcp__claude_ai_Claude_Docs__create",
+    "mcp__claude_ai_Claude_Docs__delete",
+    "mcp__claude_ai_Claude_Docs__export",
+    "mcp__claude_ai_Claude_Docs__guide",
+    "mcp__claude_ai_Claude_Docs__query",
+    "mcp__claude_ai_Claude_Docs__read",
+    "mcp__claude_ai_Claude_Docs__update"
+   ],
+   "mcp_servers": [
+    "claude.ai Claude Docs"
+   ]
+  },
+  {
+   "arm": "3a-skill-overrides-only",
+   "rep": 1,
+   "first_call_tokens": 39821,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 39819,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 39819,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "495b98ec-a558-4caf-ade6-9b09c84fc8b9",
+   "cost_usd": 0.0080518,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 993,
+    "deferred_tools_delta": 1970,
+    "mcp_instructions_delta": 2053,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "handoff",
+    "learn",
+    "methodology",
+    "pain",
+    "ticket",
+    "verify",
+    "engineer"
+   ],
+   "deferred": [
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "mcp__claude_ai_Claude_Docs__batch",
+    "mcp__claude_ai_Claude_Docs__create",
+    "mcp__claude_ai_Claude_Docs__delete",
+    "mcp__claude_ai_Claude_Docs__export",
+    "mcp__claude_ai_Claude_Docs__guide",
+    "mcp__claude_ai_Claude_Docs__query",
+    "mcp__claude_ai_Claude_Docs__read",
+    "mcp__claude_ai_Claude_Docs__update"
+   ],
+   "mcp_servers": [
+    "claude.ai Claude Docs"
+   ]
+  },
+  {
+   "arm": "3b-disable-bundled-only",
+   "rep": 0,
+   "first_call_tokens": 41467,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 41465,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 41465,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "0c2096d4-29fe-411b-9ab9-207e46c8b263",
+   "cost_usd": 0.008381,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 5837,
+    "deferred_tools_delta": 1970,
+    "mcp_instructions_delta": 2053,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "epic",
+    "handoff",
+    "harvest",
+    "learn",
+    "methodology",
+    "ocak",
+    "pain",
+    "ticket",
+    "verify",
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "engineer-quick",
+    "qa",
+    "sme",
+    "anthropic-skills:built-in-browser",
+    "anthropic-skills:chrome-browser",
+    "anthropic-skills:computer-use",
+    "anthropic-skills:deep-research",
+    "anthropic-skills:docs",
+    "anthropic-skills:docx",
+    "anthropic-skills:google-workspace",
+    "anthropic-skills:import-memory",
+    "anthropic-skills:morning",
+    "anthropic-skills:pdf",
+    "anthropic-skills:pptx",
+    "anthropic-skills:skill-creator",
+    "anthropic-skills:xlsx"
+   ],
+   "deferred": [
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "mcp__claude_ai_Claude_Docs__batch",
+    "mcp__claude_ai_Claude_Docs__create",
+    "mcp__claude_ai_Claude_Docs__delete",
+    "mcp__claude_ai_Claude_Docs__export",
+    "mcp__claude_ai_Claude_Docs__guide",
+    "mcp__claude_ai_Claude_Docs__query",
+    "mcp__claude_ai_Claude_Docs__read",
+    "mcp__claude_ai_Claude_Docs__update"
+   ],
+   "mcp_servers": [
+    "claude.ai Claude Docs"
+   ]
+  },
+  {
+   "arm": "3b-disable-bundled-only",
+   "rep": 1,
+   "first_call_tokens": 41467,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 41465,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 41465,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "0016bac6-91a7-4db2-a9ea-120761b0b19b",
+   "cost_usd": 0.008381,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 5837,
+    "deferred_tools_delta": 1970,
+    "mcp_instructions_delta": 2053,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "epic",
+    "handoff",
+    "harvest",
+    "learn",
+    "methodology",
+    "ocak",
+    "pain",
+    "ticket",
+    "verify",
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "engineer-quick",
+    "qa",
+    "sme",
+    "anthropic-skills:built-in-browser",
+    "anthropic-skills:chrome-browser",
+    "anthropic-skills:computer-use",
+    "anthropic-skills:deep-research",
+    "anthropic-skills:docs",
+    "anthropic-skills:docx",
+    "anthropic-skills:google-workspace",
+    "anthropic-skills:import-memory",
+    "anthropic-skills:morning",
+    "anthropic-skills:pdf",
+    "anthropic-skills:pptx",
+    "anthropic-skills:skill-creator",
+    "anthropic-skills:xlsx"
+   ],
+   "deferred": [
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "mcp__claude_ai_Claude_Docs__batch",
+    "mcp__claude_ai_Claude_Docs__create",
+    "mcp__claude_ai_Claude_Docs__delete",
+    "mcp__claude_ai_Claude_Docs__export",
+    "mcp__claude_ai_Claude_Docs__guide",
+    "mcp__claude_ai_Claude_Docs__query",
+    "mcp__claude_ai_Claude_Docs__read",
+    "mcp__claude_ai_Claude_Docs__update"
+   ],
+   "mcp_servers": [
+    "claude.ai Claude Docs"
+   ]
+  },
+  {
+   "arm": "4-deny-unused-tools",
+   "rep": 0,
+   "first_call_tokens": 33653,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 33651,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 33651,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "6ef0dd48-2bdb-4fb4-b497-79858f90bdd6",
+   "cost_usd": 0.006818200000000001,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 6761,
+    "deferred_tools_delta": 1857,
+    "mcp_instructions_delta": 2053,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "epic",
+    "handoff",
+    "harvest",
+    "learn",
+    "methodology",
+    "ocak",
+    "pain",
+    "ticket",
+    "verify",
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "engineer-quick",
+    "qa",
+    "sme",
+    "dataviz",
+    "update-config",
+    "keybindings-help",
+    "code-review",
+    "simplify",
+    "fewer-permission-prompts",
+    "loop",
+    "schedule",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "init",
+    "security-review",
+    "anthropic-skills:built-in-browser",
+    "anthropic-skills:chrome-browser",
+    "anthropic-skills:computer-use",
+    "anthropic-skills:deep-research",
+    "anthropic-skills:docs",
+    "anthropic-skills:docx",
+    "anthropic-skills:google-workspace",
+    "anthropic-skills:import-memory",
+    "anthropic-skills:morning",
+    "anthropic-skills:pdf",
+    "anthropic-skills:pptx",
+    "anthropic-skills:skill-creator",
+    "anthropic-skills:xlsx"
+   ],
+   "deferred": [
+    "Monitor",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "mcp__claude_ai_Claude_Docs__batch",
+    "mcp__claude_ai_Claude_Docs__create",
+    "mcp__claude_ai_Claude_Docs__delete",
+    "mcp__claude_ai_Claude_Docs__export",
+    "mcp__claude_ai_Claude_Docs__guide",
+    "mcp__claude_ai_Claude_Docs__query",
+    "mcp__claude_ai_Claude_Docs__read",
+    "mcp__claude_ai_Claude_Docs__update"
+   ],
+   "mcp_servers": [
+    "claude.ai Claude Docs"
+   ]
+  },
+  {
+   "arm": "4-deny-unused-tools",
+   "rep": 1,
+   "first_call_tokens": 33653,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 33651,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 33651,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "2c17a0e4-254c-4691-a0eb-3cef7c6fcad2",
+   "cost_usd": 0.006818200000000001,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 6761,
+    "deferred_tools_delta": 1857,
+    "mcp_instructions_delta": 2053,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "epic",
+    "handoff",
+    "harvest",
+    "learn",
+    "methodology",
+    "ocak",
+    "pain",
+    "ticket",
+    "verify",
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "engineer-quick",
+    "qa",
+    "sme",
+    "dataviz",
+    "update-config",
+    "keybindings-help",
+    "code-review",
+    "simplify",
+    "fewer-permission-prompts",
+    "loop",
+    "schedule",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "init",
+    "security-review",
+    "anthropic-skills:built-in-browser",
+    "anthropic-skills:chrome-browser",
+    "anthropic-skills:computer-use",
+    "anthropic-skills:deep-research",
+    "anthropic-skills:docs",
+    "anthropic-skills:docx",
+    "anthropic-skills:google-workspace",
+    "anthropic-skills:import-memory",
+    "anthropic-skills:morning",
+    "anthropic-skills:pdf",
+    "anthropic-skills:pptx",
+    "anthropic-skills:skill-creator",
+    "anthropic-skills:xlsx"
+   ],
+   "deferred": [
+    "Monitor",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "mcp__claude_ai_Claude_Docs__batch",
+    "mcp__claude_ai_Claude_Docs__create",
+    "mcp__claude_ai_Claude_Docs__delete",
+    "mcp__claude_ai_Claude_Docs__export",
+    "mcp__claude_ai_Claude_Docs__guide",
+    "mcp__claude_ai_Claude_Docs__query",
+    "mcp__claude_ai_Claude_Docs__read",
+    "mcp__claude_ai_Claude_Docs__update"
+   ],
+   "mcp_servers": [
+    "claude.ai Claude Docs"
+   ]
+  },
+  {
+   "arm": "4a-deny-workflow-only",
+   "rep": 0,
+   "first_call_tokens": 33714,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 33712,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 33712,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "0cf29ee5-a9b0-433d-b6fb-7be17c0799b6",
+   "cost_usd": 0.0068304,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 6761,
+    "deferred_tools_delta": 1970,
+    "mcp_instructions_delta": 2053,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "epic",
+    "handoff",
+    "harvest",
+    "learn",
+    "methodology",
+    "ocak",
+    "pain",
+    "ticket",
+    "verify",
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "engineer-quick",
+    "qa",
+    "sme",
+    "dataviz",
+    "update-config",
+    "keybindings-help",
+    "code-review",
+    "simplify",
+    "fewer-permission-prompts",
+    "loop",
+    "schedule",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "init",
+    "security-review",
+    "anthropic-skills:built-in-browser",
+    "anthropic-skills:chrome-browser",
+    "anthropic-skills:computer-use",
+    "anthropic-skills:deep-research",
+    "anthropic-skills:docs",
+    "anthropic-skills:docx",
+    "anthropic-skills:google-workspace",
+    "anthropic-skills:import-memory",
+    "anthropic-skills:morning",
+    "anthropic-skills:pdf",
+    "anthropic-skills:pptx",
+    "anthropic-skills:skill-creator",
+    "anthropic-skills:xlsx"
+   ],
+   "deferred": [
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "mcp__claude_ai_Claude_Docs__batch",
+    "mcp__claude_ai_Claude_Docs__create",
+    "mcp__claude_ai_Claude_Docs__delete",
+    "mcp__claude_ai_Claude_Docs__export",
+    "mcp__claude_ai_Claude_Docs__guide",
+    "mcp__claude_ai_Claude_Docs__query",
+    "mcp__claude_ai_Claude_Docs__read",
+    "mcp__claude_ai_Claude_Docs__update"
+   ],
+   "mcp_servers": [
+    "claude.ai Claude Docs"
+   ]
+  },
+  {
+   "arm": "4a-deny-workflow-only",
+   "rep": 1,
+   "first_call_tokens": 33714,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 33712,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 33712,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "d8a8e4d4-5f1e-4fe3-a2ff-2482b69fb5e5",
+   "cost_usd": 0.0068304,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 6761,
+    "deferred_tools_delta": 1970,
+    "mcp_instructions_delta": 2053,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "epic",
+    "handoff",
+    "harvest",
+    "learn",
+    "methodology",
+    "ocak",
+    "pain",
+    "ticket",
+    "verify",
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "engineer-quick",
+    "qa",
+    "sme",
+    "dataviz",
+    "update-config",
+    "keybindings-help",
+    "code-review",
+    "simplify",
+    "fewer-permission-prompts",
+    "loop",
+    "schedule",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "init",
+    "security-review",
+    "anthropic-skills:built-in-browser",
+    "anthropic-skills:chrome-browser",
+    "anthropic-skills:computer-use",
+    "anthropic-skills:deep-research",
+    "anthropic-skills:docs",
+    "anthropic-skills:docx",
+    "anthropic-skills:google-workspace",
+    "anthropic-skills:import-memory",
+    "anthropic-skills:morning",
+    "anthropic-skills:pdf",
+    "anthropic-skills:pptx",
+    "anthropic-skills:skill-creator",
+    "anthropic-skills:xlsx"
+   ],
+   "deferred": [
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "mcp__claude_ai_Claude_Docs__batch",
+    "mcp__claude_ai_Claude_Docs__create",
+    "mcp__claude_ai_Claude_Docs__delete",
+    "mcp__claude_ai_Claude_Docs__export",
+    "mcp__claude_ai_Claude_Docs__guide",
+    "mcp__claude_ai_Claude_Docs__query",
+    "mcp__claude_ai_Claude_Docs__read",
+    "mcp__claude_ai_Claude_Docs__update"
+   ],
+   "mcp_servers": [
+    "claude.ai Claude Docs"
+   ]
+  },
+  {
+   "arm": "3c-bundled-off+deny-workflow",
+   "rep": 0,
+   "first_call_tokens": 33225,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 33223,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 33223,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "b6aabca6-3f8c-49cb-a92c-5a2b24e702fe",
+   "cost_usd": 0.006732600000000001,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 5837,
+    "deferred_tools_delta": 1970,
+    "mcp_instructions_delta": 2053,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "epic",
+    "handoff",
+    "harvest",
+    "learn",
+    "methodology",
+    "ocak",
+    "pain",
+    "ticket",
+    "verify",
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "engineer-quick",
+    "qa",
+    "sme",
+    "anthropic-skills:built-in-browser",
+    "anthropic-skills:chrome-browser",
+    "anthropic-skills:computer-use",
+    "anthropic-skills:deep-research",
+    "anthropic-skills:docs",
+    "anthropic-skills:docx",
+    "anthropic-skills:google-workspace",
+    "anthropic-skills:import-memory",
+    "anthropic-skills:morning",
+    "anthropic-skills:pdf",
+    "anthropic-skills:pptx",
+    "anthropic-skills:skill-creator",
+    "anthropic-skills:xlsx"
+   ],
+   "deferred": [
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "mcp__claude_ai_Claude_Docs__batch",
+    "mcp__claude_ai_Claude_Docs__create",
+    "mcp__claude_ai_Claude_Docs__delete",
+    "mcp__claude_ai_Claude_Docs__export",
+    "mcp__claude_ai_Claude_Docs__guide",
+    "mcp__claude_ai_Claude_Docs__query",
+    "mcp__claude_ai_Claude_Docs__read",
+    "mcp__claude_ai_Claude_Docs__update"
+   ],
+   "mcp_servers": [
+    "claude.ai Claude Docs"
+   ]
+  },
+  {
+   "arm": "3c-bundled-off+deny-workflow",
+   "rep": 1,
+   "first_call_tokens": 33225,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 33223,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 33223,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "6d0c6ead-fb68-41d9-80e5-6d91e9ef2f20",
+   "cost_usd": 0.006732600000000001,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 5837,
+    "deferred_tools_delta": 1970,
+    "mcp_instructions_delta": 2053,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "epic",
+    "handoff",
+    "harvest",
+    "learn",
+    "methodology",
+    "ocak",
+    "pain",
+    "ticket",
+    "verify",
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "engineer-quick",
+    "qa",
+    "sme",
+    "anthropic-skills:built-in-browser",
+    "anthropic-skills:chrome-browser",
+    "anthropic-skills:computer-use",
+    "anthropic-skills:deep-research",
+    "anthropic-skills:docs",
+    "anthropic-skills:docx",
+    "anthropic-skills:google-workspace",
+    "anthropic-skills:import-memory",
+    "anthropic-skills:morning",
+    "anthropic-skills:pdf",
+    "anthropic-skills:pptx",
+    "anthropic-skills:skill-creator",
+    "anthropic-skills:xlsx"
+   ],
+   "deferred": [
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "mcp__claude_ai_Claude_Docs__batch",
+    "mcp__claude_ai_Claude_Docs__create",
+    "mcp__claude_ai_Claude_Docs__delete",
+    "mcp__claude_ai_Claude_Docs__export",
+    "mcp__claude_ai_Claude_Docs__guide",
+    "mcp__claude_ai_Claude_Docs__query",
+    "mcp__claude_ai_Claude_Docs__read",
+    "mcp__claude_ai_Claude_Docs__update"
+   ],
+   "mcp_servers": [
+    "claude.ai Claude Docs"
+   ]
+  },
+  {
+   "arm": "3d-skills+deny-workflow",
+   "rep": 0,
+   "first_call_tokens": 31579,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 31577,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 31577,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "29e820bf-4d29-42c4-8af5-cf5bc4e72f9b",
+   "cost_usd": 0.006403400000000001,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 993,
+    "deferred_tools_delta": 1970,
+    "mcp_instructions_delta": 2053,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "handoff",
+    "learn",
+    "methodology",
+    "pain",
+    "ticket",
+    "verify",
+    "engineer"
+   ],
+   "deferred": [
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "mcp__claude_ai_Claude_Docs__batch",
+    "mcp__claude_ai_Claude_Docs__create",
+    "mcp__claude_ai_Claude_Docs__delete",
+    "mcp__claude_ai_Claude_Docs__export",
+    "mcp__claude_ai_Claude_Docs__guide",
+    "mcp__claude_ai_Claude_Docs__query",
+    "mcp__claude_ai_Claude_Docs__read",
+    "mcp__claude_ai_Claude_Docs__update"
+   ],
+   "mcp_servers": [
+    "claude.ai Claude Docs"
+   ]
+  },
+  {
+   "arm": "3d-skills+deny-workflow",
+   "rep": 1,
+   "first_call_tokens": 31579,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 31577,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 31577,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "1446b515-4018-465f-a998-0f4e83e9f9aa",
+   "cost_usd": 0.006403400000000001,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 993,
+    "deferred_tools_delta": 1970,
+    "mcp_instructions_delta": 2053,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "handoff",
+    "learn",
+    "methodology",
+    "pain",
+    "ticket",
+    "verify",
+    "engineer"
+   ],
+   "deferred": [
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "mcp__claude_ai_Claude_Docs__batch",
+    "mcp__claude_ai_Claude_Docs__create",
+    "mcp__claude_ai_Claude_Docs__delete",
+    "mcp__claude_ai_Claude_Docs__export",
+    "mcp__claude_ai_Claude_Docs__guide",
+    "mcp__claude_ai_Claude_Docs__query",
+    "mcp__claude_ai_Claude_Docs__read",
+    "mcp__claude_ai_Claude_Docs__update"
+   ],
+   "mcp_servers": [
+    "claude.ai Claude Docs"
+   ]
+  },
+  {
+   "arm": "5-disable-cron-env",
+   "rep": 0,
+   "first_call_tokens": 35545,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 35543,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 35543,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "a923b919-9c44-40b3-814a-dffca24c60cf",
+   "cost_usd": 0.0071966,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 6416,
+    "deferred_tools_delta": 1939,
+    "mcp_instructions_delta": 2053,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "epic",
+    "handoff",
+    "harvest",
+    "learn",
+    "methodology",
+    "ocak",
+    "pain",
+    "ticket",
+    "verify",
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "engineer-quick",
+    "qa",
+    "sme",
+    "dataviz",
+    "update-config",
+    "keybindings-help",
+    "code-review",
+    "simplify",
+    "fewer-permission-prompts",
+    "schedule",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "init",
+    "security-review",
+    "anthropic-skills:built-in-browser",
+    "anthropic-skills:chrome-browser",
+    "anthropic-skills:computer-use",
+    "anthropic-skills:deep-research",
+    "anthropic-skills:docs",
+    "anthropic-skills:docx",
+    "anthropic-skills:google-workspace",
+    "anthropic-skills:import-memory",
+    "anthropic-skills:morning",
+    "anthropic-skills:pdf",
+    "anthropic-skills:pptx",
+    "anthropic-skills:skill-creator",
+    "anthropic-skills:xlsx"
+   ],
+   "deferred": [
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "mcp__claude_ai_Claude_Docs__batch",
+    "mcp__claude_ai_Claude_Docs__create",
+    "mcp__claude_ai_Claude_Docs__delete",
+    "mcp__claude_ai_Claude_Docs__export",
+    "mcp__claude_ai_Claude_Docs__guide",
+    "mcp__claude_ai_Claude_Docs__query",
+    "mcp__claude_ai_Claude_Docs__read",
+    "mcp__claude_ai_Claude_Docs__update"
+   ],
+   "mcp_servers": [
+    "claude.ai Claude Docs"
+   ]
+  },
+  {
+   "arm": "5-disable-cron-env",
+   "rep": 1,
+   "first_call_tokens": 35545,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 35543,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 35543,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "4c101178-6412-4d9f-9d02-865285de8edb",
+   "cost_usd": 0.0071966,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 6416,
+    "deferred_tools_delta": 1939,
+    "mcp_instructions_delta": 2053,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "epic",
+    "handoff",
+    "harvest",
+    "learn",
+    "methodology",
+    "ocak",
+    "pain",
+    "ticket",
+    "verify",
+    "adversary",
+    "architect",
+    "doctor",
+    "engineer",
+    "engineer-quick",
+    "qa",
+    "sme",
+    "dataviz",
+    "update-config",
+    "keybindings-help",
+    "code-review",
+    "simplify",
+    "fewer-permission-prompts",
+    "schedule",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "init",
+    "security-review",
+    "anthropic-skills:built-in-browser",
+    "anthropic-skills:chrome-browser",
+    "anthropic-skills:computer-use",
+    "anthropic-skills:deep-research",
+    "anthropic-skills:docs",
+    "anthropic-skills:docx",
+    "anthropic-skills:google-workspace",
+    "anthropic-skills:import-memory",
+    "anthropic-skills:morning",
+    "anthropic-skills:pdf",
+    "anthropic-skills:pptx",
+    "anthropic-skills:skill-creator",
+    "anthropic-skills:xlsx"
+   ],
+   "deferred": [
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Monitor",
+    "NotebookEdit",
+    "PushNotification",
+    "RemoteTrigger",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "mcp__claude_ai_Claude_Docs__batch",
+    "mcp__claude_ai_Claude_Docs__create",
+    "mcp__claude_ai_Claude_Docs__delete",
+    "mcp__claude_ai_Claude_Docs__export",
+    "mcp__claude_ai_Claude_Docs__guide",
+    "mcp__claude_ai_Claude_Docs__query",
+    "mcp__claude_ai_Claude_Docs__read",
+    "mcp__claude_ai_Claude_Docs__update"
+   ],
+   "mcp_servers": [
+    "claude.ai Claude Docs"
+   ]
+  },
+  {
+   "arm": "6-all",
+   "rep": 0,
+   "first_call_tokens": 29643,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 29641,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 29641,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "6943014f-d1f0-4d4c-904e-d238e2afd1c5",
+   "cost_usd": 0.006016200000000001,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 993,
+    "deferred_tools_delta": 974,
+    "mcp_instructions_delta": 0,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "handoff",
+    "learn",
+    "methodology",
+    "pain",
+    "ticket",
+    "verify",
+    "engineer"
+   ],
+   "deferred": [
+    "Monitor",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch"
+   ],
+   "mcp_servers": []
+  },
+  {
+   "arm": "6-all",
+   "rep": 1,
+   "first_call_tokens": 29643,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 29641,
+    "output_tokens": 4,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4,
+      "cache_read_input_tokens": 29641,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard"
+   },
+   "session_id": "3efe704d-a2e5-471e-a6aa-974f749a2d89",
+   "cost_usd": 0.006016200000000001,
+   "num_turns": 1,
+   "attachment_chars": {
+    "skill_listing": 993,
+    "deferred_tools_delta": 974,
+    "mcp_instructions_delta": 0,
+    "agent_listing_delta": 1880,
+    "instructions": 1232
+   },
+   "skills": [
+    "demo",
+    "deviation",
+    "doubt",
+    "handoff",
+    "learn",
+    "methodology",
+    "pain",
+    "ticket",
+    "verify",
+    "engineer"
+   ],
+   "deferred": [
+    "Monitor",
+    "SendMessage",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch"
+   ],
+   "mcp_servers": []
+  }
+ ]
+}

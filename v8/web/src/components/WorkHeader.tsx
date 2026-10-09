@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { Avatar } from "./Avatar";
 import { StatusChip } from "./StatusChip";
@@ -11,6 +12,9 @@ import { attentionLine, attentionOther, FilesViewer, HistoryViewer, useWorkConte
 import { AttentionAsks } from "./AttentionAsks";
 import { countWhere, pageItems, useAttention } from "../api/attention";
 import { AttentionDot, attentionMark } from "./AttentionDot";
+import { getSeats } from "../api/seats";
+import { usePoolCapabilities } from "../auth/guest";
+import { presenceOf, type PresenceKind } from "../pages/presence";
 import styles from "./WorkHeader.module.css";
 
 // The one work header shared by the epic and the ticket page (design-a2e5369133 §WorkHeader,
@@ -19,6 +23,21 @@ import styles from "./WorkHeader.module.css";
 // Files & evidence, History, Work). The links open the source-bound viewers in the right drawer;
 // `?view=` keeps them deep-linkable. Board facts come from the page payload first and from
 // GET /v1/tickets/{id}/contextual when the board has it, so an older board still renders the header.
+
+/** The architect's state in the Seats page's words (qa fail 9): the same presenceOf rule, from the same ["seats"] read, which the
+ *  feed refreshes on shell_dead; the epic payload's raw state ("dead", "alive") is only the fallback before the seat list answers. */
+const ARCH_WORD: Record<PresenceKind, string> = {
+  working: "running", stale: "running, not refreshed", parked: "parked", stalled: "stalled", closed: "closed", unknown: "not visible here",
+};
+const ARCH_FALLBACK: Record<string, string> = { alive: "running", dead: "closed", parked: "parked", stalled: "stalled" };
+
+function ArchitectState({ id, state }: { id: string; state: string | null }): React.JSX.Element {
+  const seats = useQuery({ queryKey: ["seats"], queryFn: getSeats, retry: false });
+  const caps = usePoolCapabilities().data;
+  const seat = seats.data?.seats.find((x) => x.id === id);
+  const word = seat ? ARCH_WORD[presenceOf(seat, caps).kind] : ARCH_FALLBACK[state ?? ""] ?? "not started";
+  return <span data-testid="work-architect-state">Architect · {word}</span>;
+}
 
 export interface WorkHeaderProps {
   ticketId: string;
@@ -33,18 +52,21 @@ export interface WorkHeaderProps {
   designRef?: string | null;
   /** Breadcrumb: the epic this ticket belongs to (ticket pages). */
   epic?: { id: string; title: string } | null;
+  /** Breadcrumb root for a page outside the epics (a Library topic): replaces "Epics". */
+  home?: { label: string; to: string };
   /** The Actions ▾ control. */
   actions: React.ReactNode;
   /** The Work viewer body (stories/kanban/criteria/process for an epic; criteria/docs for a ticket). */
   work: React.ReactNode;
-  /** S20: a waiting sign-off's evidence row opens the page's ruling drawer (evidence beside the verdict), not the reader. */
-  onRuleDoc?: (docId: string) => void;
   /** Stops the design link from claiming "review requested" when the page knows better. */
   reviewRequested?: boolean;
   /** Epic pages: the live resident architect and its seat state (t-cf353a4051). */
   architect?: { id: string; state: string | null } | null;
   /** Epic pages (S13): the workflow version this epic is pinned to, e.g. "standard@1". */
   workflow?: string | null;
+  /** Epic pages: requirements people marked that the architect has not linked yet. They are said in the Needs attention
+   *  field, which is always on the page, so the first mark never inserts a line above the thread (qa report-138db92cad). */
+  openRequirements?: number;
 }
 
 /** t-994970028d: the purpose line stays plain text, so a markdown description's first line loses its
@@ -112,11 +134,8 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
   // S20 attention trail (design-e963c656f5 §4.18): the openers that hold an item waiting on the viewer carry its dot —
   // Design, Files & evidence, Work — and so does whatever hides them (the collapsed title bar, the closed details).
   const here = pageItems(useAttention(), p.ticketId);
-  const designDots = countWhere(here, "design");
-  const filesDots = countWhere(here, "files") + (designRef ? 0 : designDots); // no Design opener: its docs are files
   const workDots = countWhere(here, "work");
-  const waitingFiles = here.filter((i) => i.pageTab === "files" || (!designRef && i.pageTab === "design"));
-  const openerDots = (designRef ? designDots : 0) + filesDots + workDots;
+  const openerDots = workDots;
 
   // Route request opens the source-bound review, never answers it (design-a2e5369133 §gate typed
   // review path; restores the ?request= handling 9734d1d dropped from ContextualWork). A deep link
@@ -193,7 +212,7 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
     <header className={styles.header} data-testid="work-header">
       <div className={styles.topline}>
         <nav aria-label="Breadcrumb" className={styles.crumb}>
-          <Link to="/epics">Epics</Link>
+          <Link to={p.home?.to ?? "/epics"}>{p.home?.label ?? "Epics"}</Link>
           <span aria-hidden="true">/</span>
           {p.kind === "epic" ? <span className={styles.here}>{crumbTitle}</span> : <>
             {ownEpic ? null : <><Link to={crumbTo}>{crumbTitle}</Link><span aria-hidden="true">/</span></>}
@@ -219,7 +238,8 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
       <details className={styles.context} open={contextOpen} onToggle={(e) => setContextOpen(e.currentTarget.open)}>
         <summary className={styles.contextSummary} data-testid="work-context-toggle">
           <span className={styles.summaryChip}><StatusChip status={p.status} size="badge" /></span>
-          <span>{attention || "Details, files & history"}</span>
+          {/* S12-ui2 (qa m-da89ef8294 item 7): open, the Needs attention row below says it; the summary must not repeat it */}
+          <span data-testid="work-context-summary">{(!contextOpen && attention) || "Details, files & history"}</span>
           {contextOpen ? null : <AttentionDot count={openerDots} />}
         </summary>
       <dl className={styles.metadata} data-testid="work-metadata">
@@ -229,40 +249,47 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
         </div>
         <div>
           <dt className={styles.label}>Owner</dt>
-          <dd className={styles.value} data-testid="work-owner">{owner ? <><Avatar id={owner} size={28} />{owner}</> : <span className={styles.muted}>Unknown</span>}</dd>
+          <dd className={styles.value} data-testid="work-owner">{owner ? <><Avatar id={owner} size={28} />{owner}</> : ctx.isPending ? <span className={styles.skeleton} data-testid="work-owner-skeleton" aria-label="Loading owner" /> : <span className={styles.muted}>Unknown</span>}</dd>
         </div>
         <div>
           <dt className={styles.label}>Assigned</dt>
-          <dd className={styles.value} data-testid="work-assigned">{assignee ? <><Avatar id={assignee} size={28} />{assignee.includes(".") ? assignee.split(".")[0] : assignee}</> : <span className={styles.muted}>Unassigned</span>}</dd>
+          <dd className={styles.value} data-testid="work-assigned">{assignee ? <><Avatar id={assignee} size={28} />{assignee.includes(".") ? assignee.split(".")[0] : assignee}</> : ctx.isPending ? <span className={styles.skeleton} aria-label="Loading assignee" /> : <span className={styles.muted}>Unassigned</span>}</dd>
         </div>
         {p.architect ? <div>
-          <dt className={styles.label}>Architect</dt>
-          <dd className={styles.value} data-testid="work-architect"><Avatar id={p.architect.id} size={28} />{p.architect.id}{p.architect.state ? <span className={styles.muted}>&nbsp;· {p.architect.state}</span> : null}</dd>
+          <dt className={styles.label}>Seat</dt>
+          <dd className={styles.value} data-testid="work-architect"><Avatar id={p.architect.id} size={28} /><ArchitectState id={p.architect.id} state={p.architect.state} /></dd>
         </div> : null}
         {p.workflow ? <div>
           <dt className={styles.label}>Workflow</dt>
           <dd className={styles.value} data-testid="work-workflow">{p.workflow}</dd>
         </div> : null}
-        <div>
+        <div className={styles.needs}>
           <dt className={styles.label}>Needs attention</dt>
           <dd className={styles.value} data-testid="work-attention">
             {attention && data ? <span className={styles.coral}><Icon name="warning" size={18} />
               {attentionOther(data)}{attentionOther(data) && data.unresolved_asks?.length ? " · " : ""}
-              {data.unresolved_asks?.length ? <AttentionAsks asks={data.unresolved_asks} /> : null}</span>
-              : <span className={styles.muted}>{ctx.isError ? "Unknown on this board" : ctx.isPending ? "…" : "Nothing open"}</span>}
+              {data.unresolved_asks?.length ? <AttentionAsks asks={data.unresolved_asks} /> : null}</span> : null}
+            {p.openRequirements ? (
+              <span className={styles.coral} data-testid="requirements-chip"
+                title="The epic cannot finish until the architect links each one.">
+                <Icon name="warning" size={18} />
+                <span><span data-testid="requirements-chip-tally">{p.openRequirements}</span> open {p.openRequirements === 1 ? "requirement" : "requirements"}
+                  {" · "}<Link className={styles.reqLink} to={{ search: "?view=work" }} data-testid="requirements-chip-open">Open the list</Link></span>
+              </span>
+            ) : null}
+            {!(attention && data) && !p.openRequirements
+              ? <span className={styles.muted}>{ctx.isError ? "Unknown on this board" : ctx.isPending ? "…" : "Nothing open"}</span> : null}
           </dd>
         </div>
       </dl>
 
       <div className={styles.links} data-testid="work-links">
         {designRef ? (
-          <button type="button" className={`${styles.link} ${styles.design} ${designDots ? attentionMark : ""}`} onClick={() => openDoc(designRef)} data-testid="work-design"
-            data-attention={designDots ? "true" : undefined}>
-            <Icon name="design" /> Design{reviewRequested ? " · review requested" : ""} <AttentionDot count={designDots} />
+          <button type="button" className={`${styles.link} ${styles.design}`} onClick={() => openDoc(designRef)} data-testid="work-design">
+            <Icon name="design" /> Design{reviewRequested ? " · review requested" : ""}
           </button>
         ) : null}
-        <button type="button" className={`${styles.link} ${filesDots ? attentionMark : ""}`} onClick={() => choose("files")} data-testid="work-files"
-          data-attention={filesDots ? "true" : undefined}><Icon name="files" /> Files &amp; evidence <AttentionDot count={filesDots} /></button>
+        <button type="button" className={styles.link} onClick={() => choose("files")} data-testid="work-files"><Icon name="files" /> Files &amp; evidence</button>
         <button type="button" className={styles.link} onClick={() => choose("history")} data-testid="work-history"><Icon name="history" /> History</button>
         <button type="button" className={`${styles.link} ${workDots ? attentionMark : ""}`} onClick={() => choose("work")} data-testid="work-work"
           data-attention={workDots ? "true" : undefined}><Icon name="work" /> Work <AttentionDot count={workDots} /></button>
@@ -274,8 +301,7 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
         {view !== "work" ? <Link className={styles.openTab} target="_blank" to={`/records/${encodeURIComponent(p.ticketId)}?${new URLSearchParams({ view: view ?? "files", ...(params.get("category") ? { category: params.get("category")! } : {}), as: identity() })}`}>Open in tab <Icon name="external" size={16} /></Link> : null}
       </span>} onClose={() => choose(null)}>
         {view === "history" ? <HistoryViewer ticketId={p.ticketId} /> : view === "work" ? p.work
-          : <FilesViewer ticketId={p.ticketId} waitingDocs={new Set(waitingFiles.map((i) => i.item.doc ?? ""))}
-            asks={new Map(waitingFiles.filter((i) => i.item.doc && i.ask).map((i) => [i.item.doc!, i.ask!]))} onRule={p.onRuleDoc} />}
+          : <FilesViewer ticketId={p.ticketId} />}
       </Drawer>
     </header>
   );

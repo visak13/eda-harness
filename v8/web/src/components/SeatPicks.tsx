@@ -45,7 +45,7 @@ export function effortDisabledReason(e: Effort, cap: Effort | null): string | nu
   return cap !== null && RANK[e] > RANK[cap] ? `Effort above this model's cap (${cap})` : null;
 }
 
-export function SeatPickRow({ role, options, meta, model, effort, disabled, disabledReason, onModel, onEffort, testIdPrefix }: {
+export function SeatPickRow({ role, options, meta, model, effort, disabled, disabledReason, onModel, onEffort, testIdPrefix, add }: {
   role: string;
   options: string[];
   /** GET /v1/models `models`: each id's harness and effort cap. */
@@ -59,6 +59,8 @@ export function SeatPickRow({ role, options, meta, model, effort, disabled, disa
   onEffort: (e: Effort) => void;
   /** data-testid prefix: `<prefix>-model-<role>` and `<prefix>-effort-<role>`. */
   testIdPrefix: string;
+  /** S12-ui2 (qa m-da89ef8294 a): the row's last cell, after the effort select: the "Add an option" button. */
+  add?: React.ReactNode;
 }): React.JSX.Element {
   const cap = effortCap(model, meta);
   const harness = meta?.[model]?.harness;
@@ -79,7 +81,7 @@ export function SeatPickRow({ role, options, meta, model, effort, disabled, disa
         <ProviderIcon harness={harness} />
         <select id={modelId} className={ui.select} value={model} disabled={Boolean(why)} title={why ?? undefined} aria-describedby={why ? whyId : undefined}
           onChange={(e) => { onModel(e.target.value); onEffort(clampEffort(e.target.value, effort, meta)); }} data-testid={modelId}>
-          {options.map((id) => <option key={id} value={id}>{modelLabel(id)}</option>)}
+          {options.map((id) => <option key={id} value={id}>{modelLabel(id, meta?.[id])}</option>)}
         </select>
       </label>
       <label className={styles.effort} htmlFor={effortId}>
@@ -94,6 +96,7 @@ export function SeatPickRow({ role, options, meta, model, effort, disabled, disa
           ))}
         </select>
       </label>
+      <span className={styles.extra}>{add}</span>
       <span id={capId} className={styles.cap} data-testid={capId}>
         {greyed.length ? `${HARNESS_LABEL[harness ?? ""] ?? harness ?? "This model"}: ${cap} max. ${greyed.join(", ")} greyed: effort above this model's cap.` : ""}
       </span>
@@ -102,10 +105,10 @@ export function SeatPickRow({ role, options, meta, model, effort, disabled, disa
   );
 }
 
-/** The header over a stack of rows. */
+/** The header over a stack of rows; it sticks to the top of the dialog's scroller (S12-ui2 b). */
 export function SeatPickHead(): React.JSX.Element {
   return (
-    <div className={styles.head} aria-hidden="true">
+    <div className={styles.head} aria-hidden="true" data-testid="seat-pick-head">
       <span>Role</span><span>Model</span><span>Effort</span><span />
     </div>
   );

@@ -1,0 +1,70 @@
+{
+ "before": {
+  "window": "2026-09-07..2026-10-01 (19 days)",
+  "sessions": 278,
+  "turns": 4501,
+  "cost_per_turn_usd": 1.126,
+  "tokens_per_turn": 1591334,
+  "cost_per_acted_turn_usd": 1.878,
+  "no_action_turn_share": 0.4,
+  "no_action_cost_share": 0.056,
+  "monitor_turns_per_day": 143.7,
+  "monitor_no_action_share": 0.463,
+  "heartbeat_turns_per_day": 29.5,
+  "boot_ctx_median": 48136,
+  "boot_ctx_p90": 51908,
+  "boot_sessions": 277,
+  "cache_read_share_of_cost": 0.692,
+  "input_cost_share_by_content": {
+   "base (system prompt, tools, role card / summary)": 0.319,
+   "seat output (text, thinking, tool args)": 0.195,
+   "prompts, events, heartbeats, reminders": 0.009,
+   "tool results": 0.221,
+   "other (attachments, framing, estimate gap)": 0.256
+  },
+  "turns_per_active_day": 236.9,
+  "days": null,
+  "triggers": {
+   "background task done": 382,
+   "compaction resume": 173,
+   "cron heartbeat": 560,
+   "human / command": 656,
+   "monitor event": 2730
+  }
+ },
+ "after": {
+  "window": "2026-10-05..2026-10-08 (2 days)",
+  "sessions": 5,
+  "turns": 126,
+  "cost_per_turn_usd": 0.506,
+  "tokens_per_turn": 771782,
+  "cost_per_acted_turn_usd": 1.046,
+  "no_action_turn_share": 0.516,
+  "no_action_cost_share": 0.117,
+  "monitor_turns_per_day": 54.0,
+  "monitor_no_action_share": 0.556,
+  "heartbeat_turns_per_day": 0.0,
+  "boot_ctx_median": 34718,
+  "boot_ctx_p90": 34759,
+  "boot_sessions": 3,
+  "cache_read_share_of_cost": 0.715,
+  "input_cost_share_by_content": {
+   "base (system prompt, tools, role card / summary)": 0.148,
+   "seat output (text, thinking, tool args)": 0.17,
+   "prompts, events, heartbeats, reminders": 0.019,
+   "tool results": 0.259,
+   "other (attachments, framing, estimate gap)": 0.404
+  },
+  "turns_per_active_day": 63.0,
+  "days": {
+   "2026-10-05": 110,
+   "2026-10-08": 16
+  },
+  "triggers": {
+   "background task done": 10,
+   "compaction resume": 1,
+   "human / command": 7,
+   "monitor event": 108
+  }
+ }
+}

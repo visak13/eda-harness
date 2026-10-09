@@ -1,0 +1,6 @@
+current 0.9.1, release 0.9.2.dev0
+verified Heronry S2 Spike-0.9.2.dev0.msi against SHA256SUMS (0.1s)
+the installed 0.9.1's MSI is cached for a rollback (<repo>\v8\.data\s2-spike\home\.data\updates\0.9.1\Heronry S2 Spike-0.9.1.msi)
+compat check passed (0 workflow(s))
+backed up the DB to <repo>\v8\.data\s2-spike\home\.data\backups\edp8-0.9.1-20261002T033741Z.db
+installing 0.9.2.dev0 from <repo>\v8\.data\s2-spike\home\update (outside the install folder); progress in <repo>\v8\.data\s2-spike\home\.data\logs\update.log, outcome in <repo>\v8\.data\s2-spike\home\update\update-result.json

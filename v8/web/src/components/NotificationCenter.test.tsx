@@ -112,10 +112,9 @@ it('controller replacement reacquires the worker without resetting the delivery 
   await waitFor(() => expect(register).toHaveBeenCalledTimes(2));
   await waitFor(() => expect(workerPost).toHaveBeenCalledTimes(1));
 });
-it('denied, offline and insecure states remain truthful (no Needs you page link: S20)', async () => {
+it('denied, offline and insecure states remain truthful (no decisions page link: S20)', async () => {
   permission = 'denied'; mount();
   expect(screen.getByRole('status')).toHaveTextContent('Notifications blocked');
-  expect(screen.queryByRole('link', { name: 'Needs you' })).toBeNull();
   Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
   act(() => window.dispatchEvent(new Event('offline')));
   expect(screen.getByRole('status')).toHaveTextContent('Offline');

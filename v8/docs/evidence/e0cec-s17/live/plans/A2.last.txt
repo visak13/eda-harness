@@ -1,0 +1,224 @@
+{
+  "steps": [
+    {
+      "n": 1,
+      "do": "Use short-lived branches from main named feat/A2-<slug> or chore/A2-<slug>. Work within the existing Tallyline packages. Set up the local environment with make setup and use anonymised fixtures and GatewayFake.",
+      "per": "strategyll-ae6d2570dc §§3–4, §6.5; design-84ceac3abd §3"
+    },
+    {
+      "n": 2,
+      "do": "Create one expand migration for recon_runs and recon_discrepancies, including their indexes in that same migration. Key recon_runs by (report_date, currency), with matched/unmatched counts; support storing discrepancy kinds and both amounts in minor units with currencies. Create db/migrations/<UTC YYYYMMDDHHMMSS>_<description>.sql using make new-migration NAME=<description>. Start -- migrate:up with SET lock_timeout = '3s'; and SET statement_timeout = '15min';. Leave -- migrate:down present and empty.",
+      "per": "design-84ceac3abd Story A2 / What we are building, Schema changes; strategyll-45e2c7fd28 DM-2–DM-4, DM-6, DM-13"
+    },
+    {
+      "n": 3,
+      "do": "Put only the migration and its own tests in the migration PR. Include integration tests for the new tables under tests/integration/; let CI perform its existing migration-application checks. Use Conventional Commit messages such as feat(db): add reconciliation tables [A2], under 72 characters. Obtain one non-author Ledger Guild approval, address review concerns, and merge without a merge commit.",
+      "per": "strategyll-45e2c7fd28 DM-5, DM-15; strategyll-ae6d2570dc HB-6–HB-14, §4.4, §5.5"
+    },
+    {
+      "n": 4,
+      "do": "Before the migration reaches production, run make rehearse-migration NAME=<migration> against staging's production-sized snapshot. Paste duration, longest lock and lock-timeout retries into the carrying release ticket; obtain the rota database engineer's sign-off there and put its link in the ticket's Links field. Rehearse again if the migration changes.",
+      "per": "strategyll-45e2c7fd28 DM-9; strategyll-d7e677657f RP-9–RP-10"
+    },
+    {
+      "n": 5,
+      "do": "Release the migration alone before cutting any release containing application code that uses these tables. Follow the working-day 10:00 UK release process, automated staging smoke run and release-captain production approval. Ensure rehearsal sign-off precedes approval; pull the migration from that day's release if unsigned by 10:00. Schedule outside the last two working days of each month and 20 December–2 January.",
+      "per": "strategyll-45e2c7fd28 DM-7; strategyll-ae6d2570dc §1.3, §15.3; strategyll-d7e677657f RP-1, RP-8–RP-9"
+    },
+    {
+      "n": 6,
+      "do": "Create tallyline-recon-nightly using flagpole create before merging code that reads it. Set its owner to the Ledger Guild, include A2 in its description and default it to off in production.",
+      "per": "design-84ceac3abd Story A2 / Observability and rollout; strategyll-d7e677657f RP-2"
+    },
+    {
+      "n": 7,
+      "do": "Implement recon_nightly_settlement in tallyline/recon/ and register it with @scheduled_job in tallyline/jobs/registry.py for daily 08:00 UTC execution. Check the flag first; while off, remain scheduled but emit only recon_nightly_settlement.skipped and exit. Use the injected UTC clock to select the previous report date and process GBP, EUR and SEK.",
+      "per": "A2-c1; design-84ceac3abd Story A2 / What we are building, Observability and rollout; strategyll-ae6d2570dc HB-23, HB-38; strategyll-d7e677657f RP-3"
+    },
+    {
+      "n": 8,
+      "do": "Download each report through GatewayClient.download_settlement_report(date, currency), without an idempotency key. Finish the download and close the connection before opening a database transaction. Reuse GatewayClient's existing authentication through the Vault secrets helper. Parse CSV amounts in the boundary/schema layer using Money.parse_major(amount, currency), retaining Money throughout processing.",
+      "per": "design-84ceac3abd Story A2 / What we are building; strategyll-ae6d2570dc §§7.1, 8.1–8.3, 9.1–9.2, Appendix L"
+    },
+    {
+      "n": 9,
+      "do": "Match gateway references: payment items against captured payments and payment_captured journals, refund items against succeeded refunds and refund_paid journals, and fee items against gateway_fee journals. Support partial refunds as ordinary refund items independently of A1. Detect report-only items, expected ledger settlements absent from the report, amount mismatches and currency mismatches; retain both amounts rather than only a difference. Detect differing currencies explicitly without performing cross-currency arithmetic.",
+      "per": "A2-c2; design-84ceac3abd §3, Story A2 / What we are building; strategyll-ae6d2570dc HB-19–HB-20, Appendix H"
+    },
+    {
+      "n": 10,
+      "do": "Record and check progress by (report_date, currency). Process the 25,000–40,000 normal daily lines and up to 90,000 month-end lines in batches using tallyline.jobs.batches, with its default size of 5000 and commits between batches. Replace a prior run's discrepancies rather than append duplicates, using one transaction per batch. Make interrupted retries and corrected-report reruns converge to the same records and counts as a clean run, including removing stale discrepancies from the replaced result.",
+      "per": "A2-c3; design-84ceac3abd Story A2 / What we are building, Re-runs; strategyll-ae6d2570dc §§14.2–14.3"
+    },
+    {
+      "n": 11,
+      "do": "Emit lifecycle events with tallyline.common.events.emit_event: recon_nightly_settlement.started, then recon_nightly_settlement.finished with counts or recon_nightly_settlement.failed with the error class. Emit recon.discrepancy_found per discrepancy with gateway reference, customer_id where known, and both amounts in integer minor units with currencies. Add schemas for every new event in tallyline/common/events/schemas/ in the feature PR. Treat a late report as a failed run that can be rerun by hand.",
+      "per": "design-84ceac3abd Story A2 / Observability and rollout, §4; strategyll-5e5d23676e OB-5–OB-7, Update 2026-01-19; strategyll-ae6d2570dc Update 2026-07-20"
+    },
+    {
+      "n": 12,
+      "do": "Use tallyline.common.log.get_logger for structured JSON diagnostic logs. Include customer_id and applicable object IDs on logs about specific customer activity; use WARNING for handled failures, ERROR for unhandled failures and INFO sparingly. Represent logged amounts as amount_minor and currency. Keep the default 30-day job-log retention and 13-month event-stream retention followed by indefinite warehouse retention.",
+      "per": "strategyll-ae6d2570dc §§11.1, 11.3; strategyll-5e5d23676e OB-1–OB-4, OB-11"
+    },
+    {
+      "n": 13,
+      "do": "Export tallyline_recon_discrepancies_total labelled only by discrepancy kind and currency. Use the scheduler's automatic duration and last-success metrics. Add a Tallyline – jobs panel as code in ops/dashboards/ and at least one alert in ops/alerts/, routed to the guild alert channel, for last success older than 26 hours.",
+      "per": "design-84ceac3abd Story A2 / Observability and rollout; strategyll-5e5d23676e OB-8–OB-10"
+    },
+    {
+      "n": 14,
+      "do": "Include unit tests and scheduled-job/Postgres integration tests in the feature PR. Verify all four A2 criteria, flag-off skip-only behaviour, event schemas, amount parsing, late reports and gateway failures, batch interruption/restart, corrected reports and unchanged ledger/payment/refund state. Use factories and reconciliation fixtures; extend GatewayFake in the same PR if needed. Run make check and the integration suite, meeting 85% changed-executable-line coverage. Cover moved lines or justify genuinely untestable glue with a commented pragma. If a flaky test appears, open a flaky ticket and fix or quarantine it.",
+      "per": "A2 criteria; strategyll-ae6d2570dc §§3.3, 6.1–6.5, 16.3, Update 2026-04-01; strategyll-45e2c7fd28 DM-15"
+    },
+    {
+      "n": 15,
+      "do": "Open the separate feature PR with a finance/support-readable one-line CHANGELOG.md entry under Unreleased, even though the flag is off. Open the flag-cleanup ticket together with this PR. Describe the change, A2, risks, validation and rollback by turning off tallyline-recon-nightly; link the design and monitoring. Use current Conventional Commit messages, for example feat(recon): reconcile nightly settlements [A2].",
+      "per": "strategyll-d7e677657f RP-6–RP-7, RP-11; strategyll-ae6d2570dc §5.3, Appendix A, Update 2026-03-02"
+    },
+    {
+      "n": 16,
+      "do": "Obtain one non-author Ledger Guild approval for the feature PR. Resolve review threads only after a change or an acknowledged answer addresses them. Merge with squash-and-merge for a single logical change or rebase-and-merge otherwise, keeping main releasable.",
+      "per": "strategyll-ae6d2570dc HB-7–HB-10, §4.4; strategyll-d7e677657f RP-1"
+    },
+    {
+      "n": 17,
+      "do": "Release the feature in a later production release than the migration, with the flag off. Follow automated staging smoke testing and release-captain approval outside the documented freezes. Verify the jobs dashboard panel and alert are merged and live before enabling the behaviour.",
+      "per": "strategyll-45e2c7fd28 DM-7; strategyll-d7e677657f RP-1, RP-5, RP-8; strategyll-5e5d23676e OB-10; strategyll-ae6d2570dc §15.3"
+    },
+    {
+      "n": 18,
+      "do": "After the feature release is deployed and monitoring is live, deliberately enable tallyline-recon-nightly as a separate action. Leave discrepancy correction to finance through the adjustments tool.",
+      "per": "design-84ceac3abd §3.1, Story A2 / What it does not do; strategyll-d7e677657f RP-5"
+    },
+    {
+      "n": 19,
+      "do": "Use the cleanup ticket to remove the flag's off-paths and delete the flag 60 days after it is fully on in production.",
+      "per": "strategyll-d7e677657f RP-6, Update 2026-02-23"
+    }
+  ],
+  "must_not": [
+    {
+      "rule": "Do not post, update or delete ledger journals or entries, correct discrepancies automatically, or change payment/refund states. The archival deletion exception does not apply to A2.",
+      "per": "A2-c4; design-84ceac3abd Story A2 / What it does not do; strategyll-ae6d2570dc HB-22; strategyll-3a3c282412 §2"
+    },
+    {
+      "rule": "Do not add a Console screen, historical reconciliation for months before switch-on, chargeback reconciliation or daily summary emails. Do not make A2 depend on A1 shipping first, add a service or add third-party dependencies.",
+      "per": "design-84ceac3abd §3, Story A2 / Out of scope, §6"
+    },
+    {
+      "rule": "Do not change existing tables, backfill existing rows or add a contract/removal migration for this story. The large-backfill procedure, rename sequence and existing-table foreign-key procedure are not triggered.",
+      "per": "design-84ceac3abd Story A2 / Schema changes; strategyll-45e2c7fd28 §§3, 5, 8"
+    },
+    {
+      "rule": "Do not require concurrent index creation, a separate index migration or transaction:false for indexes on A2's tables created in the same migration; the existing-table index rule is explicitly excepted.",
+      "per": "strategyll-45e2c7fd28 DM-13, §6; design-84ceac3abd Story A2 / Schema changes"
+    },
+    {
+      "rule": "Do not use Flyway V/U file pairs, write an undo/reverse migration, roll back schema changes or ask for a maintenance window. Fix migration mistakes with a new forward migration.",
+      "per": "strategyll-45e2c7fd28 Updates 2025-11-10 and 2026-05-04, History: maintenance windows; strategyll-d7e677657f §4"
+    },
+    {
+      "rule": "Do not combine migration and feature code in one PR or one production release, even behind an off flag. Release Procedure §3's same-release allowance is overruled.",
+      "per": "strategyll-45e2c7fd28 DM-5, DM-7; strategyll-ae6d2570dc §1.3"
+    },
+    {
+      "rule": "Do not pass gateway idempotency keys to report downloads or implement the mutating-call intent/posting flow for these reads. Do not hold a database transaction across any network call.",
+      "per": "strategyll-ae6d2570dc §§8.2–8.3"
+    },
+    {
+      "rule": "Do not add refund-intent locking, refund-limit enforcement or a bulk money-movement flow to A2; these govern mutating payment/refund operations, while A2 downloads reports and matches records.",
+      "per": "strategyll-ae6d2570dc §§8.5, 16.2; design-84ceac3abd Story A2 / What it does not do"
+    },
+    {
+      "rule": "Do not pass amounts through float or Decimal, store only an amount difference, round in reconciliation code, convert ledger currencies, or catch CurrencyMismatch and continue.",
+      "per": "design-84ceac3abd §3.1, Story A2 / What we are building; strategyll-ae6d2570dc §§7.1, 7.5"
+    },
+    {
+      "rule": "Do not add a running balance column, new ledger accounts or an event-sourcing rewrite. A2 does not trigger finance approval for new accounts.",
+      "per": "strategyll-ae6d2570dc §16.2, Appendices C and M; design-84ceac3abd Story A2 / Schema changes"
+    },
+    {
+      "rule": "Do not add job-owned single-instance locks or one transaction spanning the whole report. Daily scheduling does not trigger the platform consultation required for jobs more frequent than hourly.",
+      "per": "strategyll-ae6d2570dc §§14.2–14.3, 16.5, Appendix C.6"
+    },
+    {
+      "rule": "Do not move or suppress A2's daily 08:00 UTC run because of the design's general trial-balance-window wording: the same risk entry specifically identifies A2 at 08:00 as read-only and light.",
+      "per": "A2-c1; design-84ceac3abd Story A2 / What we are building, §4"
+    },
+    {
+      "rule": "Do not substitute the retention kill switch for A2's Flagpole flag or require archival horizons, legal-hold checks, Parquet verification, archive credentials, archival production dry runs or finance/privacy activation sign-offs. Those controls govern archival, not this reconciliation job.",
+      "per": "strategyll-d7e677657f §1 / Exception; strategyll-3a3c282412 §§2–5, 7; design-84ceac3abd Story A2"
+    },
+    {
+      "rule": "Do not apply archival's customer-identifier prohibition or 400-day log retention to A2. Its customer-specific logs follow the normal identifier rule and its job logs retain the 30-day default.",
+      "per": "strategyll-5e5d23676e §§1, 5; strategyll-ae6d2570dc §1.3; strategyll-3a3c282412 §6"
+    },
+    {
+      "rule": "Do not require PR-7 merely for reading ledger/customer data and creating reconciliation records. Do not invent a new-secret SEC-REQ for reuse of GatewayClient's existing credentials; those requirements are triggered by the specific operations described in the handbook.",
+      "per": "strategyll-ae6d2570dc §§9.2, 10.2; design-84ceac3abd Story A2"
+    },
+    {
+      "rule": "Do not log business events as EVENT: INFO lines or ordinary start/finish logs, and do not give new events obsolete snake_case-only names. Use the event helper and dotted names.",
+      "per": "strategyll-5e5d23676e Precedence, §2, Update 2026-01-19; strategyll-ae6d2570dc Update 2026-07-20"
+    },
+    {
+      "rule": "Do not log raw gateway payloads, request bodies or secrets; bypass redaction; use print or another logging setup; or put customer/payment/unbounded IDs in metric labels.",
+      "per": "strategyll-ae6d2570dc §§11.1, 11.3; strategyll-5e5d23676e §§1, 3, 6"
+    },
+    {
+      "rule": "Do not store secrets in code, configuration, environment files, fixtures, CI variables or the repository. If a leak occurs, notify on-call immediately and let platform rotate it; do not rewrite git history yourself.",
+      "per": "strategyll-ae6d2570dc §§9.1–9.3"
+    },
+    {
+      "rule": "Do not de-anonymise or copy the seed snapshot off the development machine, use real customer data for fixtures, or call the real gateway or sandbox from unit/integration tests. The automatic pre-release sandbox smoke run is separate and does not replace the main tests.",
+      "per": "strategyll-ae6d2570dc §§3.2, 6.3–6.5; strategyll-d7e677657f RP-13"
+    },
+    {
+      "rule": "Do not defer tests to a follow-up or use the obsolete 80% coverage gate. A2 does not require Money/helper property-test changes, billing/render benchmarks or smoke-suite extensions because it changes none of those scoped areas.",
+      "per": "strategyll-ae6d2570dc §§6.2, 6.6–6.7, Update 2026-04-01; strategyll-d7e677657f §6"
+    },
+    {
+      "rule": "Do not request a second ledger-owner approval 'to be safe' for A2's read-only ledger code. Do not require the retired QA guild checklist or release sign-off.",
+      "per": "strategyll-ae6d2570dc §§5.2, 16.4, Appendix D, Update 2026-06-15"
+    },
+    {
+      "rule": "Do not impose public-API spec, contract-test, api-lint, HTTP idempotency, deprecation or API-changelog requirements on this job/schema change. Record its behaviour in CHANGELOG.md, not docs/api/changes.md. Console checks, screenshots, accessibility review and Console-rota approval are also out of scope.",
+      "per": "strategyll-2593d550b0 Scope; strategyll-ae6d2570dc §§1.3, 12.1; strategyll-d7e677657f §2"
+    },
+    {
+      "rule": "Do not require a new-top-level-package discussion or dependency licence approval when adding modules inside the existing recon package without dependencies. Do not turn PR-template guidance, the approximate 600-line recommendation, onboarding suggestions or thinking aids into additional gates.",
+      "per": "strategyll-ae6d2570dc §§3.4, 5.3–5.4, 13.1, Appendices F and N; design-84ceac3abd §3"
+    },
+    {
+      "rule": "Do not use the old ticket-prefix commit format, create merge commits or release branches, activate the flag during deployment, disable scheduling while the flag is off, or use the superseded 30-day flag-cleanup window.",
+      "per": "strategyll-ae6d2570dc §§4.1, 4.4, Update 2026-03-02; strategyll-d7e677657f §§1, 4, Update 2026-02-23"
+    },
+    {
+      "rule": "Do not plan around a Thursday/Friday freeze or label ordinary A2 feature work a hotfix to bypass actual freezes. The charging/refunding flag-activation announcement condition does not apply to this report-only job.",
+      "per": "strategyll-d7e677657f §§5, 7–8; strategyll-ae6d2570dc §15.3; design-84ceac3abd Story A2 / What it does not do"
+    },
+    {
+      "rule": "Do not invent precedence for a new contradiction. Raise unresolved document disagreements in the guild channel and follow the handbook until an unflagged contradiction is resolved; raise any ticket/design disagreement rather than silently choosing. Later amendments override older chapter text, and explicit guild rulings override conflicting narrower documents.",
+      "per": "strategyll-ae6d2570dc §§1.1–1.3, 16.1, Updates"
+    }
+  ],
+  "criteria_checks": [
+    {
+      "criterion": "A2-c1",
+      "how": "Command-based tests verify scheduler registration for 08:00 UTC daily and, with the flag enabled and an injected frozen clock across date boundaries, assert downloads for the preceding date exactly for GBP, EUR and SEK. Separately verify flag-off registration remains intact and execution emits only skipped."
+    },
+    {
+      "criterion": "A2-c2",
+      "how": "Use GatewayFake CSV fixtures and Postgres integration tests containing matched payments, partial/full refunds and fees, report-only items, expected-but-missing settlements, amount mismatches and currency mismatches. Assert the corresponding recon_discrepancies rows retain both amounts as integer minor units with their currencies, plus correct run counts."
+    },
+    {
+      "criterion": "A2-c3",
+      "how": "Compare a clean run's stored results with repeated runs for the same date/currency, runs restarted after committed batches and reruns using a corrected report. Assert identical final discrepancies and counts, no duplicates or stale discrepancies, and no changes to other date/currency results."
+    },
+    {
+      "criterion": "A2-c4",
+      "how": "Snapshot ledger_journals and ledger_entries before successful, failing, interrupted and repeated runs; assert their rows and counts remain unchanged and LedgerPoster is never called. Also assert payment/refund states remain unchanged as required by the design."
+    }
+  ],
+  "complete": true
+}

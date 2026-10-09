@@ -19,6 +19,7 @@ import ipaddress
 import json
 import re
 import socket
+import ssl
 import hashlib
 import time
 from datetime import UTC, datetime
@@ -29,7 +30,7 @@ from urllib.parse import quote, urljoin, urlsplit
 import httpx
 
 from . import seat_choice, settings, tool_paging
-from .board import _TERMINAL, Board, BoardError, is_help, is_topic, topic_seat_role
+from .board import _TERMINAL, Board, BoardError, is_access, is_help, is_topic, topic_seat_role
 from .library import MAX_BYTES, TIMEOUT_S, normalize_source
 from .schemas import (
     KNOWLEDGE_DOC_TYPES,
@@ -408,7 +409,7 @@ def row(board: Board, t: Ticket) -> dict[str, Any]:
 
 def list_view(board: Board) -> list[dict[str, Any]]:
     ts = board.store.query("ticket", {"kind": TicketKind.topic.value}, limit=-1, newest_first=True)
-    return [row(board, t) for t in ts if not is_help(t)]  # type: ignore[arg-type]  # S19: help is not Library
+    return [row(board, t) for t in ts if not is_help(t) and not is_access(t)]  # type: ignore[arg-type]  # help and access are not Library
 
 
 def page(board: Board, topic_id: str, *, thread_limit: int = 200) -> dict[str, Any]:
@@ -431,6 +432,7 @@ def page(board: Board, topic_id: str, *, thread_limit: int = 200) -> dict[str, A
     return {
         "topic": {**row(board, t), "description": t.description, "words": t.words},
         "seed_url": seed_url(board, t.id),
+        "allowlist": list(allowed_hosts(board, t.id)),  # the hosts the sme may fetch (S16 topic panel)
         "tags_set_by": {"by": tags_by.get("by"), "at": tags_by.get("at")} if tags_by else None,
         "docs": [{**board._doc_summary(d, 240), "source_url": d.source_url, "proposes": d.proposes,
                   "resolution": d.resolution, "created_by": d.created_by, "created_at": d.created_at.isoformat()}
@@ -499,6 +501,41 @@ def _check_host(url: str, hosts: tuple[str, ...]) -> None:
                          f"https on: {', '.join(hosts)} (the owner's seed URL sets the extra host)")
 
 
+def _causes(e: BaseException) -> list[BaseException]:
+    out: list[BaseException] = []
+    while e is not None and e not in out and len(out) < 8:
+        out.append(e)
+        e = e.__cause__ or e.__context__
+    return out
+
+
+def _fetch_error(url: str, e: Exception) -> BoardError:
+    """p-c4adfd0f: a bare `ConnectError` told the seat nothing. Name the host, the cause class (dns, refused,
+    blocked, tls, timeout, proxy, connect, http) and the OS detail, with the next step for that class."""
+    host = urlsplit(url).hostname or url
+    chain = _causes(e)
+    detail = next((str(c) for c in chain if isinstance(c, OSError) and str(c)), str(e) or type(e).__name__)
+    if isinstance(e, httpx.TimeoutException) or any(isinstance(c, TimeoutError) for c in chain):
+        cls, hint = "timeout", "the site answered too slowly; retry once, then ask the architect"
+    elif isinstance(e, httpx.ProxyError):
+        cls, hint = "proxy", "the HTTP(S)_PROXY of the board process refused the request; check that proxy"
+    elif any(isinstance(c, socket.gaierror) for c in chain):
+        cls, hint = "dns", "the board host cannot resolve the name; check its DNS or network"
+    elif any(isinstance(c, ssl.SSLError) for c in chain):
+        cls, hint = "tls", "the TLS handshake failed; check the board host's clock, CA store or TLS-inspecting proxy"
+    elif any(isinstance(c, ConnectionRefusedError) for c in chain):
+        cls, hint = "refused", "the host refused the connection; retry later"
+    elif any(isinstance(c, PermissionError) or getattr(c, "winerror", None) == 10013
+             or getattr(c, "errno", None) == 10013 for c in chain):
+        cls, hint = "blocked", ("the board host's firewall or sandbox forbids outbound sockets for this process; "
+                                "ask the owner to allow the board's python.exe outbound https, then retry")
+    elif isinstance(e, httpx.ConnectError):
+        cls, hint = "connect", "the board host cannot reach the site; check its network, then retry"
+    else:
+        cls, hint = "http", "retry later"
+    return BoardError("unavailable", f"fetching {url} failed ({cls}, {type(e).__name__}): {host}: {detail}", hint)
+
+
 def fetch(url: str, hosts: tuple[str, ...]) -> tuple[str, int, bytes]:
     """GET `url`, following at most MAX_REDIRECTS redirects that stay inside `hosts`. Returns
     (final url, status, body)."""
@@ -509,7 +546,7 @@ def fetch(url: str, hosts: tuple[str, ...]) -> tuple[str, int, bytes]:
         try:
             status, body, loc = FETCH(cur)
         except httpx.HTTPError as e:
-            raise BoardError("invalid", f"fetching {cur} failed: {type(e).__name__}", "retry later") from e
+            raise _fetch_error(cur, e) from e
         if status in (301, 302, 303, 307, 308) and loc:
             cur = urljoin(cur, loc)
             continue

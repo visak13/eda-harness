@@ -3,7 +3,7 @@
 # design-e963c656f5 4.4 / 4.10.
 #
 #   curl -LsSf https://github.com/visak13/eda-harness/releases/latest/download/install.sh | sh
-#   sh install.sh [--version v0.9.1] [--release-url <dir or https base>] [--force] [--no-modify-path] [--yes]
+#   sh install.sh [--version v0.10.8] [--release-url <dir or https base>] [--force] [--no-modify-path] [--yes]
 #                 [--no-embed]
 #
 # 1. uv: uses the uv on PATH when it is at least $UV_VERSION, else installs exactly $UV_VERSION into
@@ -139,6 +139,18 @@ BIN="$("$UV" tool dir --bin --color never)"
 PATH="$BIN:$PATH"; export PATH
 EXE="$BIN/heronry"; [ -x "$EXE" ] || [ ! -x "$BIN/heronry.exe" ] || EXE="$BIN/heronry.exe"
 INSTALLED=""; [ -x "$EXE" ] && INSTALLED="$(ver_of "$("$EXE" version 2>/dev/null || true)")"
+# an update holds <home>/update/update.lock from park to result: replacing the install under it breaks both
+if [ -n "${EDP_HOME:-}" ]; then UHOME="$EDP_HOME"
+elif [ "$(uname -s)" = Darwin ]; then UHOME="$HOME/Library/Application Support/heronry"
+else UHOME="${XDG_DATA_HOME:-$HOME/.local/share}/heronry"; fi
+LOCKF="$UHOME/update/update.lock"
+if [ -f "$LOCKF" ]; then
+  for P in $(awk '/"pids"/,/\]/' "$LOCKF" | grep -o '[0-9][0-9]*'); do
+    if kill -0 "$P" 2>/dev/null; then
+      die "an update to $(sed -n 's/.*"to": *"\([^"]*\)".*/\1/p' "$LOCKF") is in progress ($(sed -n 's/.*"step": *"\([^"]*\)".*/\1/p' "$LOCKF")); wait for its result, then run this again"
+    fi
+  done
+fi
 if [ -n "$INSTALLED" ] && [ "$INSTALLED" = "$(ver_of "$TARGET")" ] && [ "$FORCE" = 0 ]; then
   say "heronry $TARGET is already installed; nothing to do (--force reinstalls)"
 else

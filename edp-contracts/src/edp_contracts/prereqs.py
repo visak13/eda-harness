@@ -269,11 +269,11 @@ def _which(p: Prereq) -> str | None:
 
 def _probe(argv: list[str]) -> str | None:
     """`argv` (the tool plus its version arguments) over a pipe, no shell: the first output
-    line, or None when it does not start, fails or hangs."""
+    line, or None when it does not start, fails or hangs (bounded: an npm shim's node cannot hold it open)."""
+    from .proc import run_bounded
     try:
-        r = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=15.0)
-    except (OSError, subprocess.TimeoutExpired):
+        r = run_bounded(argv, 15.0)
+    except OSError:
         return None
     if r.returncode != 0:
         return None

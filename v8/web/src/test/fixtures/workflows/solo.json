@@ -119,7 +119,6 @@
     "gate_open",
     "find",
     "participants",
-    "assemble_ruleset",
     "artifact_create",
     "artifact_read",
     "artifact_upload",

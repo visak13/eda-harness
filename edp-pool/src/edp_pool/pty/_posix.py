@@ -23,7 +23,7 @@ _SUN_PATH_MAX = 100  # sockaddr_un.sun_path is 104 bytes on macOS, 108 on Linux;
 def sock_path(run_dir: str | Path | None, name: str | None) -> str:
     """Where the host for seat `name` listens. Short by construction (a hash of the name), and moved to
     /tmp when the run dir would push the path past the AF_UNIX limit (long macOS temp dirs)."""
-    stem = "pty-" + hashlib.sha1((name or str(time.time_ns())).encode("utf-8")).hexdigest()[:12]
+    stem = "pty-" + hashlib.sha1((name or str(time.time_ns())).encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
     if run_dir is None:
         from edp_contracts import settings
         run_dir = settings.run_dir()
@@ -31,7 +31,7 @@ def sock_path(run_dir: str | Path | None, name: str | None) -> str:
     d.mkdir(parents=True, exist_ok=True)
     p = d / f"{stem}.sock"
     if len(str(p)) > _SUN_PATH_MAX:
-        p = Path("/tmp") / f"edp-{stem}.sock"
+        p = Path("/tmp") / f"edp-{stem}.sock"  # nosec B108  # AF_UNIX path limit; the file name is a hash of the seat name
     return str(p)
 
 

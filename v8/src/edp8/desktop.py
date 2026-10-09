@@ -24,6 +24,8 @@ import base64
 import contextlib
 import io
 import json
+import logging
+import os
 import sys
 import threading
 import time
@@ -214,12 +216,149 @@ def ensure_webview2(product: str) -> bool:
     return webview2_version() is not None
 
 
+# ------------------------------------------------------------------------------------------ toasts and the page bridge
+
+NOTIFY_TITLE_MAX = 80
+NOTIFY_BODY_MAX = 240
+NOTIFY_BURST = (5, 10.0)  # at most 5 toasts per 10 s from the page; a runaway page cannot flood the desktop
+TOAST_LINGER_S = 10.0
+
+
+def board_origin() -> str:
+    """scheme://host:port of the board this window shows (what the navigation guard treats as 'in the app')."""
+    from urllib.parse import urlsplit
+    u = urlsplit(board_url())
+    return f"{u.scheme}://{u.netloc}"
+
+
+def navigation_decision(url: str, origin: str, *, splash: bool = False) -> str:
+    """The window's navigation policy (design §4.G): `allow` stays in the window (the board, about:blank, and the
+    shell's own splash `data:` page while `splash` is true, i.e. before the board URL first loads), `external` goes to
+    the system browser, `block` is dropped (file:, javascript:, blob:, any later data: page, app-private schemes: a
+    top-level page in this window gets the bridge). A same-origin target=_blank opens in the window; a foreign site never."""
+    from urllib.parse import urlsplit
+    try:
+        u = urlsplit(url.strip())
+    except ValueError:
+        return "block"
+    scheme = u.scheme.lower()
+    if url.strip().lower() == "about:blank":
+        return "allow"
+    if scheme == "data":
+        return "allow" if splash else "block"
+    if scheme in ("http", "https"):
+        return "allow" if f"{scheme}://{u.netloc}".lower() == origin.lower() else "external"
+    return "block"
+
+
+def open_in_browser(url: str) -> bool:
+    """Hand an http(s) URL to the system browser; anything else is refused."""
+    import webbrowser
+    if navigation_decision(url, "") != "external":  # empty origin: every http(s) URL is foreign, other schemes blocked
+        return False
+    return bool(webbrowser.open(url))
+
+
+class Bridge:
+    """`window.pywebview.api`: the whole of what the board page may ask of the shell. Public methods only (pywebview
+    walks every public attribute), so the app handle is private; the window never leaves the board's own origin
+    (navigation guard), so only the board's page can call these."""
+
+    def __init__(self, app: "Desktop") -> None:
+        self._app = app
+        self._sent: list[float] = []
+
+    def ping(self) -> dict[str, Any]:
+        """Lets the page confirm it runs inside the desktop shell (and which one)."""
+        return {"shell": "heronry-desktop", "platform": sys.platform, "toast": self._app.can_toast()}
+
+    def notify(self, title: str = "", body: str = "") -> dict[str, Any]:
+        """A native desktop toast for a board attention event (the SPA calls it for the same mention-triggered
+        requests the browser shows). Text is capped and bursts are dropped, never queued."""
+        now = time.monotonic()
+        count, per = NOTIFY_BURST
+        self._sent = [t for t in self._sent if now - t < per]
+        if len(self._sent) >= count:
+            return {"ok": False, "reason": "rate-limited"}
+        title = str(title or "").strip()[:NOTIFY_TITLE_MAX] or self._app.product
+        body = str(body or "").strip()[:NOTIFY_BODY_MAX]
+        if not self._app.toast(title, body):
+            return {"ok": False, "reason": "no-tray"}
+        self._sent.append(now)
+        return {"ok": True}
+
+    def open_external(self, url: str) -> bool:
+        """Open an http(s) link in the system browser (the page uses it for external anchors)."""
+        return open_in_browser(str(url))
+
+
+def raise_toast(title: str, message: str, *, wait_s: float = 6.0) -> tuple[bool, str]:
+    """A native toast from a one-off tray icon (for `heronry notify-test`, which has no desktop app to borrow).
+    (raised, what happened)."""
+    try:
+        import pystray
+        from PIL import Image
+    except ImportError as e:
+        return False, f"the tray library is not installed ({e}); the desktop extra provides it"
+    icon = pystray.Icon("heronry-notify-test", Image.open(io.BytesIO(asset_bytes("heronry-64.png"))), title)
+    if not getattr(icon, "HAS_NOTIFICATION", False):
+        return False, "this platform's tray cannot raise notifications"
+    ready = threading.Event()
+
+    def setup(i: Any) -> None:
+        i.visible = True
+        ready.set()
+    icon.run_detached(setup)
+    try:
+        if not ready.wait(10.0):
+            return False, "the tray icon did not come up within 10 s"
+        time.sleep(1.0)  # let the shell register the new icon before it is asked for a toast
+        icon.notify(message, title)
+        time.sleep(wait_s)
+        with contextlib.suppress(Exception):
+            icon.remove_notification()
+        return True, f"toast raised: {title}: {message}"
+    except Exception as e:  # noqa: BLE001 — shown to the user
+        return False, f"the toast could not be raised: {e}"
+    finally:
+        with contextlib.suppress(Exception):
+            icon.stop()
+
+
+def notify_test_main(argv: list[str]) -> int:
+    """`heronry notify-test [--title T] [--message M] [--wait S]`: raise one native desktop toast and say whether it
+    was raised (exit 0) or why not (exit 1)."""
+    from .brand import DESKTOP_APP_NAME
+    title, message, wait_s = DESKTOP_APP_NAME, "Test notification from `heronry notify-test`.", 6.0
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a in ("--title", "--message", "--wait") and i + 1 < len(argv):
+            if a == "--wait":
+                try:
+                    wait_s = float(argv[i + 1])
+                except ValueError:
+                    raise SystemExit(f"heronry notify-test: --wait needs a number of seconds, not {argv[i + 1]!r}") from None
+                if not 0 <= wait_s <= 600:
+                    raise SystemExit(f"heronry notify-test: --wait must be between 0 and 600 seconds, not {argv[i + 1]!r}")
+            elif a == "--title":
+                title = argv[i + 1]
+            else:
+                message = argv[i + 1]
+            i += 2
+        else:
+            raise SystemExit(f"heronry notify-test: unknown option {a!r} (usage: heronry notify-test [--title T] [--message M] [--wait S])")
+    ok, text = raise_toast(title[:NOTIFY_TITLE_MAX], message[:NOTIFY_BODY_MAX], wait_s=wait_s)
+    print(text, file=sys.stdout if ok else sys.stderr)
+    return 0 if ok else 1
+
+
 # ------------------------------------------------------------------------------------------ the app
 
 class Desktop:
     """Window + tray state and the actions both of them offer (one set, so the tray is never the only way in)."""
 
-    def __init__(self, product: str, *, notify: Callable[[str, str], None] | None = None) -> None:
+    def __init__(self, product: str, *, notify: Callable[[str, str], bool | None] | None = None) -> None:
         self.product = product
         self.window: Any = None
         self.tray: Any = None
@@ -228,18 +367,50 @@ class Desktop:
         self._notify = notify
         self.capture_dir: Path | None = None  # `heronry gui --capture <dir>`: the app shoots its own page, then quits
         self.settle_s = 6.0
+        self.guard_wait_s = 20.0
         self._code_state: tuple[float, bool] = (0.0, False)  # (checked at, up): the tray asks on every open
+        self.guard_attached = False
+        self._guard_hooked = False
+        self.guard_error = ""
+        self.splash_open = True  # the shell's own data: page is the only one allowed, until the board URL first loads
+        self.settings: Any = None  # pywebview's settings dict (set by make_window); the guard flips the link rule
+
+    # ---- toasts ---------------------------------------------------------------------------------
+    def can_toast(self) -> bool:
+        return self.tray is not None and bool(getattr(self.tray, "HAS_NOTIFICATION", False))
+
+    def toast(self, title: str, message: str) -> bool:
+        """A native toast through the tray icon (Windows: the balloon the shell shows as a toast). False when there
+        is no tray to raise it from; the caller falls back to a dialog."""
+        if not self.can_toast():
+            return False
+        try:
+            self.tray.notify(message[:250], title[:60])  # the Windows balloon cuts at 255 / 63 characters
+        except Exception:  # noqa: BLE001 — a tray that cannot notify is a fallback, never a crash
+            return False
+        timer = threading.Timer(TOAST_LINGER_S, self._clear_toast)
+        timer.daemon = True
+        timer.start()
+        return True
+
+    def _clear_toast(self) -> None:
+        with contextlib.suppress(Exception):
+            self.tray.remove_notification()
+
+    def use_toasts(self) -> None:
+        """Wire the notify hook: action results and update outcomes become toasts instead of modal dialogs."""
+        self._notify = self.toast
 
     # ---- actions (tray menu, window menu) ------------------------------------------------------
     def show(self, message: str, title: str | None = None) -> None:
         title = title or self.product
-        if self._notify:
-            self._notify(title, message)
-        elif self.capture_dir is not None:  # unattended capture run: no modal dialog, the message is evidence
+        if self.capture_dir is not None:  # unattended capture run: the message is evidence (and a toast when wired)
             with open(self.capture_dir / "messages.txt", "a", encoding="utf-8") as f:
                 f.write(f"== {title}\n{message}\n")
             print(f"{title}: {message}")
-        elif self.window is not None:
+        if self._notify and self._notify(title, message) is not False:
+            return
+        if self.capture_dir is None and self.window is not None:
             self.window.create_confirmation_dialog(title, message)
 
     def open_board(self) -> None:
@@ -300,9 +471,13 @@ class Desktop:
         self.window.restore()
 
     def update(self) -> None:
-        """Check GitHub Releases; on a newer release ask, then `heronry update` (the §4.10 apply)."""
+        """Install update: check GitHub Releases; on a newer release ask, then `updater.apply` in this process, the
+        one entry `heronry update` calls too (S10). The bundle closes for its installer and comes back by itself."""
         from . import updater
         title = f"{self.product}: update"
+        if updater.update_staged():
+            self.show("An update is already installing; its outcome is shown here when it finishes.", title)
+            return
         try:
             got = updater.check(force=True, timeout=10.0)
         except Exception as e:  # noqa: BLE001
@@ -315,22 +490,52 @@ class Desktop:
         if not got.get("newer"):
             self.show(f"{self.product} {got['current']} is up to date.", title)
             return
-        from . import launcher
-        if launcher.bundled():
-            # the bundle updates through its installer (updater.apply refuses here): open the release page;
-            # the new installer replaces the app, the board data and config in the profile stay
-            ask = (f"{self.product} {got['latest']} is available (you have {got['current']}).\n\n"
-                   "Open the release page to download the new installer? Your board data and settings stay.")
-            if self.window is not None and not self.window.create_confirmation_dialog(title, ask):
-                return
-            import webbrowser
-            webbrowser.open(got.get("url") or f"https://github.com/{settings.get('EDP_UPDATE_REPO')}/releases/latest")
-            return
         ask = (f"{self.product} {got['latest']} is available (you have {got['current']}).\n\n"
-               "Install it now? Seats are drained and the services stop while it installs, then start again.")
+               "Install it now? Working seats pause and resume, the services restart and this window closes and "
+               "reopens. Your board data and settings stay. If the update fails it goes back to the version you have.")
         if self.window is not None and not self.window.create_confirmation_dialog(title, ask):
             return
-        self._verb("update")
+        self.install_update()
+
+    def install_update(self) -> None:
+        from . import launcher, updater
+        title = f"{self.product}: update"
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                updater.apply({"relaunch-app": True})
+        except updater.UpdateError as e:
+            self.show(f"Update refused: {e}", title)
+            return
+        except Exception as e:  # noqa: BLE001 — shown, never a crash of the GUI
+            self.show(f"The update could not start: {e}", title)
+            return
+        if not updater.update_staged():
+            self.show(buf.getvalue().strip() or "Nothing to install.", title)
+            return
+        if launcher.bundled():
+            self._close_for_update()
+        else:
+            self.show("Installing in the background; the outcome is shown here when it finishes.", title)
+
+    def _close_for_update(self) -> None:
+        """The runner waits for this process to exit before it installs over the app; it stops the services itself."""
+        self.quitting = True
+        if self.tray is not None:
+            with contextlib.suppress(Exception):
+                self.tray.stop()
+        if self.window is not None:
+            with contextlib.suppress(Exception):
+                self.window.destroy()
+        threading.Timer(5.0, os._exit, [0]).start()  # a lingering tray thread must not hold the install
+
+    def announce_update_result(self) -> None:
+        """An outcome the runner wrote that this tray has not shown: Updated to X / Rolled back: why / Failed: why."""
+        from . import updater
+        res = updater.last_result()
+        if res and res.get("finished_at") and not res.get("_seen"):
+            updater.mark_result_seen(res)
+            self.show(updater.result_text(res), f"{self.product}: update")
 
     def toggle_stop_on_quit(self) -> None:
         self.prefs["stop_services_on_quit"] = not self.stop_on_quit
@@ -356,7 +561,7 @@ class Desktop:
 
     def actions(self) -> list[tuple[str, Callable[[], None]]]:
         return [("Open board", self.open_board), ("Status", self.status), ("Start services", self.start),
-                ("Stop services", self.stop), ("Restart services", self.restart), ("Check for update", self.update),
+                ("Stop services", self.stop), ("Restart services", self.restart), ("Install update", self.update),
                 ("Start code server", self.start_code), ("Stop code server", self.stop_code),
                 ("Open Code tab", self.open_code)]
 
@@ -366,6 +571,12 @@ class Desktop:
             return not self.code_up()
         if label == "Stop code server":
             return self.code_up()
+        if label == "Install update":  # one update at a time: Windows Installer or a staged runner is mid-way
+            from . import updater
+            try:
+                return not (updater.update_staged() or updater.install_scope_busy())
+            except Exception:  # noqa: BLE001 — unknown: offer it; apply refuses with the reason
+                return True
         return True
 
     # ---- window --------------------------------------------------------------------------------
@@ -376,10 +587,90 @@ class Desktop:
         self.window.hide()
         return False
 
+    def attach_navigation_guard(self) -> bool:
+        """Hook WebView2's NavigationStarting: a top-level navigation off the board's origin is cancelled and handed
+        to the system browser (`navigation_decision`). Windows/WebView2 only; elsewhere pywebview's own rules apply.
+        `webview.start(func)` runs `func` before the native window exists, so this can fail early; `ensure_navigation_
+        guard` retries. Until it succeeds pywebview's own rule (every new window goes to the browser) stays on."""
+        if sys.platform != "win32" or self.window is None:
+            return False
+        if self.guard_attached:
+            return True
+        try:
+            from System import Action  # type: ignore[import-not-found]
+            control = self.window.native.webview  # None until the form exists: AttributeError, retried
+            if not control.IsHandleCreated:
+                self.guard_error = "the window handle does not exist yet"
+                return False
+            done, outcome = threading.Event(), []
+
+            def hook() -> None:  # on the UI thread, the only one that may touch CoreWebView2
+                try:
+                    core = control.CoreWebView2
+                    if core is None:
+                        outcome.append("CoreWebView2 is not ready yet")
+                    elif self._guard_hooked:
+                        outcome.append("")
+                    else:
+                        core.NavigationStarting += self._on_navigation_starting
+                        self._guard_hooked = True
+                        outcome.append("")
+                except Exception as e:  # noqa: BLE001
+                    outcome.append(f"{type(e).__name__}: {e}")
+                finally:
+                    done.set()
+            control.BeginInvoke(Action(hook))  # never Invoke: a busy UI thread must not block the boot thread
+            if not done.wait(3.0):
+                self.guard_error = "the window's UI thread did not answer"
+                return False
+            if outcome[0]:
+                self.guard_error = outcome[0]
+                return False
+        except Exception as e:  # noqa: BLE001 — no guard is a degraded window, never a crash
+            self.guard_error = f"{type(e).__name__}: {e}"
+            return False
+        self.guard_attached = True
+        self.guard_error = ""
+        if self.settings is not None:
+            self.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = False  # the guard decides from here on
+        return True
+
+    def ensure_navigation_guard(self, wait_s: float | None = None) -> bool:
+        """Attach the guard as soon as the native window and its WebView2 core exist (polling up to `wait_s`), and keep
+        retrying on every page load after that. Logs the failure; the window then keeps pywebview's browser-only rule."""
+        wait_s = self.guard_wait_s if wait_s is None else wait_s
+        deadline = time.monotonic() + wait_s
+        while not self.attach_navigation_guard():
+            if sys.platform != "win32" or time.monotonic() >= deadline:
+                break
+            time.sleep(0.2)
+        if self.guard_attached:
+            return True
+        if sys.platform == "win32":
+            logging.getLogger("edp8.desktop").warning("navigation guard not attached (%s); external links keep going to "
+                                                      "the browser through pywebview's own rule", self.guard_error)
+            events = getattr(self.window, "events", None)
+            if events is not None and hasattr(events, "loaded"):
+                with contextlib.suppress(Exception):
+                    events.loaded += self.attach_navigation_guard
+        return False
+
+    def _on_navigation_starting(self, _sender: Any, args: Any) -> None:
+        uri = str(args.Uri)
+        decision = navigation_decision(uri, board_origin(), splash=self.splash_open)
+        if decision == "allow":
+            return
+        args.Cancel = True
+        if decision == "external":
+            open_in_browser(uri)
+
     def boot(self) -> None:
         """Runs beside the GUI loop: bring the services up (showing progress on the splash), then the board."""
+        self.ensure_navigation_guard()
         if self.capture_dir is None:
             self._boot()
+            with contextlib.suppress(Exception):
+                self.announce_update_result()
             return
         import time
         try:
@@ -415,6 +706,13 @@ class Desktop:
                 say("Setup failed — see the message")
                 self.show(out, f"{self.product}: setup")
                 return
+        from . import launcher
+        while True:  # an update owns the services: show its step, start nothing, go on once it has its result
+            blocked = launcher.update_block()
+            if not blocked:
+                break
+            say(blocked.split("; wait")[0] + "…")
+            time.sleep(2.0)
         if not services_up():
             say("Starting the board, pool, broker and MCP…")
             rc, out = run_cli("start", "--no-browser")
@@ -425,6 +723,7 @@ class Desktop:
                     return
         say("Opening the board…")
         url = entry_url()
+        self.splash_open = False  # from here a data: page is not the shell's splash any more
         self.window.load_url(url)
         if "/ui/join?" in url:
             self._on_to_board()
@@ -531,6 +830,20 @@ def parse_args(argv: list[str]) -> dict[str, Any]:
     return opts
 
 
+def make_window(app: Desktop, webview: Any) -> Any:
+    """The one window. `text_select=True` is the quoting fix: pywebview's default (False) injects `user-select:none`
+    on the body, so no text could be selected and the SPA's select-to-quote never saw a range. The page bridge
+    (`Bridge`) carries toasts and external links; the navigation guard replaces pywebview's send-every-new-window-
+    to-the-browser rule (a same-origin 'Open in tab' stays in the window, a foreign site goes to the browser)."""
+    from .brand import DESKTOP_APP_NAME
+    webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True  # pywebview's own rule until the guard is attached
+    app.settings = webview.settings
+    app.use_toasts()
+    return webview.create_window(DESKTOP_APP_NAME, html=splash_html(DESKTOP_APP_NAME), width=1280, height=820,
+                                 min_size=(720, 480), background_color="#211B18", menu=app.menu(),
+                                 js_api=Bridge(app), text_select=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     from .brand import DESKTOP_APP_NAME
     opts = parse_args(list(argv or []))
@@ -547,8 +860,7 @@ def main(argv: list[str] | None = None) -> int:
         app.open_board()
         return 0
     import webview
-    app.window = webview.create_window(DESKTOP_APP_NAME, html=splash_html(DESKTOP_APP_NAME), width=1280, height=820,
-                                       min_size=(720, 480), background_color="#211B18", menu=app.menu())
+    app.window = make_window(app, webview)
     app.window.events.closing += app.on_closing
     tray = app.make_tray()
     if sys.platform == "win32":

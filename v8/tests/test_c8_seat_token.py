@@ -149,3 +149,25 @@ def test_mcp_spawn_tool_adds_no_env_in_trusted_mode(tmp_path, monkeypatch):
     assert out["ok"], out
     # no token env in trusted mode; the spawn ticket rides along for reap's scope (S23, pain p-a05affa0)
     assert [kw.get("env") for fn, kw in calls if fn == "spawn"] == [{"EDP_SPAWN_TICKET": epic}]
+
+
+def test_resume_hands_the_seat_its_current_secret_without_rotating(tmp_path, monkeypatch):
+    """p-451a2390: a resumed shell came back with a stale EDP8_TOKEN (the pool re-injected the spawn-time
+    env after the board had rotated the secret), so every board tool 401'd. Resume now sends the seat's
+    current secret, and resuming never rotates it."""
+    from edp8 import pool_adapter
+
+    c, f, oh, epic, _ = _tokened(tmp_path, monkeypatch)
+    seat = f"engineer.{epic}"
+    _register(c, seat, "engineer")
+    tok = c.post("/v1/sessions/seat-token", json={"participant_id": seat, "ticket_id": epic},
+                 headers=oh).json()["value"]["env"]["EDP8_TOKEN"]
+    sent = []
+    monkeypatch.setattr(pool_adapter, "reachable", lambda: True)
+    monkeypatch.setattr(pool_adapter, "resume", lambda pid, env=None: sent.append((pid, env)) or {
+        "ok": True, "value": {"resumed": True, "message": "continued"}})
+    for _ in range(2):
+        r = c.post("/v1/sessions/resume", json={"participant_id": seat, "ticket_id": epic}, headers=oh)
+        assert r.status_code == 200 and r.json()["ok"], r.text
+    assert sent == [(seat, {"EDP8_TOKEN": tok})] * 2
+    assert json.loads(f.read_text(encoding="utf-8"))["agents"][seat] == tok

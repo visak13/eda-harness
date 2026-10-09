@@ -23,7 +23,9 @@
     { "text": "two $a $b|", "expect": "b" },
     { "text": "$abc |", "expect": null },
     { "text": "line one\n$Next|", "expect": "Next" },
-    { "text": "$s-5d1b171d57 (C24 title) and $de|", "expect": "de" }
+    { "text": "$s-5d1b171d57 (C24 title) and $de|", "expect": "de" },
+    { "text": "proof $art|", "expect": "art" },
+    { "text": "proof $art-0123456789|", "expect": "art-0123456789" }
   ],
   "split": [
     { "text": "see $s-5d1b171d57 (C24 refs) now", "expect": [["s-5d1b171d57", "C24 refs"]] },
@@ -31,6 +33,8 @@
     { "text": "doc $design-10b21760d9, ll $strategyll-5e3ecdb625.", "expect": [["design-10b21760d9", null], ["strategyll-5e3ecdb625", null]] },
     { "text": "$t-0123456789 $report-abcdef0123 $strategyhl-e69dbbae06", "expect": [["t-0123456789", null], ["report-abcdef0123", null], ["strategyhl-e69dbbae06", null]] },
     { "text": "not $m-0f44bb36dd, not $s-5d1b171d5, not $s-5d1b171d57x, not a$s-5d1b171d57", "expect": [] },
-    { "text": "costs $5 and $env:X", "expect": [] }
+    { "text": "costs $5 and $env:X", "expect": [] },
+    { "text": "proof $art-0123456789 (shot.png) and $art-abcdef0123.", "expect": [["art-0123456789", "shot.png"], ["art-abcdef0123", null]] },
+    { "text": "bare art-0123456789, not $art-0123456789x, not $art-01234567", "expect": [] }
   ]
 }

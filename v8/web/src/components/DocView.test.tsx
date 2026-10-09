@@ -70,7 +70,39 @@ describe("DocView", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/Could not load design-1/);
   });
 
-  it("requires explicit source selection and posts a structured local document comment", async () => {
+  it("with several linked conversations the reader picks the source; no review opens before that", async () => {
+    server.use(http.get("/v1/docs/design-1/html", () => okJson(doc({ scope: "s-1" }))));
+    server.use(http.get("/v1/docs/design-1/sources", () => okJson([{ id: "epic-1", title: "Source work" }, { id: "s-2", title: "Other work" }])));
+    renderRoute("/x", "/x", <DocView docId="design-1" />);
+    await screen.findByRole("option", { name: "Other work · s-2" });
+    expect(screen.getByLabelText("Conversation source")).toHaveValue("");
+    expect(screen.queryByText("Design review")).not.toBeInTheDocument(); // the source strip opens only after a pick
+    fireEvent.change(screen.getByLabelText("Conversation source"), { target: { value: "s-2" } });
+    expect(await screen.findByText("Design review")).toBeInTheDocument();
+  });
+
+  it("a doc with exactly one linked conversation opens its review without a manual pick (p-77ab1bf1)", async () => {
+    server.use(http.get("/v1/docs/design-1/html", () => okJson(doc({ scope: "s-1" }))));
+    renderRoute("/x", "/x", <DocView docId="design-1" />);
+    await screen.findByRole("option", { name: "Source work · epic-1" });
+    await waitFor(() => expect(screen.getByRole("region", { name: "Document review" })).toBeInTheDocument());
+    expect(screen.getByLabelText("Conversation source")).toHaveValue("epic-1");
+  });
+
+  it("an older gate-note version offers Review latest and opens the current version (stale Approve)", async () => {
+    const asked: (string | null)[] = [];
+    server.use(http.get("/v1/docs/design-1/html", ({ request }) => {
+      const v = new URL(request.url).searchParams.get("version");
+      asked.push(v);
+      return okJson(doc({ scope: "s-1", version: v ? Number(v) : 1 }));
+    }));
+    renderRoute("/x", "/x", <DocView docId="design-1" version={1} />);
+    const latest = await screen.findByRole("button", { name: /Review latest version/ });
+    fireEvent.click(latest);
+    await waitFor(() => expect(asked).toContain("2"));
+  });
+
+  it("posts a structured local document comment to the auto-selected source", async () => {
     let body: Record<string, unknown> | null = null;
     server.use(http.get("/v1/docs/design-1/html", () => okJson(doc({ scope: "s-1" }))));
     server.use(
@@ -81,8 +113,8 @@ describe("DocView", () => {
     );
     renderRoute("/x", "/x", <DocView docId="design-1" />);
     await screen.findByRole("option", { name: "Source work · epic-1" });
-    fireEvent.change(screen.getByLabelText("Conversation source"), { target: { value: "epic-1" } });
-    fireEvent.click(await screen.findByTestId("review-reader-toggle")); // reader mode is the default (t-feb26a46d9)
+    await waitFor(() => expect(screen.getByRole("region", { name: "Document review" })).toBeInTheDocument());
+    fireEvent.click(await screen.findByTestId("doc-reader-toggle")); // reader mode is the default (t-feb26a46d9)
     fireEvent.click(await screen.findByRole("button", { name: "Comment without requesting changes" }));
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "looks good" } });
     fireEvent.click(screen.getByRole("button", { name: "Send comment" }));
@@ -308,4 +340,31 @@ it("keeps the sign-off pane for a source-backed doc that lists the viewer's crit
   renderRoute("/x", "/x", <DocView docId="design-1" source="s-1" />);
   expect(await screen.findByTestId("signoff-pane")).toBeInTheDocument();
   expect(screen.getByTestId("doc-side")).toBeInTheDocument();
+});
+
+describe("DocView S17 summary-first", () => {
+  beforeEach(() => localStorage.removeItem(READER_KEY));
+
+  it("shows the legacy banner and the heading map with sizes above the whole body (ruling m-639da0243d)", async () => {
+    server.use(http.get("/v1/docs/design-1/html", () => okJson(doc({
+      html: "<h2>Purpose</h2><p>Why.</p><h3>Deep</h3><p>The last line of the body.</p>",
+      layout: "legacy", warning: "not structured for easy read; consider rewriting summary-first",
+      map: [{ h: "# Purpose", level: 1, chars: 820 }, { h: "## Deep", level: 2, chars: 4100 }], total_chars: 4920,
+    }))));
+    renderRoute("/x", "/x", <DocView docId="design-1" />);
+    expect(await screen.findByTestId("doc-legacy-warning")).toHaveTextContent("consider rewriting summary-first");
+    const map = screen.getByTestId("doc-section-map");
+    expect(map).toHaveTextContent("Sections (2)");
+    expect(within(map).getByText("Deep")).toBeInTheDocument();
+    expect(map).toHaveTextContent("4.1k chars");
+    expect(screen.getByTestId("doc-body")).toHaveTextContent("The last line of the body.");
+  });
+
+  it("a summary-first doc shows no banner", async () => {
+    server.use(http.get("/v1/docs/design-1/html", () => okJson(doc({ layout: "summary_first", map: [] }))));
+    renderRoute("/x", "/x", <DocView docId="design-1" />);
+    await screen.findByText("Body text");
+    expect(screen.queryByTestId("doc-legacy-warning")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("doc-section-map")).not.toBeInTheDocument();
+  });
 });

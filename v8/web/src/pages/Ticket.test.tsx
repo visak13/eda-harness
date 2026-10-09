@@ -208,7 +208,7 @@ describe("TicketPage", () => {
     expect(within(work).queryByTestId("description")).toBeNull();
     expect(within(work).getByText(/No acceptance criteria have been added/)).toBeInTheDocument();
     expect(within(work).getByText("No documents linked.")).toBeInTheDocument();
-    expect(within(work).getByText("no live shell")).toBeInTheDocument();
+    expect(within(work).getByText("not running")).toBeInTheDocument();
     expect(within(work).getByTestId("assignee")).toHaveTextContent("unassigned");
   });
 
@@ -248,6 +248,24 @@ describe("TicketPage", () => {
     mount(ticketPage());
     await title();
     expect(await within(await openAction("change-status")).findByTestId("status-control")).toBeInTheDocument();
+  });
+
+  it("S12-ui2: Actions items read as plain sentences, and with no spawn the seat item is \"Assign a seat\"", async () => {
+    mount(ticketPage());
+    await title();
+    fireEvent.click(screen.getByTestId("actions-open"));
+    const menu = await screen.findByTestId("actions-menu");
+    expect(within(menu).getByTestId("action-change-status")).toHaveTextContent("Move this ticket to its next step.");
+    expect(within(menu).getByTestId("action-record")).toHaveTextContent("The ids to quote in a message or a terminal.");
+    for (const item of within(menu).getAllByRole("menuitem")) {
+      const gloss = item.lastElementChild!.textContent!;
+      expect(gloss, item.dataset.testid).toMatch(/^[A-Z][^]*\.$/);
+      expect(gloss, item.dataset.testid).not.toMatch(/_|raw status|\w\/\w/);
+    }
+    // the pool in these tests cannot spawn (spawn: false)
+    await waitFor(() => expect(within(menu).getByTestId("action-assign-spawn")).toHaveTextContent(/^Assign a seat/));
+    fireEvent.click(within(menu).getByTestId("action-assign-spawn"));
+    expect(await screen.findByRole("dialog", { name: "Assign a seat" })).toBeInTheDocument();
   });
 
   it("toggles the conversation order", async () => {
@@ -532,20 +550,18 @@ describe("TicketPage attention trail (S20)", () => {
       doc_type: "report", owner_role: "engineer", html: "<p>Evidence body</p>", body_md: "Evidence body" })),
   );
 
-  it("Files & evidence carries the dot; its evidence row opens the ruling drawer, not the reader", async () => {
+  it("Files & evidence carries no dot; its evidence row opens the reader, not the ruling drawer", async () => {
     board();
     mount(signoffPage());
     await title();
     const files = screen.getByTestId("work-files");
-    expect(await within(files).findByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    expect(within(files).queryByRole("img")).toBeNull();
     fireEvent.click(files);
     const row = await screen.findByRole("button", { name: "The report · v2" });
-    const li = row.closest("li")!;
-    expect(li).toHaveAttribute("data-attention", "true");
-    expect(within(li).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    expect(row.closest("li")).not.toHaveAttribute("data-attention");
     fireEvent.click(row);
-    expect(await screen.findByTestId("ruling-grid")).toBeInTheDocument();
     expect(await screen.findByText("Evidence body")).toBeInTheDocument();
+    expect(screen.queryByTestId("ruling-grid")).toBeNull();
   });
 
   it("the notification's #c-<id> link opens the ruling drawer on that criterion", async () => {
@@ -567,22 +583,7 @@ describe("TicketPage attention trail (S20)", () => {
     expect(await screen.findByTestId("ruling-grid")).toBeInTheDocument();
   });
 
-  // t-77c3a55b75 (qa m-1f76018caa, owner m-0e6940fe2c "waiting on me, I don't know what on"): the served ask is the
-  // waiting row's words and the ruling drawer's heading; without one the drawer asks the generated question.
-  it("the served ask names the waiting row and heads the ruling drawer", async () => {
-    const ask = "Accept the hl-craft strategy?";
-    board();
-    server.use(attentionHandler({ ...ATTENTION, items: ATTENTION.items.map((i) => (i.id === "c-1" ? { ...i, ask } : i)) }));
-    mount(signoffPage());
-    await title();
-    fireEvent.click(screen.getByTestId("work-files"));
-    expect(await screen.findByTestId("signoff-ask")).toHaveTextContent(ask);
-    fireEvent.click(await screen.findByRole("button", { name: "The report · v2" }));
-    expect(await screen.findByTestId("ruling-ask")).toHaveTextContent(ask);
-    expect(screen.getAllByTestId("drawer-panel").some((d) => d.getAttribute("aria-label") === ask)).toBe(true);
-  });
-
-  it("without a served ask the drawer heads with the generated question, never blank", async () => {
+  it("the drawer heads with the generated question, never blank", async () => {
     board();
     mount(signoffPage(), "/ticket/s-1?as=owner#c-1");
     await title();
@@ -591,8 +592,10 @@ describe("TicketPage attention trail (S20)", () => {
   });
 
   it("clears once the sign-off is ruled: no mark, no review control", async () => {
-    server.use(attentionHandler(without("c-1")));
-    mount(signoffPage());
+    board();
+    const ruled = signoffPage();
+    ruled.criteria = ruled.criteria.map((x) => ({ ...x, verdict: "pass" }));
+    mount(ruled);
     await title();
     await openWork();
     await new Promise((r) => setTimeout(r, 50));
@@ -601,7 +604,7 @@ describe("TicketPage attention trail (S20)", () => {
   });
 });
 
-// S20: the thread's "Waiting on you" comes from the attention list, and a #m-<id> landing highlights that message.
+// S20: the thread's waiting mark comes from the attention list, and a #m-<id> landing highlights that message.
 describe("TicketPage thread attention (S20)", () => {
   it("marks the waiting ask from the attention list and highlights it from its #m- link", async () => {
     server.use(attentionHandler());
@@ -611,7 +614,7 @@ describe("TicketPage thread attention (S20)", () => {
     await title();
     const li = await screen.findByText("which theme?").then((e) => e.closest("li")!);
     await waitFor(() => expect(li).toHaveAttribute("data-attention", "true"));
-    expect(within(li).getByTestId("reader-tag")).toHaveTextContent("Waiting on you");
+    expect(within(li).queryByTestId("reader-tag")).toBeNull(); // s-aa76c83998: no caption, only the highlight
     // v34 item 5: the large highlight is the marker; no dot on the comment
     expect(within(li).queryByRole("img", { name: /needs your attention/ })).toBeNull();
     expect(within(li).getByTestId("thread-dismiss")).toBeInTheDocument();
@@ -667,5 +670,21 @@ describe("TicketPage thread attention (S20)", () => {
     await waitFor(() => expect(li).toHaveAttribute("data-highlight", "true"));
     expect(li).toHaveAttribute("data-attention", "true");
     await waitFor(() => expect(screen.queryByTestId("earlier-waiting")).toBeNull());
+  });
+});
+
+// S12-ui2 (qa m-da89ef8294 m4): Assigned said "Unassigned" while engineer.s-… was alive on the story.
+describe("TicketPage live seat (S12-ui2)", () => {
+  it("shows the seat alive on the ticket as Assigned when the ticket names no assignee", async () => {
+    const data = ticketPage({ assignee: { id: null, handle: null, role: null } as unknown as TicketPageData["assignee"] });
+    data.ticket.assignee = null;
+    server.use(http.get("/v1/seats", () => okJson({ people: [], seats: [
+      { id: "engineer.s-2", handle: "engineer.s-2", role: "engineer", state: "alive", ticket_id: "s-2" },
+      { id: "engineer.s-1", handle: "engineer.s-1", role: "engineer", state: "alive", ticket_id: "s-1" },
+    ] })));
+    mount(data);
+    await title();
+    await waitFor(() => expect(screen.getByTestId("work-assigned")).toHaveTextContent("engineer"));
+    expect(screen.getByTestId("work-assigned")).not.toHaveTextContent("Unassigned");
   });
 });

@@ -436,7 +436,8 @@
 }
 .svcName,
 .svcNote {
-  white-space: nowrap;
+  /* wraps at a hyphen or a space, never mid-word: a nowrap name and note made the table 963px in a 934px column and pushed Restart out of reach (qa 0.10.7) */
+  white-space: normal;
 }
 .svcNum {
   white-space: nowrap;
@@ -444,7 +445,7 @@
   min-width: 6ch;
 }
 .svcFill {
-  width: 100%;
+  width: auto; /* was 100%: the Actions column took the whole row and squeezed every other column to a sliver */
 }
 .svcActions {
   display: flex;
@@ -466,6 +467,28 @@
   font-size: 11px;
   line-height: 18px;
   white-space: nowrap;
+}
+
+/* A phone: a teammate or an agent token is a small card of labelled cells (the table was wider than the phone and cut off its buttons). */
+@media (max-width: 640px) {
+  .stackTable thead { display: none; }
+  .stackTable, .stackTable tbody { display: block; }
+  .stackTable tr { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .stackTable tr:last-child { border-bottom: 0; }
+  .stackTable td { display: block; min-width: 0; padding: 0; border-bottom: 0; overflow-wrap: break-word; }
+  .stackTable td[data-label]::before { content: attr(data-label); display: block; color: var(--muted); font-size: 11px; }
+  .stackTable td:first-child, .stackTable td:last-child { grid-column: 1 / -1; }
+}
+
+/* A host name stays on one line: it must not break at its hyphens (qa 0.10.8 round 3). */
+.host { white-space: nowrap; }
+
+/* A phone: a check is "name · LEVEL" on one row with its detail under it (the name is the card's title, so no "Check" label). */
+@media (max-width: 640px) {
+  .stackTable.checkRows tr { grid-template-columns: auto 1fr; align-items: baseline; gap: 4px 8px; }
+  .stackTable.checkRows td:nth-child(2) { grid-column: 1; grid-row: 1; font-weight: 600; overflow-wrap: normal; }
+  .stackTable.checkRows td:nth-child(1) { grid-column: 2; grid-row: 1; justify-self: start; }
+  .stackTable.checkRows td:nth-child(3) { grid-column: 1 / -1; grid-row: 2; }
 }
 
 /* A phone: each service is a small card of labelled cells, no horizontal scroll. */

@@ -5,9 +5,6 @@ description: Trigger when starting a story, before writing any code.
 
 # /methodology
 
-**Trigger**
-You are starting a story and have not yet chosen how to approach it.
-
 **Do**
 Read the strategy_hl docs linked for the story's work_type (poc-then-iterate,
 diagnose-with-logs-and-traces, research-then-build, walking-skeleton, refactor-in-steps,

@@ -14,6 +14,7 @@ import { ThemeProvider } from "../theme/ThemeProvider";
 import { appRoutes } from "../routes";
 import { ATTENTION } from "./attentionFixture";
 import { workflowHandlers } from "./fixtures/workflows";
+import { topicTicketHandlers } from "./topicTicketFixture";
 
 // ------------------------------------------------------------------ the linter
 
@@ -240,6 +241,7 @@ function installBoard(): void {
     http.get("/v1/epics/epic-1/page", () => ok(EPIC_PAGE)),
     http.get("/v1/tickets/table", () => ok(TABLE)),
     http.get("/v1/tickets/s-1/page", () => ok(TICKET_PAGE)),
+    ...topicTicketHandlers("topic-1", "Python testing"),
     http.get("/v1/tickets/:id/contextual", ({ params }) => ok({
       ticket_id: params.id, title: "Work context", kind: params.id === "epic-1" ? "epic" : "story",
       status: "in_progress", owner: "owner", requester: "owner", assignee: null,
@@ -273,7 +275,7 @@ function installBoard(): void {
     http.get("/v1/seats", () => ok(SEATS)),
     http.get("/v1/code", () => ok({ port: 9410, url: "http://127.0.0.1:9410/", running: false, version: null,
       default_folder: "/c:/v8", start_command: "edp start code" })),
-    http.get("/v1/code/faq", () => ok({ name: "code-tab-faq", path: "guides/code-tab-faq.md", html: "<h2>Shared tree</h2>" })),
+    http.get("/v1/code/faq", () => ok({ name: "code-tab-faq", path: "docs/operator/code-tab-faq.md", html: "<h2>Shared tree</h2>" })),
     http.get("/v1/pool/capabilities", () => ok(CAPS)),
     http.get("/v1/models", () => ok(MODEL_CATALOG)),
     http.get("/v1/messages", () => ok([])),
@@ -363,7 +365,7 @@ describe("findDeadControls (self-test)", () => {
 // ------------------------------------------------------------------ the walk
 
 describe("dead-control lint over the real route table (human #26)", () => {
-  it("/epics — the historical proof case Find is live (v34: the Waiting on you popover is gone)", async () => {
+  it("/epics — the historical proof case Find is live (v34: the waiting popover is gone)", async () => {
     await walk("/epics");
     await screen.findByTestId("epic-list");
     await settle();
@@ -475,7 +477,7 @@ describe("dead-control lint over the real route table (human #26)", () => {
 
   it("/library/topics/topic-1", async () => {
     await walk("/library/topics/topic-1");
-    await screen.findByTestId("topic-thread");
+    await screen.findByTestId("conversation");
     await settle();
     expectNoDead();
   });

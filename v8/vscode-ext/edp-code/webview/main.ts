@@ -190,7 +190,7 @@ let chatScroll: number | null = null;
 let focusSha: string | undefined;
 const tabs = new TabBar(TABS, local.tab, id => select(id));
 tabs.panelOf('chat').append(timeline, composer);
-app.append(header, tabs.bar, notice, tabs.panels);
+app.append(header, tabs.strip, notice, tabs.panels);
 
 // -- rendering ---------------------------------------------------------------------------------------
 const FEED_LABEL: Record<FeedStatus, string> = {
@@ -426,7 +426,7 @@ function tabCtx(): TabCtx | null {
 /** Render the active tab (Chat renders itself) and every badge. */
 function renderTab() {
   const c = tabCtx();
-  tabs.bar.hidden = !state?.ticket;
+  tabs.strip.hidden = !state?.ticket;
   if (c && state?.ticket && tabs.current !== 'chat') {
     TABS.find(t => t.id === tabs.current)!.render(tabs.panelOf(tabs.current), c);
     focusSha = c.focusSha; // the Commits tab consumed it

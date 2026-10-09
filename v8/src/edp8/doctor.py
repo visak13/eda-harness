@@ -36,6 +36,46 @@ def _cause(code: str, what: str, *, evidence: Any = None, fix: str = "", guide: 
             "guide": f"troubleshooting-{guide}" if guide else ""}
 
 
+# ----------------------------------------------------------------------------- browser tool
+def browser_tool_view() -> dict[str, Any]:
+    """t-732cf1dd92: the fleet's browser tool as the doctor sees it: on or off, the pinned version, whether the
+    one-time install is done (it happens at the first browser call), and the browser it runs."""
+    from edp_contracts import browser_tool
+    from edp_contracts.toolpath import find_tool
+    st = browser_tool.status()
+    state = ("off (Admin → Settings → Browser tool for agents): no seat can open a web page" if not st["enabled"]
+             else f"ready ({st['browser']})" if st["ready"] else "installs at the first browser call")
+    return {**st, "state": state, "node": find_tool("node")}
+
+
+def browser_tool_causes(view: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """A fault only: the tool switched off is the owner's choice, shown in the view's `state`, not a cause."""
+    v = view if view is not None else browser_tool_view()
+    if v["enabled"] and not v["node"]:
+        return [_cause("browser_tool_no_node", "node is not found, so the browser tool cannot install or run: "
+                                               "every browser_* call fails",
+                       evidence={"node": None}, fix="install Node.js 20+ or set EDP_NODE_BIN")]
+    return []
+
+
+# ----------------------------------------------------------------------------- model windows
+def model_window_causes(models: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """S7 (design §4.E): a warning per Claude catalog row whose auto_compact sits above the window the seat
+    really gets (Claude's ~200K unless the launch id carries `[1m]`, which the launcher adds for a 1M row),
+    or whose id names `[1m]` without a 1M context_window. Reads the live catalog unless `models` is given;
+    an unreadable catalog is no finding here (the catalog validator names it)."""
+    from edp_contracts.seats import window_problems
+
+    from . import model_catalog
+    if models is None:
+        try:
+            models = (model_catalog.read() or {}).get("models") or {}
+        except (OSError, ValueError):
+            return []
+    return [_cause(p["code"], p["what"], evidence={"model": p["model"]}, fix=p["fix"])
+            for p in window_problems(models)]
+
+
 # ----------------------------------------------------------------------------- health
 def health(board: Board) -> dict[str, Any]:
     from importlib import metadata
@@ -63,6 +103,9 @@ def health(board: Board) -> dict[str, Any]:
         causes.append(_cause("pool_unreachable", "the pool does not answer: no seat can spawn, resume or be "
                                                  "reaped, and seat states freeze", evidence={"pool": "unreachable"},
                              fix="propose service.restart {service: pool}", guide="service-down"))
+    causes.extend(model_window_causes())
+    browser = browser_tool_view()
+    causes.extend(browser_tool_causes(browser))
     versions: dict[str, Any] = {}
     for name in ("edp8", "edp-pool", "edp-broker", "edp-contracts"):
         try:
@@ -70,7 +113,7 @@ def health(board: Board) -> dict[str, Any]:
         except metadata.PackageNotFoundError:
             versions[name] = None
     return {"services": svc.get("services", []), "supervisor": svc.get("supervisor"), "pool_reachable": pool_up,
-            "versions": versions, "causes": causes}
+            "versions": versions, "browser_tool": browser, "causes": causes}
 
 
 # ----------------------------------------------------------------------------- pool
@@ -205,6 +248,8 @@ def why_stuck(board: Board, ticket_id: str) -> dict[str, Any]:
     humans = _humans(board)
     gates = []
     for ev in board.open_gates(t.id):
+        if ev.data.get("gate") not in Gate._value2member_map_:
+            continue  # a gate kind the board retired (poc/demo/adversarial/budget, O): nothing can answer it
         g = Gate(ev.data.get("gate"))
         refusals = {}
         for h in humans:
@@ -328,15 +373,12 @@ def workflow_check(board: Board, ref: str) -> dict[str, Any]:
 
 
 # ----------------------------------------------------------------------------- pains, logs
-def pains(limit: int = 30) -> dict[str, Any]:
-    from .records import pain_file, read_pains
-    p = pain_file()
-    try:
-        rows = read_pains(p)
-    except OSError:
-        rows = []
+def pains(board: Any, limit: int = 30) -> dict[str, Any]:
+    from . import pains as pain_store
+    pain_store.sync(board)
+    rows = pain_store.query(board.store, status="open")
     return {"open": len(rows), "pains": [{k: r.get(k) for k in ("id", "area", "symptom", "severity", "ts", "status")}
-                                         for r in rows[-limit:]]}
+                                         for r in rows[:limit]]}
 
 
 def logs(service: str, lines: int = 100) -> dict[str, Any]:

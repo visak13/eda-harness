@@ -1,29 +1,13 @@
-# /engineer-quick — the owner's single task · design review, then build
+# /engineer-quick — the owner's single task · plan, then build
 
-Same engineer role, the QUICK flow (owner m-b13c61ddea: one role, a card per flow). No epic, no architect, no
-second opinion. The owner reviews your DESIGN before you touch a file; the board enforces it (in_progress
-is refused until the owner signs off).
+The QUICK flow: no epic, no architect, no second opinion, no design sign-off. The owner's `words` are the brief and start the work.
 
-**Boot:** `get_guide('shared-host-rules')` once → `whoami()` → `subscribe()` → monitor once, cron once → `context()`.
-Resumed? `resume_self()` first — `get_guide('resume')`.
-**Heartbeat:** `context_delta(cursor=<your last cursor>)`; `context()` only at boot, after compaction or on resync_required — `get_guide('context-refresh')`.
-**Heartbeat:** `context_delta(cursor=<your last cursor>)`; `context()` only at boot, after compaction or on resync_required.
+**Boot / heartbeat:** `get_guide('shared-host-rules')` § Seat basics; resumed: `resume_self()`; heartbeat: `context_delta(cursor=…)`, `get_guide('context-refresh')`.
 
-**1 · DESIGN — read-only until signed.** The owner's `words` are the brief. Read the code; edit NOTHING (no Write/Edit,
-no commits, no generated files). `doc_create(doc_type=note, title='Design: …')`: what you will change and why, how
-(files, approach), what you will NOT do, open questions, and ONE or TWO criteria — facts a checker can confirm by
-looking or by running one command. `ticket_update(design_ref=<note>)` → `criterion_create` for each →
-`gate_open(ticket_id=<story>, gate='design_signoff', note='<one line: what to review>')` → end the turn.
-The owner answers on the board: approve (the gate closes) or quoted comments. Fold EVERY comment into the note
-(`doc_edit`, new version), reply with the version, and re-open the gate when you need a fresh approval.
-**2 · BUILD — only after the gate is answered.** `ticket_update(status=in_progress)` (refused while unsigned) →
-work → commit by path → report doc (`doc_create(doc_type=report)`) + `evidence_ref` on every criterion →
-`ticket_update(status=in_review)` → CLOSE. Scope grows mid-build? Update the design note, tell the owner on the
-thread, and wait only if they asked to review changes.
-Questions go to the owner (`message_send(kind=question, to=owner)`). A fail verdict sends the story back to
-in_progress with a note — fix, re-evidence, hand off again.
-NEVER IDLE MID-PLAN once signed: an idle wake while in_progress = build the next unbuilt item of the design note.
-Before sign-off an idle wake with no answer ends silently.
+**1 · PLAN.** Read the code. `doc_create(doc_type=note, title='Plan: …')`: what you will change and why, how (files, approach), what you will NOT do, open questions. `criterion_create` ONE or TWO criteria — facts a checker can confirm by looking or by running one command.
+**2 · BUILD.** `ticket_update(status=in_progress)` → work → commit by path → report doc (`doc_create(doc_type=report)`) + `evidence_ref` on every criterion → `ticket_update(status=in_review)` → CLOSE. Scope grows? Update the plan note and tell the owner.
+Questions: `message_send(kind=question, to=owner)`. A fail verdict sends it back to in_progress: fix, re-evidence, hand off again.
+NEVER IDLE MID-PLAN: an idle wake while in_progress = build the next unbuilt item of the plan note.
 
-**COMMIT** by path with both trailers (shared-host-rules): PowerShell `git commit -m "..." --trailer "EDP-Ticket: <ticket-id>" --trailer "EDP-Seat: $env:EDP_HANDLE" -- <paths>` · bash `git commit -m "..." --trailer "EDP-Ticket: <ticket-id>" --trailer "EDP-Seat: $EDP_HANDLE" -- <paths>`.
-**SKILLS** /ticket · /verify · /demo · /doubt · /learn · /pain
+**COMMIT** by path, both trailers (`shared-host-rules`).
+**SKILLS** /ticket · /verify · /demo · /doubt · /learn · /pain · /doc-write · /doc-read

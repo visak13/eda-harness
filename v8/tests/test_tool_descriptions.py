@@ -17,10 +17,11 @@ from pathlib import Path
 import pytest
 
 from edp8.bundles import ALL_TOOLS, compose_description, enum_fields
-from edp8.schemas import ENUMS
+from edp8.schemas import DESCRIBE, ENUMS
+from edp8.tool_contracts import tool_objects, tools_by_object
 
 # every string value across every registered enum — the universe a description may name
-_ALL_ENUM_VALUES = {v for e in ENUMS.values() for v in (m.value for m in e)}
+_ALL_ENUM_VALUES = {v for e in ENUMS.values() for v in (m.value for m in e)} | {"all"}  # "all": the pain status filter
 
 
 @pytest.mark.parametrize("name", sorted(ALL_TOOLS))
@@ -36,13 +37,13 @@ def test_description_has_four_parts(name: str):
     assert tool.when.strip(), f"{name}: empty 'when'"
     assert "When: " in desc, f"{name}: description missing the 'When:' clause"
 
-    # part 3 — OBJECTS + ENUMS: the linked objects are named; every enum arg is named with a
-    # pointer to describe('enums'), and its allowed values are in the advertised schema
-    assert "Objects: " in desc, f"{name}: description names no linked object"
+    # part 3 — ENUMS: every enum arg is named, and its allowed values are in the advertised schema. The linked
+    # objects and skills are not in the description (e0cec S9, architect m-1fc3764b91): describe_objects() lists them.
+    assert "Objects: " not in desc and "Skills: " not in desc, f"{name}: objects/skills belong to describe_objects()"
+    assert tool_objects(name) and name in tools_by_object()[tool_objects(name)[0]], f"{name}: not listed under its object"
     ef = enum_fields(tool.args_model)
     if ef:
         assert "Enums: " in desc, f"{name}: has enum args but no enum clause"
-        assert "describe('enums')" in desc, f"{name}: enum clause must point at describe('enums')"
         props = tool.input_schema.get("properties", {})
         for field, values in ef.items():
             assert field in desc, f"{name}: enum arg {field!r} not named in the description"
@@ -91,15 +92,15 @@ def test_role_cards_untouched():
 # --------------------------------------------------------------------------- S22 §24.1 caps/derivation
 def test_ticket_create_description_names_the_caps():
     """§24.1 (criterion c-bcc4d02da1): the ticket_create tool description states the story/task caps."""
-    d = ALL_TOOLS["ticket_create"].description.lower()
-    assert "8 open stories" in d or "at most 8" in d, d
-    assert "5 tasks" in d or "at most 5" in d, d
-    assert "scope gate" in d, d
+    d = ALL_TOOLS["ticket_create"].description.lower()  # S9 (architect m-e81d718b2f): a cap shows when the tool is called
+    assert "caps: 8 open stories per epic, 5 tasks per story" in d, d
+    assert "scope gate" in DESCRIBE["ticket"].lower()  # the long form lives in describe("ticket")
 
 
 def test_criterion_create_description_states_derivation_and_criteria_cap():
     """§24/§24.1 (criteria c-abb821e363, c-bcc4d02da1): the criterion_create tool description states
     the checker derivation and the freshly-written-criteria cap."""
-    d = ALL_TOOLS["criterion_create"].description.lower()
+    d = ALL_TOOLS["criterion_create"].description.lower()  # S9: the cap line stays in the call; long form in describe("criterion")
+    assert "6 fresh" in DESCRIBE["criterion"].lower()
     for token in ("qa", "knowledge", "override_reason", "6 fresh"):
         assert token in d.replace("freshly-written", "fresh"), f"criterion_create desc missing {token!r}: {d}"

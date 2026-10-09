@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import pytest
 
-from edp8 import views
 from edp8 import workflow as wf
 from edp8.board import Board, BoardError
 from edp8.schemas import Check, DocType, Gate, Role, TicketKind, TicketStatus, Verdict, WorkType
@@ -137,6 +136,19 @@ def _custom_workflow(board) -> str:
     return _publish(board, d)
 
 
+def test_sweep3_handle_rule_binds_humans_only_agent_seats_still_register(board, ps):
+    ref = _custom_workflow(board)
+    board.ticket_create(ps["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="C", workflow=ref)
+    seat = board.participant_create("agent", "engineer", "engineer.t-05de461caa", id_="engineer.t-05de461caa")
+    assert seat.id == "engineer.t-05de461caa"
+    odd = board.participant_create("agent", "engineer", "Topic:Seat/1", id_="Topic:Seat/1")
+    assert odd.handle == "Topic:Seat/1"
+    custom = board.participant_create("agent", "designer", "designer.S-ABC", id_="designer.S-ABC")
+    assert custom.role == "designer"
+    with pytest.raises(BoardError):
+        board.participant_create("human", "owner", "Bad Name!")
+
+
 def test_a_custom_role_and_transition_get_refusal_and_auto_carry(board, ps):
     ref = _custom_workflow(board)
     epic = board.ticket_create(ps["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="C",
@@ -174,31 +186,9 @@ def test_s16_guards_are_standards_declared_preconditions():
     assert carry.auto and carry.auto_when.kinds == ["epic"]
     assert [p.check for p in carry.requires] == ["role_in", "design_ref", "criteria_min"]
     signoff = next(g for g in std.gates if g.id == "design_signoff")
-    assert [p.check for p in signoff.requires] == ["story_cap", "design_ref", "kind_in", "design_ready",
-                                                    "signoff_lint"]
+    assert [p.check for p in signoff.requires] == ["story_cap", "kind_in", "design_ready", "signoff_lint"]
     assert [p.check for p in signoff.answer_requires] == ["human_epic_owner"]
     assert all(g.requires for g in std.gates)  # the lint's gate_without_precondition holds for Standard
-
-
-def test_a_gate_the_owner_cannot_answer_is_hidden_from_needs_you(board, ps):
-    d = wf.dump(board.workflows.duplicate("standard@1", new_id="nogate", by="owner"))
-    for g in d["gates"]:
-        if g["id"] == "scope":
-            g["answerers"] = ["architect"]
-    # publish refuses it now (gate_unanswerable, c-328185ac06); a version stored before that invariant
-    # (written straight to the table here) must still never reach Needs you
-    with pytest.raises(wf.WorkflowError, match="gate_unanswerable"):
-        board.workflows.save(d, by="owner") and board.workflows.publish("nogate", 1, by="owner")
-    board.workflows._put(wf.WorkflowDef.model_validate({**d, "published": True}), "test")
-    ref = "nogate@1"
-    epic = board.ticket_create(ps["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="G",
-                               workflow=ref)
-    std = board.ticket_create(ps["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="S")
-    board.gate_open(epic.id, Gate.scope, by="arch")
-    board.gate_open(std.id, Gate.scope, by="arch")
-    listed = [(g["ticket_id"], g["gate"]) for g in views.decisions_for(board, ps["owner"])["gates"]]
-    assert listed == [(std.id, "scope")]
-    assert "answered by" in board.gate_answer_refusal(ps["owner"], epic.id, Gate.scope).message
 
 
 # ---- c-0e2611c3f2: Lean and Solo walk to done -------------------------------------------------
@@ -245,7 +235,7 @@ def test_lean_epic_walks_owner_engineer_qa_to_done(board, ps):
     epic, sc, ec = _walk(board, ps, "lean", checker=lambda b: b.participant("qa"),
                          at_acceptance=lambda b, e: paired.extend(b.run_pending_pairings()["spawned"]))
     assert (sc.checked_by, ec.checked_by) == ("qa", "qa")
-    assert paired == [f"qa.{epic.id}"]  # the acceptance gate paired the qa seat
+    assert paired == []  # the board pairs no qa seat (B): the architect starts it on the hint
 
 
 def test_solo_epic_walks_owner_engineer_owner_checks_to_done(board, ps):

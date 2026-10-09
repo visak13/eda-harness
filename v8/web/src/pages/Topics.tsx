@@ -48,7 +48,7 @@ export function TopicsSection(): React.JSX.Element {
                     data-attention={need.has(t.id) ? "true" : undefined}>
                     <span className={ui.tag}>{t.status}</span>
                     <span className={styles.rowTitle}>{t.title} <AttentionDot count={need.get(t.id)?.count ?? 0} /></span>
-                    {need.has(t.id) ? <span className={styles.needs} data-testid="attention-reason">Waiting on you: {need.get(t.id)!.reason}</span> : null}
+                    {need.has(t.id) ? <span className={styles.needs} data-testid="attention-reason">{need.get(t.id)!.reason}</span> : null}
                     <span className={styles.tags}>{t.tags.map((g) => <span key={g} className={ui.tag}>{g}</span>)}</span>
                     <span className={styles.muted}>
                       {t.docs} docs · {t.experts} experts · {t.messages} messages · seat {t.seat.state}

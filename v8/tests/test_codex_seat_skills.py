@@ -17,7 +17,7 @@ from edp8.codex_seat import seat as seat_mod
 
 V8 = Path(__file__).resolve().parents[1]
 HERE = Path(__file__).resolve().parent / "codex_seat"
-DESC = V8 / "guides" / "harness-parity" / "descriptions.ours.json"
+DESC = V8 / "src" / "edp8" / "codex_seat" / "descriptions.ours.json"
 
 
 def _names(roots):
@@ -25,9 +25,10 @@ def _names(roots):
 
 
 def test_role_skill_roots_follow_the_role_cards_skills_line():
-    assert _names(seat_mod.role_skill_roots(V8, "qa")) == ["ticket", "epic", "verify", "harvest", "pain"]
+    assert _names(seat_mod.role_skill_roots(V8, "qa")) == ["ticket", "epic", "verify", "harvest", "learn", "pain",
+                                                             "doc-write", "doc-read"]
     assert _names(seat_mod.role_skill_roots(V8, "engineer")) == ["ticket", "methodology", "demo", "verify", "deviation",
-                                                                  "doubt", "learn", "pain"]
+                                                                  "doubt", "learn", "pain", "doc-write", "doc-read"]
     for r in seat_mod.role_skill_roots(V8, "qa"):
         assert Path(r).is_absolute() and (Path(r) / "SKILL.md").is_file()
 
@@ -62,7 +63,7 @@ def test_the_role_bundle_is_bound_before_the_thread_and_read_back(tmp_path, monk
     s = seat_mod.CodexSeat(**kw)
     s.start(resume=resume)
     try:
-        assert s.skills == sorted(["ticket", "epic", "verify", "harvest", "pain"])  # the bundle, not imagegen
+        assert s.skills == sorted(["ticket", "epic", "verify", "harvest", "learn", "pain", "doc-write", "doc-read"])  # the bundle, not imagegen
         methods = _mirror_out_methods(s.log_path)[-6:] if resume else _mirror_out_methods(s.log_path)
         thread = "thread/resume" if resume else "thread/start"
         assert methods.index("skills/extraRoots/set") < methods.index(thread)
@@ -81,7 +82,7 @@ def test_binding_writes_nothing_to_the_tree(tmp_path, monkeypatch):
                            env={"EDP_PARITY_DESCRIPTIONS": str(DESC)}, discover=lambda _c: ([], None))
     s.start()
     try:
-        assert s.skills == ["epic", "harvest", "pain", "ticket", "verify"]
+        assert s.skills == ["doc-read", "doc-write", "epic", "harvest", "learn", "pain", "ticket", "verify"]
         assert not (V8 / ".agents").exists() and not (V8 / ".codex" / "skills").exists()
     finally:
         s.stop()

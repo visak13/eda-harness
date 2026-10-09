@@ -1,6 +1,7 @@
+import { hideFromGuests, usePoolCapabilities } from "../auth/guest";
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getPoolCapabilities, spawnSeat } from "../api/seats";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { spawnSeat } from "../api/seats";
 import { BoardApiError } from "../api/client";
 import type { PoolCapabilities } from "../api/types";
 import { copyProps } from "../copy/pages";
@@ -11,7 +12,7 @@ import styles from "./AssignControl.module.css";
 // spawn; the page does not know a seat's liveness (assigned_seats is assignees, not sessions), so
 // the board decides whether a second architect is refused or replayed and its hint is shown
 // verbatim, on success and on error. When an architect seat is already assigned the button says so.
-export function SpawnArchitect({
+function SpawnArchitectView({
   epicId,
   assignedSeats = [],
   gloss = null,
@@ -23,7 +24,7 @@ export function SpawnArchitect({
 }): React.JSX.Element | null {
   const qc = useQueryClient();
   const [hint, setHint] = useState<string | null>(null);
-  const capsQ = useQuery({ queryKey: ["pool", "capabilities"], queryFn: getPoolCapabilities, retry: false });
+  const capsQ = usePoolCapabilities();
   const caps = capsQ.data as PoolCapabilities | undefined;
   const seatId = `architect.${epicId}`;
   const existing = assignedSeats.find((s) => s === seatId || s.startsWith("architect.")) ?? null;
@@ -56,7 +57,7 @@ export function SpawnArchitect({
       {gloss}
       {existing ? (
         <p className={styles.note} data-testid="spawn-architect-existing">
-          {existing} already holds this epic — the board decides whether a second shell starts.
+          {existing} already holds this epic. Spawning another only works if the board allows a second architect.
         </p>
       ) : null}
       {hint ? (
@@ -72,3 +73,6 @@ export function SpawnArchitect({
     </div>
   );
 }
+
+/** e0cec S5: a guest never sees this control (the board refuses it). */
+export const SpawnArchitect = hideFromGuests(SpawnArchitectView);

@@ -104,13 +104,13 @@ __all__ = ["TOOL_KEYS", "ToolMissing", "find_tool", "git_bash", "probe_version",
 
 def probe_version(argv: list[str], *, timeout: float = 10.0) -> str | None:
     """`<argv> --version` over a pipe, no shell: the first output line, or None when the tool does not
-    start, fails, or hangs past `timeout`. A health check that needs no install-layout knowledge."""
-    import subprocess
+    start, fails, or hangs past `timeout`. Bounded by :func:`edp_contracts.proc.run_bounded`: a hung
+    tool's whole tree is killed, so a ``.CMD`` shim's node cannot hold the call open (D9)."""
+    from .proc import run_bounded
 
     try:
-        r = subprocess.run([*argv, "--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=timeout)
-    except (OSError, subprocess.TimeoutExpired):
+        r = run_bounded([*argv, "--version"], timeout)
+    except OSError:
         return None
     if r.returncode != 0:
         return None

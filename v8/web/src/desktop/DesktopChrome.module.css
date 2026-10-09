@@ -1,0 +1,12 @@
+/* Back / Forward for the desktop window (no browser chrome there). Same 32px control as the rail toggle. */
+.history { display: flex; gap: 6px; margin: 0 4px 8px; }
+.step {
+  flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0;
+  border: 1.5px solid transparent; border-radius: 8px; background: transparent; color: var(--ink); cursor: pointer;
+}
+.step:hover:not(:disabled) { background: var(--secondary); border-color: var(--strongline); }
+.step:focus-visible { outline: 2px solid var(--accentink); outline-offset: 3px; }
+.step:disabled { color: var(--muted); cursor: default; opacity: 0.55; }
+@media (min-width: 768px) {
+  :global([data-rail="collapsed"]) .history { flex-direction: column; margin: 0 0 8px; align-items: center; }
+}

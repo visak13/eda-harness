@@ -52,6 +52,9 @@ describe("LibraryPage — Tickets", () => {
       expect(seen).toContain(p);
     }
     expect(screen.getByText("A story")).toBeInTheDocument();
+    // S12-ui2 (m1): sentence-case column headers
+    expect(Array.from(screen.getByTestId("tickets-table").querySelectorAll("th")).map((th) => th.textContent))
+      .toEqual(["Id", "Epic", "Title", "Kind", "Status", "Assignee", "Criteria"]);
   });
 
   it("changing a filter updates the query and re-requests", async () => {
@@ -83,10 +86,10 @@ describe("LibraryPage — History", () => {
     expect(screen.getByText(/moved ready/)).toBeInTheDocument();
   });
 
-  it("the sub-nav lists all five sections", async () => {
+  it("the sub-nav lists its sections, Pains included", async () => {
     server.use(http.get("/v1/tickets/table", () => okJson(TABLE)));
     renderRoute("/library/tickets", "/library/:section", <LibraryPage />);
-    for (const s of ["Documents", "Artifacts", "Links", "Tickets", "History"]) {
+    for (const s of ["Documents", "Artifacts", "Links", "Tickets", "Pains", "History"]) {
       expect(screen.getByRole("link", { name: s })).toBeInTheDocument();
     }
   });
@@ -143,6 +146,7 @@ describe("LibraryPage — Links", () => {
     renderRoute("/library/links", "/library/:section", <LibraryPage />);
     expect(await screen.findByText("designed_by")).toBeInTheDocument();
     expect(screen.getAllByText("s-1").length).toBeGreaterThan(0);
+    expect(Array.from(screen.getByRole("table").querySelectorAll("th")).map((th) => th.textContent)).toEqual(["From", "Relation", "To"]); // S12-ui2 (m1)
   });
 
   it("shows the empty state when there are no links", async () => {

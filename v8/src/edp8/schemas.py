@@ -38,6 +38,9 @@ class Role(StrEnum):
     # S19 (design-e963c656f5 §4.14(e).5): the kernel-provided Help seat. Read-only diagnostics; it proposes
     # fixes an admin approves (edp8.fixes) and is resident on a `help` topic (edp8.help)
     doctor = "doctor"
+    # e0cec S5 (design-b6a55eed13 §4.B): an invited human scoped to its member epics (edp8.guest_scope); the
+    # default role of an invite. Reads, posts question/note and uploads on member epics; nothing else.
+    guest = "guest"
 
 
 class CustomRole(str):
@@ -123,6 +126,7 @@ class CheckedBy(StrEnum):
     qa = "qa"
     owner = "owner"
     engineer = "engineer"
+    sme = "sme"  # e0cec S6: a knowledge ticket's lines, verdicted by its sme once it has checked the cited sources
 
 
 class DocType(StrEnum):
@@ -141,9 +145,18 @@ class DocStatus(StrEnum):
     proposed = "proposed"
     retired = "retired"
 
+class DocLayout(StrEnum):
+    """S17 (design-f39cf0db7d decision 2): a doc older than the layout column is `legacy` (its reads carry
+    LEGACY_WARNING); a summary-first rewrite clears it. Registered so describe('enums') lists doc_update's values."""
+    legacy = "legacy"
+    summary_first = "summary_first"
+
+
 
 # The knowledge kinds the Library tab lists; only these carry tags/status in practice.
 KNOWLEDGE_DOC_TYPES = ("strategy_hl", "strategy_ll", "domain")
+#: astra F2: what topic_propose advertises is what edp8.topics accepts (a topic proposes knowledge docs only)
+TopicDocType = StrEnum("TopicDocType", {t: t for t in KNOWLEDGE_DOC_TYPES})
 
 
 def normalize_tags(tags: list[str] | None) -> list[str]:
@@ -163,7 +176,7 @@ class Relation(StrEnum):
     evidence_for = "evidence_for"
     blocks = "blocks"
     produced = "produced"
-    extends = "extends"  # doc -> doc layering: assemble_ruleset composes the chain universal-first
+    extends = "extends"  # doc -> doc layering: the more specific doc names the general one it builds on
     has_expert = "has_expert"  # topic -> expert participant (S-SME-SURFACE); written by edp8.topics only
 
 
@@ -189,6 +202,19 @@ class ClaimStatus(StrEnum):
 class LessonStatus(StrEnum):
     live = "live"
     retired = "retired"
+
+
+class PainStatus(StrEnum):
+    open = "open"
+    fixed = "fixed"  # fixed_commit names the commit
+    ticket = "ticket"  # routed: ticket_ref names the ticket that owns the fix
+    duplicate = "duplicate"  # dup_of names the pain it repeats
+    invalid = "invalid"
+
+
+class LessonScope(StrEnum):
+    framework = "framework"
+    project = "project"
 
 
 class LinkKind(StrEnum):
@@ -240,6 +266,9 @@ class EventKind(StrEnum):
     shell_dead = "shell_dead"
     shell_stalled = "shell_stalled"
     ticket_created = "ticket_created"
+    # e0cec s-0b8d2e5393 (design-63db8a7d42 J): the owner's chat reply lifted an epic's story cap: subject = the epic,
+    # {message, by}. Board._scope_cap_raised reads it beside a scope-gate answer.
+    scope_cap_lifted = "scope_cap_lifted"
     ticket_updated = "ticket_updated"  # a non-status field changed: {changed: [field...], by} (ruling #32: title)
     # a verdict landed: {criterion, verdict, by, by_type, evidence, ticket, check, checked_by}
     criterion_checked = "criterion_checked"
@@ -253,6 +282,36 @@ class EventKind(StrEnum):
     # v34 (design-e963c656f5 §4.18, owner m-8aa6439a77): the addressee dismissed a waiting ask without replying:
     # subject = the message id, {by, ticket}. Board.ask_resolved reads it, so every attention surface clears together.
     ask_dismissed = "ask_dismissed"
+    # e0cec S3 (owner R3, dec-49f1f6a911): a structural resolver settled an ask: subject = the ask's message id,
+    # {by, reason (reply|resolves|owner_message|phase_past), via, ticket}. Board.ask_resolved reads it.
+    ask_resolved = "ask_resolved"
+    # e0cec S3: a right-role checker's verdict was refused: subject = the criterion, {by, role, reason}. A criterion with
+    # one is stuck as `cannot_clear` (Board.stuck_cause).
+    criterion_verdict_refused = "criterion_verdict_refused"
+    # e0cec S3: the board queued a fresh checker for stuck criteria: subject = the ticket, {role, seat, cause, criteria}
+    checker_requeued = "checker_requeued"
+    # s-3c858b31b4: a seat read a message (message_read or inbox): subject = the message id, {by}. A read receipt for the close
+    # sweep only: no listener is woken by it. {by, via: read|listener}. Board.note_seen writes it, Board.was_seen reads it.
+    message_seen = "message_seen"
+    # e0cec S4 (asks ledger, design-edca9590d7 §5): subject = the ask id. ask_created {epic, ticket, source, by};
+    # ask_triaged {state, covers, amends, story, by}; ask_judged {verdict, by}; criterion_staled: subject = the
+    # criterion, {ask, by} (E3: an owner amendment reworded the ask this criterion covers)
+    ask_created = "ask_created"
+    ask_triaged = "ask_triaged"
+    ask_judged = "ask_judged"
+    # s-aa76c83998 (design-63db8a7d42 item H): ask_archived {epic, from} = the migration retiring an ask row;
+    # requirement_marked {epic, ticket, source, by} wakes the epic's architect once; requirement_linked {epic,
+    # criterion | doc, version, heading, by} closes it.
+    ask_archived = "ask_archived"
+    requirement_marked = "requirement_marked"
+    requirement_linked = "requirement_linked"
+    criterion_staled = "criterion_staled"
+    # RETIRED (s-3c858b31b4 D): the board no longer revives a closed seat, so this is never emitted. Kept so stored rows
+    # (subject = the seat's ticket, {seat, by, message}) still decode in replay, activity and event reads.
+    seat_revive_started = "seat_revive_started"
+    # e0cec board hints: the board no longer acts (staffs qa, revives a closed seat); it says so. subject = the ticket,
+    # {hint: qa_available|closed_seat_message, text, seat?, message?}. The epic architect's listener is paged for every one.
+    board_hint = "board_hint"
 
 
 class Reason(StrEnum):
@@ -271,10 +330,6 @@ class Reason(StrEnum):
 
 class Gate(StrEnum):
     design_signoff = "design_signoff"
-    poc = "poc"
-    demo = "demo"
-    adversarial = "adversarial"
-    budget = "budget"
     acceptance = "acceptance"
     scope = "scope"  # the owner raises a story/criteria cap by answering this (design §24.1)
 
@@ -336,9 +391,13 @@ class Ticket(Obj):
     description: str = ""  # the slice in prose: scope, intent, pointers — searchable (2026-09-06)
     tags: list[str] = Field(default_factory=list)  # free labels for filtering/grouping
     epic_id: str | None = None  # derived by the board at create time (an epic's own id for an epic)
+    serves: list[str] = Field(default_factory=list)  # e0cec S4 E6: the ask or finding ids a task serves
     # a Library topic's config on its own record (t-3e246b5e32 (d)): {seed_url, allowlist, tags_set_by};
     # None on every other ticket and on a topic from before the field (topics.config backfills it once)
     topic_config: dict[str, Any] | None = None
+    # e0cec S5 (design-b6a55eed13 §4.B): an epic's guest members (participant ids), edited by the owner in the
+    # epic's People panel. A guest reads only its member epics' trees (edp8.guest_scope); [] on every other row.
+    members: list[str] = Field(default_factory=list)
 
 
 class Criterion(Obj):
@@ -349,6 +408,7 @@ class Criterion(Obj):
     evidence_ref: str | None = None  # doc id (report)
     evidence_version: int | None = None  # the doc version this verdict signed off (design §14 finding 3)
     verdict: Verdict = Verdict.pending
+    stale: str | None = None  # e0cec S4 E3: the amending ask id while the criterion's ask was reworded; a reword clears it
 
 
 class Doc(Obj):
@@ -365,6 +425,12 @@ class Doc(Obj):
     source: dict[str, str | None] | None = None  # a proposed doc: {participant, ticket} it came from
     source_url: str | None = None  # an imported doc (skills.sh / raw SKILL.md): its origin, the re-import key
     resolution: str | None = None  # a resolved proposal: "approved -> <id> v<n>" | "rejected"
+    # S17 (design-f39cf0db7d decision 2): docs older than the column are `legacy` (set by the store migration);
+    # a read of one carries LEGACY_WARNING. A rewrite passes layout='summary_first' to clear it. Never parsed.
+    layout: Literal["legacy", "summary_first"] = "summary_first"
+
+
+LEGACY_WARNING = "legacy layout: no summary-first head; use the heading map (edit it in place, do not rewrite it)"
 
 
 class Link(Obj):
@@ -560,6 +626,8 @@ class Message(Obj):
     # finalised upload artifacts this message carries (R1): ids only, bytes stay behind the
     # authenticated /v1/artifacts/{id}/content route; older rows have none.
     artifacts: list[str] = Field(default_factory=list)
+    resolves: list[str] = Field(default_factory=list)  # ask message ids this message settles (message_send resolves=)
+    ask_phase: str | None = None  # on an ask: its ticket's status when asked (phase_past resolver)
 
 
 class Event(Obj):
@@ -591,6 +659,10 @@ class Session(Obj):
     # the last known one, not a probed truth. The UI renders "Presence not refreshed" (S10) —
     # silence is never rendered as Closed (design §18.3). Cleared on the next positive answer.
     presence_stale_since: datetime | None = None
+    # the global store seq when the seat's CURRENT run began: the first mirror of the row, restarted when a closed
+    # seat resumes. The close-race sweep (c-a7059e9d27) looks at messages since then; created_at moves with every
+    # upsert, so it cannot mark a start. None on rows written before this field.
+    started_seq: int | None = None
 
 
 DECISION_TEXT_MAX = 240  # one sentence (design-d2c4f39fc6 §3)
@@ -640,6 +712,37 @@ class Lesson(Obj):
     helped: int = Field(default=0, ge=0)
     harmed: int = Field(default=0, ge=0)
     status: LessonStatus = LessonStatus.live
+    # e0cec S6: who the lesson is for. framework = about Heronry itself (tools, protocol, host); it reaches
+    # framework epics only. project = about one project's work; it reaches epics of that project.
+    scope_kind: LessonScope = LessonScope.framework
+    project: str = ""  # the project key (an epic's `project:<key>` tag) when scope_kind=project
+    domains: list[str] = Field(default_factory=list)  # extra domain tags that rank the lesson (never gate it)
+    retired_reason: str = Field(default="", max_length=240)  # one line, set when status→retired
+
+
+class Pain(Obj):
+    """One pain record (e0cec S6, design-b6a55eed13 §4.C): a tool, guide or board behaviour found wrong
+    versus reality. The board's DB is the one store; the repo and installed jsonl files are imported once
+    and deduped by id. A resolution rewrites status with the commit / ticket / original it names."""
+    severity: str = "low"
+    area: str = ""
+    symptom: str
+    expected: str = ""
+    evidence: str = ""
+    workaround: str = ""
+    cost: str = ""
+    role: str = ""  # the filer's role
+    handle: str = ""  # the filer's handle
+    ts: str = ""  # the filing time as the source wrote it (an import keeps the original)
+    status: PainStatus = PainStatus.open
+    fixed_commit: str = ""
+    ticket_ref: str = ""
+    dup_of: str = ""
+    supersedes: str = ""
+    resolved_by: str = ""  # who resolved it (a participant handle, or board:import)
+    resolved_at: str = ""
+    resolution_note: str = Field(default="", max_length=1000)
+    source: str = "board"  # board | import:<file label>
 
 
 class KgLink(Obj):
@@ -725,6 +828,60 @@ class AccessRequest(Obj):
     handle: str | None = None  # the teammate an approval created
 
 
+class AskState(StrEnum):
+    untriaged = "untriaged"
+    covered = "covered"
+    met = "met"
+    not_met = "not_met"
+    not_a_requirement = "not_a_requirement"
+    superseded = "superseded"
+    archived = "archived"  # s-aa76c83998: the ledger is retired; old rows stay read-only history
+
+
+class Ask(Obj):
+    """e0cec S4 (design-edca9590d7 §5.1): one row per human message with text on an epic's tree, made by the board at
+    message time (gate answers excluded). The text is NOT copied: `source` names the message and the ledger view renders
+    it once. `created_by` is the message's author."""
+    epic_id: str
+    ticket_id: str  # the thread the message was posted on
+    source: str  # the message id
+    state: AskState = AskState.untriaged
+    covers: list[str] = Field(default_factory=list)  # criterion ids
+    amends: str | None = None  # the earlier ask this one reworded
+    superseded_by: str | None = None
+    story: str | None = None  # the story whose fix list holds it
+    triage_note: str = ""
+    triaged_by: str | None = None
+    qa_verdict: Literal["met", "not_met"] | None = None
+    qa_note: str = ""
+    judged_by: str | None = None
+
+
+class RequirementState(StrEnum):
+    open = "open"
+    linked = "linked"
+
+
+class Requirement(Obj):
+    """s-aa76c83998 (design-63db8a7d42 item H): a span of a message that a person marked as a requirement of an epic.
+    Made only by the Mark-as-requirement button; no message is sent. Open until the architect links it to a criterion
+    or to a design section (doc id + version + heading). An epic cannot finish while one is open. `text` is the
+    quoted span as the message said it (messages are immutable); `created_by` is who marked it."""
+    epic_id: str
+    ticket_id: str  # the thread the source message sits on
+    source: str  # the message id
+    char_start: int  # 0-based, end-exclusive range of the message text
+    char_end: int
+    text: str
+    state: RequirementState = RequirementState.open
+    criterion: str | None = None  # linked criterion id
+    doc_id: str | None = None  # linked design section: doc id + version + heading
+    doc_version: int | None = None
+    heading: str | None = None
+    linked_by: str | None = None
+    marked_by: list[str] = Field(default_factory=list)  # everyone who marked this same span (created_by is the first)
+
+
 OBJECT_TYPES: dict[str, type[Obj]] = {
     "participant": Participant,
     "ticket": Ticket,
@@ -738,12 +895,15 @@ OBJECT_TYPES: dict[str, type[Obj]] = {
     "decision": Decision,
     "claim": Claim,
     "lesson": Lesson,
+    "pain": Pain,
     "kglink": KgLink,
     "policy": Policy,
     "rsi_run": RsiRun,
     "rsi_state": RsiState,
     "fix": FixProposal,
     "access_request": AccessRequest,
+    "ask": Ask,
+    "requirement": Requirement,
 }
 
 # Every strict-valued enum in the model, keyed by class name.
@@ -775,12 +935,6 @@ class PainSeverity(StrEnum):
     high = "high"
 
 
-class PainStatus(StrEnum):
-    fixed = "fixed"
-    invalid = "invalid"
-    superseded = "superseded"
-
-
 class WorkflowAction(StrEnum):
     list = "list"
     read = "read"
@@ -803,9 +957,9 @@ class TeammateAction(StrEnum):
 SeatTicketKind = StrEnum("SeatTicketKind", {k.name: k.value for k in TicketKind if k != TicketKind.topic})
 SeatRelation = StrEnum("SeatRelation", {r.name: r.value for r in Relation if r != Relation.has_expert})
 SeatRole = StrEnum("SeatRole", {r.name: r.value for r in Role if r != Role.expert})
-# owner m-da9a2ae62f: the roles a seat can be launched as — never a person's role (owner, expert), so the
-# spawn tool's schema does not even offer one
-SpawnRole = StrEnum("SpawnRole", {r.name: r.value for r in Role if not is_non_agent(r)})
+# owner m-da9a2ae62f: the roles a seat can be launched as — never a person's role (owner, expert, guest), so
+# the spawn tool's schema does not even offer one (astra F2: guest validated, then every handler refused it)
+SpawnRole = StrEnum("SpawnRole", {r.name: r.value for r in Role if not is_non_agent(r) and r != Role.guest})
 
 class ParticipantType(StrEnum):
     """participants(type=…) filter (T3 F4); Participant.type holds the same two values."""
@@ -820,6 +974,8 @@ ENUMS: dict[str, type[StrEnum]] = {
     "SeatRole": SeatRole,
     'SeatEffort': SeatEffort,
     'SpawnMode': SpawnMode,
+    "SpawnRole": SpawnRole,
+    "TopicDocType": TopicDocType,
     "Role": Role,
     "TicketKind": TicketKind,
     "WorkType": WorkType,
@@ -829,12 +985,14 @@ ENUMS: dict[str, type[StrEnum]] = {
     "CheckedBy": CheckedBy,
     "DocType": DocType,
     "DocStatus": DocStatus,
+    "DocLayout": DocLayout,
     "Relation": Relation,
     "MessageKind": MessageKind,
     "DecisionStatus": DecisionStatus,
     "ClaimBasis": ClaimBasis,
     "ClaimStatus": ClaimStatus,
     "LessonStatus": LessonStatus,
+    "LessonScope": LessonScope,
     "LinkKind": LinkKind,
     "StatusValue": StatusValue,
     "Gate": Gate,
@@ -846,6 +1004,7 @@ ENUMS: dict[str, type[StrEnum]] = {
     "PainStatus": PainStatus,
     "WorkflowAction": WorkflowAction,
     "TeammateAction": TeammateAction,
+    "AskState": AskState,
 }
 
 
@@ -907,13 +1066,20 @@ DESCRIBE: dict[str, str] = {
     "(tasks). CRUD: create, read (ticket_read = one fat read: chain, criteria, docs+relation, children+roles, "
     "blockers, gates, thread tail), query(kind, status, assignee, epic_id, created_by, tag, q text), "
     "update(status, assignee, design_ref, description, tags, title — words never change). Has criteria, "
-    "a thread, linked docs and artifacts.",
+    "a thread, linked docs and artifacts. Caps: at most 8 open stories per epic (raised via a scope gate), at most 5 tasks per story; a cap breach is a scope error.",
     "criterion": "A checkable definition of done on a ticket, written by the parent owner before work; "
     "the doer never edits it; the checker records verdict + evidence_ref. The board DERIVES the checker "
     "from the ticket (design §24.1): qa for a story/epic criterion, engineer for a task criterion (a task is its doer's own checklist, "
     "self-verdicted, gating nothing), owner for a knowledge ticket — criterion_create's checked_by argument is "
     "accepted for one release but ignored unless the owner also passes override_reason (recorded as a "
-    "criterion_checker_overridden event). CRUD: create, read, update.",
+    "criterion_checker_overridden event). Max 6 fresh criteria per story. CRUD: create, read, update.",
+    "ask": "RETIRED (s-aa76c83998): the old asks ledger row, kept read-only as history (state archived). No new ask "
+    "rows are made; a human message creates nothing. See requirement.",
+    "requirement": "A span of a message (message id + character range) that the owner or a guest marked with Mark as "
+    "requirement on the epic; no message is sent. State open -> linked. The epic's architect links it to a criterion "
+    "(criterion=<id>) or to a design section (doc + version + heading) with requirement_link; the architect is woken "
+    "once per new requirement. An epic cannot reach done (or open its acceptance gate) while one is open. Read: "
+    "requirements(epic=<epic id>).",
     "doc": "A versioned markdown knowledge unit: design (architect), strategy_hl/strategy_ll/domain (sme, owner), "
     "report (engineer/adversary/qa), note. Every update is a new version. Knowledge docs carry tags and a status "
     "active|proposed|retired: any seat may file a proposed doc (proposes=<active id> for a new version of it); the "

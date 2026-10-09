@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { Link, useLocation } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { serviceAction } from "../api/admin";
@@ -9,7 +9,8 @@ import { Icon } from "../components/Icon";
 import { usePageFrame } from "../components/PageFrame";
 import { copyProps } from "../copy/pages";
 import { useIsAdmin } from "./admin/Admin";
-import { embedUrl, guardBase, isLoopbackHost, lineLabel, loginUrl, parseCodeLink } from "./codeLink";
+import { useGuestState } from "../auth/guest";
+import { embedUrl, guardBase, isLoopbackHost, lineLabel, loginForm, parseCodeLink, postLogin, type LoginForm } from "./codeLink";
 import styles from "./Code.module.css";
 
 // epic-91fcd3b370 S3 (design-449b628cdd §4): the Code tab. A direct iframe to code-server on the
@@ -36,7 +37,9 @@ export function CodePage({ hostname = window.location.hostname }: { hostname?: s
   usePageFrame(FRAMING);
   const { search } = useLocation();
   const link = useMemo(() => parseCodeLink(search), [search]);
-  const status = useQuery({ queryKey: ["code", "status"], queryFn: getCodeStatus, retry: false, refetchOnWindowFocus: false });
+  // S12-ui2 (qa m-da89ef8294 m7): the board refuses Code to a guest; say so, and never ask it
+  const { guest, teammate } = useGuestState();
+  const status = useQuery({ queryKey: ["code", "status"], queryFn: getCodeStatus, retry: false, refetchOnWindowFocus: false, enabled: teammate });
   const local = isLoopbackHost(hostname);
   const s = status.data;
   // S21: an admin starts the code server from here, through the same Admin → Services route (the supervisor
@@ -54,26 +57,38 @@ export function CodePage({ hostname = window.location.hostname }: { hostname?: s
   // invalidation must not remint (and reload the editor), and a frame shown again after an error state
   // must not reuse a spent token (second opinion 20260925T191655Z-01833b5d).
   const [attempt, setAttempt] = useState(0);
-  const [session, setSession] = useState<{ for: string; url?: string; error?: unknown } | null>(null);
+  // `login` = the form to POST into the frame (RC2 F5: never a token in its src); `url` = a board without the
+  // mint route (404): the frame loads the guard directly, as before S8
+  const [session, setSession] = useState<{ for: string; n: number; login?: LoginForm; url?: string; error?: unknown } | null>(null);
   useEffect(() => {
     if (!showFrame || !src) { setSession(null); return; }
     let live = true;
-    setSession({ for: src });
+    setSession({ for: src, n: attempt });
     mintCodeSession().then(
-      (m) => { if (live) setSession({ for: src, url: m ? loginUrl(src, m.token) : src }); },
-      (e: unknown) => { if (live) setSession({ for: src, error: e }); },
+      (m) => { if (live) setSession(m ? { for: src, n: attempt, login: loginForm(src, m.token) } : { for: src, n: attempt, url: src }); },
+      (e: unknown) => { if (live) setSession({ for: src, n: attempt, error: e }); },
     );
     return () => { live = false; };
   }, [showFrame, src, attempt]);
-  const frameSrc = session?.for === src ? session.url ?? null : null;
+  const current = session?.for === src && (session.login || session.url) ? session : null;
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const posted = useRef<LoginForm | null>(null);
+  useEffect(() => {
+    const login = current?.login;
+    const win = frameRef.current?.contentWindow;
+    if (!login || !win || posted.current === login) return;
+    posted.current = login; // one POST per minted token: a re-render never spends it twice
+    postLogin(win, login);
+  });
   const openNewWindow = (e: React.MouseEvent<HTMLAnchorElement>): void => {
     if (!src) return;
     e.preventDefault();
-    // opened now, inside the click (popup blockers), then pointed at a freshly minted login URL
+    // opened now, inside the click (popup blockers), then signed in by POSTing a freshly minted token into it
     const w = window.open("about:blank", "_blank");
     if (!w) return;
     w.opener = null;
-    mintCodeSession().then((m) => { w.location.href = m ? loginUrl(src, m.token) : src; }, () => { w.location.href = src; });
+    mintCodeSession().then((m) => { if (m) postLogin(w, loginForm(src, m.token)); else w.location.href = src; },
+      () => { w.location.href = src; });
   };
   // t-93da8bf09d: the way out of a Zen-stuck workbench, from outside it (the extension in the frame does the reset)
   const [reset, setReset] = useState<{ busy: boolean; text?: string; error?: boolean }>({ busy: false });
@@ -87,7 +102,13 @@ export function CodePage({ hostname = window.location.hostname }: { hostname?: s
   const where = link.file ? `${link.file}${link.line ? ` ${lineLabel(link.line)}` : ""}` : "";
 
   let body: React.JSX.Element;
-  if (!local) {
+  if (guest) {
+    body = (
+      <State testid="code-guest" title="Not available for guests">
+        <p>The code editor is for the board's own team. Ask the owner if you need a file opened.</p>
+      </State>
+    );
+  } else if (!local) {
     body = (
       <State testid="code-host-only" title="Code runs on the board host only">
         <p>The editor listens on the board host's loopback address, so it opens only in a browser on that machine. Nothing is exposed to this one.</p>
@@ -109,7 +130,8 @@ export function CodePage({ hostname = window.location.hostname }: { hostname?: s
       </State>
     );
   } else if (!s.running) {
-    const missing = s.installed === false;
+    const downloads = s.installed === false && s.downloadable === true;
+    const missing = s.installed === false && !downloads;
     const canStart = admin && !s.foreign && !missing;
     body = (
       <State testid="code-down" title={missing ? "code-server is not installed" : "Code service is not running"}>
@@ -121,6 +143,8 @@ export function CodePage({ hostname = window.location.hostname }: { hostname?: s
             <pre className={styles.command} data-testid="code-install-hint"><code>{s.install_hint}</code></pre>
             <p>Then start it:</p>
           </>
+        ) : downloads ? (
+          <p data-testid="code-downloads">The Code tab embeds code-server. Nothing needs installing here: the first start downloads the pinned release, checks its sha256 and runs it with its own Node. {s.install_hint ? <span data-testid="code-download-hint">{s.install_hint}.</span> : null} {canStart ? "Start it here, or run this on the board host:" : "An admin can start it from this tab or Admin → Services; on the board host, run:"}</p>
         ) : (
           <p>code-server is not running on port {s.port}. {canStart ? "Start it here, or run this on the board host:" : "An admin can start it from this tab or Admin → Services; on the board host, run:"}</p>
         )}
@@ -129,7 +153,7 @@ export function CodePage({ hostname = window.location.hostname }: { hostname?: s
           {canStart ? (
             <button type="button" className={`${styles.retry} ${styles.primary}`} data-testid="code-start" disabled={start.isPending}
               onClick={() => start.mutate()} {...copyProps("code", "start")}>
-              {start.isPending ? "Starting…" : "Start code server"}
+              {start.isPending ? (downloads ? "Downloading and starting… (a few minutes)" : "Starting…") : "Start code server"}
             </button>
           ) : null}
           <button type="button" className={styles.retry} data-testid="code-retry" onClick={() => void status.refetch()} {...copyProps("code", "retry")}>
@@ -151,14 +175,15 @@ export function CodePage({ hostname = window.location.hostname }: { hostname?: s
         <button type="button" className={styles.retry} onClick={() => setAttempt((n) => n + 1)} {...copyProps("code", "retry")}>Retry</button>
       </State>
     );
-  } else if (!frameSrc) {
+  } else if (!current) {
     body = <State testid="code-loading" title="Opening a code session…"><p>Asking the board for a one-time sign-in to the editor.</p></State>;
   } else {
     body = (
       <iframe
-        key={frameSrc}
+        key={`${current.for}#${current.n}`}
+        ref={frameRef}
         className={styles.frame}
-        src={frameSrc}
+        src={current.url}
         title="Code editor (code-server)"
         data-testid="code-frame"
         allow="clipboard-read; clipboard-write"
@@ -203,7 +228,7 @@ export function CodeFaqPage(): React.JSX.Element {
   const faq = useQuery({ queryKey: ["code", "faq"], queryFn: getCodeFaq, retry: false });
   return (
     <>
-      <PageHeader title="Code tab FAQ" subtitle="guides/code-tab-faq.md" />
+      <PageHeader title="Code tab FAQ" subtitle="docs/operator/code-tab-faq.md" />
       <p className={styles.back}><Link to="/code" data-testid="code-faq-back" {...copyProps("code", "open")}>Open the Code tab</Link></p>
       {faq.data ? <Markdown html={faq.data.html} /> : faq.isError
         ? <p role="alert" data-testid="code-faq-error">{faq.error instanceof Error ? faq.error.message : "The FAQ could not be loaded."}</p>

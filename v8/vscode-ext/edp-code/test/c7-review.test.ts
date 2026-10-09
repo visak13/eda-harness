@@ -46,7 +46,7 @@ it('C7: ready-then-EOF on every stream reaches polling fallback', async () => {
 
 it('C7: same-scope Inbox clears the previous identity question after a 403', async () => {
   let refused = false;
-  const board = { decisions: async () => {
+  const board = { inbox: async () => {
     if (refused) throw Object.assign(new Error('forbidden'), { status: 403 });
     return { questions: [{ id: 'm-1111111111', ticket_id: 's-0123456789', text: 'owner-private question', created_by: 'arch', created_at: '2026-09-25T00:00:00Z', kind: 'question' }], signoffs: [], gates: [], counts: {} };
   } } as unknown as Board;

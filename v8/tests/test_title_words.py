@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from asks_support import serve
 from edp8.board import Board, BoardError
 from edp8.schemas import EventKind, Role, TicketKind, WorkType
 from edp8.service import create_app
@@ -87,7 +88,7 @@ def test_story_and_task_carry_no_words(board, rig):
     s = _story(board, rig, e)
     assert s.words is None
     t = board.ticket_create(rig["engineer"], kind=TicketKind.task, work_type=WorkType.feature,
-                            title="one task", parent_id=s.id)
+                            title="one task", parent_id=s.id, serves=serve(board, s.id))
     assert t.words is None
 
 
@@ -124,23 +125,28 @@ def test_engineer_may_not_set_title(board, rig):
     assert ei.value.code == "scope"
 
 
-def test_title_over_80_is_refused(board, rig):
-    e = _epic(board, rig)
-    with pytest.raises(BoardError) as ei:
+def test_title_over_80_is_refused_at_update_as_at_create(board, rig):
+    e = _epic(board, rig)  # Q2 (Astra report-869d0fc8d4): one rule and one hint at create and at update
+    with pytest.raises(BoardError) as upd:
         board.ticket_update(rig["architect"], e.id, title="t" * 81)
-    assert ei.value.code == "scope"
-    assert "80" in ei.value.message
-    assert board.ticket(e.id).title == e.title
+    with pytest.raises(BoardError) as new:
+        board.ticket_create(rig["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="t" * 81,
+                            words="the owner's words")
+    assert (upd.value.message, upd.value.hint) == (new.value.message, new.value.hint)
+    assert "at most 80" in upd.value.message and "words" in upd.value.hint
+    assert board.ticket(e.id).title != "t" * 81
 
 
-def test_task_title_is_fixed(board, rig):
+def test_task_title_change_goes_ahead_and_the_reply_says_it_is_normally_fixed(board, rig):
+    from edp8 import advice
     e = _epic(board, rig)
     s = _story(board, rig, e)
     t = board.ticket_create(rig["engineer"], kind=TicketKind.task, work_type=WorkType.feature,
-                            title="one task", parent_id=s.id)
-    with pytest.raises(BoardError) as ei:
-        board.ticket_update(rig["architect"], t.id, title="renamed task")
-    assert ei.value.code == "scope"
+                            title="one task", parent_id=s.id, serves=serve(board, s.id))
+    advice.take()
+    board.ticket_update(rig["architect"], t.id, title="renamed task")
+    assert board.ticket(t.id).title == "renamed task"
+    assert any("normally fixed at create" in said for said in advice.take())
 
 
 def test_ticket_update_has_no_words_argument(board, rig):

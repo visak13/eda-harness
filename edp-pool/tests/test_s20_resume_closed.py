@@ -125,3 +125,37 @@ def test_spawn_without_a_session_id_pins_a_minted_one():
     sid = svc.spawn("engineer", "engineer.s-mint", None, "monitor")
     minted = svc.sessions[sid]["claude_session_id"]
     assert minted and svc.spawner.launched[-1]["claude_session"] == minted
+
+
+def test_resume_closed_refreshes_a_rotated_token_and_keeps_it():
+    """p-451a2390: the board's current secret replaces the stale spawn token, now and for the next resume."""
+    svc = PoolService(FakeSpawner())
+    h = "qa.epic-x"
+    sid = _spawn(svc, handle=h, role="qa", cs="cs-1", env={"EDP8_TOKEN": "tok-old"})
+    svc.release(sid, reason="closed by self: deferred")
+    out = svc.resume_closed(h, env={"EDP8_TOKEN": "tok-new", "PATH": "C:/evil"})
+    assert out["resumed"] is True, out
+    assert svc.spawner.launched[-1]["extra_env"] == {"EDP8_TOKEN": "tok-new"}  # only the token is refreshable
+    assert svc.sessions[sid]["spawn_settings"]["env"] == {"EDP8_TOKEN": "tok-new"}
+
+
+def test_resume_route_passes_the_token_through_to_a_closed_seat():
+    app = create_app(FakeSpawner())
+    svc = app.state.svc
+    h = "qa.epic-y"
+    sid = _spawn(svc, handle=h, role="qa", cs="cs-1", env={"EDP8_TOKEN": "tok-old"})
+    svc.release(sid, reason="closed by self: deferred")
+    r = TestClient(app).post(f"/v1/resume/{h}", json={"env": {"EDP8_TOKEN": "tok-new"}})
+    assert r.status_code == 200 and r.json()["resumed"] is True, r.text
+    assert svc.spawner.launched[-1]["extra_env"] == {"EDP8_TOKEN": "tok-new"}
+
+
+def test_resume_without_a_body_keeps_the_spawn_env():
+    app = create_app(FakeSpawner())
+    svc = app.state.svc
+    h = "qa.epic-z"
+    sid = _spawn(svc, handle=h, role="qa", cs="cs-1", env={"EDP8_TOKEN": "tok-1"})
+    svc.release(sid, reason="closed by self: deferred")
+    r = TestClient(app).post(f"/v1/resume/{h}")
+    assert r.status_code == 200 and r.json()["resumed"] is True, r.text
+    assert svc.spawner.launched[-1]["extra_env"] == {"EDP8_TOKEN": "tok-1"}

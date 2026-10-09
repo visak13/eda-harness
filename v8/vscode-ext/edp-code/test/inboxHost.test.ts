@@ -29,7 +29,7 @@ describe('InboxHost', () => {
   it('a read that began before a write landed does not list the answered row again', async () => {
     const reads = [deferred<DecisionsHome>()];
     let n = 0;
-    const board = { decisions: vi.fn(() => (n++ === 0 ? Promise.resolve(home(1)) : reads[0].p)), send: vi.fn(async () => ({})) };
+    const board = { inbox: vi.fn(() => (n++ === 0 ? Promise.resolve(home(1)) : reads[0].p)), send: vi.fn(async () => ({})) };
     const { h } = host(board as never);
     await h.open();
     expect(h.snapshot(STORY)!.items.map(i => i.key)).toContain(questionKey(M1));
@@ -46,7 +46,7 @@ describe('InboxHost', () => {
     // the board refuses the stale v1 (the row stays), then takes v2
     const verdict = vi.fn().mockRejectedValueOnce(Object.assign(new Error('you are ruling version 1 but the doc is now v2'), { status: 409 }))
       .mockResolvedValue({});
-    const { h, posts } = host({ decisions: async () => home(v), verdict } as never);
+    const { h, posts } = host({ inbox: async () => home(v), verdict } as never);
     await h.open();
     await h.openRow(signoffKey(C1)); // read v1
     v = 2; await h.refresh(); // the row now says v2
@@ -61,7 +61,7 @@ describe('InboxHost', () => {
 
   it('never opened: the version the row shows', async () => {
     const verdict = vi.fn(async () => ({}));
-    const { h } = host({ decisions: async () => home(3), verdict } as never);
+    const { h } = host({ inbox: async () => home(3), verdict } as never);
     await h.open();
     await h.verdict(signoffKey(C1), 'pass', '', 3);
     expect(verdict).toHaveBeenLastCalledWith(expect.objectContaining({ evidence_version: 3 }));
@@ -69,7 +69,7 @@ describe('InboxHost', () => {
   });
 
   it('a 401 on a fresh scope settles the tab (not loading) before the sign-in path', async () => {
-    const { h, posts, authFail } = host({ decisions: async () => { throw Object.assign(new Error('unauthorized'), { status: 401 }); } } as never);
+    const { h, posts, authFail } = host({ inbox: async () => { throw Object.assign(new Error('unauthorized'), { status: 401 }); } } as never);
     await h.open();
     expect(authFail).toHaveBeenCalledOnce();
     const last = posts.at(-1) as Extract<HostToView, { type: 'inbox' }>;

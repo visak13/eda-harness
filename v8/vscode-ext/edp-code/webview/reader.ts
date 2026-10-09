@@ -143,13 +143,22 @@ function renderDocBody(): void {
   if (key === renderedBody) return; // an unchanged re-read never rebuilds the doc (keeps scroll and selection)
   renderedBody = key;
   const { frag, outline } = renderDoc(document, d.body);
-  article.replaceChildren(frag);
+  // S17 (ruling m-639da0243d): a legacy doc's warning sits above the whole body
+  article.replaceChildren(...(d.warning ? [el('p', 'rd-legacy', d.warning)] : []), frag);
   const list = el('ol', 'rd-toc');
+  const sizes = [...(d.map ?? [])];
   for (const h of outline) {
     const li = el('li', `rd-toc-l${Math.min(h.level, 4)}`);
     const a = el('a', '', h.text);
     a.href = `#${h.id}`;
     a.dataset.target = h.id;
+    // S17: the heading map's section size, matched in order by heading text
+    const at = sizes.findIndex(s => s.h === h.text);
+    if (at >= 0) {
+      const n = sizes.splice(0, at + 1)[at].chars;
+      a.append(el('span', 'rd-toc-size', ` ${n < 1000 ? n : `${(n / 1000).toFixed(1)}k`}`));
+      a.title = `${h.text} (${n} chars)`;
+    }
     li.append(a);
     list.append(li);
   }

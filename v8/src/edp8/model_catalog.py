@@ -6,7 +6,8 @@ import hashlib
 import json
 import os
 import re
-import subprocess
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +25,7 @@ MODEL_FIELD_DOCS = {
     "model": "the model name passed to the harness, when it differs from the row's id",
     "context_window": "the model's context window, in tokens",
     "auto_compact": "the context size, in tokens, at which the seat compacts its conversation",
-    "effort_cap": "the highest reasoning effort a seat on this model may be given: low, medium or high",
+    "effort_cap": "the highest reasoning effort a seat on this model may be given: low, medium or high (never above high)",
 }
 MODEL_FIELDS = set(MODEL_FIELD_DOCS)
 #: the catalog's top-level keys, with their meaning (S15 site reference)
@@ -105,12 +106,17 @@ def read(agent_home: Path | None = None) -> dict[str, Any]:
 
 
 def shipped_path() -> Path:
-    """The catalog this version ships: the agent home's copy, else the package's (wheel data, or in dev
-    mode the source checkout: EDP_HOME, or the editable install's tree on a private EDP_HOME, t-96df382440)."""
+    """The catalog this version ships: the package's (wheel data), else the agent home's copy, else the source
+    checkout in dev mode (EDP_HOME, or the editable install's tree on a private EDP_HOME, t-96df382440).
+    RC2 item 1: the package wins, so an agent home left from an older version (or a hand-edited copy there)
+    never stands in for what this version ships."""
+    from .materialise import packaged_root, source_root
+    packaged = packaged_root()
+    if packaged is not None and (packaged / "models.json").is_file():
+        return packaged / "models.json"
     source = settings.agent_home() / "models.json"
     if source.is_file():
         return source
-    from .materialise import source_root
     return source_root() / "models.json"
 
 
@@ -219,35 +225,102 @@ def ensure() -> list[str]:
     return [f"created {dest} from {shipped_path()}"]
 
 
-_codex_windows: dict[str, dict[str, int]] | None = None
+#: `codex debug models` probe (qa m-da89ef8294 item 9, architect m-7d7910576b). The probe runs through
+#: edp_contracts.proc.run_bounded (D9: the whole tree is killed on timeout, and a lingering grandchild that
+#: holds the pipe costs output, never time), and the result — a failure too — is cached so a hung codex costs
+#: at most one bounded probe per FAIL_TTL, refreshed in the background once a result exists.
+PROBE_TIMEOUT = 10.0
+OK_TTL = 600.0
+FAIL_TTL = 60.0
+
+_probe_lock = threading.Lock()
+_probe_thread: threading.Thread | None = None
+_probe_state: dict[str, Any] = {"windows": None, "ok": None, "error": None, "at": 0.0}
+
+
+def _run_codex_probe(exe: str, timeout: float) -> dict[str, dict[str, int]]:
+    """`codex debug models` parsed, or raises RuntimeError naming the failure. Never waits past `timeout`
+    plus the tree kill's grace: on timeout codex and every descendant is killed (edp_contracts.proc)."""
+    from edp_contracts.proc import run_bounded
+    from edp_contracts.toolpath import tool_argv
+    try:
+        r = run_bounded([*tool_argv(exe), "debug", "models"], timeout, grace=1.0)
+    except OSError as e:
+        raise RuntimeError(f"codex debug models could not start: {e}") from e
+    if r.timed_out:
+        raise RuntimeError(f"codex debug models timed out after {timeout:g}s")
+    try:
+        rows = json.loads(r.stdout).get("models") or []
+    except (ValueError, AttributeError) as e:
+        raise RuntimeError(f"codex debug models exited {r.returncode} without a model list") from e
+    if not isinstance(rows, list):
+        raise RuntimeError(f"codex debug models exited {r.returncode} without a model list")
+    windows: dict[str, dict[str, int]] = {}
+    for m in rows:
+        try:
+            window = int(m.get("context_window") or 0)
+            if m.get("slug") and window > 0:
+                windows[str(m["slug"])] = {"context_window": window,
+                                           "max_context_window": int(m.get("max_context_window") or window),
+                                           "auto_compact": window * 9 // 10}
+        except (ValueError, TypeError, AttributeError):
+            continue
+    return windows
+
+
+def _probe_once() -> None:
+    from edp_contracts.toolpath import find_tool
+    exe = find_tool("codex", key="EDP_CODEX_BIN")
+    if not exe:
+        state = {"windows": {}, "ok": False, "error": "codex is not installed"}
+    else:
+        try:
+            state = {"windows": _run_codex_probe(str(exe), PROBE_TIMEOUT), "ok": True, "error": None}
+        except RuntimeError as e:
+            state = {"windows": {}, "ok": False, "error": str(e)}
+        except Exception as e:  # noqa: BLE001 - a background probe records every failure, never dies silently
+            state = {"windows": {}, "ok": False, "error": f"codex debug models failed: {e}"}
+    with _probe_lock:
+        prior = _probe_state["windows"]
+        if not state["ok"] and prior:  # keep the last good windows; the status still names the failure
+            state["windows"] = prior
+        _probe_state.update(state, at=time.monotonic())
+
+
+def _fresh() -> bool:
+    if _probe_state["windows"] is None:
+        return False
+    ttl = OK_TTL if _probe_state["ok"] else FAIL_TTL
+    return time.monotonic() - _probe_state["at"] < ttl
 
 
 def codex_windows(refresh: bool = False) -> dict[str, dict[str, int]]:
     """Each Codex model's window from Codex itself (`codex debug models`, the CLI's raw catalog):
     {slug: {context_window, max_context_window, auto_compact}}. `auto_compact` is Codex's own default,
     90% of context_window (what codex-rs applies when neither the model nor config sets
-    model_auto_compact_token_limit). {} when codex is absent or the call fails."""
-    global _codex_windows
-    if _codex_windows is not None and not refresh:
-        return _codex_windows
-    from edp_contracts.toolpath import find_tool
-    exe = find_tool("codex", key="EDP_CODEX_BIN")
-    out: dict[str, dict[str, int]] = {}
-    if exe:
-        try:
-            proc = subprocess.run([str(exe), "debug", "models"], capture_output=True, text=True,
-                                  encoding="utf-8", timeout=30, stdin=subprocess.DEVNULL,
-                                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            for m in (json.loads(proc.stdout).get("models") or []):
-                window = int(m.get("context_window") or 0)
-                if m.get("slug") and window > 0:
-                    out[str(m["slug"])] = {"context_window": window,
-                                           "max_context_window": int(m.get("max_context_window") or window),
-                                           "auto_compact": window * 9 // 10}
-        except (OSError, ValueError, TypeError, AttributeError, subprocess.SubprocessError):
-            out = {}
-    _codex_windows = out
-    return out
+    model_auto_compact_token_limit). {} when codex is absent or the call fails; codex_probe() names why.
+
+    Cached (OK_TTL, a failure FAIL_TTL). A stale result is returned at once while one background thread
+    re-probes; only the very first call (or `refresh`) waits, and never longer than the probe's hard timeout."""
+    global _probe_thread
+    with _probe_lock:
+        if _fresh() and not refresh:
+            return _probe_state["windows"]
+        have = _probe_state["windows"] is not None
+        if _probe_thread is None or not _probe_thread.is_alive():
+            _probe_thread = threading.Thread(target=_probe_once, name="codex-probe", daemon=True)
+            _probe_thread.start()
+        thread = _probe_thread
+    if not have or refresh:
+        thread.join(PROBE_TIMEOUT + 5.0)  # the probe kills its tree at PROBE_TIMEOUT; this is a backstop
+    with _probe_lock:
+        return _probe_state["windows"] or {}
+
+
+def codex_probe() -> dict[str, Any]:
+    """The last probe's outcome for the Admin view: {ok, error}; ok is None before any probe finished."""
+    with _probe_lock:
+        return {"ok": _probe_state["ok"], "error": _probe_state["error"]}
 
 
 def write(raw: dict[str, Any], dest: Path | None = None) -> None:
@@ -275,8 +348,8 @@ def validate(models: dict[str, Any], role_models: dict[str, Any],
         if not isinstance(row.get("provider"), str) or not re.fullmatch(r"[A-Za-z0-9_-]+", row["provider"]):
             errors.append(f"{mid}: provider is required")
         cap = row.get("effort_cap")
-        if cap not in EFFORTS or (row.get("harness") == "claude" and cap == "high"):
-            errors.append(f"{mid}: invalid effort_cap {cap!r}")
+        if cap not in EFFORTS:  # owner §6 words: every row, Claude included, may be capped up to high; xhigh/max never
+            errors.append(f"{mid}: invalid effort_cap {cap!r} (low, medium or high)")
         errors += _window_errors(mid, row)
     for role, ids in role_models.items():
         if not isinstance(ids, list) or not ids:

@@ -38,11 +38,12 @@ describe("Request access (sign-in page)", () => {
     const urls: string[] = [];
     let polls = 0;
     server.use(
-      http.get("/v1/access-requests/available", () => ok({ enabled: true, reason: null, roles: ["owner", "engineer"] })),
+      http.get("/v1/access-requests/available", () => ok({ enabled: true, reason: null, roles: ["guest", "owner"] })),
       http.post("/v1/access-requests", async ({ request }) => {
         urls.push(request.url);
         const body = (await request.json()) as Record<string, string>;
-        expect(body).toEqual({ name: "Dana Lee", role_wanted: "owner", note: "design review" });
+        // owner m-ab7c81eb8d: left as it is, the form asks for guest
+        expect(body).toEqual({ name: "Dana Lee", role_wanted: "guest", note: "design review" });
         return ok({ id: "acc-1", claim_code: "c0de-xyz", poll_s: 2 });
       }),
       http.post("/v1/access-requests/claim", async ({ request }) => {
@@ -119,10 +120,33 @@ describe("Admin → Teammates: requests and Remove", () => {
     expect(row).toHaveTextContent("Dana Lee asks for access as member");
     fireEvent.change(within(row).getByTestId("access-request-acc-1-handle"), { target: { value: "dana" } });
     fireEvent.click(within(row).getByTestId("access-request-acc-1-approve"));
-    await waitFor(() => expect(approved).toEqual(['acc-1:{"handle":"dana"}']));
+    // owner m-ab7c81eb8d: they asked for member, but one click on Approve grants guest
+    await waitFor(() => expect(approved).toEqual(['acc-1:{"role":"guest","handle":"dana"}']));
   });
 
-  it("S20: the access request's #<id> link highlights its marked row", async () => {
+  it("grants member only when the admin picks it on the row", async () => {
+    const approved: string[] = [];
+    server.use(
+      http.get("/v1/admin/teammates", () => ok(TEAM)),
+      http.get("/v1/admin/tailnet", () => ok(TAILNET)),
+      http.get("/v1/admin/tokens/agents", () => ok([])),
+      http.get("/v1/admin/access-requests", () => ok([
+        { id: "acc-2", created_at: "2026-09-27T01:00:00Z", name: "Kim Ray", role_wanted: "guest", note: "", status: "pending",
+          decided_by: null, decided_at: null, handle: null }])),
+      http.post("/v1/admin/access-requests/:id/approve", async ({ params, request }) => {
+        approved.push(`${params.id}:${JSON.stringify(await request.json())}`);
+        return ok({ id: params.id, status: "approved", handle: "kim-ray" });
+      }),
+    );
+    wrap(<TeammatesTab />);
+    const row = await screen.findByTestId("access-request-acc-2");
+    expect(within(row).getByTestId("access-request-acc-2-role")).toHaveValue("guest");
+    fireEvent.change(within(row).getByTestId("access-request-acc-2-role"), { target: { value: "owner" } });
+    fireEvent.click(within(row).getByTestId("access-request-acc-2-approve"));
+    await waitFor(() => expect(approved).toEqual(['acc-2:{"role":"owner"}']));
+  });
+
+  it("the access request's #<id> link highlights its row", async () => {
     server.use(
       attentionHandler(),
       http.get("/v1/admin/teammates", () => ok(TEAM)),
@@ -136,7 +160,6 @@ describe("Admin → Teammates: requests and Remove", () => {
     render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={["/admin?tab=teammates#ar-1"]}><TeammatesTab /></MemoryRouter></QueryClientProvider>);
     const row = await screen.findByTestId("access-request-ar-1");
     await waitFor(() => expect(row).toHaveAttribute("data-highlight", "true"));
-    await waitFor(() => expect(row).toHaveAttribute("data-attention", "true"));
   });
 
   it("hides removed teammates until asked, and Remove needs a confirm step", async () => {

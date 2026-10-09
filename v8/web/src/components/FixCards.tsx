@@ -3,8 +3,6 @@ import { Link, useLocation } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { approveFix, getFixes, rejectFix, type FixProposal } from "../api/endpoints";
 import { BoardApiError } from "../api/client";
-import { useAttention } from "../api/attention";
-import { AttentionDot, attentionMark } from "./AttentionDot";
 import { highlightMessage } from "./AttentionAsks";
 import ui from "./ui.module.css";
 
@@ -21,8 +19,6 @@ export function FixCards({ topicId }: { topicId?: string }): React.JSX.Element |
     retry: false,
     refetchInterval: 10000,
   });
-  const attention = useAttention();
-  const waiting = new Set(attention.items.filter((i) => i.kind === "fix").map((i) => i.id));
   // S20: a #<fix id> deep link (the attention trail's end) scrolls to its card once it renders
   const { hash } = useLocation();
   const target = hash.startsWith("#fix-") ? hash.slice(1) : null;
@@ -33,12 +29,12 @@ export function FixCards({ topicId }: { topicId?: string }): React.JSX.Element |
   return (
     <section aria-label="Fixes to approve" data-testid="fix-cards">
       <h2 className={ui.sectionLabel}>Fixes the Help seat proposes</h2>
-      {q.data.map((f) => <FixCard key={f.id} fix={f} linkThread={!topicId} waiting={waiting.has(f.id)} />)}
+      {q.data.map((f) => <FixCard key={f.id} fix={f} linkThread={!topicId} />)}
     </section>
   );
 }
 
-function FixCard({ fix, linkThread, waiting }: { fix: FixProposal; linkThread: boolean; waiting: boolean }): React.JSX.Element {
+function FixCard({ fix, linkThread }: { fix: FixProposal; linkThread: boolean }): React.JSX.Element {
   const qc = useQueryClient();
   const [done, setDone] = useState<string | null>(null);
   const refresh = () => { void qc.invalidateQueries({ queryKey: ["fixes"] }); void qc.invalidateQueries({ queryKey: ["topic", fix.topic_id] }); };
@@ -60,9 +56,8 @@ function FixCard({ fix, linkThread, waiting }: { fix: FixProposal; linkThread: b
   const err = approve.error ?? reject.error;
   const body = fix.request.body && Object.keys(fix.request.body as object).length ? JSON.stringify(fix.request.body) : "";
   return (
-    <article id={fix.id} className={`${ui.card} ${waiting ? attentionMark : ""}`} data-testid="fix-card" data-fix={fix.id}
-      data-attention={waiting ? "true" : undefined}>
-      <p><strong>{fix.effect}</strong> <AttentionDot count={waiting ? 1 : 0} /></p>
+    <article id={fix.id} className={ui.card} data-testid="fix-card" data-fix={fix.id}>
+      <p><strong>{fix.effect}</strong></p>
       <p className={ui.metaRow}>
         Runs exactly: <code data-testid="fix-request">{fix.request.method} {fix.request.path}{body ? ` ${body}` : ""}</code>
       </p>

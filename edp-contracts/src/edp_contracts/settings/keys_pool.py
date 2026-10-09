@@ -77,6 +77,11 @@ declare("pool.pi_seat_python", "EDP_PI_SEAT_PYTHON", "path", None, "Seats & mode
         "Python that runs the Pi/codex seat runner; default the agent home's .venv python.",
         tier="advanced", label='Python for Pi and Codex agents',
         help="The Python that runs Pi and Codex agents. Leave empty for the app's own.")
+declare("pool.lean_boot", "EDP_LEAN_BOOT", "bool", True, "Seats & models",
+        "Claude seats boot lean: claude.ai connectors and the cron tools off, the skill listing trimmed to the "
+        "role's skills, tools no seat uses denied. False restores the full boot (output caps stay).",
+        tier="advanced", label='Lean agent start-up',
+        help='Start Claude agents without the extras none of them use, so the first call costs fewer tokens.')
 declare("pool.codex_roles", "EDP_CODEX_ROLES", "list", list, "Seats & models",
         "Roles always routed to the codex app-server backend.", restart_required="pool",
         tier="advanced", label='Roles on Codex',

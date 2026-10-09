@@ -23,6 +23,8 @@ export interface ServiceRow {
   /** the code-server row (S21): whether one is installed, how to install it, and whether `heronry start` starts it */
   installed?: boolean;
   install_hint?: string | null;
+  /** S16: not installed, but the first start downloads the pinned release (Windows x64) */
+  downloadable?: boolean;
   autostart?: boolean;
   reason?: string | null;
 }
@@ -76,6 +78,19 @@ export interface UpdatesView {
 export const getUpdates = () => api<UpdatesView>("/v1/admin/updates");
 export const applyUpdate = (force = false) => postJson<Record<string, unknown>>("/v1/admin/updates/apply", { force });
 
+// S10 Cut release: owner-only; the board dispatches release.yml (dry run by default).
+export interface ReleaseView {
+  can_cut: boolean;
+  reason: string | null;
+  repo: string;
+  default_ref: string;
+  token_set: boolean;
+  last: { at: string; by: string; tag: string; dry_run: string; publish: string; status: number } | null;
+}
+export interface CutBody { version: string; dry_run: boolean; publish: boolean }
+export const getRelease = () => api<ReleaseView>("/v1/admin/release");
+export const cutRelease = (body: CutBody) => postJson<{ runs_url: string; tag: string }>("/v1/admin/release/cut", body);
+
 // ------------------------------------------------------------------------------------------ models
 
 // S12 (s-32035a77da, contract m-62fc5b54f9): the model catalog in the data dir. Every entry names its
@@ -95,11 +110,32 @@ export interface HarnessDefault { context_window: number; auto_compact: number; 
 export interface AdminModelsView extends ModelsCatalogIn {
   selected: string[];
   warnings: string[];
+  /** the doctor's window/compaction findings (c-356b57acc9) */
+  window_problems?: { model: string; code: string; what: string; fix: string }[];
   harness_defaults?: Record<string, HarnessDefault>;
+  /** the last `codex debug models` probe (qa m-da89ef8294 item 9): ok null = not probed yet or no Codex rows */
+  codex_probe?: { ok: boolean | null; error: string | null };
 }
 export interface TestSpawnResult { reply: string; model: string; harness: string; provider: string }
 
-export const getAdminModels = () => api<AdminModelsView>("/v1/admin/models");
+/** The board bounds its Codex probe (~15 s worst case); past this the page shows an error with Retry, never
+ *  "Loading…" forever. `refresh` re-probes Codex now. */
+export const MODELS_TIMEOUT_MS = 30_000;
+export function getAdminModels(refresh = false, timeoutMs = MODELS_TIMEOUT_MS): Promise<AdminModelsView> {
+  return bounded<AdminModelsView>(`/v1/admin/models${refresh ? "?refresh=true" : ""}`, timeoutMs);
+}
+async function bounded<T>(path: string, timeoutMs: number): Promise<T> {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    return await api<T>(path, { signal: ctl.signal });
+  } catch (e) {
+    if (ctl.signal.aborted) throw new Error(`The board did not answer within ${timeoutMs / 1000} s.`);
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 /** Full replacement of the catalog; the board validates harness, install and provider credential. */
 export const putAdminModels = (body: ModelsCatalogIn) => postJson<AdminModelsView>("/v1/admin/models", body, "PUT");
 /** Run a stub prompt on a private seat of `model` for `role`. */
@@ -152,6 +188,14 @@ export interface Teammate {
   last_seen: string | null;
   invite_expires: string | null;
 }
+/** S12 sweep #3: mirrors the server's HANDLE_RX (board.py): a path-safe slug. Returns the error text, or null. */
+export function handleError(raw: string): string | null {
+  const h = raw.trim().replace(/^@/, "");
+  if (!h) return null;
+  if (/^[a-z0-9][a-z0-9._-]{1,47}$/.test(h) && !h.includes("..")) return null;
+  return "Use 2 to 48 characters: lowercase letters, digits, dot, dash or underscore, starting with a letter or digit, no \"..\".";
+}
+
 export interface Invite { link: string; vscode_link: string; code: string; expires_at: string | null }
 export interface AgentToken { handle: string; participant_id: string | null; role: string | null; model: string | null; last_seen: string | null; revoked: boolean }
 export interface TailscaleKey { teammate: string; key: string; id?: string; expires?: string; ephemeral: boolean; reusable: boolean; preauthorized: boolean; tags: string[] }
@@ -235,7 +279,11 @@ export interface HarnessRow {
 }
 export interface HarnessesView { harnesses: HarnessRow[]; selected: string[]; fable_ack: Record<string, unknown> | null; fable_notice: string | null }
 
-export const getHarnesses = (latest = true) => api<HarnessesView>(`/v1/admin/harnesses?latest=${latest}`);
+/** D9: the board bounds each CLI probe (10 s, its whole tree killed) and each registry lookup (5 s); past this
+ *  the card shows the error with Retry, never "Loading…" forever. */
+export const HARNESSES_TIMEOUT_MS = 60_000;
+export const getHarnesses = (latest = true, timeoutMs = HARNESSES_TIMEOUT_MS) =>
+  bounded<HarnessesView>(`/v1/admin/harnesses?latest=${latest}`, timeoutMs);
 export const updateHarness = (h: string, wait = false) => postJson<HarnessRow["update"]>(`/v1/admin/harnesses/${encodeURIComponent(h)}/update`, { wait });
 export const putHarnessSelection = (harnesses: string[], fable_ack = false) =>
   postJson<{ selected: string[]; fable_ack: Record<string, unknown> | null; restart_required: string[] }>("/v1/admin/harnesses/selection", { harnesses, fable_ack }, "PUT");

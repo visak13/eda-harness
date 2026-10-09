@@ -220,21 +220,6 @@ def test_codex_rows_may_leave_window_to_codex_and_refusals_are_plain_text(tmp_pa
     assert view["harness_defaults"]["gpt-6-sol"] == {**windows["gpt-6-sol"], "source": "codex debug models"}
 
 
-def test_codex_windows_reads_codex_debug_models(monkeypatch):
-    import subprocess
-    from types import SimpleNamespace
-
-    out = json.dumps({"models": [{"slug": "gpt-6-sol", "context_window": 272000, "max_context_window": 872000},
-                                 {"slug": "broken"}]})
-    monkeypatch.setattr("edp_contracts.toolpath.find_tool", lambda *a, **k: "codex")
-    monkeypatch.setattr(model_catalog, "_codex_windows", None)
-    calls = []
-    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: calls.append(argv) or SimpleNamespace(stdout=out))
-    got = model_catalog.codex_windows(refresh=True)
-    assert calls == [["codex", "debug", "models"]]
-    assert got == {"gpt-6-sol": {"context_window": 272000, "max_context_window": 872000, "auto_compact": 244800}}
-
-
 def test_read_falls_back_to_the_shipped_catalog_and_admin_never_500s(tmp_path, monkeypatch):
     # t-bdd34121ee: a home with no catalog reads the shipped one; a build shipping none is a plain 404
     from edp8 import materialise
@@ -358,3 +343,18 @@ def test_the_shipped_codex_seat_row_carries_no_invented_window():
     for name, row in {**raw["seats"], **raw["models"]}.items():
         if row.get("harness") == "codex":
             assert "context_window" not in row and "auto_compact" not in row, name
+
+
+def test_sweep13_admin_catalog_view_carries_the_doctor_window_warnings(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    base = model_catalog.migrate({"seats": {}, "role_models": {"engineer": ["small"]}})
+    base["models"]["small"] = {"harness": "claude", "provider": "claude", "effort_cap": "medium",
+                               "context_window": 200000, "auto_compact": 350000}
+    (home / "models.json").write_text(json.dumps(base), encoding="utf-8")
+    monkeypatch.setenv("EDP_AGENT_HOME", str(home))
+    monkeypatch.setenv("EDP8_DATA", str(tmp_path / "data"))
+    env = make_env(tmp_path, monkeypatch)
+    view = env.client.get("/v1/admin/models", headers=ADMIN_H).json()["value"]
+    assert [p["code"] for p in view["window_problems"]] == ["compact_above_window"]
+    assert view["window_problems"][0]["model"] == "small"

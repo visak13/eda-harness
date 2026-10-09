@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ._core import agent_home, data_dir, declare, get, secrets_dir
+from ._core import TOKENS_FILE, agent_home, data_dir, declare, get, secrets_dir
 
 # ---- roots and directories (read by _core's dir functions; env-only: they locate config.toml)
 declare("paths.home", "EDP_HOME", "path", None, "Paths",
@@ -33,7 +33,7 @@ declare("paths.agent_home", "EDP_AGENT_HOME", "path", None, "Paths",
 declare("paths.db", "EDP8_DB", "path", lambda: data_dir() / "edp8.db", "Paths",
         "The board's SQLite database.", default_doc="<data>/edp8.db", restart_required="board",
         tier="internal")
-declare("paths.tokens", "EDP8_TOKENS", "path", lambda: secrets_dir() / "tokens.json", "Identity",
+declare("paths.tokens", "EDP8_TOKENS", "path", lambda: secrets_dir() / TOKENS_FILE, "Identity",
         "The participant token file (never inside a package or repo path when installed).",
         default_doc="<EDP_HOME>/tokens.json, installed <config>/secrets/tokens.json", restart_required="board",
         tier="internal")
@@ -191,6 +191,22 @@ declare("tools.node", "EDP_NODE_BIN", "path", None, "Seats & models",
         "node executable (Pi's cli.js, the codex seat's WebSocket monitor); default `node` on PATH.",
         tier="basic", label='Node.js program',
         help='Where Node.js is installed. Set it only if Node.js is not found on your PATH.')
+declare("tools.browser_mcp", "EDP_BROWSER_MCP", "bool", True, "Seats & models",
+        "Every agent seat (Claude, codex and pi) gets the Playwright browser tools through edp8 (edp8.browser_proxy "
+        "over the one shared service, edp_contracts.browser_tool); off, no seat lists them. The mcp service reads "
+        "it at start.", restart_required="mcp",
+        tier="basic", label='Browser tool for agents',
+        help='Agents can open a web page, click through it and take screenshots, for example to check the app\'s own '
+             'screens. Uses Chrome if installed, otherwise downloads a browser once.')
+declare("tools.browser_mcp_version", "EDP_BROWSER_MCP_VERSION", "str", "0.0.83", "Seats & models",
+        "The exact @playwright/mcp version installed under <data>/tools/browser-mcp (pinned, never @latest).",
+        tier="internal")
+declare("tools.browser_mcp_port", "EDP_BROWSER_MCP_PORT", "int", 0, "Seats & models",
+        "Loopback port of the shared browser service the mcp server starts on first use; 0 = a free port each start "
+        "(nothing but the mcp server dials it).", restart_required="mcp", tier="internal")
+declare("tools.npm", "EDP_NPM_BIN", "path", None, "Seats & models",
+        "npm for the browser tool's one-time install; default the npm next to node, else `npm` on PATH.",
+        tier="internal")
 declare("tools.git", "EDP_GIT_BIN", "path", None, "Seats & models",
         "git executable; default `git` on PATH. On Windows it also locates Git's bash.",
         tier="basic", label='Git program',
@@ -283,6 +299,14 @@ declare("update.repo", "EDP_UPDATE_REPO", "str", "visak13/eda-harness", "Updates
 declare("update.api_url", "EDP_UPDATE_API", "url", "https://api.github.com", "Updates",
         "GitHub API base the release check asks (tests and mirrors point it elsewhere).", restart_required="none",
         tier="internal")
+declare("update.release_token", "EDP_RELEASE_TOKEN", "str", "", "Updates",
+        "GitHub token (Actions: write on update.repo) that Admin -> Updates -> Cut release uses to dispatch release.yml.",
+        secret=True, restart_required="none",
+        tier="advanced", label='Release token',
+        help='A GitHub token that may run workflows on the update source. Only the owner\'s "Cut release" button uses it. Kept private, never shown again.')
+declare("update.release_ref", "EDP_RELEASE_REF", "str", "main", "Updates",
+        "Branch release.yml is dispatched on by Cut release (the workflow file must exist there).", restart_required="none",
+        tier="internal")
 declare("update.install_cmd", "EDP_UPDATE_INSTALL_CMD", "str", None, "Updates",
         "Packaging/test override: a JSON argv run instead of `uv tool install --force`; {wheel} is the edp8 "
         "wheel, {with} expands to the sibling wheels.", env_only=True,
@@ -290,4 +314,8 @@ declare("update.install_cmd", "EDP_UPDATE_INSTALL_CMD", "str", None, "Updates",
 declare("update.compat_cmd", "EDP_UPDATE_COMPAT_CMD", "str", None, "Updates",
         "Packaging/test override: a JSON argv run instead of the new release's `heronry workflows check`; "
         "{db} is the live DB, {wheel} the new edp8 wheel.", env_only=True,
+        tier="internal")
+declare("update.fault", "HERONRY_UPDATE_FAULT", "str", None, "Updates",
+        "Drill-only fault injection for the MSI update runner (S2 spike): `unhealthy` makes the runner treat "
+        "the new version as failing its health check, so it rolls back.", env_only=True,
         tier="internal")

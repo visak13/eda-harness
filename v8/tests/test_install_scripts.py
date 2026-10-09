@@ -192,3 +192,38 @@ def test_install_ps1_parses_as_irm_hands_it_to_iex():
     r = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True, timeout=120)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "params: Version,ReleaseUrl" in r.stdout, r.stdout
+
+
+# -- S10 (s-b431082892): a failing install.ps1 throws; it never `exit`s the shell it was pasted into ----------------
+
+def _failing_release(tmp_path, fake_exe):
+    rel, temp, home, bin_dir = _layout(tmp_path)
+    (rel / "SHA256SUMS").write_text("", encoding="utf-8")  # a release with no wheels: the script dies at step 2
+    for name in ("uv.exe", "heronry.exe"):
+        shutil.copy(fake_exe, bin_dir / name)
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("EDP", "HERONRY"))}
+    sysroot = os.environ["SystemRoot"]
+    env.update(PATH=rf"{bin_dir};{sysroot}\System32;{sysroot}\System32\WindowsPowerShell\v1.0",
+               TEMP=str(temp), TMP=str(temp), USERPROFILE=str(home), S11_BIN=str(bin_dir), S11_LOG=str(tmp_path / "argv.log"))
+    return rel, temp, env
+
+
+def test_install_ps1_failure_leaves_the_pasting_shell_alive(tmp_path, fake_exe):
+    rel, temp, env = _failing_release(tmp_path, fake_exe)
+    # what `irm <url>/install.ps1 | iex` does: the script text runs inside the person's own session. With `exit 1`
+    # that session ends before the last line; with `throw` the caller sees the error and carries on.
+    rel_ps = str(rel).replace("'", "''")  # the layout's folder name holds an apostrophe
+    ps = (f"$s = [IO.File]::ReadAllText('{ROOT / 'install.ps1'}'); $sb = [ScriptBlock]::Create($s); "
+          f"try {{ & $sb -ReleaseUrl '{rel_ps}' -NoModifyPath }} catch {{ 'CAUGHT ' + $_.Exception.Message }}; 'SHELL STILL ALIVE'")
+    r = subprocess.run(["powershell", "-NoProfile", "-Command", ps], env=env, capture_output=True, text=True, timeout=120)
+    assert "CAUGHT heronry-install: the release has no edp8 wheel" in r.stdout, r.stdout + r.stderr
+    assert "SHELL STILL ALIVE" in r.stdout, r.stdout + r.stderr
+    assert not any(temp.iterdir()), "the work dir is removed on failure too"
+
+
+def test_install_ps1_failure_still_exits_nonzero_as_a_file(tmp_path, fake_exe):
+    rel, temp, env = _failing_release(tmp_path, fake_exe)
+    r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ROOT / "install.ps1"),
+                        "-ReleaseUrl", str(rel), "-NoModifyPath"], env=env, capture_output=True, text=True, timeout=120)
+    assert r.returncode == 1 and "heronry-install: the release has no edp8 wheel" in r.stderr, r.stdout + r.stderr
+    assert not any(temp.iterdir())

@@ -1,0 +1,116 @@
+{
+ "must": {
+  "B1-m1": {
+   "v": "present",
+   "why": "Step 18: 'Send identical session-open POST, chunk PUT and commit POST requests at least twice, asserting equivalent responses and no duplicate rows, bytes, accounting or notifications.'"
+  },
+  "B1-m2": {
+   "v": "present",
+   "why": "Step 5: separate migration PR with .up.sql/.down.sql, both beginning 'SET lock_timeout = '5s';', primary key and 'created_at timestamptz NOT NULL DEFAULT now()'. Step 6: document expected locks and production run time, link the dependent code PR, run migration-check. must_not forbids combining code with the migration."
+  },
+  "B1-m3": {
+   "v": "present",
+   "why": "Step 5: 'db/retention/<table_name>.yaml for each table'. must_not: 'do not ... alter the frozen db/retention.yaml'."
+  },
+  "B1-m4": {
+   "v": "present",
+   "why": "Step 11 updates protocol/spec/ in the server PR and adds a VERSIONS.md entry 'identifying B1 and every introduced message'. Step 22 allocates the minor at merge. must_not rules out a major bump."
+  },
+  "B1-m5": {
+   "v": "present",
+   "why": "Step 11: 'Generate and commit golden fixtures with make fixtures'. Step 19: 'pass the previous-minor contract suite'. must_not forbids hand-written fixtures."
+  },
+  "B1-m6": {
+   "v": "present",
+   "why": "Step 10 gates sends with conn.Supports. Step 19 tests 'suppression on a previous-minor connection' and 'WELCOME downgrade fallback'. Step 13 raises protocol_max 'only in the same PR that handles everything'. Step 23: 'link the fleet promotion on the train ticket'."
+  },
+  "B1-m7": {
+   "v": "present",
+   "why": "Step 15: 'Preserve unsampled WARN sync.negotiate.failed events with client_version, protocol_max and server maximum, and test failed negotiation at the new version.'"
+  },
+  "B1-m8": {
+   "v": "present",
+   "why": "Step 3 creates the sync.chunked_attachments flag with a ramp and removal plan. Step 4 names the flag in the PR. Step 13 keeps the client default OFF in train builds. Step 25 ramps only after release, with author ownership. Step 26 removes the flag after a full train cycle at 100%."
+  },
+  "B1-m9": {
+   "v": "present",
+   "why": "Step 9: 'Clean staging on completed success and failure, with sweepers covering abandoned work'. Step 14: 'cap retries with jittered backoff'."
+  },
+  "B1-m10": {
+   "v": "present",
+   "why": "Step 15 requires structured dotted events with snake_case fields, payload_sha256 via logging.ErrorWithPayload, and stream logs through synclog. must_not forbids logging user content or filenames."
+  },
+  "B1-m11": {
+   "v": "present",
+   "why": "Step 16 covers RED metrics per endpoint and ATTACHMENT_READY, the sweeper last_success/items_processed metrics, and spans. Step 17 adds the Sync Overview row, an error-rate alert with runbook link and a staleness alert, 'before ramping beyond 1%'. must_not forbids unbounded ID labels."
+  },
+  "B1-m12": {
+   "v": "present",
+   "why": "Step 17 has runbook entries for endpoints and sweeper. Step 11 updates OpenAPI in the server PR. Step 21 adds an Unreleased CHANGELOG entry in each PR. Step 4 requires a Rollback section, the design section and the sequence position."
+  },
+  "B1-m13": {
+   "v": "present",
+   "why": "Step 24: rebase-merge 'by 17:00 on the second working day before the Monday 10:00 cut', release-notes/<train>.md entry, every commit builds and passes. Step 22 squash-merges Rookery and quill-sync. Step 4: B1/<short-slug> branches, 'area: summary' titles, 'Refs: B1'."
+  },
+  "B1-m14": {
+   "v": "present",
+   "why": "Step 20 requires 85% coverage and both device-ios and device-android. Steps 6 and 18 run container-backed Postgres tests of the migration and queries. Step 19 requires a green run-e2e-triggered sync-e2e run before merge."
+  },
+  "B1-m15": {
+   "v": "present",
+   "why": "Step 25: 'spending at least one full day at each stage'."
+  },
+  "B1-m16": {
+   "v": "present",
+   "why": "Step 6: 'state when down remains safe'. Step 4: 'Rollback section explaining ... migration-down safety'."
+  }
+ },
+ "must_not": {
+  "B1-n1": {
+   "v": "ok",
+   "why": "must_not: 'Do not add expand/backfill/contract ... for these new tables.'"
+  },
+  "B1-n2": {
+   "v": "ok",
+   "why": "must_not: 'Do not add a major bump, deprecation notice ...'"
+  },
+  "B1-n3": {
+   "v": "ok",
+   "why": "must_not: 'Do not require UI accessibility screenshots, new translations or Notebook UI review solely for B1.'"
+  },
+  "B1-n4": {
+   "v": "ok",
+   "why": "must_not: 'Do not combine application code with the migration PR ... rely on deploy-time ... migration'."
+  },
+  "B1-n5": {
+   "v": "ok",
+   "why": "must_not forbids reserving 3.5 and hand-writing golden fixtures."
+  },
+  "B1-n6": {
+   "v": "ok",
+   "why": "Plan uses snake_case and forbids camelCase. quill-mobile is rebase-merged and must_not forbids squash-merge there."
+  }
+ },
+ "order": {
+  "B1-o1": {
+   "v": "kept",
+   "why": "Step 3 creates the flag in every environment 'before merging any code that reads it'. Code comes in step 8 onward."
+  },
+  "B1-o2": {
+   "v": "kept",
+   "why": "Step 7 waits for migrate apply and status confirmation 'before merging dependent application code' (steps 8+, 21)."
+  },
+  "B1-o3": {
+   "v": "kept",
+   "why": "Step 23 completes the server release step with full-fleet promotion and passing contract 'before the target train cut'. The train cut is in step 24."
+  }
+ },
+ "extras": [
+  "Step 2: open a security-review ticket because SHA-256 verification counts as cryptography, and obtain security-champion sign-off before merging any B1 PR (repeated in steps 6 and 21)",
+  "Step 3: file a Platform alert-routing request early, allowing approximately two working days",
+  "Step 20: check quill-sync performance budgets, including cold-start sync of 1,000 notes under 10 seconds on the reference low-end Android device",
+  "Step 14: dependency justification, allow-list license check and tech-lead agreement for a quill-sync addition over 100 KB",
+  "Step 21: require local reviewer execution if the implementation touches outbox or revision handling",
+  "Step 26: a production down migration after dependent code has deployed requires agreement from the author and a tech lead"
+ ]
+}

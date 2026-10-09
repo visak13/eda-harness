@@ -9,7 +9,7 @@ import { GateForm, useRetainedGates } from "./GateForm";
 
 const gate: GateRow = {
   ticket_id: "epic-1",
-  gate: "acceptance", // design_signoff renders the source-review link instead of a form
+  gate: "scope", // design_signoff renders the source-review link instead of a form
   by: "architect.epic-1",
   note: "please rule",
   opened_at: "2026-09-08T00:00:00Z",
@@ -29,7 +29,7 @@ function mount(onAnswered = vi.fn(), row: GateRow = gate) {
 describe("GateForm", () => {
   it("shows the fixed gate kind and the opener, submit disabled until a ruling is typed", () => {
     mount();
-    expect(screen.getByTestId("gate-kind")).toHaveTextContent("Acceptance"); // human label, not the raw enum
+    expect(screen.getByTestId("gate-kind")).toHaveTextContent("Scope"); // human label, not the raw enum
     expect(screen.getByText(/architect\.epic-1/)).toBeInTheDocument();
     expect(screen.getByTestId("gate-submit")).toBeDisabled();
     fireEvent.change(screen.getByTestId("gate-answer"), { target: { value: "approved" } });
@@ -51,22 +51,22 @@ describe("GateForm", () => {
     expect(posted).toBeNull(); // Enter never submits a gate
     fireEvent.click(screen.getByTestId("gate-submit"));
     await waitFor(() => expect(onAnswered).toHaveBeenCalled());
-    expect(posted).toMatchObject({ path: "epic-1/acceptance", body: { answer: "approved" } });
+    expect(posted).toMatchObject({ path: "epic-1/scope", body: { answer: "approved" } });
   });
 
   it("shows the opener, the gate's meaning and its note as the question", () => {
     mount();
-    expect(screen.getByText(/opened by architect\.epic-1/)).toHaveTextContent("Decide whether the result is accepted.");
+    expect(screen.getByText(/opened by architect\.epic-1/)).toHaveTextContent("Lift the limit on how many stories this epic may hold.");
     expect(screen.getByTestId("gate-question")).toHaveTextContent("please rule");
   });
 
-  // t-cfd8462f9d (owner m-fcb4463e1e): a legacy gate stored with a blank note (the board's auto-opened acceptance
+  // t-cfd8462f9d (owner m-fcb4463e1e): a legacy gate stored with a blank note (the board's auto-opened scope
   // gate before the fix) renders the question its kind asks, never an empty card
   it.each([null, "", "   "])("renders a legacy blank gate (note=%j) with the generated question", (note) => {
     mount(vi.fn(), { ...gate, by: "board", note });
     expect(screen.getByText(/opened by board/)).toBeInTheDocument();
     const q = screen.getByTestId("gate-question");
-    expect(q).toHaveTextContent("Acceptance on epic-1: Decide whether the result is accepted. Answer it here.");
+    expect(q).toHaveTextContent("Scope on epic-1: Lift the limit on how many stories this epic may hold. Answer it here.");
     expect(q.textContent?.trim()).not.toBe("");
   });
 
@@ -119,13 +119,13 @@ describe("GateForm refusal", () => {
   it("shows the board's refusal message on a 409 and keeps the ruling", async () => {
     server.use(
       http.post("/v1/gates/:t/:g/answer", () => HttpResponse.json(
-        { ok: false, error: { code: "http", message: "gate acceptance on epic-1 is already answered" }, hint: "" }, { status: 409 })),
+        { ok: false, error: { code: "http", message: "gate scope on epic-1 is already answered" }, hint: "" }, { status: 409 })),
     );
     mount();
     fireEvent.change(screen.getByTestId("gate-answer"), { target: { value: "approved" } });
     fireEvent.click(screen.getByTestId("gate-submit"));
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("gate acceptance on epic-1 is already answered");
+    expect(alert).toHaveTextContent("gate scope on epic-1 is already answered");
     expect(alert).toHaveTextContent(/your ruling is kept/);
     expect(screen.getByTestId("gate-answer")).toHaveValue("approved");
   });

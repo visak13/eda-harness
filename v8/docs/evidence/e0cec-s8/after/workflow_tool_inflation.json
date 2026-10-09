@@ -1,0 +1,15 @@
+﻿{
+    "bundled_off":  {
+                        "messages_chars":  15149,
+                        "workflow_tool_chars":  22863,
+                        "tools_chars":  124492,
+                        "system_chars":  24901
+                    },
+    "note":  "Request-body sizes (chars) captured by capture_proxy.py for the first call of two private-seat boots: baseline vs disableBundledSkills. Only the Workflow tool definition differs (5473 -\u003e 22863 chars): trimming bundled skills alone ADDS ~4.3k tokens unless Workflow is denied.",
+    "baseline":  {
+                     "messages_chars":  16200,
+                     "workflow_tool_chars":  5473,
+                     "tools_chars":  107102,
+                     "system_chars":  24901
+                 }
+}

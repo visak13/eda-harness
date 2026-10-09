@@ -1,5 +1,6 @@
 /* Astra ruling #36 item 2: the same 1112px reader as the drawer, centred on the page. */
 .page {
+  width: 100%; /* <main> is a flex row: without this the page shrank to its content (a 448px card on a 1088px column) */
   max-width: 1112px;
   margin: 0 auto;
 }

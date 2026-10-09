@@ -8,6 +8,14 @@
 .muted {
   color: var(--muted);
   font-size: 13px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+/* the button is one line, always: the text gives way, not the label */
+.bar > button { flex: none; white-space: nowrap; }
+@media (max-width: 560px) {
+  .bar { flex-direction: column; align-items: flex-start; }
+  .muted { flex: none; }
 }
 .row {
   display: flex;
@@ -131,3 +139,9 @@
 
 /* S20: why a topic waits on the viewer */
 .needs { font-size: 13px; font-weight: 650; color: var(--accentink); }
+
+/* the owner's topic panels sit above the ticket conversation and grow with their content (qa m10: a 36vh
+   scroll box cut the Docs card off); the page scrolls, not the panel */
+.panelsAbove {
+  min-height: 0;
+}

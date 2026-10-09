@@ -1,0 +1,11 @@
+/* Sweep #2: the source select was a native white control, wider than a 390px column. */
+.source { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; max-width: 100%; min-width: 0; font-size: 14px; color: var(--ink); }
+.select {
+  /* width 1px keeps the longest option out of the page's min-content (the select once made /doc 476px wide on a 390px phone); flex-basis sets the real width */
+  width: 1px; flex: 1 1 14rem; min-width: 0; max-width: 100%; box-sizing: border-box;
+  font: inherit; font-size: 14px; padding: 6px 9px;
+  border: 1.5px solid var(--strongline); border-radius: 8px;
+  background: var(--panel); color: var(--ink);
+  text-overflow: ellipsis;
+}
+.select:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }

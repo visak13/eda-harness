@@ -80,6 +80,8 @@ def test_request_access_end_to_end_and_the_token_travels_once(env, caplog):
     assert ok.status_code == 200, ok.text
     assert ok.json()["value"]["handle"] == "dana-lee" and "token" not in ok.text
     assert env.board.participant("dana-lee").type == "human"
+    # owner m-ab7c81eb8d: she asked for member; one click on Approve made her a guest
+    assert env.board.participant("dana-lee").role == "guest"
     # deciding twice is refused
     assert env.client.post(f"/v1/admin/access-requests/{req_id}/deny", headers=ADMIN_H).status_code == 409
 
@@ -266,3 +268,72 @@ def test_expired_requests_neither_fill_the_cap_nor_answer_pending(env):
     assert _claim(env, code).status_code == 401
     # and an admin cannot approve it any more
     assert env.client.post(f"/v1/admin/access-requests/{q.id}/approve", headers=ADMIN_H).status_code == 409
+
+
+# ------------------------------------------------------------------ who is external (owner m-ab7c81eb8d)
+def _pending_id(env, name):
+    r = _ask(env, name=name)
+    assert r.status_code == 200, r.text
+    return r.json()["value"]["id"]
+
+
+def test_a_person_can_only_ask_for_or_be_granted_guest_or_member(env):
+    assert env.client.get("/v1/access-requests/available").json()["value"]["roles"] == ["guest", "owner"]
+    for role in ("architect", "engineer", "qa", "expert", "doctor"):
+        assert _ask(env, name=f"Asker {role}", role_wanted=role).status_code == 400, role
+    req = _pending_id(env, "Ana Ruiz")
+    for role in ("architect", "engineer", "qa", "expert"):
+        r = env.client.post(f"/v1/admin/access-requests/{req}/approve", headers=ADMIN_H, json={"role": role})
+        assert r.status_code == 400, role
+    assert env.board.store.get("access_request", req).status == "pending"
+
+
+def test_approve_grants_member_only_when_the_admin_chooses_it(env):
+    req = _pending_id(env, "Lee Park")
+    ok = env.client.post(f"/v1/admin/access-requests/{req}/approve", headers=ADMIN_H, json={"role": "owner"})
+    assert ok.status_code == 200, ok.text
+    assert env.board.participant("lee-park").role == "owner"
+
+
+def test_a_guest_cannot_be_approved_as_an_admin(env):
+    req = _pending_id(env, "Sam Cole")
+    r = env.client.post(f"/v1/admin/access-requests/{req}/approve", headers=ADMIN_H, json={"admin": True})
+    assert r.status_code == 400 and "guest cannot be an admin" in r.text
+    assert env.board.store.get("access_request", req).status == "pending"
+
+
+def _notice_of(env, data):
+    notices = env.board.store.query("message", {"created_by": "board"}, limit=100)
+    return next(m for m in notices if data["id"] in m.text)
+
+
+def test_f5_simultaneous_expiry_settles_every_notice_on_an_attention_read(env, monkeypatch):
+    """Nobody opens /v1/admin/access-requests: the attention and inbox reads reconcile expiry themselves."""
+    first, second = _ask(env).json()["value"], _ask(env, name="Kim Ro").json()["value"]
+    n1, n2 = _notice_of(env, first), _notice_of(env, second)
+    assert n1.id in env.client.get("/v1/me/attention", headers=ADMIN_H).text
+    real_time = access.time.time
+    monkeypatch.setattr(access.time, "time", lambda: real_time() + access.CLAIM_TTL_S + 60)  # both expire together
+    att = env.client.get("/v1/me/attention", headers=ADMIN_H).text
+    assert n1.id not in att and n2.id not in att
+    for rid in (first["id"], second["id"]):
+        assert env.board.store.get("access_request", rid).status == "expired"
+
+
+def test_f5_simultaneous_expiry_settles_every_notice_on_an_inbox_read(env, monkeypatch):
+    first, second = _ask(env).json()["value"], _ask(env, name="Kim Ro").json()["value"]
+    n1, n2 = _notice_of(env, first), _notice_of(env, second)
+    real_time = access.time.time
+    monkeypatch.setattr(access.time, "time", lambda: real_time() + access.CLAIM_TTL_S + 60)
+    inbox = env.client.get("/v1/inbox", headers=ADMIN_H).text
+    assert n1.id not in inbox and n2.id not in inbox
+
+
+def test_f5_the_claim_path_settles_an_expired_request(env, monkeypatch):
+    data = _ask(env).json()["value"]
+    notice = _notice_of(env, data)
+    real_time = access.time.time
+    monkeypatch.setattr(access.time, "time", lambda: real_time() + access.CLAIM_TTL_S + 60)
+    assert _claim(env, data["claim_code"]).status_code == 401
+    assert env.board.store.get("access_request", data["id"]).status == "expired"
+    assert notice.id not in env.client.get("/v1/me/attention", headers=ADMIN_H).text

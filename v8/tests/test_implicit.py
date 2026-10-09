@@ -1,7 +1,7 @@
 """S-IMPLICIT (s-b461950144, design-34bf11cc07 §4.5, owner m-5b3db5cb0d "recursive self-improvement
 needs to be implicit"): the board reads and records by itself.
 
-  c-530bb59136 read   — context(ticket) and assemble_ruleset carry a capped `recall` section
+  c-530bb59136 read   — context(ticket) carries a capped `recall` section (the ruleset tool is gone, S17)
   c-1e8f2edd8e record — verdict+note → claim, accepted deviation → decision, gate answer → decision,
                         pain filed → lesson; dedup by text, per-epic cap, withdraw as undo
   c-a9984af463 link   — design_signoff / quick-task create link tagged Library docs + one note
@@ -332,8 +332,8 @@ def test_rest_recall_and_criterion_note(board, rig):
     assert any(i["type"] == "claim" and "cold re-run green" in i["text"] for i in r.json()["value"]["items"])
 
 
-def test_assemble_ruleset_appends_recall(board, rig):
-    """The MCP brief (bundles._assemble_ruleset via the REST client) carries value.recall."""
+def test_context_tool_carries_recall(board, rig):
+    """The MCP brief (context(ticket_id) via the REST client) carries the ticket's recall."""
     from fastapi.testclient import TestClient
     from edp8.bundles import ALL_TOOLS, set_client
     from edp8.client import BoardClient
@@ -344,9 +344,9 @@ def test_assemble_ruleset_appends_recall(board, rig):
     board.link_create(rig["architect"], from_id=epic.id, to_id=doc.id, relation=Relation.uses_strategy)
     d = board.record_decision(rig["architect"], scope=epic.id, text="uploads retry with exponential backoff")
     set_client(BoardClient(participant="engineer", client=TestClient(create_app(board))))
-    tool = ALL_TOOLS["assemble_ruleset"]
+    tool = ALL_TOOLS["context"]
     out = tool.handler(tool.args_model(ticket_id=s.id))
-    assert out["ok"] and d.id in {i["id"] for i in out["value"]["recall"]["items"]}
+    assert out["ok"] and d.id in {i["id"] for i in out["value"]["tickets"][0]["recall"]["items"]}
 
 def test_the_same_pain_id_twice_in_one_file_makes_one_lesson(board, rig, tmp_path):
     """S-ADV finding 8: a pain re-filed under its own id (an edited symptom) is one lesson, not two."""

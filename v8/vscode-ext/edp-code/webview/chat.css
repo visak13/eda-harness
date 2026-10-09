@@ -34,6 +34,9 @@ button:disabled { opacity: 0.6; cursor: default; }
 .tstatus[data-status="in_progress"], .tstatus[data-status="in_review"] { color: var(--vscode-textLink-foreground); }
 .tstatus[data-status="blocked"] { color: var(--vscode-errorForeground); }
 .arch { color: var(--vscode-descriptionForeground); max-width: 26%; }
+/* a very narrow panel gives the picker the whole first line, so the thread's name reads in full (qa 0.10.8: "Sa…");
+   the epic crumb, Stories and the feed dot take the line below */
+@media (max-width: 360px) { .hdr { flex-wrap: wrap; row-gap: 2px; } .pick { order: -1; flex: 1 1 100%; } }
 /* a narrow panel keeps the thread's title readable: status and architect fold into the picker's tooltip */
 @container (max-width: 440px) { .tstatus, .arch { display: none; } .crumb.epic { max-width: 22%; } }
 .stories-btn { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; border-color: var(--vscode-input-border, transparent); padding: 1px 6px; }
@@ -63,9 +66,26 @@ button:disabled { opacity: 0.6; cursor: default; }
 /* C13: the tab bar under the header, and the panels that fill the rest. Each panel is the ONLY flexible
    box below the bar, so nothing competes with it for height (C9's chips lost that contest to the thread). */
 .tabbar { display: flex; gap: 2px; padding: 0 6px; flex: 0 0 auto; border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, transparent));
-  /* C16: five tabs (six with C17) outgrow a narrow side bar: the bar scrolls itself, never the whole view */
-  min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  /* Six tabs outgrow a narrow side bar. They stay on ONE row and the row scrolls sideways (qa 0.10.8: a second row of one
+     tab, "Decisions" alone, took a line from the thread). A cue says there is more: a soft shade on the edge that has more
+     behind it (the "local" gradients cover the shade at the ends). The scrollbar is hidden; the selected tab scrolls into
+     view (tabs.ts) and the arrow keys reach every tab. The bar never widens the view. */
+  min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+  --bar-bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  background:
+    linear-gradient(to right, var(--bar-bg) 30%, transparent) left center / 28px 100% no-repeat local,
+    linear-gradient(to left, var(--bar-bg) 30%, transparent) right center / 28px 100% no-repeat local,
+    linear-gradient(to right, rgba(128, 128, 128, 0.45), transparent) left center / 12px 100% no-repeat scroll,
+    linear-gradient(to left, rgba(128, 128, 128, 0.45), transparent) right center / 12px 100% no-repeat scroll; }
 .tabbar::-webkit-scrollbar { display: none; }
+/* ‹ › on the edge that has more tabs behind it (tabs.ts sets more-left / more-right); the shade is the same fade, now with a chevron. */
+.tabstrip { position: relative; flex: 0 0 auto; min-width: 0; }
+.tab-more { display: none; position: absolute; top: 0; bottom: 1px; width: 22px; padding: 0; border: 0; border-radius: 0; cursor: pointer;
+  align-items: center; justify-content: center; font-size: 16px; line-height: 1; color: var(--vscode-foreground); }
+.tab-more-left { left: 0; background: linear-gradient(to right, var(--vscode-sideBar-background, var(--vscode-editor-background)) 55%, transparent); }
+.tab-more-right { right: 0; background: linear-gradient(to left, var(--vscode-sideBar-background, var(--vscode-editor-background)) 55%, transparent); }
+.tabstrip.more-left .tab-more-left, .tabstrip.more-right .tab-more-right { display: inline-flex; }
+.tab-more:hover { color: var(--vscode-textLink-foreground); }
 #app { overflow-x: hidden; }
 .tab {
   display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; padding: 3px 6px 2px; border: none; border-radius: 0;

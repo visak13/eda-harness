@@ -434,7 +434,8 @@ def test_con_1_monitor_uses_visible_console_and_PROMPTS(monkeypatch):
     )
     sp.launch("worker:c1", "worker", "p:a1", mode="monitor")
 
-    assert captured["argv"] == ["claude.exe", "/worker"]   # no bypass flag
+    # no bypass flag; S7: every Claude seat carries its effort on argv (nothing named = medium)
+    assert captured["argv"] == ["claude.exe", "--effort", "medium", "/worker"]
     assert captured["cwd"] == r"C:\agent\home"
     assert captured["env"]["EDP_HANDLE"] == "p:a1"
     assert captured["flags"] == getattr(
@@ -447,11 +448,83 @@ def test_con_1b_monitor_opt_in_autonomy(monkeypatch):
     # EDP_SKIP_PERMISSIONS=1 → monitor shell runs autonomously (bypass).
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setenv("EDP_SKIP_PERMISSIONS", "1")
+    monkeypatch.delenv("EDP_AGENT_HOME", raising=False)  # no registry: the seat resolves no --model
     captured, _ = _patch_console(monkeypatch)
     SubprocessSpawner(claude_bin="claude.exe").launch(
         "worker:c1b", "worker", "p:a1", mode="monitor")
     assert captured["argv"] == [
-        "claude.exe", "--dangerously-skip-permissions", "/worker"]
+        "claude.exe", "--dangerously-skip-permissions", "--effort", "medium", "/worker"]
+
+
+# ── S7 (epic-0cec8d1c31): real Claude effort per seat, cap <= high, auto [1m] ──
+def _catalog(tmp_path, monkeypatch):
+    import json
+    cat = {"models": {
+        "sonnet-hi": {"harness": "claude", "provider": "claude", "context_window": 1_000_000,
+                      "auto_compact": 350_000, "effort_cap": "high"},
+        "opus-med": {"harness": "claude", "provider": "claude", "context_window": 1_000_000,
+                     "auto_compact": 350_000, "effort_cap": "medium"},
+        "already[1m]": {"harness": "claude", "provider": "claude", "context_window": 1_000_000,
+                        "auto_compact": 350_000, "effort_cap": "high"},
+        "small": {"harness": "claude", "provider": "claude", "context_window": 200_000,
+                  "auto_compact": 100_000, "effort_cap": "high"},
+        "gpt": {"harness": "codex", "provider": "codex", "context_window": 1_000_000, "effort_cap": "high"}},
+        "role_models": {"engineer": ["sonnet-hi"]}}
+    (tmp_path / "models.json").write_text(json.dumps(cat), encoding="utf-8")
+    monkeypatch.setenv("EDP_MODELS_CONFIG", str(tmp_path / "models.json"))
+    return str(tmp_path)
+
+
+def test_build_argv_emits_effort_only_for_the_capped_levels():
+    assert pl.build_argv("c.exe", extra=["--x"], effort="high", defaults={}) == [
+        "c.exe", "--effort", "high", "--x"]
+    assert pl.build_argv("c.exe", extra=[], model="m", effort="LOW", defaults={}) == [
+        "c.exe", "--model", "m", "--effort", "low"]
+    for junk in (None, "", "xhigh", "max", "ultra"):   # never above high, never an inert flag
+        assert pl.build_argv("c.exe", extra=[], effort=junk, defaults={}) == ["c.exe"]
+
+
+def test_claude_model_id_appends_1m_for_a_1m_claude_row_and_never_doubles(tmp_path, monkeypatch):
+    home = _catalog(tmp_path, monkeypatch)
+    assert pl.claude_model_id(home, "sonnet-hi") == "sonnet-hi[1m]"
+    assert pl.claude_model_id(home, "already[1m]") == "already[1m]"          # carries it: untouched
+    assert pl.claude_model_id(home, "sonnet-hi[1m]") == "sonnet-hi[1m]"      # never doubled
+    assert pl.claude_model_id(home, "SONNET[1M]") == "SONNET[1M]"
+    assert pl.claude_model_id(home, "small") == "small"                      # window under 1M
+    assert pl.claude_model_id(home, "gpt") == "gpt"                          # not a Claude row
+    assert pl.claude_model_id(home, "no-such-row") == "no-such-row"
+    assert pl.claude_model_id(None, "sonnet-hi") == "sonnet-hi"
+    assert pl.claude_model_id(home, None) is None
+
+
+def test_claude_launch_choice_clamps_to_the_catalog_cap(tmp_path, monkeypatch):
+    home = _catalog(tmp_path, monkeypatch)
+    assert pl.claude_launch_choice(home, "sonnet-hi", {"EDP_SEAT_EFFORT": "high"}) == ("sonnet-hi[1m]", "high")
+    assert pl.claude_launch_choice(home, "opus-med", {"EDP_SEAT_EFFORT": "high"}) == ("opus-med[1m]", "medium")
+    assert pl.claude_launch_choice(home, "sonnet-hi", None) == ("sonnet-hi[1m]", "medium")
+    assert pl.claude_launch_choice(home, "sonnet-hi", {"EDP_SEAT_EFFORT": "max"})[1] == "medium"
+    assert pl.claude_launch_choice(home, "no-such-row", {"EDP_SEAT_EFFORT": "high"})[1] == "medium"
+
+
+def test_a_claude_seat_launches_with_its_effort_and_1m_id_on_argv(monkeypatch, tmp_path):
+    """The launched argv — not just a setting — carries --effort high and the [1m] id for a sonnet-hi seat,
+    and an opus-med seat asking high launches at medium (the launcher clamps even a replayed env)."""
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.delenv("EDP_SKIP_PERMISSIONS", raising=False)
+    home = _catalog(tmp_path, monkeypatch)
+    captured, _ = _patch_console(monkeypatch)
+    sp = SubprocessSpawner(claude_bin="claude.exe", cwd=home)
+    monkeypatch.setattr("edp_pool.spawn_defaults.load_spawn_defaults", lambda: {})
+    sp.launch("engineer:s1", "engineer", "engineer.s1", mode="monitor", model="sonnet-hi",
+              extra_env={"EDP_SEAT_EFFORT": "high"})
+    argv = captured["argv"]
+    assert argv[argv.index("--model") + 1] == "sonnet-hi[1m]"
+    assert argv[argv.index("--effort") + 1] == "high"
+    assert captured["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] == "350000"   # looked up by the catalog id
+    sp.launch("engineer:s2", "engineer", "engineer.s2", mode="monitor", model="opus-med",
+              extra_env={"EDP_SEAT_EFFORT": "high"})
+    argv = captured["argv"]
+    assert argv[argv.index("--effort") + 1] == "medium" and argv[argv.index("--model") + 1] == "opus-med[1m]"
 
 
 def test_con_2_monitor_alive_and_terminate(monkeypatch):

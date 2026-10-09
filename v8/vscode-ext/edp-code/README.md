@@ -10,7 +10,7 @@ The Heronry extension for the Code tab's code-server (design-449b628cdd §4, epi
 | `Heronry: Checkout… / Merge… / Pull (guarded)` | A modal listing live seats and `git status --porcelain` paths, then system git. The built-in Source Control view is NOT guarded and cannot be vetoed. |
 | `Heronry: Open external terminal here` | Launches `edp.externalTerminal` (pwsh / cmd / git-bash, a real `.exe`) detached in the folder. |
 
-Settings: `edp.boardUrl` (default `http://127.0.0.1:9400`; creds go only to loopback or https), `edp.sharedTreePaths`, `edp.externalTerminal`
+Settings: `edp.boardUrl` (default `http://127.0.0.1:19400`; creds go only to loopback or https), `edp.sharedTreePaths`, `edp.externalTerminal`
 (default Windows PowerShell 5.1 by absolute path; pwsh 7 is not installed on this host). All three are **machine-scoped**:
 in code-server set them in `<user-data>/Machine/settings.json` (Settings → "Remote" tab). A machine setting in
 `User/settings.json` is not reliably applied in a remote window (measured in the S5 smoke: the badge and board URL fell back to
@@ -37,7 +37,7 @@ extensions dir on every start; restarting the service (`heronry restart code`, a
 
 For a teammate who works in their own desktop VS Code on their own clone, not in this host's Code tab
 (code-server :9410 stays loopback-only). Board side (tailnet access, participant, token) is the owner's
-runbook: `guides/tailnet-public-mode.md` §5 "Add a teammate".
+runbook: `docs/operator/tailnet-public-mode.md` §5 "Add a teammate".
 
 1. **Get the vsix.** Download the `edp-code-<version>.vsix` artifact from the board (story
    s-6a52d6545a, or the newest one on the epic), or build it from a clone with `npm ci; npm run package` here.

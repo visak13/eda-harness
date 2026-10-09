@@ -5,13 +5,12 @@ import {
   createTeammate, getAgentTokens, getTailnet, getTeammates, mintTailscaleKey, reinviteTeammate, revokeAgentToken,
   revokeTeammate, rotateTeammate, setTeammateAdmin,
 } from "../../api/admin";
+import { handleError } from "../../api/admin";
 import type { Invite, TailscaleKey } from "../../api/admin";
 import { approveAccess, denyAccess, getAccessRequests, removeTeammate, type AccessRequestRow, type TeammateRow } from "../../api/access";
 import ui from "../../components/ui.module.css";
 import styles from "./Admin.module.css";
-import { AdminError, Done, Secret } from "./shared";
-import { useAttention } from "../../api/attention";
-import { AttentionDot, attentionMark } from "../../components/AttentionDot";
+import { AdminError, Done, Secret, When } from "./shared";
 import { highlightMessage } from "../../components/AttentionAsks";
 import own from "./Teammates.module.css";
 
@@ -29,7 +28,7 @@ function InviteLinks({ invite, who }: { invite: Invite; who: string }): React.JS
 }
 
 /** t-5dd0cc18ea (owner m-b9c54cb63b): how a colleague joins, in three steps, and what they cannot bring. */
-function HowInviting({ remoteOn }: { remoteOn: boolean }): React.JSX.Element {
+function HowInviting({ remoteOn, loading }: { remoteOn: boolean; loading: boolean }): React.JSX.Element {
   return (
     <section className={styles.card} data-testid="how-inviting">
       <h2 className={styles.cardTitle}>How inviting works</h2>
@@ -41,7 +40,7 @@ function HowInviting({ remoteOn }: { remoteOn: boolean }): React.JSX.Element {
       <p className={styles.fieldDoc} data-testid="how-inviting-agents">
         Agent teammates are seats this board starts on this computer. A colleague works with the same agents; they can't bring their own.
       </p>
-      {!remoteOn ? (
+      {!remoteOn && !loading ? (
         <p className={ui.banner} data-testid="how-inviting-remote-off">
           Remote access is off, so an invite link would not reach anyone. Turn it on in <Link to="/admin?tab=remote">Remote access</Link> first.
         </p>
@@ -50,27 +49,37 @@ function HowInviting({ remoteOn }: { remoteOn: boolean }): React.JSX.Element {
   );
 }
 
-function InviteForm({ remoteOn }: { remoteOn: boolean }): React.JSX.Element {
+function InviteForm({ remoteOn, loading }: { remoteOn: boolean; loading: boolean }): React.JSX.Element {
   const qc = useQueryClient();
   const [handle, setHandle] = useState("");
   const [admin, setAdmin] = useState(false);
+  // e0cec S5: an invite is a guest (scoped to the epics it is added to) unless owner access is granted here.
+  const [role, setRole] = useState<"guest" | "owner">("guest");
+  const badHandle = handleError(handle);
   const m = useMutation({
-    mutationFn: () => createTeammate({ handle: handle.trim(), admin }),
-    onSuccess: () => { setHandle(""); setAdmin(false); void qc.invalidateQueries({ queryKey: ["admin", "teammates"] }); },
+    mutationFn: () => createTeammate({ handle: handle.trim(), role, admin: role === "owner" && admin }),
+    onSuccess: () => { setHandle(""); setAdmin(false); setRole("guest"); void qc.invalidateQueries({ queryKey: ["admin", "teammates"] }); },
   });
   return (
     <section className={styles.card} data-testid="invite">
       <h2 className={styles.cardTitle}>Invite a teammate</h2>
-      <form className={styles.row} onSubmit={(e) => { e.preventDefault(); if (handle.trim()) m.mutate(); }}>
+      <form className={styles.row} onSubmit={(e) => { e.preventDefault(); if (handle.trim() && !badHandle) m.mutate(); }}>
         <input className={ui.input} placeholder="handle, e.g. alex" value={handle} onChange={(e) => setHandle(e.target.value)}
-          aria-label="Teammate handle" data-testid="invite-handle" />
-        <label className={styles.row}><input type="checkbox" checked={admin} onChange={(e) => setAdmin(e.target.checked)} data-testid="invite-admin" /> admin</label>
-        <button type="submit" className={`${ui.button} ${ui.buttonPrimary}`} disabled={!remoteOn || !handle.trim() || m.isPending} data-testid="invite-submit"
-          title={remoteOn ? undefined : "Turn on Remote access first: the invite link only works over your tailnet."} aria-describedby={remoteOn ? undefined : "invite-off-reason"}>
+          aria-label="Teammate handle" data-testid="invite-handle" aria-invalid={badHandle ? true : undefined}
+          aria-describedby={badHandle ? "invite-handle-error" : undefined} />
+        <select className={ui.select} value={role} onChange={(e) => { const r = e.target.value as "guest" | "owner"; setRole(r); if (r === "guest") setAdmin(false); }}
+          aria-label="Access" data-testid="invite-role">
+          <option value="guest">Guest: only the epics you add them to</option>
+          <option value="owner">Owner: full access</option>
+        </select>
+        <label className={styles.row}><input type="checkbox" checked={admin} disabled={role !== "owner"} onChange={(e) => setAdmin(e.target.checked)} data-testid="invite-admin" /> admin</label>
+        <button type="submit" className={`${ui.button} ${ui.buttonPrimary}`} disabled={!remoteOn || !handle.trim() || Boolean(badHandle) || m.isPending} data-testid="invite-submit"
+          title={remoteOn ? undefined : "Turn on Remote access first: the invite link only works over your tailnet."} aria-describedby={remoteOn || loading ? undefined : "invite-off-reason"}>
           {m.isPending ? "Inviting…" : "Invite"}
         </button>
       </form>
-      {!remoteOn ? <p className={styles.fieldNote} id="invite-off-reason" data-testid="invite-off-reason">Invite is off while Remote access is off: the link only works over your tailnet.</p> : null}
+      {badHandle ? <p className={styles.fieldNote} role="alert" id="invite-handle-error" data-testid="invite-handle-error">{badHandle}</p> : null}
+      {!remoteOn && !loading ? <p className={styles.fieldNote} id="invite-off-reason" data-testid="invite-off-reason">Invite is off while Remote access is off: the link only works over your tailnet.</p> : null}
       <AdminError error={m.error} testid="invite-error" />
       {m.data ? <InviteLinks invite={m.data.value.invite} who={m.data.value.teammate.handle} /> : null}
     </section>
@@ -122,16 +131,17 @@ function AccessRequests({ remoteOn }: { remoteOn: boolean }): React.JSX.Element 
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin", "access-requests"], queryFn: getAccessRequests, retry: false });
   const [handles, setHandles] = useState<Record<string, string>>({});
+  // owner m-ab7c81eb8d: Approve grants Guest unless the admin picks Member here; the requester's ask is only shown
+  const [roles, setRoles] = useState<Record<string, "guest" | "owner">>({});
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ["admin", "access-requests"] });
     void qc.invalidateQueries({ queryKey: ["admin", "teammates"] });
   };
-  const approve = useMutation({ mutationFn: (r: AccessRequestRow) => approveAccess(r.id, handles[r.id]?.trim() ? { handle: handles[r.id].trim() } : {}), onSuccess: refresh });
+  const approve = useMutation({ mutationFn: (r: AccessRequestRow) => approveAccess(r.id, { role: roles[r.id] ?? "guest", ...(handles[r.id]?.trim() ? { handle: handles[r.id].trim() } : {}) }), onSuccess: refresh });
   const deny = useMutation({ mutationFn: (r: AccessRequestRow) => denyAccess(r.id), onSuccess: refresh });
   const rows = q.data ?? [];
   const pending = rows.filter((r) => r.status === "pending");
-  // S20: the trail's last hop — a request waiting on this admin is marked, and its #<id> link highlights it
-  const waiting = new Set(useAttention().items.filter((i) => i.kind === "access_request").map((i) => i.id));
+  // the owner's chat message about a request links here with #<id>: that request is highlighted
   const { hash } = useLocation();
   const target = hash ? decodeURIComponent(hash.slice(1)) : null;
   const loaded = pending.some((r) => r.id === target);
@@ -147,15 +157,18 @@ function AccessRequests({ remoteOn }: { remoteOn: boolean }): React.JSX.Element 
       <AdminError error={q.error} testid="access-requests-error" />
       {!pending.length && !q.isLoading ? <p className={ui.empty} data-testid="access-requests-empty">No open requests.</p> : null}
       {pending.map((r) => (
-        <div key={r.id} id={r.id} className={`${own.request} ${waiting.has(r.id) ? attentionMark : ""}`} data-testid={`access-request-${r.id}`}
-          data-attention={waiting.has(r.id) ? "true" : undefined}>
+        <div key={r.id} id={r.id} className={own.request} data-testid={`access-request-${r.id}`}>
           <div>
             <strong>{r.name}</strong> asks for access as <strong>{r.role_wanted === "owner" ? "member" : r.role_wanted}</strong>
-            {waiting.has(r.id) ? <> <AttentionDot count={1} /></> : null}
-            <div className={styles.usage}>{r.created_at}</div>
+            <div className={styles.usage}><When at={r.created_at} /></div>
             {r.note ? <p className={styles.fieldDoc}>{r.note}</p> : null}
           </div>
           <div className={styles.actions}>
+            <select className={ui.select} value={roles[r.id] ?? "guest"} aria-label={`Access for ${r.name}`} data-testid={`access-request-${r.id}-role`}
+              onChange={(e) => setRoles((m) => ({ ...m, [r.id]: e.target.value as "guest" | "owner" }))}>
+              <option value="guest">Guest: only the epics you add them to</option>
+              <option value="owner">Owner: full access</option>
+            </select>
             <input className={ui.input} placeholder="handle (optional)" value={handles[r.id] ?? ""} aria-label={`Handle for ${r.name}`}
               onChange={(e) => setHandles((h) => ({ ...h, [r.id]: e.target.value }))} data-testid={`access-request-${r.id}-handle`} />
             <button type="button" className={`${ui.button} ${ui.buttonPrimary} ${styles.small}`} disabled={approve.isPending || deny.isPending}
@@ -214,12 +227,12 @@ function AgentTokens(): React.JSX.Element {
       <p className={styles.fieldDoc}>Minted automatically at spawn. Revoking one refuses that seat's calls at once; a respawn mints a new token.</p>
       <AdminError error={q.error} testid="agent-tokens-error" />
       <div className={styles.tableWrap}>
-        <table className={styles.table}>
+        <table className={`${styles.table} ${styles.stackTable}`}>
           <thead><tr><th>Seat</th><th>Role</th><th>Model</th><th>Last seen</th><th /></tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.handle} data-testid={`agent-token-${r.handle}`}>
-                <td className={ui.idMono}>{r.handle}</td><td>{r.role ?? "—"}</td><td>{r.model ?? "—"}</td><td>{r.last_seen ?? "—"}</td>
+                <td className={ui.idMono}>{r.handle}</td><td data-label="Role">{r.role ?? "—"}</td><td data-label="Model">{r.model ?? "—"}</td><td data-label="Last seen"><When at={r.last_seen} testid={`agent-token-${r.handle}-seen`} /></td>
                 <td>{r.revoked ? <span className={ui.chip}>revoked</span> : (
                   <button type="button" className={`${ui.button} ${styles.small}`} disabled={m.isPending}
                     onClick={() => m.mutate(r.handle)} data-testid={`agent-token-${r.handle}-revoke`}>Revoke</button>
@@ -256,8 +269,8 @@ export function TeammatesTab(): React.JSX.Element {
   const hint = removedHint ?? revoke.data?.hint ?? null;
   return (
     <div className={styles.panel} data-testid="admin-teammates">
-      <HowInviting remoteOn={remoteOn} />
-      <InviteForm remoteOn={remoteOn} />
+      <HowInviting remoteOn={remoteOn} loading={tail.isLoading} />
+      <InviteForm remoteOn={remoteOn} loading={tail.isLoading} />
       <AccessRequests remoteOn={remoteOn} />
       <section className={styles.card} data-testid="teammates">
         <h2 className={styles.cardTitle}>Teammates</h2>
@@ -269,19 +282,19 @@ export function TeammatesTab(): React.JSX.Element {
           </label>
         ) : null}
         <div className={styles.tableWrap}>
-          <table className={styles.table}>
+          <table className={`${styles.table} ${styles.stackTable}`}>
             <thead><tr><th>Handle</th><th>Role</th><th>Admin</th><th>Signed in</th><th>Last seen</th><th>Actions</th></tr></thead>
             <tbody>
               {rows.map((t) => (
                 <tr key={t.handle} data-testid={`teammate-${t.handle}`} className={t.retired ? own.removed : undefined}>
-                  <td><strong>{t.handle}</strong>{t.init_human ? <div className={styles.usage}>init human</div> : null}
+                  <td><strong>{t.handle}</strong>
                     {t.retired ? <div className={styles.usage}><span className={ui.chip}>removed</span></div>
                       : !t.has_token && !t.invite_expires ? <div className={styles.usage}>no token: hidden from people lists</div> : null}</td>
-                  <td>{t.role}</td>
-                  <td><input type="checkbox" checked={t.admin} disabled={t.init_human || flag.isPending} aria-label={`${t.handle} is an admin`}
+                  <td data-label="Role">{t.role}</td>
+                  <td data-label="Admin"><input type="checkbox" checked={t.admin} disabled={t.init_human || flag.isPending} aria-label={`${t.handle} is an admin`}
                     onChange={(e) => flag.mutate({ handle: t.handle, admin: e.target.checked })} data-testid={`teammate-${t.handle}-admin`} /></td>
-                  <td>{t.has_token ? "yes" : t.invite_expires ? `invited (until ${t.invite_expires})` : "no"}</td>
-                  <td>{t.last_seen ?? "—"}</td>
+                  <td data-label="Signed in">{t.has_token ? "yes" : t.invite_expires ? `invited (until ${t.invite_expires})` : "no"}</td>
+                  <td data-label="Last seen"><When at={t.last_seen} testid={`teammate-${t.handle}-seen`} /></td>
                   <td>
                     <div className={styles.actions}>
                       <button type="button" className={`${ui.button} ${styles.small}`} onClick={() => reinvite.mutate(t.handle)} data-testid={`teammate-${t.handle}-invite`}>New invite</button>

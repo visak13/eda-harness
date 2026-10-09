@@ -12,11 +12,13 @@ import { mentionedHandles, previewMentionText } from "./mentions";
 import styles from "./Composer.module.css";
 import { Icon } from "./Icon";
 import { identity } from "../auth/identity";
+import { useGuestState } from "../auth/guest";
 import { readDraft, writeDraft } from "./draftStorage";
 import { Avatar } from "./Avatar";
 import { QuoteChips } from "./QuoteCard";
 import { quoteTray, registerQuoteTarget, useQuoteTray } from "./quoteTray";
 import { useWorkflowRoles } from "../api/workflows";
+import { slotRef, useSlotFlash } from "./statusSlot";
 const draftStores = new WeakMap<object, Map<string, import("./draftStorage").StoredDraft>>();
 
 // The object-attached composer (design §4.2/§13/§16.1/§18.1). The conversation is IMPLICIT — the
@@ -70,12 +72,12 @@ function ComposerHelp({ onClose }: { onClose: () => void }): React.JSX.Element {
         </button>
       </div>
       <p>
-        <strong>Wake</strong> — a message addressed <em>to</em> a seat or role wakes that seat&apos;s shell:
+        <strong>Wake</strong> — a message addressed <em>to</em> a seat or role wakes that seat:
         the agent reads it and acts. A note with nobody addressed reaches the seats already working this
         ticket.
       </p>
       <p>
-        <strong>Seat</strong> — one running agent shell bound to one ticket, named <code>role.ticket</code>
+        <strong>Seat</strong> — one running agent bound to one ticket, named <code>role.ticket</code>
         (for example <code>engineer.s-12</code>). Only a live seat can be woken.
       </p>
       <p>
@@ -251,10 +253,13 @@ function ComposerInstance({
     const t = setTimeout(() => setPreviewText(draftText), 250);
     return () => clearTimeout(t);
   }, [draftText]);
+  const { teammate } = useGuestState();
+  const flash = useSlotFlash();
   const preview = useQuery({
     queryKey: ["resolve", ticketId, to, kind, previewText],
     queryFn: () => resolveMessage({ ticket_id: ticketId, to, kind, text: previewText }),
-    enabled: Boolean(ticketId),
+    // S12-ui2 (qa m-da89ef8294 m7): the board refuses the wake preview to a guest; never ask it
+    enabled: Boolean(ticketId) && teammate,
     retry: false,
   });
 
@@ -544,14 +549,16 @@ function ComposerInstance({
         </button>}
         {/* Wake preview — the board's plan, verbatim, as the render's one delivery line; every
             per-recipient reason sits in its title. The preview cannot drift from delivery. */}
-        {preview.data ? (
-          <span className={styles.delivery} data-testid="wake-preview"
+        {flash ? (
+          <span className={styles.delivery} data-testid="composer-flash" role="status" aria-live="polite" ref={(el) => slotRef(el)}>{flash}</span>
+        ) : preview.data ? (
+          <span className={styles.delivery} data-testid="wake-preview" aria-live="polite" ref={(el) => slotRef(el)}
             title={preview.data.plan.map((w) => `${w.recipient}${w.alive === false ? " (not alive)" : ""} — ${w.why}`).join("\n") || preview.data.note}>
             {preview.data.plan.length > 0
-              ? `Will notify ${preview.data.plan.map((w) => w.recipient).join(", ")}`
+              ? `Will notify ${[...new Set(preview.data.plan.map((w) => `the ${w.recipient.split(".")[0]}`))].join(", ")}`
               : preview.data.note || "Nobody will be woken."}
           </span>
-        ) : <span className={styles.delivery} />}
+        ) : <span className={styles.delivery} aria-live="polite" ref={(el) => slotRef(el)} />}
         {panel ? null : sendButton}
       </div>
       {panel ? (

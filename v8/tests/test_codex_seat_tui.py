@@ -181,7 +181,7 @@ def test_app_server_child_never_holds_the_ws_token(tmp_path, monkeypatch):
 
 def test_tui_argv_joins_the_seat_thread_with_the_token_by_env_name(tmp_path):
     s = seat_mod.CodexSeat(cwd=V8, role="qa", handle="qa.tui", log_dir=tmp_path, codex_bin=str(FAKE),
-                           board=False, env={"EDP_PARITY_DESCRIPTIONS": str(V8 / "guides" / "harness-parity" / "descriptions.ours.json")},
+                           board=False, env={"EDP_PARITY_DESCRIPTIONS": str(V8 / "src" / "edp8" / "codex_seat" / "descriptions.ours.json")},
                            discover=lambda _c: ([], None), ws=True)
     s.server = SimpleNamespace(ws_url="ws://127.0.0.1:5555", env={WS_TOKEN_ENV: "the-token-value"})
     s.thread_id = "thr-1"
@@ -198,7 +198,7 @@ def test_tui_argv_always_turns_the_startup_update_check_off(tmp_path):
     runs `npm install -g @openai/codex` on the shared host (drill tui1, 2026-09-23). Upgrades are an owner
     action between stories, never from inside a seat."""
     s = seat_mod.CodexSeat(cwd=V8, role="engineer", handle="engineer.tui", log_dir=tmp_path, codex_bin=str(FAKE),
-                           board=False, env={"EDP_PARITY_DESCRIPTIONS": str(V8 / "guides" / "harness-parity" / "descriptions.ours.json")},
+                           board=False, env={"EDP_PARITY_DESCRIPTIONS": str(V8 / "src" / "edp8" / "codex_seat" / "descriptions.ours.json")},
                            discover=lambda _c: ([], None), ws=True)
     s.server = SimpleNamespace(ws_url="ws://127.0.0.1:5555", env={})
     s.thread_id = "thr-2"

@@ -1,0 +1,239 @@
+{
+  "steps": [
+    {
+      "n": 1,
+      "do": "Record B3's scope against its epic design section: Rookery authentication and device REST APIs, rookery schema, a new WIPE_SIGNING_KEY secret, quill-sync token/wipe handling, and quill-mobile Settings UI. Apply the handbook, security, migration, observability and mobile policies within their scopes. Security takes precedence for security changes; amendments supersede older text; process documents override the design's illustrative rollout.",
+      "per": "strategyll-b7b76321a0 §§2–3, Amendments; strategyll-5959d8f62d §1; design-49dfe7ce39 / Story B3"
+    },
+    {
+      "n": 2,
+      "do": "Open a security-review ticket before B3's first PR, including the migration PR. Link the B3 design section and add each PR as it opens. Obtain a security champion's recorded sign-off before any B3 PR merges.",
+      "per": "strategyll-5959d8f62d §5"
+    },
+    {
+      "n": 3,
+      "do": "File the Platform request to provision WIPE_SIGNING_KEY in development, staging and production, allowing two working days. Write runbooks/secrets/WIPE_SIGNING_KEY.md with zero-downtime introduction, overlap and retirement instructions; register owner team, reading services and a rotation period no longer than 90 days in rookery's secrets/inventory.yaml.",
+      "per": "strategyll-5959d8f62d §2.1; strategyll-b7b76321a0 §21"
+    },
+    {
+      "n": 4,
+      "do": "Organize small PRs on B3/<short-slug> branches, each referencing exactly one implementation ticket, B3. Use area: imperative-summary titles and commit summaries under 72 characters with Refs: B3 footers. Describe what changed and why, link the design section, and identify each PR's sequence position and related PRs.",
+      "per": "strategyll-b7b76321a0 §§3.1–3.2, 6.1–6.2"
+    },
+    {
+      "n": 5,
+      "do": "Prepare a separate schema-only PR with the next free NNNN_<description>.up.sql and .down.sql pair in db/migrations/. Add devices.revoked_at timestamptz and devices.revoked_by_device_id uuid as nullable columns without defaults, preserving NULL for existing rows. Create wipe_commands with the design's id, device_id, requested_at, requested_by_device_id, delivered_at and signature fields, plus a primary key and created_at timestamptz NOT NULL DEFAULT now(). Start each migration file with SET lock_timeout = '5s';.",
+      "per": "design-49dfe7ce39 / Story B3 / Server side; strategyll-94135d3fbc §§2–2.2, 4"
+    },
+    {
+      "n": 6,
+      "do": "Select and justify wipe_commands' retention class from the documented classes in db/retention/wipe_commands.yaml, also giving the one-line justification in the migration PR. State expected locks and runtime at production volumes, link dependent code PRs when available, and document in Rollback when the down migration is safe.",
+      "per": "strategyll-94135d3fbc §§2.1, 3–5, July update; strategyll-b7b76321a0 / Amendment 2"
+    },
+    {
+      "n": 7,
+      "do": "Exercise the migration in a real-Postgres container integration test. Require migration-check to pass up/down/up on both an empty database and a staging-schema snapshot with identical up results. Resolve migration-number collisions before merge. Obtain a non-author CODEOWNERS approval, the security-review ticket sign-off and applicable blocking CI results, then squash-merge the migration PR.",
+      "per": "strategyll-94135d3fbc §§2, 4; strategyll-b7b76321a0 §§5.3, 7.1, 7.3, Appendix E; strategyll-5959d8f62d §5"
+    },
+    {
+      "n": 8,
+      "do": "Have on-call check the migration's lock/runtime estimate against current production load and run migrate apply <NNNN> during working hours. Allow up to one working day after merge. Confirm migrate status reports it applied and on-call records it in the migration log channel before any dependent code PR merges.",
+      "per": "strategyll-94135d3fbc §3; strategyll-b7b76321a0 §9.1"
+    },
+    {
+      "n": 9,
+      "do": "Implement authenticated GET /v3/devices for the caller's devices, returning platform, app version, last_seen_at and revoked_at. Implement POST /v3/devices/{id}/revoke with {wipe: bool}: enforce ownership through authentication/authorization middleware, set revocation state and actor, delete all target device_tokens, and insert a wipe command when requested. Make repeated identical requests return equivalent responses without duplicate side effects. Use the primary for reads that must see their own writes; web sessions using device_tokens are covered too.",
+      "per": "design-49dfe7ce39 / Story B3 / Server side, §7; strategyll-b7b76321a0 §§5.4, 9.3, 12"
+    },
+    {
+      "n": 10,
+      "do": "Validate access tokens against revocation state on every request, with any revocation cache limited to a 30-second TTL. Close the revoked device's existing sync stream and reject its reconnect at authentication. Return HTTP 401 with error device_revoked and wipe containing the signed command or null on revoked-device token refresh.",
+      "per": "design-49dfe7ce39 / Story B3 / Server side, Relationship to sync protocol; B3-c1"
+    },
+    {
+      "n": 11,
+      "do": "Read WIPE_SIGNING_KEY by name from the Platform secret store at service startup. Use rookery/crypto's HKDF helper with a feature-unique context to derive the per-device key delivered at registration, and use the reviewed server/client crypto primitives for wipe signing and verification. Use constant-time comparisons for tokens, secrets, MACs and signatures.",
+      "per": "design-49dfe7ce39 / Story B3 / The wipe command; strategyll-5959d8f62d §§2–3"
+    },
+    {
+      "n": 12,
+      "do": "Record every affected security action, including revocation, wipe request and token-refresh failure, in audit_events with actor device and user IDs, target, action name, outcome and time; include whether wipe was requested for revocation. Register new action names in rookery/audit/actions.go. Keep each audit write in the same database transaction as its action, and preserve idempotency under retries.",
+      "per": "strategyll-5959d8f62d §4; design-49dfe7ce39 / Story B3 / Server side; strategyll-b7b76321a0 §5.4; B3-c3"
+    },
+    {
+      "n": 13,
+      "do": "Add structured lowercase dotted log events with snake_case fields and trace_id, propagating context into spawned goroutines. Log security/authentication events unsampled with the ordinary logger, even on the stream; REST logging is also unsampled. Include payload_sha256 on request/message errors only where the payload hash does not reveal a hash of tokens, signatures, MACs or key material; the security prohibition takes precedence. Use permitted IDs for sensitive security events.",
+      "per": "strategyll-c97766671d §§1–2.3, June update; strategyll-5959d8f62d §§1, 4"
+    },
+    {
+      "n": 14,
+      "do": "Provide the expected RED metrics for each new endpoint: rookery_<area>_<op>_requests_total with outcome, errors_total with code, and duration_seconds without labels. Keep label cardinality bounded. Wrap new request-handling and database paths in <service>.<area>.<op> trace spans with content-free attributes. Use existing SyncTelemetry aggregates for client metrics.",
+      "per": "strategyll-c97766671d §§3–4"
+    },
+    {
+      "n": 15,
+      "do": "Before production server deployment, create a collapsible B3 row on Sync Overview showing request rate, error rate and latency, and at least one error-rate alert routed to Inkwell on-call with a runbook link. Add runbook entries for the new endpoints and alerts. Update rookery/api/ OpenAPI in the same PR as each REST change, including device_revoked and its client behavior; update the error-code reference when the new code merges.",
+      "per": "strategyll-c97766671d §5, August update; strategyll-b7b76321a0 §13, Appendix I"
+    },
+    {
+      "n": 16,
+      "do": "Add behavior tests and container-Postgres integration tests for changed SQL, listing isolation, revocation state, token deletion, stream closure, refresh responses and transactional audit behavior. Repeat identical revoke requests with and without wipe, checking equivalent responses and no duplicate wipe rows or audit events. Put bypass tests in server unit/integration jobs for revoked tokens, revoked-device refresh, forged/tampered signatures, expired artifacts and attempts to act on another user's device.",
+      "per": "strategyll-b7b76321a0 §§5.1, 5.3–5.4; strategyll-5959d8f62d §7; B3-c1–B3-c3"
+    },
+    {
+      "n": 17,
+      "do": "For server PRs, include Threat model sections wherever attacker capabilities change: assets, network attacker, stolen-device holder, malicious other user and defenses against each. Include Rollback explaining safe rollback or a corrective deployment, including schema/data implications. Add each behavior change to that repository's CHANGELOG.md Unreleased section in the same PR.",
+      "per": "strategyll-5959d8f62d §5, May update, §6; strategyll-b7b76321a0 §6.3, Amendments 2–3; strategyll-94135d3fbc §5"
+    },
+    {
+      "n": 18,
+      "do": "Run repository formatters and applicable blocking CI, including lint, unit, coverage, integration, openapi-check, contract, migration-check and secret-scan. Require at least 85% line coverage in changed packages, excluding generated code and migrations. Obtain CODEOWNERS approval and a second security-champion approval for rookery/auth/ changes, independently of the security-review ticket sign-off. Confirm the migration is applied in production and the secret is provisioned before deployment to each environment.",
+      "per": "strategyll-b7b76321a0 §§4.1, 5.2, 7.1, Appendix E, Amendments 1, 4; strategyll-5959d8f62d §§2.1, 5; strategyll-94135d3fbc §3"
+    },
+    {
+      "n": 19,
+      "do": "With production monitoring and provisioning ready, squash-merge server code and deploy enabled to Rookery canary, undergo the fifteen-minute automated analysis, and promote to the full fleet during the permitted working-hours window. Confirm full-fleet deployment before merging B3's unflagged, non-protocol-gated quill-sync change and before the matching train cut.",
+      "per": "strategyll-b7b76321a0 §§7.3–7.4, 11.1, Appendix H; strategyll-5959d8f62d §6; strategyll-72905f6f9e §5.1"
+    },
+    {
+      "n": 20,
+      "do": "Implement explicit device_revoked handling in quill-sync: sign out, verify any wipe command with the derived per-device key, and for a valid wipe delete the local SQLite store, cached blobs and keychain entries before showing sign-in. Reject forged, tampered and expired artifacts. Use contextual Go errors where applicable, prefer Result at Kotlin module boundaries, and cap any retry loops with jittered backoff.",
+      "per": "design-49dfe7ce39 / Story B3 / Client side, The wipe command; strategyll-5959d8f62d §§3, 7; strategyll-b7b76321a0 §4.2, Appendix I.1"
+    },
+    {
+      "n": 21,
+      "do": "Test client sign-out, valid wipe deletion and invalid-command rejection on both iOS simulator and Android emulator. Require both device jobs and other applicable blocking checks, including 85% changed-package coverage. Review the non-blocking perf report against the documented cold-start and bundle-size budgets. Include the quill-sync changelog, applicable Threat model and Rollback sections, code-owner approval and recorded security sign-off; squash-merge and publish a quill-sync release.",
+      "per": "strategyll-b7b76321a0 §§5–7, 15, Appendix E, Amendments 1–2; strategyll-5959d8f62d §§5, 7, May update; strategyll-72905f6f9e §3.1"
+    },
+    {
+      "n": 22,
+      "do": "Add Settings → Your devices on iOS and Android, listing devices and offering Sign out this device and Sign out and erase only for devices other than the current one. Ship the list and actions together, enabled and unflagged. Put new user-facing strings in strings/source.yaml with translator comments. Provide accessibility labels, sensible VoiceOver/TalkBack reading order and untruncated actions at the largest system font size.",
+      "per": "design-49dfe7ce39 / Story B3 / Client side; strategyll-5959d8f62d §6; strategyll-72905f6f9e §6; B3-c4"
+    },
+    {
+      "n": 23,
+      "do": "Open the quill-mobile exact-version pin bump and UI PRs. Include screenshots from both platforms at default and largest font sizes; obtain Notebook UI review and non-author code-owner approval. Pass both device jobs and all applicable blocking CI. Include same-PR changelog entries, Rollback and applicable Threat model sections, plus the expected user-facing entry in release-notes/<train>.md in the PR completing client work. Ensure security-review sign-off covers every PR.",
+      "per": "strategyll-72905f6f9e §§3.1, 6–7; strategyll-b7b76321a0 §§6–7, Appendix E, Amendments 1–2, 5; strategyll-5959d8f62d §5, May update"
+    },
+    {
+      "n": 24,
+      "do": "Tidy quill-mobile history so every commit independently builds, passes tests and follows the commit-message format; rebase-merge the client PRs, including the pin bump, by 17:00 on the second working day before the train cut, normally Thursday. Target train 26.11 if ready; otherwise use the next train without coupling B3 to B1 or B2. Verify dependent server behavior is deployed across the full fleet before the cut.",
+      "per": "strategyll-72905f6f9e §§2–3.1, 5.1, April update; design-49dfe7ce39 §4"
+    },
+    {
+      "n": 25,
+      "do": "Ship through the regular train: Monday 10:00 cut, train testing, store submission and seven-day phased store rollout under the train captain. After the cut, accept only fixes for bugs found in that train's testing. Keep B3 effective on installation and retain author ownership until rollout completes; use rollback or a fix if the control breaks.",
+      "per": "strategyll-72905f6f9e §§2, 8–9; strategyll-b7b76321a0 §7.4; strategyll-5959d8f62d §6"
+    },
+    {
+      "n": 26,
+      "do": "Throughout implementation, investigate a CI job that fails twice rather than retrying further; quarantine any flaky test with @flaky and a ticket within one working day, then fix or delete it within two weeks. During rollout, if a page affects sync for more than 1% of devices for more than ten minutes, follow the documented incident declaration, coordination and post-incident review within five working days.",
+      "per": "strategyll-b7b76321a0 §§5.5, 11.3"
+    }
+  ],
+  "must_not": [
+    {
+      "rule": "Do not create or read devices.revocation or any other flag for B3's integrated listing, revocation and wipe feature, on server or client. Do not apply flag-default-OFF, flag provisioning, percentage ramps, ramp waiting periods or flag-removal requirements. The design's suggested flag and illustrative rollout, handbook flag rules and mobile flag defaults are overridden.",
+      "per": "strategyll-5959d8f62d §6; strategyll-b7b76321a0 §8; strategyll-72905f6f9e §4; design-49dfe7ce39 §§4–5"
+    },
+    {
+      "rule": "Do not change stream messages, fields or negotiation, bump protocol_max or the wire version, reserve a protocol number, add protocol fixtures/spec changes, deprecation notices or a web migration guide for B3. Protocol-change-specific release, gating and negotiation-test requirements are out of scope; the ordinary existing blocking contract job still applies.",
+      "per": "design-49dfe7ce39 / Story B3 / Relationship to sync protocol; strategyll-45c0da3c69 §1; strategyll-b7b76321a0 / Appendix E"
+    },
+    {
+      "rule": "Do not add run-e2e or require the special sync-e2e run for B3's REST, token and local-storage handling: it does not alter client stream-message handling.",
+      "per": "strategyll-b7b76321a0 / Appendix E"
+    },
+    {
+      "rule": "Do not wait for normal access-token expiry, leave an existing revoked stream active, allow cross-user revocation, or offer self-revocation from Your devices. Do not add the deferred push-notification kill switch.",
+      "per": "design-49dfe7ce39 / Story B3 / Server side, Client side, Relationship to sync protocol, Notes from planning; strategyll-5959d8f62d §7"
+    },
+    {
+      "rule": "Do not combine migrations and dependent application code, manually alter schema, rely on automatic deploy-time migrations, or equate migration merge or staging application with production application. Dependent code cannot merge until production status and logging are complete.",
+      "per": "strategyll-94135d3fbc §§1, 3–4, 7; strategyll-b7b76321a0 §9.1"
+    },
+    {
+      "rule": "Do not add defaults, NOT NULL constraints, a backfill job or an expand/backfill/contract sequence for B3's two nullable devices columns. Do not put data updates in migrations. Concurrent-index rules apply only if an index is added to an existing table; indexes on the new wipe_commands table may be ordinary indexes in its creation migration.",
+      "per": "design-49dfe7ce39 / Story B3 / Server side; strategyll-94135d3fbc §§2–2.3"
+    },
+    {
+      "rule": "Do not edit frozen db/retention.yaml. Do not create an audit_events table, migration or new retention declaration merely to add an audit action: the existing table is audit-7y and action names go in rookery/audit/actions.go.",
+      "per": "strategyll-94135d3fbc / July update; strategyll-5959d8f62d §4"
+    },
+    {
+      "rule": "Do not run a production down migration after dependent code has written data without agreement from the author and a tech lead.",
+      "per": "strategyll-94135d3fbc §5"
+    },
+    {
+      "rule": "Do not deploy a build reading WIPE_SIGNING_KEY to an environment before provisioning it there. Do not put real secrets in repositories, configuration files, images, logs, crash reports, tickets or tests; use obviously fake fixtures without secret-scan exclusions.",
+      "per": "strategyll-5959d8f62d §§2–2.1; strategyll-b7b76321a0 / Appendix E"
+    },
+    {
+      "rule": "Do not send the service secret to a client, use it directly as a per-device key, add third-party cryptography or implement primitives yourself. Do not use == or bytes.Equal for secret, token, MAC or signature comparisons.",
+      "per": "strategyll-5959d8f62d §§2.2–3"
+    },
+    {
+      "rule": "Do not log tokens, signatures, MACs, key material or any hashes, prefixes or suffixes of them. The observability payload-hash requirement cannot override this, including on token-refresh or signed-command errors. B3 does not inherit the separate shared-note-merge blanket hash exception; non-sensitive error payloads still follow the general hash rule.",
+      "per": "strategyll-5959d8f62d §§1, 4; strategyll-c97766671d §§1, 2.2"
+    },
+    {
+      "rule": "Do not log user content, email addresses, display names or device names, or include user content in crash reports or analytics. Do not sample security/authentication logs, add camelCase fields, use IDs as metric labels, add per-event sync analytics, new StatsD calls or panels on dead graphite dashboards. Convert touched legacy logging as required when substantially changing its package.",
+      "per": "strategyll-b7b76321a0 §§4.3, 10; strategyll-c97766671d §§2–4, 6, June update"
+    },
+    {
+      "rule": "Do not delay B3's dashboard and alerts until a percentage ramp: it has no flag and monitoring must exist before production server deployment.",
+      "per": "strategyll-c97766671d §5, August update"
+    },
+    {
+      "rule": "Do not schedule the withdrawn external penetration test unless security champions request one. Do not substitute the threat model or auth-directory approval for the separately recorded security-review ticket sign-off.",
+      "per": "strategyll-5959d8f62d §5, May update"
+    },
+    {
+      "rule": "Do not accept the superseded 80% coverage floor or invent a 95% requirement. Do not require an idempotency test for GET /v3/devices, but do require it for POST revoke and any other changed POST/PUT endpoint.",
+      "per": "strategyll-b7b76321a0 §§5.2–5.4, §18, Appendix C.4, Amendment 1"
+    },
+    {
+      "rule": "Do not defer behavior changelog entries or OpenAPI updates to follow-up PRs or release time. Migration-only PRs need no changelog entry or feature flag. Do not replace CHANGELOG.md with fragments on the strength of a rejected proposal.",
+      "per": "strategyll-b7b76321a0 §§6.3, 13, Amendment 3, Appendix O.5; strategyll-94135d3fbc §8"
+    },
+    {
+      "rule": "Do not squash-merge quill-mobile, rebase-merge rookery or quill-sync, self-approve, omit the second security-champion approval for rookery/auth/, or impose a blanket second code-owner approval on quill-sync.",
+      "per": "strategyll-b7b76321a0 §§7.1–7.3, Amendment 4, Appendix L.2; strategyll-72905f6f9e §3"
+    },
+    {
+      "rule": "Do not treat merging quill-sync as shipping it, omit the exact-version mobile bump, use the obsolete just-before-cut merge deadline, or admit the client to a train before its required server behavior reaches the full fleet. Do not merge B3's unflagged, non-protocol-gated quill-sync change ahead of its server deployment.",
+      "per": "strategyll-b7b76321a0 §14, Appendix H; strategyll-72905f6f9e §§3.1, 5.1, April update"
+    },
+    {
+      "rule": "Do not hard-code UI strings, hide actions through inaccessible labels or font truncation, or omit Notebook UI review. Do not use the retired Friday hotfix train or emergency hotfix path to ship story work.",
+      "per": "strategyll-72905f6f9e §§6, 9"
+    },
+    {
+      "rule": "Do not impose historical, rejected or proposed requirements: manual QA sheets, three-day main freeze, company-wide release-note email, head-of-engineering sign-off, mandatory pairing, mandatory table partitioning, load testing every endpoint or a blanket debug-log ban. The retired checklist's checkboxes do not make it current.",
+      "per": "strategyll-b7b76321a0 §§0, 5.6, 17, Appendices C, L, M; strategyll-72905f6f9e §9.2"
+    },
+    {
+      "rule": "Do not add a standalone design-note requirement to this epic story, or invent a sweeper/background job from rules for new attachment staging areas. New-job metrics, staleness alerts and pause runbooks are conditional on adding a job, which B3's design does not request. Dependency license checks, justification and the greater-than-100-KB quill-sync approval apply only if dependencies are added or upgraded; local reviewer execution for outbox/revision changes applies only if those areas are touched.",
+      "per": "strategyll-b7b76321a0 §§4.3–4.4, 7.2, 13, 18; strategyll-c97766671d §§3, 5; design-49dfe7ce39 / Story B3"
+    }
+  ],
+  "criteria_checks": [
+    {
+      "criterion": "B3-c1",
+      "how": "Use server unit and real-Postgres integration tests to verify caller-only device listing, revocation state and deletion of all target tokens; warm the revocation cache and verify access rejection within 30 seconds, existing-stream closure and failed reconnect. Verify revoked refresh returns 401 device_revoked with the documented wipe field. Test cross-user denial and repeated identical revoke requests without duplicate side effects."
+    },
+    {
+      "criterion": "B3-c2",
+      "how": "Using obviously fake test keys and the reviewed crypto helpers, request wipe, retrieve its signed command on revoked-device refresh, and verify it using the registered derived per-device key. On both iOS and Android, verify deletion of SQLite data, cached blobs and keychain entries followed by sign-in. Test forged, tampered and expired artifact rejection, plus the no-wipe response."
+    },
+    {
+      "criterion": "B3-c3",
+      "how": "Query audit_events in integration tests for revocation and wipe requests, checking actor device/user, target, action, outcome, time and wipe-requested value. Test that action and audit commit or roll back together, that retries create no duplicate audit events, and that audit data contains no tokens or secrets."
+    },
+    {
+      "criterion": "B3-c4",
+      "how": "Run both platform device suites to verify Settings → Your devices lists devices and offers both named actions for other devices only. Verify the feature works without a flag, actions invoke the correct wipe choice, and VoiceOver/TalkBack labels and reading order work. Check default/largest-font screenshots on both platforms and obtain Notebook UI review."
+    }
+  ],
+  "complete": true
+}

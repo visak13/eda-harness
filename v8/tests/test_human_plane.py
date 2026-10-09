@@ -34,7 +34,7 @@ def client(tmp_path, monkeypatch, ui_prefix):
 
 @pytest.fixture
 def rig(client):
-    for pid, role, typ in [("sam", "owner", "human"), ("x", "owner", "human"),
+    for pid, role, typ in [("sam", "owner", "human"), ("kim", "owner", "human"),
                            ("arch", "architect", "agent")]:
         assert client.post("/v1/participants", json={"type": typ, "role": role, "handle": pid, "id": pid},
                            headers=ADMIN).json()["ok"]
@@ -47,14 +47,14 @@ def rig(client):
 
 def test_mention_fans_out_to_broker_and_feed(client, rig, published):
     r = client.post("/v1/messages", json={"ticket_id": rig["epic"], "kind": "note",
-                                          "text": "planning this — need @x and @arch to weigh in"},
+                                          "text": "planning this — need @kim and @arch to weigh in"},
                     headers={"X-Participant": "sam"}).json()
     assert r["ok"], r
     targets = [t for _f, t, _k, _b in published]
-    assert targets == ["x", "arch"]  # thread note, but both mentions woken
-    # the mention reaches x's FEED too (any role)
-    feed = client.get("/v1/events", params={"since": 0}, headers={"X-Participant": "x"}).json()["value"]
-    assert any(e["kind"] == "message_sent" and "x" in e["data"].get("mentions", []) for e in feed)
+    assert targets == ["kim", "arch"]  # thread note, but both mentions woken
+    # the mention reaches kim's FEED too (any role)
+    feed = client.get("/v1/events", params={"since": 0}, headers={"X-Participant": "kim"}).json()["value"]
+    assert any(e["kind"] == "message_sent" and "kim" in e["data"].get("mentions", []) for e in feed)
 
 
 def test_unknown_handle_is_prose_not_error(client, rig, published):
@@ -90,7 +90,7 @@ def test_other_owner_does_not_see_my_epic_events(client, rig):
     client.post(f"/v1/gates/{rig['epic']}/design_signoff/open", json={"note": "n"},
                 headers={"X-Participant": "sam"})
     mine = client.get("/v1/events", params={"since": 0}, headers={"X-Participant": "sam"}).json()["value"]
-    theirs = client.get("/v1/events", params={"since": 0}, headers={"X-Participant": "x"}).json()["value"]
+    theirs = client.get("/v1/events", params={"since": 0}, headers={"X-Participant": "kim"}).json()["value"]
     assert any(e["kind"] == "gate_opened" for e in mine)
     assert not any(e["kind"] == "gate_opened" for e in theirs)
 
@@ -98,12 +98,12 @@ def test_other_owner_does_not_see_my_epic_events(client, rig):
 # ----------------------------------------------------------------------- tokens
 
 def test_token_required_only_when_configured(client, rig, tmp_path):
-    ok_before = client.get("/v1/whoami", headers={"X-Participant": "x"}).json()
+    ok_before = client.get("/v1/whoami", headers={"X-Participant": "kim"}).json()
     assert ok_before["ok"]  # no tokens.json yet -> trusted mode
-    (tmp_path / "tokens.json").write_text(json.dumps({"x": "s3cret"}), encoding="utf-8")
-    denied = client.get("/v1/whoami", headers={"X-Participant": "x"})
+    (tmp_path / "tokens.json").write_text(json.dumps({"kim": "s3cret"}), encoding="utf-8")
+    denied = client.get("/v1/whoami", headers={"X-Participant": "kim"})
     assert denied.status_code == 401
-    allowed = client.get("/v1/whoami", headers={"X-Participant": "x", "X-Token": "s3cret"}).json()
+    allowed = client.get("/v1/whoami", headers={"X-Participant": "kim", "X-Token": "s3cret"}).json()
     assert allowed["ok"]
     # agents are untouched; an un-listed HUMAN is refused once tokens.json exists (human #34)
     assert client.get("/v1/whoami", headers={"X-Participant": "arch"}).json()["ok"]
@@ -141,16 +141,16 @@ def test_asks_on_closed_projects_disappear(client, rig):
 # ----------------------------------------------------------------------- /ui/me
 
 def test_ui_me_renders_and_replies(client, rig, published, ui_prefix):
-    client.post("/v1/messages", json={"ticket_id": rig["epic"], "kind": "question", "to": "x",
+    client.post("/v1/messages", json={"ticket_id": rig["epic"], "kind": "question", "to": "kim",
                                       "text": "your call on the auth boundary?"},
                 headers={"X-Participant": "sam"})
-    page = client.get(f"{ui_prefix}/me", params={"as": "x"})
+    page = client.get(f"{ui_prefix}/me", params={"as": "kim"})
     assert page.status_code == 200 and "auth boundary" in page.text
-    r = client.post(f"{ui_prefix}/me/message", data={"as_": "x", "ticket_id": rig["epic"], "to": "sam",
+    r = client.post(f"{ui_prefix}/me/message", data={"as_": "kim", "ticket_id": rig["epic"], "to": "sam",
                                             "kind": "answer", "text": "option B, keep it server-side"},
                     follow_redirects=False)
     assert r.status_code == 303
-    assert published[-1][:3] == ("x", "sam", "answer")
+    assert published[-1][:3] == ("kim", "sam", "answer")
     thread = client.get("/v1/messages", params={"ticket_id": rig["epic"]},
                         headers={"X-Participant": "sam"}).json()["value"]
     assert any("option B" in m["text"] for m in thread)
@@ -168,8 +168,7 @@ def test_ui_me_gate_answer(client, rig, published, ui_prefix):
                         headers={"X-Participant": "arch"}).json()["ok"]
     client.post(f"/v1/gates/{rig['epic']}/design_signoff/open", json={"note": "n"},
                 headers={"X-Participant": "arch"})
-    page = client.get(f"{ui_prefix}/me", params={"as": "sam"})
-    assert "design_signoff" in page.text
+    # s-aa76c83998: the legacy /me page no longer lists gates; the answer route stays
     r = client.post(f"{ui_prefix}/me/gate", data={"as_": "sam", "ticket_id": rig["epic"],
                                          "gate": "design_signoff", "answer": "signed"},
                     follow_redirects=False)

@@ -12,9 +12,10 @@ os.environ.setdefault("EDP8_EMBEDDER", "none")
 import pytest
 from fastapi.testclient import TestClient
 
+from asks_support import serve
 from edp8 import attention, broker_adapter, notifications, topics, views
 from edp8.board import Board
-from edp8.schemas import OBJECT_TYPES, Check, DocType, FixProposal, Gate, MessageKind, Role, TicketKind, WorkType
+from edp8.schemas import AccessRequest, Check, TicketStatus, DocType, FixProposal, Gate, MessageKind, Role, TicketKind, WorkType
 from edp8.service import create_app
 from edp8.store import Store, new_id
 
@@ -75,97 +76,79 @@ def test_a_note_or_an_agent_addressed_status_is_not_an_item(rig):
     assert attention.items(b, owner) == []
 
 
-@pytest.mark.parametrize("gate,where", [(Gate.scope, ("actions", "decisions")),
-                                        (Gate.demo, ("actions", "decisions")),
-                                        (Gate.design_signoff, ("design", "signoff"))])
-def test_owner_gates_land_on_their_opener(rig, gate, where):
-    b, owner, other, arch, epic, story = rig
-    ready_for_signoff(b, arch, epic)
-    ev = b.gate_open(epic.id, gate)
-    row = only(attention.items(b, owner), id=ev.id)
-    assert row["kind"] == "gate" and row["item"]["gate"] == gate.value
-    assert (row["tab"], row["section"]) == where and row["ticket"] is None
-    assert row["url"] == f"/ui/epic/{epic.id}?request={ev.id}"
-    assert attention.items(b, other) == []  # not their epic: owner scoping is the gate rule's
-
-
-def test_a_gate_on_a_child_ticket_goes_through_work_then_the_ticket(rig):
-    b, owner, _, _, epic, story = rig
-    ev = b.gate_open(story.id, Gate.scope)
-    row = only(attention.items(b, owner), id=ev.id)
-    assert (row["tab"], row["section"], row["ticket"]["id"]) == ("work", "tickets", story.id)
-    assert row["at"] == {"tab": "actions", "section": "decisions"}
-
-
-@pytest.mark.parametrize("doc_type,where", [(DocType.design, ("design", "signoff")),
-                                            (DocType.report, ("files", "evidence"))])
-def test_signoffs_land_on_design_or_files(rig, doc_type, where):
-    b, owner, _, arch, epic, _ = rig  # noqa
-    eng = b.participant_create("agent", Role.engineer, "eng")
-    story = b.ticket_create(arch, kind=TicketKind.story, work_type=WorkType.feature, title="Sheet",
-                            parent_id=epic.id, assignee=eng.id)
-    c = b.criterion_create(owner, ticket_id=story.id, text="owner signs", check=Check.look, checked_by="owner",
-                           override_reason="the owner rules this one")
-    doc = b.doc_create(eng if doc_type == DocType.report else arch, doc_type=doc_type, title="evidence",
-                       body_md="# e", scope=story.id)
-    b.criterion_update(eng, c.id, evidence_ref=doc.id)
-    row = only(attention.items(b, owner), id=c.id)
-    assert row["kind"] == "signoff" and row["item"] == {"type": "criterion", "id": c.id, "doc": doc.id}
-    assert (row["tab"], row["section"], row["ticket"]["id"]) == ("work", "tickets", story.id)
-    assert (row["at"]["tab"], row["at"]["section"]) == where  # on the ticket page: its Design / Files opener
-    query = f"?doc={doc.id}" if doc_type == DocType.design else ""  # evidence opens the ticket's ruling drawer
-    assert row["url"] == f"/ui/ticket/{story.id}{query}#{c.id}"
-    # t-77c3a55b75 (owner m-0e6940fe2c): the item says what the owner decides, the words the ruling drawer heads with
-    assert row["ask"] == "Accept “Sheet” as meeting this criterion?" == views.signoff_ask(story)
-
-
-def test_a_gate_item_asks_its_question_even_when_stored_blank(rig):
-    """t-77c3a55b75: a gate item carries its note as `ask`; a legacy gate stored blank asks 0df23fa's generated question."""
-    from edp8.schemas import EventKind
-    b, owner, _, _, epic, story = rig
-    ev = b.gate_open(story.id, Gate.scope, note="Split Ship sheet in two?")
-    assert only(attention.items(b, owner), id=ev.id)["ask"] == "Split Ship sheet in two?"
-    legacy = b._emit(story.id, EventKind.gate_opened, {"gate": Gate.demo, "by": "arch", "note": ""})
-    ask = only(attention.items(b, owner), id=legacy.id)["ask"]
-    assert ask == b.gate_question(story.id, Gate.demo) and "Ship sheet" in ask
-
-
 def _help_topic(b, owner):
     from edp8 import help as help_
     return b.ticket(help_.ask(b, owner, "Board is slow")["topic"]["id"])
 
 
-def test_a_topic_ask_and_a_fix_proposal_live_on_the_topic(rig):
-    b, owner, other, arch, _, _ = rig
-    t = _help_topic(b, owner)
-    ask = b.message_send(arch, ticket_id=t.id, kind=MessageKind.question, text="which port?", to=owner.id)
-    fix = FixProposal(id=new_id("fix"), created_by="doctor", topic_id=t.id,
-                      action={"kind": "service.restart", "service": "board"}, effect="restart the board",
-                      request={"method": "POST", "path": "/v1/admin/services/board/restart", "body": {}})
-    b.store.put("fix", fix)
-    rows = attention.items(b, owner)
-    a, f = only(rows, id=ask.id), only(rows, id=fix.id)
-    assert a["scope"]["type"] == f["scope"]["type"] == "help" and a["scope"]["id"] == t.id
-    assert (a["tab"], a["section"]) == ("thread", "asks") and a["url"] == f"/ui/library/topics/{t.id}#{ask.id}"
-    assert f["kind"] == "fix" and (f["tab"], f["section"]) == ("fixes", "fixes")
-    assert f["url"] == f"/ui/library/topics/{t.id}#{fix.id}"
-    assert all(r["kind"] != "fix" for r in attention.items(b, other))  # not an admin
-    b.store.put("fix", fix.model_copy(update={"status": "rejected"}))
-    assert all(r["kind"] != "fix" for r in attention.items(b, owner))
-
-
-@pytest.mark.skipif("access_request" not in OBJECT_TYPES, reason="t-882e4d2eeb not landed")
-def test_a_pending_access_request_reaches_admins_only(rig):
+def test_the_retired_attention_kinds_are_gone(rig):
+    """s-aa76c83998: a gate, a sign-off, a fix proposal and an access request are no longer attention items."""
     from edp8.schemas import AccessRequest
-    b, owner, other, *_ = rig
-    req = AccessRequest(id=new_id("ar"), created_by="anonymous", name="Sam", role_wanted="owner")
-    b.store.put("access_request", req)
-    row = only(attention.items(b, owner), id=req.id)
-    assert row["scope"]["type"] == "admin" and (row["tab"], row["section"]) == ("teammates", "requests")
-    assert row["url"] == f"/ui/admin?tab=teammates#{req.id}" and "Sam" in row["label"]
-    assert attention.items(b, other) == []
-    b.store.put("access_request", req.model_copy(update={"status": "denied"}))
+    b, owner, _, arch, epic, story = rig
+    assert attention.KINDS == ("ask",)
+    ready_for_signoff(b, arch, epic)
+    b.gate_open(epic.id, Gate.design_signoff)
+    t = _help_topic(b, owner)
+    b.store.put("fix", FixProposal(id=new_id("fix"), created_by="doctor", topic_id=t.id,
+                                   action={"kind": "service.restart", "service": "board"}, effect="restart",
+                                   request={"method": "POST", "path": "/x", "body": {}}))
+    b.store.put("access_request", AccessRequest(id=new_id("ar"), created_by="anonymous", name="Sam",
+                                                role_wanted="owner"))
     assert attention.items(b, owner) == []
+
+
+def test_a_gate_reaches_the_owner_as_a_chat_message_and_settles_with_it(rig):
+    b, owner, _, _, epic, story = rig
+    ev = b.gate_open(story.id, Gate.scope, note="Split Ship sheet in two?")
+    m = b.store.get("message", ev.data["notice"])
+    assert m.ticket_id == story.id and m.to == owner.id and m.kind == MessageKind.question
+    assert m.created_by == "board" and "Split Ship sheet in two?" in m.text
+    assert only(attention.items(b, owner), id=m.id)["kind"] == "ask"
+    b.gate_answer(owner, story.id, Gate.scope, "approved")
+    assert attention.items(b, owner) == []  # answering the gate settles its notice
+
+
+def test_a_closed_gate_settles_its_notice(rig):
+    b, owner, _, arch, epic, story = rig
+    ev = b.gate_open(story.id, Gate.scope)
+    assert len(attention.items(b, owner)) == 1
+    b.ticket_update(arch, story.id, status=TicketStatus.dropped)
+    assert attention.items(b, owner) == []
+    assert ev.data["notice"]
+
+
+def test_the_design_signoff_gate_posts_no_message(rig):
+    b, owner, _, arch, epic, _ = rig
+    ready_for_signoff(b, arch, epic)
+    ev = b.gate_open(epic.id, Gate.design_signoff)
+    assert "notice" not in ev.data and attention.items(b, owner) == []
+
+
+def _access_topics(b):
+    from edp8.board import is_access
+    return [t for t in b.store.query("ticket", {"kind": "topic"}, limit=-1) if is_access(t)]
+
+
+def test_an_access_request_posts_to_one_standing_topic_and_settles_when_decided(rig):
+    from edp8.admin import access
+    b, owner, other, *_ = rig
+    reqs = [AccessRequest(id=new_id("ar"), created_by="anonymous", name=n, role_wanted="owner")
+            for n in ("Sam", "Kim", "Lee")]
+    for q in reqs:
+        b.store.put("access_request", q)
+        access._notify_owner(b, q)
+    (topic,) = _access_topics(b)  # opened once, however many requests
+    assert topic.title == "Access requests" and topic.tags == ["access-requests"]
+    assert not any(t.id == topic.id for t in topics.list_view(b))  # not a Library topic
+    rows = attention.items(b, owner)
+    assert len(rows) == 3 and all(r["scope"]["id"] == topic.id for r in rows)
+    access._settle_notice(b, reqs[0].id, "approved")
+    access._settle_notice(b, reqs[1].id, "denied")
+    left = attention.items(b, owner)
+    assert len(left) == 1 and reqs[2].id in b.store.get("message", left[0]["id"]).text
+    assert attention.items(b, other) == []
+    with pytest.raises(Exception, match="access-requests"):  # the tag cannot be spoofed on an ordinary ticket
+        b.ticket_create(owner, kind=TicketKind.topic, work_type=WorkType.knowledge, title="x", tags=["access-requests"])
 
 
 # ------------------------------------------------------------------ clearing + rollup
@@ -173,11 +156,9 @@ def test_a_pending_access_request_reaches_admins_only(rig):
 def test_an_item_clears_only_when_answered(rig):
     b, owner, _, arch, epic, _ = rig
     q = b.message_send(arch, ticket_id=epic.id, kind=MessageKind.question, text="?", to=owner.id)
-    ev = b.gate_open(epic.id, Gate.scope)
     b.thread(epic.id)  # reading the thread (opening the item) is not answering it
-    assert {r["id"] for r in attention.items(b, owner)} == {q.id, ev.id}
+    assert {r["id"] for r in attention.items(b, owner)} == {q.id}
     b.message_send(owner, ticket_id=epic.id, kind=MessageKind.answer, text="yes", to=arch.id, reply_to=q.id)
-    b.gate_answer(owner, epic.id, Gate.scope, "approved")
     assert attention.items(b, owner) == []
 
 
@@ -186,17 +167,16 @@ def test_rollup_counts_every_hop_and_writes_the_reason(rig):
     t = _help_topic(b, owner)
     b.message_send(arch, ticket_id=story.id, kind=MessageKind.question, text="1", to=owner.id)
     b.message_send(arch, ticket_id=story.id, kind=MessageKind.question, text="2", to=owner.id)
-    ready_for_signoff(b, arch, epic)
-    b.gate_open(epic.id, Gate.design_signoff)
+    b.message_send(arch, ticket_id=epic.id, kind=MessageKind.question, text="x", to=owner.id)
     b.message_send(arch, ticket_id=t.id, kind=MessageKind.question, text="3", to=owner.id)
     lib = topics.create(b, owner, title="Rendering")["topic"]
     b.message_send(arch, ticket_id=lib.id, kind=MessageKind.question, text="4", to=owner.id)
     roll = attention.rollup(attention.items(b, owner))
     assert roll["counts"] == {"total": 5, "epics": 3, "topics": 1, "help": 1, "admin": 0}
     e = only(roll["scopes"], id=epic.id)
-    assert e["count"] == 3 and e["reason"] == "2 questions, 1 design sign-off"
-    assert e["tabs"] == {"work": 2, "design": 1}
-    assert e["sections"] == {"work/tickets": 2, "design/signoff": 1} and e["tickets"] == {story.id: 2}
+    assert e["count"] == 3 and e["reason"] == "3 questions"
+    assert e["tabs"] == {"work": 2, "thread": 1}
+    assert e["sections"] == {"work/tickets": 2, "thread/asks": 1} and e["tickets"] == {story.id: 2}
     row = only(views.epics_summary(b, owner), id=epic.id)
     assert row["attention"]["count"] == 3 and row["attention"]["reason"] == e["reason"]
 
@@ -226,14 +206,11 @@ def test_every_surface_moves_with_attention_items(rig, monkeypatch):
     cursor = notifications.attention(b, owner)["cursor"]
     q = b.message_send(arch, ticket_id=epic.id, kind=MessageKind.question, text="?", to=owner.id)
     assert views.summary_for(b, owner)["counts"]["waiting_on_you"] == 1
-    assert len(views.decisions_for(b, owner)["questions"]) == 1
     assert len(notifications.attention(b, owner, since=cursor)["requests"]) == 1
     assert views.epics_summary(b, owner)[0]["attention"]["count"] == 1
     monkeypatch.setattr(attention, "items", lambda board, viewer: [])  # the one derivation says: nothing
     assert views.summary_for(b, owner)["counts"]["waiting_on_you"] == 0
     assert views.summary_for(b, owner)["attention"]["total"] == 0
-    assert views.decisions_for(b, owner) == {"signoffs": [], "questions": [], "gates": [],
-                                             "counts": {"signoffs": 0, "questions": 0, "gates": 0}}
     assert notifications.attention(b, owner, since=cursor)["requests"] == []
     assert views.epics_summary(b, owner)[0]["attention"] is None
     assert not views.conversations_for(b, owner) or not any(r["unread"] for r in views.conversations_for(b, owner))
@@ -243,7 +220,7 @@ def test_every_surface_moves_with_attention_items(rig, monkeypatch):
 # The primitive rules attention.items composes; outside their own definitions only attention.py may call them among
 # the modules that serve people's attention surfaces. Agents' own inbox (board.inbox via /v1/inbox, context,
 # context_delta, close_check) is the ask rule itself, the one attention reads.
-_RULES = {"inbox", "_owner_gates", "pending_signoffs"}
+_RULES = {"inbox"}
 _SURFACES = ("views.py", "notifications.py", "api_views.py", "api_doctor.py", "ui.py")
 
 
@@ -267,13 +244,13 @@ def _calls(path: Path) -> list[tuple[str, str]]:
 def test_no_second_attention_rule_exists():
     offenders = {name: calls for name in _SURFACES if (calls := _calls(SRC / name))}
     assert offenders == {}, f"compute attention through attention.items, not a rule of your own: {offenders}"
-    assert {c for _, c in _calls(SRC / "attention.py")} >= {"inbox", "_owner_gates", "pending_signoffs"}
+    assert {c for _, c in _calls(SRC / "attention.py")} >= {"inbox"}
 
 
 def test_a_task_item_sits_on_its_own_work_row(rig):
     """The epic's Work tree lists tasks as rows under their story, so a task's item names the task itself."""
     b, owner, _, arch, epic, story = rig
-    task = b.ticket_create(arch, kind=TicketKind.task, work_type=WorkType.feature, title="Sub", parent_id=story.id)
+    task = b.ticket_create(arch, kind=TicketKind.task, work_type=WorkType.feature, title="Sub", parent_id=story.id, serves=serve(b, story.id))
     q = b.message_send(arch, ticket_id=task.id, kind=MessageKind.question, text="?", to=owner.id)
     row = only(attention.items(b, owner), id=q.id)
     assert row["ticket"]["id"] == task.id and row["scope"]["id"] == epic.id

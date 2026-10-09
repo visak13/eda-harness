@@ -78,7 +78,8 @@ def test_role_address_resolves_to_this_epics_seat_only(client, board, two_epics,
     arch_a, arch_b = board.participant(f"architect.{a}"), board.participant(f"architect.{b}")
     ev = [e for _, e in board.store.events_since(0) if e.kind == EventKind.message_sent][-1]
     assert board.relevant(ev, arch_a) and not board.relevant(ev, arch_b)
-    assert [m["id"] for m in board.inbox(arch_a)] == [r["value"]["id"]]
+    ids = [m["id"] for m in board.inbox(arch_a)]  # S4: the owner's question also lands as an asks-ledger row
+    assert r["value"]["id"] in ids and all(i == r["value"]["id"] or i.startswith("ask-") for i in ids)
     assert board.inbox(arch_b) == []
 
 
@@ -205,11 +206,10 @@ def _spawn(**kw):
     return ALL_TOOLS["spawn"].handler(ALL_TOOLS["spawn"].args_model(**kw))
 
 
-def test_spawn_refuses_second_architect_while_resident_is_up(client, spawn_rig):
+def test_spawn_of_a_second_architect_goes_ahead_and_names_the_resident(client, spawn_rig):
     out = _spawn(role="architect", ticket_id=spawn_rig["s"])
-    assert out["ok"] is False and out["error"]["code"] == "conflict"
-    assert f"architect.{spawn_rig['a']}" in out["error"]["message"] and "to='architect'" in out["hint"]
-    assert spawn_rig["spawned"] == []
+    assert out["ok"] is True, out  # design-63db8a7d42 I: advice, not a refusal
+    assert f"architect.{spawn_rig['a']}" in out["hint"] and "to='architect'" in out["hint"]
 
 
 def test_spawn_never_steals_a_live_assignee(client, spawn_rig):

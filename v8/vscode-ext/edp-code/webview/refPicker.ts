@@ -92,7 +92,7 @@ export class RefPicker {
       li.id = `${this.ids.opt}-${i}`;
       li.setAttribute('role', 'option');
       li.setAttribute('aria-selected', String(i === this.active));
-      li.setAttribute('aria-label', `${kindLabel(r.kind)} ${r.id} ${r.title}${r.group === 'board' ? ' (other work)' : ''}`);
+      li.setAttribute('aria-label', `${kindLabel(r.kind)} ${r.id} ${r.title}${r.kind === 'artifact' ? ` in ${r.epic ?? 'no epic'}` : ''}${r.group === 'board' ? ' (other work)' : ''}`);
       li.dataset.ref = r.id;
       li.dataset.group = r.group;
       const h = document.createElement('span');
@@ -100,7 +100,7 @@ export class RefPicker {
       h.textContent = `${kindLabel(r.kind)} $${r.id}`;
       const d = document.createElement('span');
       d.className = 'd';
-      d.textContent = r.title;
+      d.textContent = r.kind === 'artifact' ? `${r.title} · ${r.epic ?? 'no epic'}` : r.title;
       li.append(h, d);
       li.addEventListener('mousedown', e => { e.preventDefault(); this.active = i; this.accept(); });
       return li;

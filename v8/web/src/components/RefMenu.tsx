@@ -17,11 +17,11 @@ export function RefMenu({ refs, listId, className, activeClass, handleClass, lab
     <ul id={listId} className={className} role="listbox" aria-label="Board objects" data-testid={testId}>
       {refs.menu.items.map((r: RefRow, i) => (
         <li key={r.id} id={`${listId}-${i}`} role="option" aria-selected={i === refs.menu.index}
-          aria-label={`${kindLabel(r.kind)} ${r.id} ${r.title}${r.group === "board" ? " (other work)" : ""}`}
+          aria-label={`${kindLabel(r.kind)} ${r.id} ${r.title}${r.kind === "artifact" ? ` in ${r.epic ?? "no epic"}` : ""}${r.group === "board" ? " (other work)" : ""}`}
           className={i === refs.menu.index ? activeClass : ""} data-ref={r.id} data-group={r.group}
           onMouseDown={(e) => { e.preventDefault(); refs.accept(r); }}>
           <span className={handleClass} data-kind={r.kind}>{kindLabel(r.kind)} ${r.id}</span>
-          <span className={labelClass}>{r.title}</span>
+          <span className={labelClass}>{r.title}{r.kind === "artifact" ? <span data-testid="ref-epic"> · {r.epic ?? "no epic"}</span> : null}</span>
         </li>
       ))}
     </ul>

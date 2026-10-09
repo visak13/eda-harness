@@ -23,8 +23,11 @@ The guarantees the scripts gave are kept:
   same way, to the second.
 
 code-server itself is found by the ``code_server.path`` setting, else (a source checkout) the pinned install
-``scripts/install-code-server.ps1`` leaves under ``.tools/code-server``, else ``code-server`` on PATH. Not
-found: the state is ``not_installed`` with the official per-OS install command.
+``scripts/install-code-server.ps1`` leaves under ``.tools/code-server``, else the pinned standalone release this
+module downloaded under ``<code data>/server/<version>``, else ``code-server`` on PATH. On Windows x64 nothing
+has to be installed: ``heronry start code`` downloads the release ``vscode-ext/code-server.lock.json`` pins
+(it bundles its own node), checks its sha256 BEFORE unpacking, and runs it with that node, so neither node,
+npm nor python needs to be on PATH. Other platforms still need their own code-server (``code_server.path``).
 """
 
 from __future__ import annotations
@@ -32,16 +35,21 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import logging
 import os
+import platform
 import re
 import secrets
+import shutil
 import socket
 import sys
+import tarfile
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from dataclasses import replace as _replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -51,6 +59,8 @@ from edp_contracts.proc import ProcId, assign_job, detach, job_name, kill_tree, 
 from edp_contracts.toolpath import find_tool, tool_argv
 
 from . import run_state, settings
+
+log = logging.getLogger("edp8.code_service")
 
 SERVICE = "code"
 GUARD_MODULE = "edp8.code_guard"
@@ -65,9 +75,10 @@ _SCRUB = ("LOG_LEVEL", "PASSWORD", "HASHED_PASSWORD", "CODE_SERVER_COOKIE_SUFFIX
 _HOME_KEYS = ("EDP_HOME", "EDP8_HOME", "EDP8_DATA", "EDP8_RUN_DIR", "EDP_CONFIG_DIR")
 _PROBE_TIMEOUT_S = 3.0
 
+#: The hint where there is no pinned download for this OS/CPU (Windows x64 downloads the pinned release instead).
 INSTALL_HINTS = {
-    "win32": "npm install -g code-server  (Node.js 22; see https://coder.com/docs/code-server/install#windows), "
-             "or set code_server.path",
+    "win32": "no code-server here and no download for this host (not x64, or EDP_CODE_NO_DOWNLOAD is set): set "
+             "code_server.path to an unpacked code-server release folder",
     "darwin": "brew install code-server  (see https://coder.com/docs/code-server/install#macos), or set "
               "code_server.path",
     "linux": "curl -fsSL https://code-server.dev/install.sh | sh  (see https://coder.com/docs/code-server/install), "
@@ -85,8 +96,15 @@ class CodeError(RuntimeError):
         self.exit = exit
 
 
-def install_hint(platform: str | None = None) -> str:
-    return INSTALL_HINTS.get(platform or sys.platform, INSTALL_HINTS["linux"])
+def install_hint(platform_: str | None = None) -> str:
+    """What to tell a user whose host has no code-server yet: where the pinned download is on Windows x64, else
+    the per-OS way to get one (never an npm command: a Windows host needs no node)."""
+    if platform_ is None:
+        pin = pinned_download()
+        if pin is not None:
+            return (f"nothing to install: the first start downloads the pinned code-server {pin['version']} "
+                    f"({pin['size'] // (1024 * 1024)} MB, with its own node) and checks its sha256")
+    return INSTALL_HINTS.get(platform_ or sys.platform, INSTALL_HINTS["linux"])
 
 
 # ------------------------------------------------------------------------------------------ settings
@@ -132,6 +150,15 @@ def _board_url() -> str:
     return str(launcher.url("board") or f"http://{LOOPBACK}:9400").rstrip("/")
 
 
+def _remote_url(value: Any) -> bool:
+    """A board URL the user chose that is not on this machine (loopback ones are ours and follow the port)."""
+    try:
+        host = urllib.parse.urlsplit(str(value or "")).hostname or ""
+    except ValueError:
+        return False
+    return bool(host) and host.lower() not in (LOOPBACK, "localhost", "::1")
+
+
 def _origins() -> list[str]:
     """The guard's WebSocket Origin allowlist beyond its own two: the board, and its public origin."""
     from . import launcher
@@ -173,6 +200,164 @@ def _pinned() -> Install | None:
     return Install([str(node), str(server)], str(install), str(lock["version"]), "pinned", lock.get("sha256"))
 
 
+# ------------------------------------------------------------------------------------------ pinned download
+
+_LOCK_NAME = "code-server.lock.json"
+
+
+def _lock_files() -> list[Path]:
+    """Where the pin lives: the wheel's package data, else a source checkout's vscode-ext."""
+    out = [Path(__file__).with_name("code_server.lock.json")]
+    home = settings.home()
+    if home is not None:
+        out.append(home / "vscode-ext" / _LOCK_NAME)
+    from .materialise import checkout_root
+    root = checkout_root()  # dev mode: the checkout an editable install runs from
+    if root is not None:
+        out.append(root / "vscode-ext" / _LOCK_NAME)
+    return out
+
+
+def pinned_download() -> dict[str, Any] | None:
+    """The pinned standalone release this host can download, or None (not Windows x64, or no valid lock). Keys:
+    version, asset, url (https), size, sha256, server_dir, node (the bundled node, relative to server_dir)."""
+    if sys.platform != "win32" or platform.machine().lower() not in ("amd64", "x86_64"):
+        return None
+    if str(settings.environ_copy().get("EDP_CODE_NO_DOWNLOAD") or "").strip().lower() in ("1", "true", "yes", "on"):
+        return None  # an offline host (or a drill) opts out of the download
+    for f in _lock_files():
+        try:
+            lock = json.loads(f.read_text(encoding="utf-8-sig"))
+            ok = (re.fullmatch(r"\d+\.\d+\.\d+", str(lock["version"]))
+                  and re.fullmatch(r"[0-9a-f]{64}", str(lock["sha256"]).lower())
+                  and str(lock["url"]).startswith("https://") and int(lock["size"]) > 0
+                  and all(isinstance(lock[k], str) and lock[k] and ".." not in lock[k] and not Path(lock[k]).is_absolute()
+                          for k in ("asset", "server_dir", "node")))
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if ok:
+            return {**lock, "sha256": str(lock["sha256"]).lower(), "size": int(lock["size"])}
+    return None
+
+
+def server_root() -> Path:
+    """Where downloaded releases live: ``<code data>/server/<version>`` (older versions stay, the N-1 rollback)."""
+    return data_root() / "server"
+
+
+def _downloaded() -> Install | None:
+    """The pinned release already unpacked and verified under server_root(); None when absent or half-done."""
+    pin = pinned_download()
+    if pin is None:
+        return None
+    dest = server_root() / pin["version"]
+    server = dest / pin["server_dir"]
+    node = server / pin["node"]
+    try:
+        marker = (dest / ".verified").read_text(encoding="ascii").strip()
+    except OSError:
+        return None
+    if marker != pin["sha256"] or not node.is_file():
+        return None
+    return Install([str(node), str(server)], str(dest), pin["version"], "download", pin["sha256"])
+
+
+def _http_fetch(url_: str, part: Path, size: int, say: Any) -> None:
+    """Stream ``url_`` to ``part`` (https only; the sha256 is checked by the caller before anything is unpacked)."""
+    if not url_.startswith("https://"):
+        raise CodeError(f"the lock's url must be https: {url_}")
+    req = urllib.request.Request(url_, headers={"User-Agent": "heronry-code-service"})
+    done, step = 0, max(size // 10, 1)
+    next_say = step
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r, open(part, "wb") as out:  # nosec B310  # https only, sha256-checked after
+            while chunk := r.read(min(1 << 20, size + 1 - done)):  # never a byte past the pinned size + 1
+                out.write(chunk)
+                done += len(chunk)
+                if done > size:
+                    raise CodeError(f"the download from {url_} is larger than the pinned {size} bytes: stopped, nothing unpacked")
+                if done >= next_say:
+                    say(f"downloading code-server: {min(done * 100 // size, 100)}% ({done // (1 << 20)} of {size // (1 << 20)} MB)")
+                    next_say += step
+    except (urllib.error.URLError, OSError, TimeoutError) as e:
+        raise CodeError(f"could not download code-server from {url_}: {e}") from None
+
+
+#: the downloader; a test replaces it (no 200 MB fetch in a unit test)
+_FETCH = _http_fetch
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(1 << 20):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _unpack(archive: Path, into: Path) -> None:
+    """Unpack a release tarball into ``into`` through tarfile's ``data`` filter: no absolute path, no ``..``, no
+    link leaving the tree, no device node, no setuid bit (zip-slip safe)."""
+    into.mkdir(parents=True, exist_ok=True)
+    try:
+        with tarfile.open(archive, "r:gz") as tf:
+            tf.extractall(into, filter="data")
+    except (tarfile.TarError, OSError, EOFError) as e:
+        raise CodeError(f"could not unpack {archive.name}: {e}") from None
+
+
+def ensure_pinned(say: Any = None) -> Install:
+    """The pinned code-server, downloaded and verified when not already there. Order: the cached archive (hash
+    checked) else a download; sha256 BEFORE unpacking (a mismatch deletes the file and unpacks nothing); unpack
+    into ``<version>.tmp``, then rename, so ``<version>`` exists complete (with its ``.verified`` marker) or not
+    at all. Never looks up "latest"; leaves other versions alone."""
+    tell = say or (lambda _m: None)
+    have = _downloaded()
+    if have is not None:
+        return have
+    pin = pinned_download()
+    if pin is None:
+        raise CodeError(f"no pinned code-server download for this host: {install_hint(sys.platform)}")
+    dest = server_root() / pin["version"]
+    cache = data_root() / "download"
+    cache.mkdir(parents=True, exist_ok=True)
+    archive = cache / pin["asset"]
+    if archive.is_file() and _sha256_file(archive) != pin["sha256"]:
+        archive.unlink()
+    if not archive.is_file():
+        tell(f"downloading the pinned code-server {pin['version']} ({pin['size'] // (1 << 20)} MB) from {pin['url']}")
+        part = archive.with_name(archive.name + ".part")
+        part.unlink(missing_ok=True)
+        _FETCH(pin["url"], part, pin["size"], tell)
+        got = _sha256_file(part)
+        if got != pin["sha256"]:
+            part.unlink(missing_ok=True)
+            raise CodeError(f"sha256 mismatch for {pin['asset']} (lock {pin['sha256']}, download {got}); nothing was unpacked")
+        os.replace(part, archive)
+    tell(f"sha256 verified: {pin['sha256']}")
+    tmp = dest.with_name(dest.name + ".tmp")
+    if tmp.exists():
+        shutil.rmtree(tmp, ignore_errors=True)
+    tell(f"unpacking code-server {pin['version']} (a few minutes)")
+    try:
+        _unpack(archive, tmp)
+        if not (tmp / pin["server_dir"] / pin["node"]).is_file():
+            raise CodeError(f"the archive has no {pin['server_dir']}/{pin['node']}")
+        (tmp / ".verified").write_text(pin["sha256"], encoding="ascii")
+        if dest.exists():  # same version present but unverified (a half-done earlier unpack): replace it
+            shutil.rmtree(dest, ignore_errors=True)
+        os.replace(tmp, dest)
+    except BaseException:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    archive.unlink(missing_ok=True)  # the unpacked tree is the install; the 200 MB tarball is not kept
+    installed = _downloaded()
+    if installed is None:
+        raise CodeError(f"code-server {pin['version']} was unpacked under {dest} but did not verify")
+    tell(f"code-server {pin['version']} installed at {dest}")
+    return installed
+
+
 def _release_version(d: Path) -> str | None:
     """A code-server release dir's version, from its package.json."""
     with contextlib.suppress(OSError, ValueError):
@@ -209,16 +394,52 @@ def _from_path(path: str, source: str) -> Install | None:
         return None
 
 
+#: (argv, mtime, size) → the version `--version` printed, or None: a status poll never re-runs the probe
+_PROBED: dict[tuple[Any, ...], str | None] = {}
+_PROBE_RUN_S = 20.0
+
+
+def probe_version(inst: Install) -> str | None:
+    """RC2 item 2 (t-e338298d88): does this code-server run at all? ``<argv> --version`` within 20 s, exit 0 and
+    a version on its first line; else None (a broken npm shim, a missing node, a crash on start)."""
+    from edp_contracts.proc import run_bounded
+    try:
+        st = Path(inst.argv[-1]).stat()
+        key: tuple[Any, ...] = (*inst.argv, st.st_mtime_ns, st.st_size)
+    except OSError:
+        key = (*inst.argv,)
+    if key in _PROBED:
+        return _PROBED[key]
+    version = None
+    try:
+        out = run_bounded([*inst.argv, "--version"], _PROBE_RUN_S, env=server_env())
+        m = re.match(r"\s*v?(\d+\.\d+\.\d+)\b", out.stdout) if out.returncode == 0 else None
+        version = m.group(1) if m else None
+    except (OSError, ValueError):
+        version = None
+    _PROBED[key] = version
+    return version
+
+
 def locate() -> Install | None:
-    """The code-server to run: the ``code_server.path`` setting, else a checkout's pinned build, else PATH."""
+    """The code-server to run: the ``code_server.path`` setting, else a checkout's pinned build, else the pinned
+    release this module downloaded, else PATH. RC2 item 2: a PATH code-server counts only when it runs
+    (``probe_version``); a broken one is passed over, so a start falls through to the pinned download."""
     configured = settings.get("EDP_CODE_SERVER_PATH")
     if configured:
         return _from_path(str(configured), "setting")
-    pinned = _pinned()
+    pinned = _pinned() or _downloaded()
     if pinned is not None:
         return pinned
     found = find_tool("code-server", key="EDP_CODE_SERVER_PATH")
-    return _from_path(found, "path") if found else None
+    inst = _from_path(found, "path") if found else None
+    if inst is None:
+        return None
+    version = probe_version(inst)
+    if version is None:
+        log.info("code-server on PATH (%s) does not run (`--version` failed); passing it over", found)
+        return None
+    return _replace(inst, version=inst.version or version)
 
 
 # ------------------------------------------------------------------------------------------ environment
@@ -324,9 +545,12 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 _OPENER = urllib.request.build_opener(_NoRedirect)
 
 
-def _get(url_: str, cookie: str | None = None, timeout: float = _PROBE_TIMEOUT_S) -> tuple[int, dict[str, str], bytes]:
-    """(status, headers, body) with no redirect followed; (0, {}, b"") when nothing answers."""
-    req = urllib.request.Request(url_, headers={"Cookie": cookie} if cookie else {})
+def _get(url_: str, cookie: str | None = None, timeout: float = _PROBE_TIMEOUT_S,
+         form: str | None = None) -> tuple[int, dict[str, str], bytes]:
+    """(status, headers, body) with no redirect followed; (0, {}, b"") when nothing answers. `form` POSTs it
+    (the guard login, RC2 F5: a token never rides a URL)."""
+    req = urllib.request.Request(url_, headers={"Cookie": cookie} if cookie else {},
+                                 data=form.encode("ascii") if form is not None else None)
     try:
         with _OPENER.open(req, timeout=timeout) as r:
             return r.status, {k.lower(): v for k, v in r.headers.items()}, r.read(65536)
@@ -368,7 +592,7 @@ def workbench(mint_key: str | None, p: int | None = None) -> bool:
     if _get(base + "/")[0] != 401:
         return False
     token, _ = mint_token(mint_key)
-    code, headers, _ = _get(f"{base}{LOGIN_PATH}?t={token}&next=%2F")
+    code, headers, _ = _get(base + LOGIN_PATH, form=f"t={token}&next=%2F")
     m = re.match(rf"^({GUARD_COOKIE}=[^;]+)", headers.get("set-cookie", ""))
     if code != 302 or headers.get("location") != "/" or not m:
         return False
@@ -394,7 +618,8 @@ def _free_port(avoid: int) -> int:
 def status() -> dict[str, Any]:
     """{service, state, port, url, pid, guard_pid, version, installed, install_hint, reason}. state is up (this
     home's guard answers with its recorded code-server alive), down, foreign (another program or home holds
-    the port), or not_installed (down, and no code-server to start)."""
+    the port), or not_installed (down, and no code-server to start and none this host can download). On Windows
+    x64 a missing code-server is just ``down`` with ``downloadable``: the first start downloads the pinned one."""
     p = port()
     rec = record()
     server, guard = _idents(rec)
@@ -402,6 +627,7 @@ def status() -> dict[str, Any]:
     row: dict[str, Any] = {"service": SERVICE, "port": p, "url": url(), "pid": None, "guard_pid": None,
                            "version": rec.get("version") or (inst.version if inst else None),
                            "installed": inst is not None, "install_hint": None if inst else install_hint(),
+                           "downloadable": inst is None and pinned_download() is not None,
                            "autostart": autostart(), "state": "down", "reason": None}
     if _listening(p):
         hid = guard_home_id(p)
@@ -415,7 +641,9 @@ def status() -> dict[str, Any]:
             return row
         row.update(reason="this home's guard answers, but its recorded code-server is gone: heronry restart code")
         return row
-    if inst is None:
+    if inst is None and row["downloadable"]:
+        row.update(reason=f"not running: `heronry start code` first downloads the pinned code-server: {install_hint()}")
+    elif inst is None:
         row.update(state="not_installed", reason=f"code-server is not installed: {install_hint()}")
     else:
         row.update(reason="not running: `heronry start code` starts it")
@@ -455,10 +683,13 @@ def _seed_coder_json() -> str:
 
 
 def _vendor_dir() -> Path | None:
-    """The vendored extension list (a source checkout's vscode-ext); None when absent (an installed wheel)."""
+    """The vendored extension list and the EDP Chat vsix: a source checkout's vscode-ext, else the copy an
+    installed wheel carries as package data (edp8/vscode_ext). None when neither has both list files."""
     home = settings.home()
-    d = home / "vscode-ext" if home is not None else None
-    return d if d is not None and (d / "extensions.txt").is_file() and (d / "extensions.lock.json").is_file() else None
+    for d in ([home / "vscode-ext"] if home is not None else []) + [Path(__file__).with_name("vscode_ext")]:
+        if (d / "extensions.txt").is_file() and (d / "extensions.lock.json").is_file():
+            return d
+    return None
 
 
 def _pins(vendor: Path) -> tuple[list[tuple[str, str]], dict[str, Any]]:
@@ -483,6 +714,20 @@ def _terminal_profiles() -> dict[str, Any]:
         if bash:
             profiles["Git Bash"] = {"path": bash, "args": ["--login", "-i"], "icon": "terminal-bash"}
     return {"terminal.integrated.profiles.windows": profiles, "terminal.integrated.defaultProfile.windows": "PowerShell"}
+
+
+def _read_settings(path: Path) -> dict[str, Any]:
+    """A settings file's keys; an absent or unparsable file reads as empty (the User file keeps its own backup path)."""
+    try:
+        got = json.loads(path.read_text(encoding="utf-8-sig") or "{}")
+    except (OSError, ValueError):
+        return {}
+    return got if isinstance(got, dict) else {}
+
+
+def _write_settings(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def _seed_settings(pins: list[tuple[str, str]], lock: dict[str, Any]) -> str:
@@ -525,6 +770,19 @@ def _seed_settings(pins: list[tuple[str, str]], lock: dict[str, Any]) -> str:
         allowed["edp.edp-code"] = True
         managed["extensions.allowed"] = allowed
     cur.update(managed)
+    # owner m-314348ee1d: the edp-code extension's own default is :9400, but the board's port block moves (this
+    # install runs at 19400). Point it at the running board, unless the user signed in to a remote board (a
+    # non-loopback boardUrl, set by the extension's sign-in link): that choice is theirs and is kept.
+    if not _remote_url(cur.get("edp.boardUrl")):
+        cur["edp.boardUrl"] = board
+    # edp.boardUrl is `scope: machine` in the extension (a workspace must not redirect credentials), and code-server
+    # ignores a machine-scoped key in User settings, so the same value is seeded where it is read.
+    machine = _read_settings(user_dir() / "Machine" / "settings.json")
+    if not _remote_url(machine.get("edp.boardUrl")) and not _remote_url(cur.get("edp.boardUrl")):
+        machine["edp.boardUrl"] = board
+    elif _remote_url(cur.get("edp.boardUrl")) and not _remote_url(machine.get("edp.boardUrl")):
+        machine["edp.boardUrl"] = cur["edp.boardUrl"]  # the sign-in link's choice, kept where it takes effect
+    _write_settings(user_dir() / "Machine" / "settings.json", machine)
     chrome = {"window.menuBarVisibility": "classic", "workbench.activityBar.location": "default",
               "workbench.statusBar.visible": True, "zenMode.restore": False}
     for k, v in chrome.items():
@@ -536,14 +794,13 @@ def _seed_settings(pins: list[tuple[str, str]], lock: dict[str, Any]) -> str:
 def _cli(inst: Install, args: list[str], timeout: float = 600.0) -> tuple[int, list[str]]:
     """code-server in CLI mode (extension installs) with the fleet env stripped and no gallery: with one,
     a vsix's pack/dependencies were fetched from Open VSX unchecked and replaced our files."""
-    import subprocess
-
-    from edp_contracts.proc import hidden_flags
+    from edp_contracts.proc import run_bounded
     env = server_env()
     env["EXTENSIONS_GALLERY"] = "{}"
     argv = [*inst.argv, "--user-data-dir", str(user_dir()), "--extensions-dir", str(ext_dir()), *args]
-    out = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL,
-                         creationflags=hidden_flags())
+    out = run_bounded(argv, timeout, env=env)
+    if out.timed_out:
+        raise CodeError(f"code-server {' '.join(args[:1])} timed out after {timeout:g}s")
     lines = [ln for ln in (out.stdout + "\n" + out.stderr).splitlines()
              if ln.strip() and "DeprecationWarning" not in ln and "trace-deprecation" not in ln]
     return out.returncode, lines
@@ -565,7 +822,9 @@ def _install_extensions(inst: Install, vendor: Path, pins: list[tuple[str, str]]
         f = cache / Path(urllib.parse.urlparse(e["url"]).path).name
         if not f.is_file():
             part = f.with_name(f.name + ".part")
-            with urllib.request.urlopen(e["url"], timeout=120) as r, open(part, "wb") as out:
+            if not str(e["url"]).startswith("https://"):
+                raise CodeError(f"{ext_id}@{ver}: the lock's url must be https")
+            with urllib.request.urlopen(e["url"], timeout=120) as r, open(part, "wb") as out:  # nosec B310  # https only, sha256-checked below
                 while chunk := r.read(1 << 20):
                     out.write(chunk)
             os.replace(part, f)
@@ -649,6 +908,10 @@ def start(*, wait_s: float = 60.0, extensions: bool = True, say=None) -> dict[st
     """Start the code service unless this home's already runs. Returns {service, state: started |
     already_running | not_installed, pid, guard_pid, url, reason}. Raises CodeError on a refusal or a failed
     start (after rolling back what it launched)."""
+    from . import launcher
+    blocked = launcher.update_block()
+    if blocked:
+        raise CodeError(blocked)
     tell = say or (lambda _m: None)
     host = bind_host()
     p = port()
@@ -664,6 +927,8 @@ def start(*, wait_s: float = 60.0, extensions: bool = True, say=None) -> dict[st
             raise CodeError(f"port {p} is held by this home's code guard, but the recorded code-server behind it is "
                             "missing, unverified or not serving the workbench: heronry restart code", exit=3)
         inst = locate()
+        if inst is None and pinned_download() is not None:
+            inst = ensure_pinned(tell)
         if inst is None:
             return {"service": SERVICE, "state": "not_installed", "pid": None, "url": None,
                     "reason": f"code-server is not installed: {install_hint()}", "install_hint": install_hint()}
@@ -803,6 +1068,50 @@ def stop(*, grace: float = 4.0, timeout_s: float = 20.0) -> dict[str, Any]:
     if not survivors:
         _clear_record()
     return {"service": SERVICE, "state": "stopped", "killed": killed, "survivors": [s.to_json() for s in survivors]}
+
+
+EXTENSION_ID = "edp.edp-code"
+
+
+def packaged_extension_version() -> str | None:
+    """The version of the EDP Chat vsix this install carries (read from the vsix itself, whatever the file is called)."""
+    import zipfile
+    vendor = _vendor_dir()
+    vsix = sorted((vendor / "edp-code").glob("*.vsix"), key=lambda p: p.stat().st_mtime, reverse=True) if vendor else []
+    if not vsix:
+        return None
+    try:
+        with zipfile.ZipFile(vsix[0]) as z:
+            return str(json.loads(z.read("extension/package.json").decode("utf-8")).get("version") or "") or None
+    except (OSError, KeyError, ValueError, zipfile.BadZipFile):
+        return None
+
+
+def served_extension_version() -> str | None:
+    """The version of EDP Chat that code-server's extensions dir records (extensions.json), None when it holds none."""
+    try:
+        rows = json.loads((ext_dir() / "extensions.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    for row in rows if isinstance(rows, list) else []:
+        if str(((row or {}).get("identifier") or {}).get("id", "")).lower() == EXTENSION_ID:
+            return str(row.get("version") or "") or None
+    return None
+
+
+def heal_extension() -> dict[str, Any] | None:
+    """After an update the code-server that is still running serves the OLD EDP Chat: the updater that stopped and
+    restarted it was the old version's (qa 0.10.7 -> 0.10.8). Run from the new version at `heronry start`: when the
+    code-server is up and serves a different EDP Chat than the vsix this install carries, install the vsix and
+    restart the code-server once (a start installs it). Touches no other service. None when nothing needed doing."""
+    packaged = packaged_extension_version()
+    if packaged is None or status().get("state") != "up":
+        return None
+    served = served_extension_version()
+    if served == packaged:
+        return None
+    got = restart()
+    return {"service": SERVICE, "state": got.get("state"), "from": served, "to": packaged}
 
 
 def restart(**kw: Any) -> dict[str, Any]:

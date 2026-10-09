@@ -284,7 +284,7 @@ def test_doc_comments_list_review_comments_and_quoting_messages(board, client, e
     assert [r["id"] for r in v2] == [q2]
     every = client.get(f"/v1/docs/{env['doc']}/comments", headers=ENG).json()["value"]
     assert [r["id"] for r in every] == [review["message_id"], q1, q2]
-    assert client.get(f"/v1/docs/{env['doc']}/comments", params={"version": 7}, headers=ENG).status_code == 400
+    assert client.get(f"/v1/docs/{env['doc']}/comments", params={"version": 7}, headers=ENG).status_code == 404  # e0cec S5: not_found is 404 board-wide
 
 
 # ------------------------------------------------------------------------------ agent rendering

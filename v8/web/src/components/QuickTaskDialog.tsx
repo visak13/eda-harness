@@ -4,7 +4,8 @@ import { Link, useNavigate } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createQuickTask, libraryTags } from "../api/endpoints";
 import { parseTags } from "../pages/KnowledgeDetail";
-import { getModels, getPoolCapabilities, modelLabel } from "../api/seats";
+import { getModels, modelLabel } from "../api/seats";
+import { usePoolCapabilities } from "../auth/guest";
 import { clampEffort, SeatPickHead, SeatPickRow, type Effort } from "./SeatPicks";
 import type { ModelCatalog, PoolCapabilities } from "../api/types";
 import { BoardApiError } from "../api/client";
@@ -40,7 +41,7 @@ export function QuickTaskDialog({ open, onClose }: { open: boolean; onClose: () 
   // S-UI: the engineer's effort beside its model (Claude capped at medium)
   const [effortPick, setEffortPick] = useState<Effort>("medium");
   const effort = clampEffort(model, effortPick, catalog?.models);
-  const capsQ = useQuery({ queryKey: ["pool", "capabilities"], queryFn: getPoolCapabilities, retry: false, enabled: open });
+  const capsQ = usePoolCapabilities(open);
   const caps = capsQ.data as PoolCapabilities | undefined;
   const canSpawn = Boolean(caps?.spawn);
   useModalDialog(open, panelRef, titleRef, busy, onClose);
@@ -78,6 +79,8 @@ export function QuickTaskDialog({ open, onClose }: { open: boolean; onClose: () 
         }}
       >
         <h2 className={styles.title}>Quick task</h2>
+        {/* S12-ui2 (qa m-da89ef8294): the New epic dialog's compact layout — only the body scrolls */}
+        <div className={styles.body} data-testid="quick-task-body">
         <label className={ui.sectionLabel} htmlFor="quick-task-title">Title</label>
         <input id="quick-task-title" data-testid="quick-task-title" ref={titleRef} className={ui.input} maxLength={80}
           value={title} disabled={create.isPending} onChange={(e) => setTitle(e.target.value)} aria-describedby="quick-task-title-count" />
@@ -107,7 +110,7 @@ export function QuickTaskDialog({ open, onClose }: { open: boolean; onClose: () 
           </p>
         ) : null}
         <p className={styles.preview} data-testid="quick-task-preview">
-          {canSpawn
+          {capsQ.isPending ? "Checking whether the pool can start a seat…" : canSpawn
             ? `Opens a quick task with your words verbatim, starts an engineer on ${model ? modelLabel(model) : "the default engineer model"} at effort ${effort} and assigns it. The engineer writes a plan and one or two criteria you check; a dot marks it for you when handed off.`
             : `The pool cannot start a seat from here${caps?.reason ? ` (${caps.reason})` : ""}, so no quick task is opened.`}
         </p>
@@ -118,7 +121,8 @@ export function QuickTaskDialog({ open, onClose }: { open: boolean; onClose: () 
             <Link to={`/ticket/${encodeURIComponent(stranded.id)}`} onClick={() => { setStranded(null); onClose(); }}>Open the task</Link>
           </p>
         ) : null}
-        <div className={styles.actions}>
+        </div>
+        <div className={styles.actions} data-testid="quick-task-actions">
           <button type="button" className={ui.button} onClick={onClose} disabled={create.isPending}>Cancel</button>
           <button type="submit" className={`${ui.button} ${ui.buttonPrimary}`} disabled={!ready || create.isPending}
             data-testid="quick-task-create">

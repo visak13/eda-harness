@@ -16,6 +16,7 @@ os.environ.setdefault("EDP8_EMBEDDER", "none")
 
 from datetime import timedelta
 
+from asks_support import serve_rest
 import pytest
 from fastapi.testclient import TestClient
 
@@ -51,7 +52,7 @@ def rig(monkeypatch):
     other = post("/v1/tickets", {"kind": "story", "work_type": "feature", "title": "star map",
                                  "parent_id": epic}, ARCH)["id"]
     task = post("/v1/tickets", {"kind": "task", "work_type": "feature", "title": "ship sheet css",
-                                "parent_id": story}, ARCH)["id"]
+                                "parent_id": story, "serves": serve_rest(client, epic, OWN)}, ARCH)["id"]
     seat = f"engineer.{story}"
     post("/v1/participants", {"type": "agent", "role": "engineer", "handle": seat, "id": seat}, ADMIN)
     # another owner's epic, with its own decision: never listed under this epic

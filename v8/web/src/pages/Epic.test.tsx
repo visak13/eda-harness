@@ -39,6 +39,9 @@ function mount(data: EpicPageData, summary: Record<string, unknown>[] = [], caps
   renderRoute(path, "/epic/:id", <EpicPage />);
 }
 
+const seatRow = (id: string, state: string | null) => ({ id, handle: id, role: id.split(".")[0], state, ticket_id: id.split(".")[1], ticket_title: "t", last_output_at: new Date().toISOString(), presence_stale_since: null, reason: state === "dead" ? "closed by self: done" : "", latest_status: null });
+const seatsAre = (...rows: ReturnType<typeof seatRow>[]) => server.use(http.get("/v1/seats", () => okJson({ seats: rows, people: [], retired: [] })));
+
 const title = () => screen.findByText("Upgrade the board UI", { selector: "h1" });
 async function openAction(key: string) {
   fireEvent.click(screen.getByTestId("actions-open"));
@@ -51,6 +54,33 @@ async function openWork() {
 }
 
 describe("EpicPage", () => {
+  it("m12: a guest's epic page never asks for the owner-only pool capabilities, and logs no 403", async () => {
+    const forbidden: string[] = [];
+    const seen: string[] = [];
+    const onResponse = ({ response, request }: { response: Response; request: Request }) => {
+      if (response.status === 403) forbidden.push(new URL(request.url).pathname);
+    };
+    const onRequest = ({ request }: { request: Request }) => { seen.push(new URL(request.url).pathname); };
+    server.events.on("response:mocked", onResponse);
+    server.events.on("request:start", onRequest);
+    try {
+      server.use(http.get("/v1/whoami", () => okJson({ participant: { id: "gina", handle: "gina", role: "guest", type: "human" }, tickets: [], admin: false })));
+      // the board's real answer to a guest (403): a page that asked would log it
+      mount(page({ board: { ...page().board, epic: { ...page().board.epic, assignee: "architect.epic-1" } } }), [],
+        { ok: false, error: { code: "forbidden", message: "owner only" } });
+      server.use(http.get("/v1/pool/capabilities", () => HttpResponse.json({ ok: false, error: { code: "forbidden", message: "owner only" } }, { status: 403 })));
+      await title();
+      fireEvent.click(screen.getByTestId("actions-open"));
+      await new Promise((r) => setTimeout(r, 300));
+      expect(seen).toContain("/v1/epics/epic-1/page");
+      expect(seen).not.toContain("/v1/pool/capabilities");
+      expect(forbidden).toEqual([]);
+    } finally {
+      server.events.removeListener("response:mocked", onResponse);
+      server.events.removeListener("request:start", onRequest);
+    }
+  });
+
   it("shows the full >100 total and loads every older page without replacing the draft", async () => {
     const messages: MessageView[] = Array.from({ length: 235 }, (_, i) => ({ id: `m-${i + 1}`, seq: i + 1, by: "owner", to: null, kind: "note", text: `History row ${i + 1}`, at: "2026-09-01T10:00:00Z", reply_to: null }));
     const cursors: number[] = [];
@@ -145,8 +175,9 @@ describe("EpicPage", () => {
     mount(data);
     await title();
     const work = await openWork();
-    expect(within(work).getByText("This epic has no stories yet.")).toBeInTheDocument();
-    expect(within(work).getByText(/No stories yet — this epic is still being shaped/)).toBeInTheDocument();
+    // S12-ui2 (qa m-da89ef8294 item 7): one empty-state line, not two
+    expect(within(work).queryByText("This epic has no stories yet.")).toBeNull();
+    expect(within(work).getAllByText(/No stories yet/)).toHaveLength(1);
     expect(within(work).queryByTestId("kanban")).not.toBeInTheDocument();
   });
 
@@ -305,6 +336,7 @@ describe("EpicPage", () => {
     await title();
     const drawer = await openAction("assign-spawn");
     expect(await within(drawer).findByTestId("seat-choice")).toHaveTextContent("GPT-6 Astra, effort high");
+    expect(screen.getByRole("dialog", { name: "Assign or spawn a seat" })).toBeInTheDocument(); // the pool can spawn
   });
 
   it("S-UI: no MODELS strip in the header; Actions → Models… shows and switches each role's model and effort", async () => {
@@ -332,16 +364,26 @@ describe("EpicPage", () => {
     fireEvent.change(sel("effort", "engineer"), { target: { value: "high" } });
     fireEvent.click(within(drawer).getByTestId("models-save"));
     await waitFor(() => expect(patched).not.toBeNull());
+    // S7: a role with a tag list keeps its list (default first, effort named); the others keep the legacy pair
     expect(patched!.tags).toEqual(["area:ui",
-      "model:architect=gpt-6-astra", "model:engineer=gpt-6-sol", "model:qa=claude-fable-5-1", "model:adversary=gpt-6-astra", "model:sme=gpt-6-sol",
-      "seat-effort:architect=medium", "seat-effort:engineer=high", "seat-effort:qa=medium", "seat-effort:adversary=high", "seat-effort:sme=medium"]);
+      "model:architect=gpt-6-astra@medium", "model:engineer=gpt-6-sol@high", "model:sme=gpt-6-sol@medium",
+      "model:qa=claude-fable-5-1", "model:adversary=gpt-6-astra",
+      "seat-effort:qa=medium", "seat-effort:adversary=high"]);
     expect(await within(drawer).findByTestId("models-saved")).toBeInTheDocument();
   });
 
   it("the header names the live resident architect and its seat state (t-cf353a4051)", async () => {
     mount(page({ architect: { id: "architect.epic-9", state: "alive" } }));
     await title();
-    expect(await screen.findByTestId("work-architect")).toHaveTextContent("architect.epic-9 · alive");
+    expect(await screen.findByTestId("work-architect")).toHaveTextContent("Architect · running");
+  });
+
+  it("an owner-closed architect reads Closed, as on the Seats page, and not 'dead' (qa fail 9)", async () => {
+    mount(page({ architect: { id: "architect.epic-9", state: "dead" } }));
+    await title();
+    const row = await screen.findByTestId("work-architect");
+    await waitFor(() => expect(row).toHaveTextContent("Architect · closed"));
+    expect(row).not.toHaveTextContent("dead");
   });
 
   it("an older board without the architect field renders no Architect row", async () => {
@@ -368,6 +410,9 @@ describe("EpicPage", () => {
     const drawer = await openAction("assign-spawn");
     expect(await within(drawer).findByTestId("spawn-unavailable")).toHaveTextContent("pool unreachable");
     expect(within(drawer).queryByTestId("spawn-architect")).not.toBeInTheDocument();
+    // S12-ui2: the title says what the dialog can do (no "spawn" it then says is unavailable)
+    expect(screen.getByRole("dialog", { name: "Assign a seat" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: /spawn/i })).toBeNull();
   });
 
   it("Spawn the architect reports the board's refusal hint (promise #18)", async () => {
@@ -379,36 +424,95 @@ describe("EpicPage", () => {
     expect(await within(drawer).findByTestId("spawn-architect-error")).toHaveTextContent("architect.epic-1 is already alive; message it instead");
   });
 
-  it("every Actions item carries a gloss saying what it does and who is woken (human #23)", async () => {
+  // S12-ui2 (qa m-da89ef8294) replaces human #23's "does / wakes" menu line: each item says what it does in one
+  // plain sentence (who is woken stays in its tooltip).
+  it("every Actions item carries a plain one-sentence description, also the dialog's subtitle", async () => {
     mount(page({ answerable_gates: [{ ticket_id: "epic-1", gate: "acceptance", by: "owner", note: "accept the epic?", opened_at: "2026-09-02T10:00:00Z", epic: "epic-1" }] }));
     await title();
     fireEvent.click(screen.getByTestId("actions-open"));
     const menu = await screen.findByTestId("actions-menu");
-    for (const k of ["change-status", "answer-decision", "raise-decision", "assign-spawn", "ask-role"]) {
-      expect(within(menu).getByTestId(`action-${k}`).textContent, k).toMatch(/wakes/i);
+    const items = within(menu).getAllByRole("menuitem");
+    expect(items.length).toBeGreaterThan(8);
+    for (const item of items) {
+      const gloss = item.lastElementChild!.textContent!;
+      expect(gloss, item.dataset.testid).toMatch(/^[A-Z][^]*\.$/);
+      expect(gloss, item.dataset.testid).not.toMatch(/_|raw status|design link|\w\/\w/);
     }
-    expect(within(menu).getByTestId("action-change-status")).toHaveTextContent(/owner and the architect/);
-    expect(within(menu).getByTestId("action-answer-decision")).toHaveTextContent(/opener/);
-    expect(within(menu).getByTestId("action-assign-spawn")).toHaveTextContent(/assignee/);
-    for (const k of ["add-criterion", "original-request", "record"]) expect(within(menu).getByTestId(`action-${k}`).textContent!.length, k).toBeGreaterThan(30);
+    expect(within(menu).getByTestId("action-change-status")).toHaveTextContent("Move this epic to its next step.");
+    expect(within(menu).getByTestId("action-record")).toHaveTextContent("The ids to quote in a message or a terminal.");
+    fireEvent.click(within(menu).getByTestId("action-change-status"));
+    expect(await screen.findByTestId("action-drawer-gloss")).toHaveTextContent("Move this epic to its next step.");
+  });
+
+  it("S12-ui2: the composer's placeholder is a plain sentence about Steer", async () => {
+    mount(page());
+    await title();
+    expect(await screen.findByPlaceholderText("Write a message. Choose Steer to change the plan.")).toBeInTheDocument();
   });
 
   it("Assigned seats (under Assign or spawn) link to the Seats row with inline Message and Resume (human #24)", async () => {
     let resumed: Record<string, unknown> | null = null;
     server.use(http.post("/v1/sessions/resume", async ({ request }) => { resumed = (await request.json()) as Record<string, unknown>; return okJson({ ok: true }, "engineer.s-99 resumed from its parked session"); }));
+    seatsAre(seatRow("engineer.s-99", "parked"), seatRow("architect.epic-1", "alive"));
     mount(page(), [{ id: "epic-1", assigned_seats: ["engineer.s-99", "architect.epic-1"], waiting_reason: { presence: "alive" }, latest_status: "on it" }]);
     await title();
-    await waitFor(() => expect(screen.getByTestId("work-assigned")).toHaveTextContent("engineer"));
     const drawer = await openAction("assign-spawn");
     const links = await within(drawer).findAllByTestId("assigned-seat-link");
     expect(links.map((l) => l.getAttribute("href"))).toEqual(["/seats#engineer.s-99", "/seats#architect.epic-1"]);
     const msgs = within(drawer).getAllByTestId("assigned-seat-message");
     expect(msgs[0]).toHaveAttribute("href", "/seats?message=engineer.s-99#engineer.s-99");
-    expect(msgs[0].getAttribute("title")).toMatch(/wakes that seat/);
+    expect(msgs[0].getAttribute("title")).toMatch(/wakes that seat/i);
     fireEvent.click((await within(drawer).findAllByTestId("assigned-seat-resume"))[0]);
     await waitFor(() => expect(resumed).not.toBeNull());
     expect(resumed!).toEqual({ participant_id: "engineer.s-99", ticket_id: "s-99" });
     expect(await within(drawer).findByTestId("assigned-seat-hint")).toHaveTextContent("engineer.s-99 resumed from its parked session");
+  });
+
+  it("a live assigned seat has a Close that calls sessions/close (design-63db8a7d42 G)", async () => {
+    let closed: Record<string, unknown> | null = null;
+    server.use(http.post("/v1/sessions/close", async ({ request }) => { closed = (await request.json()) as Record<string, unknown>; return okJson({ closed: true }, "engineer.s-99 closed"); }));
+    seatsAre(seatRow("engineer.s-99", "alive"));
+    mount(page(), [{ id: "epic-1", assigned_seats: ["engineer.s-99"], waiting_reason: { presence: "alive" }, latest_status: "on it" }]);
+    await title();
+    const drawer = await openAction("assign-spawn");
+    const close = await within(drawer).findByTestId("assigned-seat-close");
+    fireEvent.click(close);
+    await waitFor(() => expect(closed).not.toBeNull());
+    expect(closed!).toEqual({ participant_id: "engineer.s-99", ticket_id: "s-99" });
+    expect(await within(drawer).findByTestId("assigned-seat-hint")).toHaveTextContent("engineer.s-99 closed");
+  });
+
+  // qa c-4c274905e3: Resume / Close follow the Seats page's presence rule, one state per seat
+  const ALL_CAPS = { resume_parked: true, resume_closed: true, park: true, spawn: true };
+  for (const [state, resume, close, word] of [["alive", false, true, "Working"], ["stalled", true, true, "Stalled"], ["dead", true, false, "Closed"], ["parked", true, true, "Parked"], [null, false, false, "Not visible here"]] as const) {
+    it(`an assigned seat that is ${state ?? "unknown"} says ${word ?? "nothing"} and offers ${resume ? "Resume" : "no Resume"} and ${close ? "Close" : "no Close"}`, async () => {
+      seatsAre(seatRow("engineer.s-99", state));
+      mount(page(), [{ id: "epic-1", assigned_seats: ["engineer.s-99"], waiting_reason: { presence: "alive" }, latest_status: "on it" }], ALL_CAPS);
+      await title();
+      const drawer = await openAction("assign-spawn");
+      await waitFor(() => expect(within(drawer).getByTestId("assigned-seat")).toHaveAttribute("data-presence"));
+      expect(within(drawer).queryByTestId("assigned-seat-resume") !== null).toBe(resume);
+      expect(within(drawer).queryByTestId("assigned-seat-close") !== null).toBe(close);
+      if (word) expect(within(drawer).getByTestId("assigned-seat-state")).toHaveTextContent(word); // the chip the Seats page shows
+      else expect(within(drawer).queryByTestId("assigned-seat-state")).toBeNull();
+    });
+  }
+
+  it("the Assign dialog and the header both read epic.assignee only: Unassigned when it is null, though a seat works a story", async () => {
+    seatsAre(seatRow("engineer.s-99", "alive"));
+    mount(page(), [{ id: "epic-1", assigned_seats: ["engineer.s-99"], waiting_reason: { presence: "alive" }, latest_status: "on it" }]);
+    await title();
+    await waitFor(() => expect(screen.getByTestId("work-assigned")).toHaveTextContent("Unassigned"));
+    const drawer = await openAction("assign-spawn");
+    expect(within(drawer).getByTestId("assign-current")).toHaveTextContent("Unassigned");
+    expect(within(drawer).getByTestId("assigned-seat-link")).toHaveTextContent("engineer.s-99"); // still listed under Assigned seats
+  });
+
+  it("the dialog names a real epic assignee", async () => {
+    mount(page({ board: { ...page().board, epic: { ...page().board.epic, assignee: "architect.epic-1" } } }));
+    await title();
+    const drawer = await openAction("assign-spawn");
+    expect(within(drawer).getByTestId("assign-current")).toHaveTextContent("architect.epic-1");
   });
 
   it("Change status opens the existing StatusControl in the drawer", async () => {
@@ -470,6 +574,18 @@ describe("S-UI: the unanswered-request badge is a control (c-7e59da92c3)", () =>
     expect(document.getElementById("m-old")).not.toHaveAttribute("data-highlight");
     expect(screen.queryByTestId("attention-asks-list")).toBeNull();
   });
+
+  it("e0cec S3: each row says why it is waiting on the owner, and a single ask carries it in the badge title", async () => {
+    const why = "Addressed to you; work does not wait on it";
+    asks.forEach((a) => Object.assign(a, { why }));
+    withAsks(2);
+    await title();
+    const badge = await screen.findByTestId("attention-asks");
+    await screen.findByText("Pick a filter");
+    fireEvent.click(badge);
+    const whys = within(await screen.findByTestId("attention-asks-list")).getAllByTestId("attention-ask-why");
+    expect(whys.map((w) => w.textContent)).toEqual([why, why]);
+  });
 });
 
 // t-994970028d: the architect's brief renders the board's description_html as markdown inside Clamp.
@@ -494,29 +610,28 @@ describe("EpicPage brief markdown", () => {
 describe("EpicPage attention trail (S20)", () => {
   const scopeGate = { event_id: "ev-scope", ticket_id: "epic-1", gate: "scope", by: "architect.epic-1", note: "cut the export?", opened_at: "2026-09-27T00:00:00Z", epic: "epic-1" };
 
-  it("Work opener → the ticket row carry the dot; Actions → Answer a decision → the gate is marked", async () => {
+  it("Work opener → the ticket row carry the dot; Actions → Answer a decision lists the gate, unmarked", async () => {
     server.use(attentionHandler());
     mount(page({ open_gates: [["epic-1", "scope"]], answerable_gates: [scopeGate] }));
     await title();
     const work = screen.getByTestId("work-work");
-    expect(await within(work).findByRole("img", { name: "needs your attention: 2" })).toBeInTheDocument();
+    expect(await within(work).findByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
     expect(work).toHaveAttribute("data-attention", "true");
     const trigger = screen.getByTestId("actions-open");
-    expect(within(trigger).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    expect(within(trigger).queryByRole("img")).toBeNull();
     await openWork();
     const row = document.getElementById("row-s-1")!;
     expect(row).toHaveAttribute("data-attention", "true");
-    expect(within(row).getByRole("img", { name: "needs your attention: 2" })).toBeInTheDocument();
+    expect(within(row).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
     // steer m-4ed69369cb: the row leads to the ticket's newest waiting item, not the bare ticket page
     expect(within(row).getByRole("link")).toHaveAttribute("href", "/ticket/s-1#m-storyq");
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.click(trigger);
     const item = await screen.findByTestId("action-answer-decision");
-    expect(item).toHaveAttribute("data-attention", "true");
-    expect(within(item).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    expect(item).not.toHaveAttribute("data-attention");
     fireEvent.click(item);
     await screen.findByTestId("action-drawer-answer-decision");
-    expect(document.getElementById("ev-scope")).toHaveAttribute("data-attention", "true");
+    expect(document.getElementById("ev-scope")).not.toHaveAttribute("data-attention");
   });
 
   it("a Work row with nothing waiting links to the ticket page", async () => {
@@ -527,12 +642,12 @@ describe("EpicPage attention trail (S20)", () => {
     expect(within(document.getElementById("row-s-1")!).getByRole("link")).toHaveAttribute("href", "/ticket/s-1");
   });
 
-  it("a ?request=<gate> deep link opens the decision drawer on the marked gate", async () => {
+  it("a ?request=<gate> deep link opens the decision drawer on the gate", async () => {
     server.use(attentionHandler());
     mount(page({ open_gates: [["epic-1", "scope"]], answerable_gates: [scopeGate] }), [], undefined, "/epic/epic-1?request=ev-scope");
     await title();
     await screen.findByTestId("action-drawer-answer-decision");
-    expect(document.getElementById("ev-scope")).toHaveAttribute("data-attention", "true");
+    expect(document.getElementById("ev-scope")).toBeInTheDocument();
   });
 
   it("clears: with nothing waiting no opener or row carries a dot", async () => {
@@ -542,5 +657,45 @@ describe("EpicPage attention trail (S20)", () => {
     await openWork();
     await waitFor(() => expect(document.querySelector("[data-attention-dot]")).toBeNull());
     expect(document.getElementById("row-s-1")).not.toHaveAttribute("data-attention");
+  });
+
+  // s-aa76c83998: the requirements list and the board's reason the epic cannot finish sit behind Work
+  it("Work shows the marked requirements, open first, and why the epic is held", async () => {
+    const reason = "1 open requirement (req-u)";
+    server.use(attentionHandler(without(...ATTENTION.items.map((i) => i.id))));
+    server.use(http.get("/v1/epics/epic-1/requirements", () => okJson({ digests: [], blocked_reason: reason, requirements: [
+      { id: "req-c", state: "linked", epic: "epic-1", ticket: "s-1", source: "m-2", char_start: 0, char_end: 22, by: "owner",
+        at: "2026-10-01T11:00:00+00:00", text: "quote works in the app", criterion: "c-9" },
+      { id: "req-u", state: "open", epic: "epic-1", ticket: "epic-1", source: "m-1", char_start: 0, char_end: 26, by: "owner",
+        at: "2026-10-01T10:00:00+00:00", text: "make the board trustworthy" },
+    ] })));
+    mount(page());
+    await title();
+    const work = await openWork();
+    const rows = await within(work).findAllByTestId("req-row");
+    expect(rows.map((r) => r.dataset.state)).toEqual(["open", "linked"]);
+    expect(within(rows[1]).getByTestId("req-link")).toHaveTextContent("Covered by c-9");
+    expect(within(work).getByTestId("gate-blocked-reason").textContent).toBe("1 open requirement"); // the board names the id for agents; the page does not
+  });
+
+  it("Work says no requirements are marked for an empty list", async () => {
+    server.use(attentionHandler(without(...ATTENTION.items.map((i) => i.id))));
+    mount(page());
+    await title();
+    const work = await openWork();
+    expect(await within(work).findByTestId("requirements-empty")).toHaveTextContent("No requirements marked");
+    expect(within(work).queryByTestId("gate-held")).toBeNull();
+  });
+});
+
+// S12-ui3 (architect m-3264e7edf9 item 4): a menu label that opens a dialog ends in the "…" glyph, never three dots.
+describe("Epic Actions labels (S12-ui3)", () => {
+  it("uses the ellipsis glyph", async () => {
+    mount(page());
+    await title();
+    fireEvent.click(screen.getByTestId("actions-open"));
+    const models = await screen.findByTestId("action-models");
+    expect(models).toHaveTextContent("Models…");
+    expect(screen.getByTestId("actions-open").closest("body")!.textContent).not.toContain("...");
   });
 });

@@ -156,14 +156,14 @@ def test_rest_spawn_body_model_and_effort_override_the_epic(rig, monkeypatch):
     client = rig["client"]
     calls = _stub_pool(monkeypatch)
     epic = _epic(client, ["seat-model:astra", "seat-effort:high"])
-    r = client.post("/v1/sessions/spawn", json={"role": "qa", "participant_id": f"qa.{epic}", "ticket_id": epic,
+    r = client.post("/v1/sessions/spawn", json={"role": "adversary", "participant_id": f"adversary.{epic}", "ticket_id": epic,
                                                 "model": "builder", "effort": "high"}, headers=OWNER)
     assert r.status_code == 200, r.text
     assert calls[-1]["model"] == "builder" and calls[-1]["effort"] == "medium"  # Claude seat: capped
     assert "capped" in r.json()["value"]["seat_choice"]["note"]
     # an epic without a choice, and no body choice: nothing is passed (the pool's role→seat default)
     plain = _epic(client, [])
-    r = client.post("/v1/sessions/spawn", json={"role": "qa", "participant_id": f"qa.{plain}", "ticket_id": plain},
+    r = client.post("/v1/sessions/spawn", json={"role": "adversary", "participant_id": f"adversary.{plain}", "ticket_id": plain},
                     headers=OWNER)
     assert r.status_code == 200 and calls[-1]["model"] is None and calls[-1]["effort"] is None
 
@@ -187,7 +187,7 @@ def test_mcp_spawn_tool_inherits_the_epic_choice(rig, monkeypatch):
     assert seen[-1]["model"] == "astra" and seen[-1]["effort"] == "high"
     assert out["value"]["seat_choice"] == {"model": "astra", "effort": "high", "note": None}
     # spawn(model=...) names its own model: the epic's effort still applies, capped for Claude
-    out = ALL_TOOLS["spawn"].handler(ALL_TOOLS["spawn"].args_model(role="qa", ticket_id=story,
+    out = ALL_TOOLS["spawn"].handler(ALL_TOOLS["spawn"].args_model(role="adversary", ticket_id=story,
                                                                    model="builder", assign=False))
     assert out["ok"], out
     assert seen[-1]["model"] == "builder" and seen[-1]["effort"] == "medium"
@@ -212,7 +212,7 @@ def test_auto_pairing_spawn_inherits_the_epic_choice(home):
     epic = board.ticket_create(owner, kind=TicketKind.epic, work_type=WorkType.feature, title="E",
                                tags=["seat-model:astra", "seat-effort:high"])
     story = board.ticket_create(arch, kind=TicketKind.story, work_type=WorkType.feature, title="S", parent_id=epic.id)
-    assert board._spawn_seat("qa", f"qa.{story.id}", story.id) is True
+    assert board._spawn_seat("adversary", f"adversary.{story.id}", story.id) is True
     assert pool.calls[-1]["model"] == "astra" and pool.calls[-1]["effort"] == "high"
     assert board.seat_choice_for(None).as_dict() == {"model": None, "effort": None, "note": None}
     assert board.seat_choice_for("t-missing").model is None
@@ -315,9 +315,9 @@ def test_rest_spawn_per_role_routes_gpt_to_codex_and_claude_by_id(cat_home, monk
     assert r.json()["value"]["seat_choice"]["model"] == "gpt-6-sol"
     p = client.get(f"/v1/participants/engineer.{story}", headers=OWNER).json()["value"]
     assert p.get("model") == "gpt-6-sol"  # provenance is the catalog id the owner chose
-    r = client.post("/v1/sessions/spawn", json={"role": "qa", "participant_id": f"qa.{epic}",
+    r = client.post("/v1/sessions/spawn", json={"role": "adversary", "participant_id": f"adversary.{epic}",
                                                 "ticket_id": epic}, headers=OWNER)
-    assert r.status_code == 200 and calls[-1]["model"] == "claude-fable-5-1"  # catalog default, Claude seat
+    assert r.status_code == 200 and calls[-1]["model"] == "gpt-6-astra"  # catalog default, codex seat
     page = client.get(f"/v1/epics/{epic}/page", headers=OWNER).json()["value"]
     assert page["role_models"]["architect"] == "gpt-6-astra" and page["role_models"]["qa"] == "claude-fable-5-1"
     got = client.get("/v1/models", headers=OWNER).json()["value"]
@@ -336,9 +336,9 @@ def test_auto_pairing_uses_the_paired_roles_model(cat_home):
     board = Board(Store(":memory:"), pool=pool, free_mb=lambda: 4096)
     owner = board.participant_create("human", Role.owner, "owner")
     epic = board.ticket_create(owner, kind=TicketKind.epic, work_type=WorkType.feature, title="E",
-                               tags=["model:qa=gpt-6-astra"])
-    assert board._spawn_seat("qa", f"qa.{epic.id}", epic.id) is True
-    assert pool.calls[-1]["model"] == "gpt-6-astra"
+                               tags=["model:adversary=gpt-6-sol"])
+    assert board._spawn_seat("adversary", f"adversary.{epic.id}", epic.id) is True
+    assert pool.calls[-1]["model"] == "gpt-6-sol"
 
 
 def test_rest_spawn_assign_makes_the_seat_the_assignee(cat_home, monkeypatch):
@@ -385,6 +385,149 @@ def test_role_efforts_for_shows_every_catalog_role(cat_home):
     got = seat_choice.role_efforts_for(["seat-effort:adversary=high", "seat-effort:sme=low"], cat_home)
     assert got == {"architect": None, "engineer": None, "qa": None, "adversary": "high", "sme": "low"}
 
+# ----------------------------------------------------------------------------- S7: cap <= high, option lists, story picks
+
+S7_CATALOG = {
+    "seats": {"builder": {"model": "claude-opus-4-8", "effort": "medium"}},
+    "roles": {"engineer": "builder"},
+    "models": {
+        "claude-sonnet-5-5[1m]": {"harness": "claude", "provider": "claude", "context_window": 1_000_000,
+                                  "auto_compact": 350_000, "effort_cap": "high"},
+        "claude-opus-5-5": {"harness": "claude", "provider": "claude", "context_window": 1_000_000,
+                            "auto_compact": 350_000, "effort_cap": "medium"},
+        "gpt-6-sol": {"harness": "codex", "provider": "codex", "effort_cap": "high"},
+    },
+    "role_models": {"engineer": ["claude-sonnet-5-5[1m]", "claude-opus-5-5", "gpt-6-sol"],
+                    "qa": ["claude-opus-5-5"]},
+}
+
+
+@pytest.fixture
+def s7_home(home):
+    (home / "models.json").write_text(json.dumps(S7_CATALOG), encoding="utf-8")
+    return home
+
+
+def test_catalog_accepts_a_claude_effort_cap_up_to_high_and_rejects_above():
+    from edp8.model_catalog import validate
+    row = {"harness": "claude", "provider": "claude", "context_window": 1_000_000, "auto_compact": 350_000}
+    for cap in ("low", "medium", "high"):
+        assert validate({"m": {**row, "effort_cap": cap}}, {"engineer": ["m"]}) == []
+    for cap in ("xhigh", "max", "ultra", None):
+        errs = validate({"m": {**row, "effort_cap": cap}}, {"engineer": ["m"]})
+        assert errs and "invalid effort_cap" in errs[0], cap
+
+
+def test_option_list_tag_roundtrip_and_legacy_single_form():
+    opts = {"engineer": [("claude-sonnet-5-5[1m]", "high"), ("claude-opus-5-5", "medium"), ("gpt-6-sol", None)]}
+    tags = seat_choice.tags_for_role_options(opts)
+    assert tags == ["model:engineer=claude-sonnet-5-5[1m]@high|claude-opus-5-5@medium|gpt-6-sol"]
+    assert seat_choice.role_options_from_tags(tags) == opts
+    assert seat_choice.role_models_from_tags(tags) == {"engineer": "claude-sonnet-5-5[1m]"}   # first = default
+    # the legacy single form is a list of one; the last tag of a role wins
+    assert seat_choice.role_options_from_tags(["model:qa=gpt-6-astra", "model:qa=claude-opus-5-5@low"]) == {
+        "qa": [("claude-opus-5-5", "low")]}
+    assert seat_choice.role_options_from_tags(["model:qa=gpt-6-astra"]) == {"qa": [("gpt-6-astra", None)]}
+    assert seat_choice.role_options_from_tags(["model:qa=", "model:=x", "model:bad"]) == {}
+    # an effort outside the levels keeps the id, drops the effort and names the problem
+    assert seat_choice.parse_option("a@xhigh") == (("a", None), "effort 'xhigh' is not one of ['low', 'medium', 'high']")
+
+
+def test_precedence_spawn_arg_then_story_then_first_option_then_catalog_default_each_clamped(s7_home):
+    epic = ["model:engineer=claude-opus-5-5@medium|claude-sonnet-5-5[1m]@high"]
+    story = ["seat:engineer=claude-sonnet-5-5[1m]@high"]
+
+    def r(model=None, effort=None, etags=epic, stags=None, role="engineer"):
+        return seat_choice.resolve(model, effort, etags, s7_home, role=role, story_tags=stags)
+
+    assert (r().model, r().effort) == ("claude-opus-5-5", "medium")                      # first option
+    assert (r(stags=story).model, r(stags=story).effort) == ("claude-sonnet-5-5[1m]", "high")   # story > option
+    c = r(model="gpt-6-sol", stags=story)                                                # spawn arg > story
+    assert (c.model, c.effort) == ("gpt-6-sol", None)       # the story's effort belongs to the story's model
+    c = r(effort="low", stags=story)
+    assert (c.model, c.effort) == ("claude-sonnet-5-5[1m]", "low")                      # spawn effort > story effort
+    c = r(etags=[])                                                                      # catalog default
+    assert (c.model, c.effort) == ("claude-sonnet-5-5[1m]", None)
+    # every step is clamped to the chosen model's own cap: opus caps at medium, sonnet and gpt allow high
+    c = r(model="claude-opus-5-5", effort="high", stags=story)
+    assert (c.model, c.effort) == ("claude-opus-5-5", "medium") and "capped to medium" in c.note
+    c = r(etags=["model:engineer=claude-opus-5-5@high"])                                 # an option above its cap
+    assert (c.model, c.effort) == ("claude-opus-5-5", "medium")
+    assert r(model="claude-sonnet-5-5[1m]", effort="high").effort == "high"             # Claude may run high
+    assert r(model="claude-sonnet-5-5[1m]", effort="max").effort is None                # never above high: dropped
+    # the option's own effort applies to the model it names, wherever the model came from
+    c = r(model="claude-sonnet-5-5[1m]", etags=epic)
+    assert (c.model, c.effort) == ("claude-sonnet-5-5[1m]", "high")
+    # a story pick for another role never leaks
+    assert r(role="qa", etags=[], stags=story).model == "claude-opus-5-5"
+
+
+def test_story_pick_is_any_catalog_model_of_the_role_within_its_cap(s7_home):
+    """RC2 F2 (architect m-1f09a47214): the epic's option list is not a limit on a story."""
+    ok = seat_choice.story_pick_problem
+    epic = ["model:engineer=claude-sonnet-5-5[1m]"]                                     # one option: Sonnet
+    assert ok("engineer", ("claude-sonnet-5-5[1m]", "high"), epic, s7_home) is None
+    assert ok("engineer", ("gpt-6-sol", "high"), epic, s7_home) is None                 # outside the list: allowed
+    assert ok("engineer", ("claude-opus-5-5", "low"), epic, s7_home) is None
+    assert "capped at medium" in ok("engineer", ("claude-opus-5-5", "high"), epic, s7_home)   # the cap still holds
+    assert "not a engineer model in the catalog" in ok("engineer", ("claude-fable-5-1", None), epic, s7_home)
+    assert ok("engineer", ("claude-opus-5-5", "low"), [], s7_home) is None
+    assert "not a qa model in the catalog" in ok("qa", ("gpt-6-sol", None), [], s7_home)
+
+
+def test_board_refuses_a_story_pick_outside_the_options_and_accepts_an_option(s7_home, rig):
+    client = rig["client"]
+    epic = _epic(client, ["model:engineer=claude-opus-5-5@medium|claude-sonnet-5-5[1m]@high"])
+    story = _story(client, epic)
+
+    def set_tags(tags, who="owner"):
+        return client.patch(f"/v1/tickets/{story}", json={"tags": tags}, headers={"X-Participant": who})
+
+    bad = set_tags(["seat:engineer=claude-fable-5-1"])
+    assert bad.json()["ok"] is False and "not a engineer model in the catalog" in bad.text
+    for junk in ("xhigh", "max", "ultra"):  # an effort outside low/medium/high is refused, never stored
+        r = set_tags([f"seat:engineer=claude-sonnet-5-5[1m]@{junk}"])
+        assert r.json()["ok"] is False and junk in r.text, r.text
+    good = set_tags(["seat:engineer=claude-sonnet-5-5[1m]@high"])
+    assert good.json()["ok"], good.text
+    page = client.get(f"/v1/epics/{epic}/page", headers=OWNER).json()["value"]
+    assert page["story_picks"] == {story: {"engineer": {"model": "claude-sonnet-5-5[1m]", "effort": "high"}}}
+    assert [o["model"] for o in page["role_options"]["engineer"]] == ["claude-opus-5-5", "claude-sonnet-5-5[1m]"]
+    # an engineer may not choose its own seat; the epic carries no `seat:` pick
+    deny = client.post("/v1/participants", json={"type": "agent", "role": "engineer", "handle": "eng", "id": "eng"},
+                       headers=ADMIN)
+    assert deny.json()["ok"]
+    assert set_tags(["seat:engineer=claude-opus-5-5@medium"], who="eng").json()["ok"] is False
+    on_epic = client.patch(f"/v1/tickets/{epic}", json={"tags": ["seat:engineer=claude-opus-5-5"]}, headers=OWNER)
+    assert on_epic.json()["ok"] is False and "a story's pick" in on_epic.text
+    # a malformed or over-cap option list on the epic is refused whole
+    xh = client.patch(f"/v1/tickets/{epic}", json={"tags": ["model:engineer=claude-sonnet-5-5[1m]@xhigh"]},
+                      headers=OWNER)
+    assert xh.json()["ok"] is False and "xhigh" in xh.text
+    over = client.patch(f"/v1/tickets/{epic}", json={"tags": ["model:engineer=claude-opus-5-5@high"]}, headers=OWNER)
+    assert over.json()["ok"] is False and "capped at medium" in over.text
+
+
+def test_rest_spawn_uses_the_story_pick_and_clamps(s7_home, rig, monkeypatch):
+    client = rig["client"]
+    calls = _stub_pool(monkeypatch)
+    epic = _epic(client, ["model:engineer=claude-opus-5-5@medium|claude-sonnet-5-5[1m]@high"])
+    story = _story(client, epic)
+    r = client.post("/v1/sessions/spawn", json={"role": "engineer", "participant_id": f"engineer.{story}",
+                                                "ticket_id": story}, headers=OWNER)
+    assert r.status_code == 200 and (calls[-1]["model"], calls[-1]["effort"]) == ("claude-opus-5-5", "medium")
+    assert client.patch(f"/v1/tickets/{story}", json={"tags": ["seat:engineer=claude-sonnet-5-5[1m]@high"]},
+                        headers=OWNER).json()["ok"]
+    r = client.post("/v1/sessions/spawn", json={"role": "engineer", "participant_id": f"engineer.{story}b",
+                                                "ticket_id": story}, headers=OWNER)
+    assert r.status_code == 200 and (calls[-1]["model"], calls[-1]["effort"]) == ("claude-sonnet-5-5[1m]", "high")
+    # a spawn arg above the model's cap is clamped on the board path
+    r = client.post("/v1/sessions/spawn", json={"role": "engineer", "participant_id": f"engineer.{story}c",
+                                                "ticket_id": story, "model": "claude-opus-5-5", "effort": "high"},
+                    headers=OWNER)
+    assert r.status_code == 200 and (calls[-1]["model"], calls[-1]["effort"]) == ("claude-opus-5-5", "medium")
+
+
 def test_unknown_model_names_the_catalog_s_adv_10(tmp_path):
     """S-ADV finding 10: an id outside the role's catalog (and not a legacy seat name) is the reason with the
     catalog listed; a catalog id, a seat name, "claude" and a role without a catalog pass."""
@@ -401,3 +544,35 @@ def test_unknown_model_names_the_catalog_s_adv_10(tmp_path):
     why = seat_choice.unknown_model("engineer", "gpt-6-astra", tmp_path)
     assert why and "catalog for engineer is ['claude-opus-5-5', 'gpt-6-sol']" in why
     assert "gpt-does-not-exist" in (seat_choice.unknown_model("qa", "gpt-does-not-exist", tmp_path) or "")
+
+
+def test_rc2_a_story_runs_opus_at_high_on_an_epic_that_lists_only_sonnet(home, rig, monkeypatch):
+    """RC2 F2 (architect m-1f09a47214): per-story model and effort beyond the epic's one-entry list; the pool
+    gets the story's model with effort high (the pool clamp reads the catalog since 934a860a, where
+    EDP_SEAT_EFFORT=high survives on a cap=high model: edp-pool/tests/test_spawner_agent_home.py)."""
+    cat = json.loads(json.dumps(S7_CATALOG))
+    cat["models"]["claude-opus-5-5"]["effort_cap"] = "high"
+    (home / "models.json").write_text(json.dumps(cat), encoding="utf-8")
+    client = rig["client"]
+    calls = _stub_pool(monkeypatch)
+    epic = _epic(client, ["model:engineer=claude-sonnet-5-5[1m]"])
+    story = _story(client, epic)
+    r = client.patch(f"/v1/tickets/{story}", json={"tags": ["seat:engineer=claude-opus-5-5@high"]}, headers=OWNER)
+    assert r.json()["ok"], r.text
+    r = client.post("/v1/sessions/spawn", json={"role": "engineer", "participant_id": f"engineer.{story}",
+                                                "ticket_id": story}, headers=OWNER)
+    assert r.status_code == 200, r.text
+    assert calls[-1]["model"] == "claude-opus-5-5" and calls[-1]["effort"] == "high"
+    page = client.get(f"/v1/epics/{epic}/page", headers=OWNER).json()["value"]
+    assert page["story_picks"] == {story: {"engineer": {"model": "claude-opus-5-5", "effort": "high"}}}
+
+
+def test_a_1m_launch_id_keeps_its_rows_effort_cap(tmp_path, monkeypatch):
+    """qa m-1b272db80b: `claude-opus-5-5[1m]` is the `claude-opus-5-5` row, so its cap (high) holds."""
+    (tmp_path / "models.json").write_text(json.dumps({"models": {
+        "claude-opus-5-5": {"harness": "claude", "provider": "claude", "effort_cap": "high",
+                            "context_window": 1000000}}}), encoding="utf-8")
+    monkeypatch.setenv("EDP_AGENT_HOME", str(tmp_path))
+    assert seat_choice._effort_cap("claude-opus-5-5[1m]", tmp_path) == "high"
+    assert seat_choice._effort_cap("claude-opus-5-5", tmp_path) == "high"
+    assert seat_choice._effort_cap("ghost[1m]", tmp_path) == "medium"

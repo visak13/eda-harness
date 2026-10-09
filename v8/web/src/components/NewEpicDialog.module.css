@@ -9,14 +9,13 @@
   position: fixed;
   top: 12px;
   max-height: calc(100dvh - 24px);
-  overflow-y: auto;
+  overflow: hidden;
   left: 50%;
   transform: translateX(-50%);
   width: min(640px, calc(100vw - 24px));
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 24px;
+  padding: 0;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -24,7 +23,35 @@
 }
 .dialog input:not([type="checkbox"]), .dialog select { min-height: 44px; max-width: 100%; padding: 8px; font: inherit; }
 .dialog button { min-height: 44px; overflow-wrap: anywhere; }
+/* S12-ui: header and footer pinned, only the body scrolls. S12-ui2 (qa m-da89ef8294): a compact form, each
+   label inline with its input and the help under the input; full-width blocks span both columns. */
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-content: start;
+  column-gap: 16px;
+  row-gap: 6px;
+  padding: 4px 24px 16px;
+  --seat-head-top: -4px;
+}
+.body > * { grid-column: 1 / -1; }
+.body > label[for] { grid-column: 1; align-self: start; padding-top: 8px; margin: 0; }
+.body > input, .body > select, .body > textarea, .body > p.muted { grid-column: 2; }
+.body > p.muted { margin-bottom: 6px; }
+.body > fieldset, .body > .preview { margin-top: 6px; }
+@media (min-width: 481px) {
+  .body > input:not([type="checkbox"]), .body > select { min-height: 36px; padding: 6px 8px; }
+}
+@media (max-width: 480px) {
+  .body { grid-template-columns: minmax(0, 1fr); }
+  .body > label[for], .body > input, .body > select, .body > textarea, .body > p.muted { grid-column: 1; padding-top: 0; }
+}
 .title {
+  flex: none;
+  padding: 24px 24px 8px;
   margin: 0;
   font: 400 26px/32px Georgia, serif;
   color: var(--ink);
@@ -54,7 +81,8 @@
 .roleModels {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
+  gap: 6px;
+  min-width: 0;
   margin: 0;
   padding: 0;
   border: 0;
@@ -74,6 +102,7 @@
   text-transform: capitalize;
 }
 .roleModels select { text-transform: none; }
+.roleBlock { display: grid; gap: 4px; }
 @media (max-width: 480px) {
   .choice, .roleModels {
     grid-template-columns: 1fr;
@@ -98,10 +127,10 @@
   display: flex;
   justify-content: flex-end;
   flex-wrap: wrap;
-  position: sticky;
-  bottom: -24px;
+  flex: none;
   background: var(--panel);
-  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  padding: 12px 24px;
   gap: 8px;
 }
 /* t-f5bf848f0f: the Open-topic dialog's one-time expert links (done state) */

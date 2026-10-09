@@ -94,7 +94,7 @@ def test_stored_reference_traces_carry_identity():
 
 
 def test_wording_equivalence_collapses_claude_and_our_texts():
-    """Owner m-2d7ef9243d: the seat speaks our words; the oracle exempts wording only (guides/harness-parity/wording.json)."""
+    """Owner m-2d7ef9243d: the seat speaks our words; the oracle exempts wording only (docs/operator/harness-parity/wording.json)."""
     pairs = [
         ("Monitor started (task bfgghodgn, timeout 60000ms). You will be notified on each event. Keep working — do not poll "
          "or sleep. Events may arrive while you are waiting for the user — an event is not their reply.",

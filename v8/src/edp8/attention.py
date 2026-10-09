@@ -1,15 +1,12 @@
-"""S20 attention trail (design-e963c656f5 §4.18, owner ruling m-8d061abf32): the ONE derivation of what waits on a
-person, each item with its full location path, so every surface (rail counts, Epics list, the epic's openers, the
-Work drawer's ticket rows, the Waiting-on-you popover, notifications, the Decisions read) renders the same list and
-none computes its own rule.
+"""S20 attention trail (design-e963c656f5 §4.18, owner ruling m-8d061abf32): the ONE derivation of the unanswered
+messages addressed to a person, each with its full location path, so every surface (the Epics list's dots, the epic's
+openers, the Work drawer's ticket rows, notifications) renders the same list and none computes its own rule.
+s-aa76c83998 (design-63db8a7d42 item H): the gate, sign-off, fix and access-request kinds are gone. A gate, a fix
+proposal and an access request now reach the owner as a chat message, so they are asks like any other; there is no
+Needs-you view and no decisions read.
 
 Items and the rule each reuses (never re-implemented here):
-- ask: `board.inbox` — questions/steers to anyone; status/finding/deviation to a human (answered = gone).
-- gate: `views._owner_gates` — open gates this viewer may answer (S16: never one the board would refuse).
-- signoff: `views.pending_signoffs` — owner-checked pending criteria with evidence.
-- fix: S19 fix proposals still `proposed`, for an admin (`admin.auth.is_admin`).
-- access_request: t-882e4d2eeb requests still `pending`, for an admin (shape agreed in m-5a9866b623).
-
+- ask: `board.inbox` — questions/steers to the viewer; status/finding/deviation to a human (answered = gone).
 Location vocabulary. The epic page has no tab bar; its "tabs" are the WorkHeader openers: `actions` (the Actions
 menu; section `decisions` = its answer-decision item), `design` (the design doc drawer), `files` (Files & evidence),
 `work` (the Work drawer; section `tickets`, then the ticket row). `thread` is the page's own conversation (no
@@ -24,18 +21,11 @@ from typing import Any
 from urllib.parse import quote, urlencode
 
 from . import views
-from .board import _TERMINAL, Board, is_help, is_quick, is_topic
-from .schemas import Gate, Participant, TicketKind
+from .board import Board, is_help, is_quick, is_topic
+from .schemas import Participant, TicketKind
 
-KINDS = ("ask", "gate", "signoff", "fix", "access_request")
+KINDS = ("ask",)
 
-#: design_signoff is answered from the Design opener's review surface; every other gate (demo included) is answered
-#: from the Actions menu's decisions item, so that is where its trail ends. Evidence sign-offs live behind Files.
-_GATE_AT = {Gate.design_signoff.value: ("design", "signoff")}
-_GATE_NOUN = {Gate.design_signoff.value: "design sign-off", Gate.demo.value: "demo review",
-              Gate.scope.value: "scope decision", Gate.budget.value: "budget decision",
-              Gate.acceptance.value: "acceptance", Gate.adversarial.value: "adversarial review",
-              Gate.poc.value: "proof-of-concept review"}
 _PLURAL = {"status": "statuses", "access request": "access requests", "fix to approve": "fixes to approve"}
 
 
@@ -55,10 +45,10 @@ def _scope(board: Board, t: Any) -> tuple[Any, dict[str, Any]]:
 
 def _place(board: Board, t: Any, at: tuple[str, str], item: dict[str, Any], *, kind: str, since: str,
            label: str, noun: str, query: dict[str, str] | None = None, anchor: str | None = None,
-           src: Any = None, ask: str | None = None) -> dict[str, Any]:
+           src: Any = None, ask: str | None = None, why: str = "") -> dict[str, Any]:
     """One item: the hop on its scope page, where it sits on its own page, and the deep link that lands there.
     `ask` (t-77c3a55b75, owner m-0e6940fe2c): a sign-off's or gate's plain-words question, so every surface says
-    what the viewer decides."""
+    what the viewer decides. `why` (e0cec S3): the one line saying why only this person can act on it."""
     root, scope = _scope(board, t)
     child = t.id != root.id
     tab, section = ("work", "tickets") if child and scope["type"] in ("epic", "quick") else at
@@ -66,8 +56,11 @@ def _place(board: Board, t: Any, at: tuple[str, str], item: dict[str, Any], *, k
     return {"kind": kind, "id": item["id"], "since": since, "label": label, "noun": noun, "scope": scope,
             "tab": tab, "section": section,
             "ticket": {"id": t.id, "title": t.title} if child else None,
-            "at": {"tab": at[0], "section": at[1]}, "item": item, "url": url, "_src": src,
+            "at": {"tab": at[0], "section": at[1]}, "item": item, "url": url, "_src": src, "why": why,
             **({"ask": ask} if ask else {})}
+
+
+ASK_WHY = "work does not wait on it: the seat carries on with its recommendation until you answer"
 
 
 def _asks(board: Board, viewer: Participant) -> list[dict[str, Any]]:
@@ -78,81 +71,28 @@ def _asks(board: Board, viewer: Participant) -> list[dict[str, Any]]:
             continue
         role = m.get("from_role") or "a seat"
         kind = m["kind"]
+        why = views._why_in_inbox(board, viewer, m)
         out.append(_place(board, t, ("thread", "asks"), {"type": "message", "id": m["id"]}, kind="ask",
-                          since=m["created_at"], label=f"{kind} from {role}", noun=kind, anchor=m["id"], src=m))
+                          since=m["created_at"], label=f"{kind} from {role}", noun=kind, anchor=m["id"], src=m,
+                          why=f"{why[:1].upper()}{why[1:]}; {ASK_WHY}" if viewer.type == "human" else why))
     return out
 
 
-def _gates(board: Board, viewer: Participant) -> list[dict[str, Any]]:
-    out = []
-    for tid, ev in views._owner_gates(board, viewer):
-        t = board.ticket(tid)
-        gate = ev.data.get("gate") or ""
-        noun = _GATE_NOUN.get(gate, f"{gate} decision")
-        out.append(_place(board, t, _GATE_AT.get(gate, ("actions", "decisions")),
-                          {"type": "gate", "id": ev.id, "gate": gate}, kind="gate",
-                          since=ev.created_at.isoformat(), label=noun, noun=noun, query={"request": ev.id},
-                          src=(tid, ev), ask=views._gate_note(board, tid, ev)))
-    return out
-
-
-def _signoffs(board: Board, viewer: Participant) -> list[dict[str, Any]]:
-    out = []
-    for c, t, doc in views.pending_signoffs(board, viewer):
-        design = doc is not None and getattr(doc.doc_type, "value", doc.doc_type) == "design"
-        noun = "design sign-off" if design else "sign-off"
-        out.append(_place(board, t, ("design", "signoff") if design else ("files", "evidence"),
-                          {"type": "criterion", "id": c.id, "doc": getattr(doc, "id", None)}, kind="signoff",
-                          since=c.created_at.isoformat(), label=noun, noun=noun,
-                          # evidence: the ticket page opens its ruling drawer on #<criterion>; a design doc opens
-                          # in the Design drawer via ?doc
-                          query={"doc": doc.id} if design else None, anchor=c.id,
-                          src=(c, t, doc), ask=views.signoff_ask(t)))
-    return out
-
-
-def _fixes(board: Board, viewer: Participant) -> list[dict[str, Any]]:
-    from .admin.auth import is_admin
-    if not is_admin(viewer):
-        return []
-    out = []
-    for f in board.store.query("fix", {"status": "proposed"}, limit=500):
-        t = board.store.get("ticket", f.topic_id)
-        if t is None or board.epic_of(t).status in _TERMINAL:
-            continue
-        out.append(_place(board, t, ("fixes", "fixes"), {"type": "fix", "id": f.id}, kind="fix",
-                          since=f.created_at.isoformat(), label="fix to approve", noun="fix to approve",
-                          anchor=f.id, src=f))
-    return out
-
-
-def _access_requests(board: Board, viewer: Participant) -> list[dict[str, Any]]:
-    from .admin.auth import is_admin
-    if not is_admin(viewer):
-        return []
-    from .admin.access import live_pending
-    try:
-        rows = live_pending(board)
-    except KeyError:  # t-882e4d2eeb not landed on this build: no requests can exist
-        return []
-    return [{"kind": "access_request", "id": r.id, "since": r.created_at.isoformat(),
-             "label": f"{r.name} asks for access as {r.role_wanted}", "noun": "access request",
-             "scope": {"type": "admin", "id": "admin", "title": "Admin"},
-             "tab": "teammates", "section": "requests", "ticket": None,
-             "at": {"tab": "teammates", "section": "requests"},
-             "item": {"type": "access_request", "id": r.id},
-             "url": f"/ui/admin?tab=teammates#{quote(r.id, safe='')}", "_src": r} for r in rows]
-
-
-_SOURCES = (_asks, _gates, _signoffs, _fixes, _access_requests)
+_SOURCES = (_asks,)
 
 
 def items(board: Board, viewer: Participant) -> list[dict[str, Any]]:
     """Every item waiting on `viewer`, oldest first. THE rule every attention surface reads. Each row keeps its
     source record under `_src` for in-process readers (the Decisions read); `public()` strips it."""
     out: list[dict[str, Any]] = []
+    from .admin import access
+    access.reconcile_expired(board)  # a lapsed access request settles its owner notice here, whoever reads next (F5)
     for source in _SOURCES:
         out.extend(source(board, viewer))
+    from . import guest_scope
+    scope = guest_scope.scope_for(board, viewer)
+    if scope is not None:  # e0cec S5: a guest's rows (and so every count/rollup) are its closure only
+        out = [r for r in out if scope.has((r.get("ticket") or {}).get("id") or (r.get("scope") or {}).get("id"))]
     out.sort(key=lambda i: i["since"])
     return out
 

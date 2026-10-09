@@ -1,3 +1,4 @@
+import { roleLabel as seatRoleLabel } from "../../components/iconPaths";
 import type { Precondition, Problem, RoleDef, Transition, WorkflowDef } from "../../api/workflows";
 
 // S14: pure helpers the Design tab's panels share — no fetching, so vitest drives them with fixtures.
@@ -77,10 +78,6 @@ export const PARAM_LABEL: Record<string, string> = {
 /** Plain names for gates. */
 export const GATE_LABEL: Record<string, string> = {
   design_signoff: "Design sign-off",
-  poc: "Proof of concept",
-  demo: "First demo",
-  adversarial: "Adversarial review ruling",
-  budget: "Budget",
   acceptance: "Acceptance",
   scope: "Scope increase",
 };
@@ -95,10 +92,6 @@ export const CAP_LABEL: Record<string, string> = {
 /** One line per gate id (the answer a human gives). */
 export const GATE_HELP: Record<string, string> = {
   design_signoff: "The owner approves the epic's design before any story starts.",
-  poc: "The owner decides whether a proof of concept is good enough to build on.",
-  demo: "The owner looks at a first artifact and says go on or change course.",
-  adversarial: "The owner rules on an adversarial review's findings.",
-  budget: "The owner approves spending past a cost or time budget.",
   acceptance: "The owner is asked when an epic reaches acceptance; the checker verdicts its criteria.",
   scope: "The owner raises a story or criteria cap for one epic.",
 };
@@ -147,7 +140,7 @@ export const PERMISSION_HELP: Record<string, string> = {
 };
 
 export function roleLabel(r: RoleDef): string {
-  return r.label || r.id;
+  return r.label || seatRoleLabel(r.id);
 }
 
 /** Roles that may spawn `id`. */
@@ -302,8 +295,8 @@ export const NON_AGENT_ROLES: ReadonlySet<string> = new Set(["owner", "expert", 
 /** Plain names for the board's tools (the id stays in the tooltip). An unknown tool falls back to its id in words. */
 export const TOOL_LABEL: Record<string, string> = {
   artifact_create: "Record a produced thing", artifact_read: "Read an artifact", artifact_upload: "Upload a file",
-  assemble_ruleset: "Build a ticket's working rules", board: "See an epic's tickets at a glance", close: "Close an epic",
-  close_self: "End its own shell", context: "Load its tickets", context_delta: "Read what changed",
+  board: "See an epic's tickets at a glance", close: "Close an epic",
+  close_self: "End its own session", context: "Load its tickets", context_delta: "Read what changed",
   criterion_create: "Write checks (criteria)", criterion_query: "List a ticket's checks", criterion_update: "Attach evidence or give a verdict",
   dense_search: "Search by meaning (diagnostic)", describe: "Look up an object's fields", describe_objects: "List object types",
   doc_create: "Write a document", doc_edit: "Edit a document", doc_query: "List documents", doc_read: "Read a document",
@@ -315,7 +308,7 @@ export const TOOL_LABEL: Record<string, string> = {
   link_query: "List links", lookup: "Look up decisions and lessons", message_query: "Read a ticket's thread",
   message_read: "Read one message", message_send: "Send a message", participants: "List the team",
   preflight: "Check host memory before starting seats", propose_fix: "Propose a fix for an admin",
-  reap: "Stop a seat's shell", record_claim: "Record a claim", record_decision: "Record a decision",
+  reap: "Stop a seat", record_claim: "Record a claim", record_decision: "Record a decision",
   record_lesson: "Record a lesson", record_status: "Report its outcome", resume: "Resume a paused seat",
   resume_self: "Resume after a restart", session_query: "List seat sessions", set_binding: "Make a decision binding",
   spawn: "Start a seat", subscribe: "Turn on its event feed", ticket_create: "Create tickets", ticket_query: "Find tickets",

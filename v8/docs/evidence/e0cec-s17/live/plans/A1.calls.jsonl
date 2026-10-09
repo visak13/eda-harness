@@ -1,0 +1,32 @@
+{"t": 1790990373.7454555, "tool": "ticket_read", "args": {"ticket_id": "s-c7141c20d0"}, "chars": 6852}
+{"t": 1790990382.384522, "tool": "doc_read", "args": {"id": "design-16997fc8c9"}, "chars": 10579}
+{"t": 1790990382.4000785, "tool": "doc_read", "args": {"id": "strategyll-70f21f1bd2"}, "chars": 8855}
+{"t": 1790990382.418473, "tool": "doc_read", "args": {"id": "strategyll-3e707d102f"}, "chars": 8408}
+{"t": 1790990382.433898, "tool": "doc_read", "args": {"id": "strategyll-2a4568e35a"}, "chars": 8670}
+{"t": 1790990382.4591334, "tool": "doc_read", "args": {"id": "strategyll-57ba44c849"}, "chars": 8708}
+{"t": 1790990382.487799, "tool": "doc_read", "args": {"id": "strategyll-ecbcff9c68"}, "chars": 16104}
+{"t": 1790990382.5138094, "tool": "ticket_read", "args": {"ticket_id": "s-c7141c20d0", "include": "chain,criteria,docs,children,blockers,gates,thread,links"}, "chars": 8054}
+{"t": 1790990389.7872794, "tool": "doc_read", "args": {"id": "strategyll-70f21f1bd2"}, "chars": 8855}
+{"t": 1790990389.8051012, "tool": "doc_read", "args": {"id": "strategyll-3e707d102f"}, "chars": 8408}
+{"t": 1790990389.8224015, "tool": "doc_read", "args": {"id": "strategyll-2a4568e35a"}, "chars": 8670}
+{"t": 1790990389.8408391, "tool": "doc_read", "args": {"id": "strategyll-57ba44c849"}, "chars": 8708}
+{"t": 1790990389.8655088, "tool": "doc_read", "args": {"id": "strategyll-ecbcff9c68"}, "chars": 16104}
+{"t": 1790990398.286269, "tool": "doc_read", "args": {"id": "strategyll-2a4568e35a", "version": 1, "offset": 0, "limit": 16000}, "chars": 12245}
+{"t": 1790990398.3007956, "tool": "doc_read", "args": {"id": "strategyll-57ba44c849", "version": 1, "offset": 0, "limit": 16000}, "chars": 11228}
+{"t": 1790990405.0043886, "tool": "doc_read", "args": {"id": "strategyll-3e707d102f", "version": 1, "offset": 7200, "limit": 9000}, "chars": 6449}
+{"t": 1790990405.0222435, "tool": "doc_read", "args": {"id": "strategyll-70f21f1bd2", "version": 1, "offset": 7800, "limit": 8000}, "chars": 4754}
+{"t": 1790990405.0384073, "tool": "doc_read", "args": {"id": "design-16997fc8c9", "version": 1, "offset": 7800, "limit": 11000}, "chars": 9644}
+{"t": 1790990411.5933676, "tool": "doc_read", "args": {"id": "strategyll-ecbcff9c68", "version": 1, "offset": 8192, "limit": 15808}, "chars": 16254}
+{"t": 1790990411.608752, "tool": "doc_read", "args": {"id": "strategyll-ecbcff9c68", "version": 1, "offset": 24000, "limit": 15808}, "chars": 16239}
+{"t": 1790990418.6236782, "tool": "doc_read", "args": {"id": "strategyll-ecbcff9c68", "version": 1, "offset": 39808, "limit": 15808}, "chars": 16306}
+{"t": 1790990418.6622062, "tool": "doc_read", "args": {"id": "strategyll-ecbcff9c68", "version": 1, "offset": 55616, "limit": 15808}, "chars": 16324}
+{"t": 1790990429.1792517, "tool": "doc_read", "args": {"id": "strategyll-ecbcff9c68", "version": 1, "offset": 71424, "limit": 16000}, "chars": 11511}
+{"t": 1790990429.1988122, "tool": "doc_read", "args": {"id": "strategyll-70f21f1bd2", "section": "## 5. Idempotency for money-moving requests"}, "chars": 902}
+{"t": 1790990429.2120304, "tool": "doc_read", "args": {"id": "strategyll-3e707d102f", "section": "## 3. Expand and contract"}, "chars": 1298}
+{"t": 1790990429.2316737, "tool": "find", "args": {"query": "A1 partial refunds amendments process rules", "k": 30}, "chars": 3853}
+{"t": 1790990438.8904414, "tool": "doc_read", "args": {"id": "design-16997fc8c9", "section": "## Story A1: Partial refunds on the public API", "include_children": true}, "chars": 4679}
+{"t": 1790990438.9043612, "tool": "doc_read", "args": {"id": "strategyll-f55a783865"}, "chars": 9415}
+{"t": 1790990438.9268, "tool": "ticket_read", "args": {"ticket_id": "epic-e185d624cf", "include": "chain,docs,thread,links"}, "chars": 989}
+{"t": 1790990450.2634265, "tool": "doc_read", "args": {"id": "strategyll-f55a783865", "version": 1, "offset": 8030, "limit": 8000}, "chars": 4988}
+{"t": 1790990450.283749, "tool": "find", "args": {"query": "A1", "k": 100, "types": "message"}, "chars": 131}
+{"t": 1790990450.302728, "tool": "doc_read", "args": {"id": "design-16997fc8c9", "section": "## 3. Architecture overview", "include_children": true}, "chars": 1942}

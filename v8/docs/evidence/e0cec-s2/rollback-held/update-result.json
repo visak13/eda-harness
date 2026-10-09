@@ -1,0 +1,21 @@
+{
+ "from": "0.9.1",
+ "to": "0.9.2.dev0",
+ "state": "rolled_back",
+ "reason": "files in the install folder are held by Windows PowerShell (pid 25764); nothing was installed",
+ "timings": {
+  "parked": 0.5,
+  "stopped": 5.6,
+  "holders_checked": 33.1,
+  "rolled_back": 50.1
+ },
+ "parked": [
+  "engineer.s2-drill"
+ ],
+ "resumed": [
+  "engineer.s2-drill"
+ ],
+ "installed": "0.9.1",
+ "health_version": "0.9.1",
+ "finished_at": "2026-10-02T00:06:28+00:00"
+}

@@ -10,7 +10,8 @@ an error the caller must not launch through.
 from __future__ import annotations
 
 import json
-import subprocess
+
+from edp_contracts.proc import run_bounded
 
 #: unreal-mcp stays a hard floor even if discovery returns nothing.
 _MCP_FLOOR: tuple[str, ...] = ("unreal-mcp",)
@@ -42,12 +43,11 @@ def discover_mcp_servers(codex: str, timeout_s: int = 30, *, env: dict[str, str]
     `env`/`cwd` = the LAUNCH context (CODEX_HOME, project config): discovery must see the same
     configuration the launched codex will load; default = this process's."""
     try:
-        proc = subprocess.run(
-            [codex, "mcp", "list", "--json"], env=env, cwd=cwd,
-            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding="utf-8", errors="replace", timeout=timeout_s, check=False)
-    except (OSError, subprocess.SubprocessError) as e:
+        proc = run_bounded([codex, "mcp", "list", "--json"], timeout_s, env=env, cwd=cwd)
+    except OSError as e:
         return [], f"`codex mcp list --json` could not run: {e}"
+    if proc.timed_out:
+        return [], f"`codex mcp list --json` could not run: timed out after {timeout_s}s"
     if proc.returncode != 0:
         tail = _last_nonempty_line((proc.stdout or "") + "\n" + (proc.stderr or ""))
         return [], f"`codex mcp list --json` exited {proc.returncode}: {tail}"

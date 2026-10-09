@@ -4,7 +4,8 @@ import { applyUpdate, getCapacity, getServices, getUpdates, putCapacity } from "
 import type { CapacityPut, CapacityView, ServiceRow } from "../../api/admin";
 import ui from "../../components/ui.module.css";
 import styles from "./Admin.module.css";
-import { AdminError, Done, RestartStatus, useServiceAction } from "./shared";
+import { AdminError, Done, RestartStatus, adminRefused, useServiceAction } from "./shared";
+import { CutRelease } from "./CutRelease";
 
 // Admin → Services (design §4.8, §4.10): health per service with Start/Stop/Restart through the supervisor;
 // the app-update banner; and Capacity (§4.14(d)).
@@ -43,7 +44,8 @@ function UpdatesBanner(): React.JSX.Element | null {
     },
   });
   const u = q.data;
-  if (!u) return q.error ? <AdminError error={q.error} testid="updates-error" /> : null;
+  // a refused admin route is said once, by the Services table below, not once per panel
+  if (!u) return q.error && !adminRefused(q.error) ? <AdminError error={q.error} testid="updates-error" /> : null;
   const last = u.last?.result?.state;
   return (
     <>
@@ -199,7 +201,7 @@ export function CapacityPanel(): React.JSX.Element {
       </div>
       <p className={styles.fieldDoc}>How many seat shells the pool runs at once. Changes apply at once, with no restart, and survive a pool restart. Every cap is at least 1: a cap of 0 would not pause anything, it would deadlock spawning. Pausing is its own control.</p>
       {tooLow ? <p className={ui.banner} role="alert" data-testid="capacity-clamp">A cap below 1 is saved as 1. To stop new seats, pause instead.</p> : null}
-      <AdminError error={q.error} testid="capacity-error" />
+      {adminRefused(q.error) ? null : <AdminError error={q.error} testid="capacity-error" />}
       {v ? (
         <>
           <div className={styles.capGrid}>
@@ -230,6 +232,7 @@ export function ServicesTab(): React.JSX.Element {
   return (
     <div className={styles.panel} data-testid="admin-services">
       <UpdatesBanner />
+      <CutRelease />
       <ServicesTable />
       <CapacityPanel />
     </div>

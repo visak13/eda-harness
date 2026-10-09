@@ -32,7 +32,7 @@ const home: DecisionsHome = {
   questions: [
     { id: M1, ticket_id: TASK, created_by: 'engineer.t-0123456789', kind: 'question', text: 'which **one**?', why: 'addressed to you (@owner)',
       asker: { type: 'agent', role: 'engineer', seat_state: 'alive', note: 'Its shell is alive; your answer wakes it.' } },
-    { id: M2, ticket_id: OTHER_STORY, created_by: 'x', kind: 'question', text: 'not in this story' },
+    { id: M2, ticket_id: OTHER_STORY, created_by: 'x', kind: 'question', text: 'not in this story', from_type: 'human', from_role: 'owner' },
     { id: M3, ticket_id: STORY, created_by: 'y', kind: 'question', text: 'asker closed', asker: { seat_state: 'dead' } },
   ],
 };
@@ -53,6 +53,10 @@ describe('scopeInbox: only the picked scope, owner m-db09472a68', () => {
     expect(items.map(i => i.key)).toEqual([signoffKey(C1), gateKey(EPIC, 'scope'), gateKey(EPIC, 'design_signoff'), questionKey(M1), questionKey(M2)]);
     expect((items[1] as InboxGate).design).toBe(false);
     expect((items[2] as InboxGate).design).toBe(true);
+  });
+  it('a row that names its sender only as from_role/from_type shows that role, not "unknown" (qa 0.10.8)', () => {
+    const q = scopeInbox(home, new Set([OTHER_STORY]))[0] as InboxQuestion;
+    expect(q).toMatchObject({ byRole: 'owner', byHuman: true });
   });
   it('switching scope changes the list; nothing, or garbage, is an empty list', () => {
     expect(scopeInbox(home, new Set([OTHER_STORY])).map(i => i.key)).toEqual([questionKey(M2)]);

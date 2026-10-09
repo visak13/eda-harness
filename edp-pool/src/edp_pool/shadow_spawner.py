@@ -441,10 +441,13 @@ class ShadowSpawner(Spawner):
             PtyLaunch, activation_text, build_argv, build_env,
             build_session_args, ensure_claude_healthy, resolve_claude_bin,
         )
+        from .pty_launcher import claude_launch_choice
         from .spawner import seat_model_for
 
         # v7 live-drill fix: registry binds every shadowed role too.
         model = model or seat_model_for(role, self.legacy.cwd)
+        # S7: the fleet-wide effortLevel pin left settings.json, so the effort rides argv here too
+        argv_model, effort = claude_launch_choice(self.legacy.cwd, model, None)
 
         cfg = ShadowConfig(
             handle=handle, role=role, ledger_dir=self.shadow_dir,
@@ -478,13 +481,13 @@ class ShadowSpawner(Spawner):
                 return _ConsoleShellAdapter(
                     argv=build_argv(bin_, extra=sargs,
                                     skip_permissions=skip_perms,
-                                    model=model),
+                                    model=argv_model, effort=effort),
                     env=env, cwd=self.legacy.cwd)
         else:
             def shell_factory():
                 return _PtyShellAdapter(PtyLaunch(
                     argv=build_argv(bin_, extra=sargs,
-                                    skip_permissions=True, model=model),
+                                    skip_permissions=True, model=argv_model, effort=effort),
                     env=env, cwd=self.legacy.cwd, log_path=log_path))
 
         def driver_factory(on_event):

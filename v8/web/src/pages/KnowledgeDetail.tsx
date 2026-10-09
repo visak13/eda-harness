@@ -6,7 +6,7 @@ import type { BoardApiError } from "../api/client";
 import type { KnowledgeDoc, KnowledgeView } from "../api/types";
 import { useDocDrawer } from "../components/DocDrawer";
 import ui from "../components/ui.module.css";
-import { KIND_LABEL, StatusWord } from "./knowledgeShared";
+import { docTitle, DOC_WRITE_HINT, KIND_LABEL, StatusWord } from "./knowledgeShared";
 import styles from "./Knowledge.module.css";
 
 // One knowledge doc: meta + provenance, Read (the doc drawer), Edit (title/body/tags → the board
@@ -71,7 +71,7 @@ export function KnowledgeDetail({ doc, epics, onClose }: {
 
   return (
     <aside className={styles.detail} aria-label={`Knowledge doc ${doc.title}`} data-testid="knowledge-detail">
-      <h2 className={styles.detailTitle}>{doc.title}</h2>
+      <h2 className={styles.detailTitle}>{docTitle(doc.title)}</h2>
       <p className={styles.muted}>
         <span className={ui.tag}>{KIND_LABEL[doc.doc_type] ?? doc.doc_type}</span> <StatusWord status={doc.status} /> ·
         v{doc.version} · {doc.id} · by {doc.created_by}
@@ -177,6 +177,7 @@ function KnowledgeEditor({ doc, onSaved }: { doc: KnowledgeDoc; onSaved: () => v
       <label className={ui.sectionLabel} htmlFor="kd-body">Body (markdown)</label>
       <textarea id="kd-body" className={ui.textarea} rows={14} value={body ?? full.data.body_md}
         onChange={(e) => setBody(e.target.value)} data-testid="knowledge-edit-body" />
+      <p className={styles.muted} data-testid="knowledge-doc-write-hint">{DOC_WRITE_HINT}</p>
       {save.isError ? <p className={ui.banner} role="alert">{errText(save.error)}</p> : null}
       <div className={styles.actions}>
         <button type="submit" className={`${ui.button} ${ui.buttonPrimary}`} disabled={!changed || save.isPending}

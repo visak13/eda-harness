@@ -1,3 +1,4 @@
+import { hideFromGuests } from "../auth/guest";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { sendMessage, updateDoc } from "../api/endpoints";
@@ -12,7 +13,7 @@ import styles from "./DocControls.module.css";
 // is SignoffPane and Comment is DocView's box — this fills the rest. Only shown when the doc's scope
 // is a ticket/epic thread; a domain- or global-scoped doc has no thread to ask on. The board owns
 // who may write; its plain-sentence hint is shown verbatim on refusal.
-export function DocControls({
+function DocControlsView({
   docId,
   scope,
   version,
@@ -181,3 +182,6 @@ function NewVersion({ docId }: { docId: string }): React.JSX.Element {
     </form>
   );
 }
+
+/** e0cec S5: a guest never sees this control (the board refuses it). */
+export const DocControls = hideFromGuests(DocControlsView);

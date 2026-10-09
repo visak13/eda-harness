@@ -1,0 +1,30 @@
+   fleet before: board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+PASS  pre-check: every record in <repo>\v8\.data\s2-spike\home\.run names a private (or dead) pid
+   ports board=55585 pool=55588 mcp=55586 broker=55589; home <repo>\v8\.data\s2-spike\home
+== 09:05:41 install 0.9.1 (spike identity) privately
+PASS  no spike product installed yet
+PASS  the spike wxs runs no custom action (nothing touches a default home at install)
+   msiexec exit 0 in 45.4s
+PASS  0.9.1 installed
+PASS  heronry.exe at <repo>\v8\.data\s2-spike\install\heronry.exe
+   installed: {015FD807-D012-4E4E-A414-93FC737F76F7}=0.9.1
+   Heronry 0.9.1
+   claude seats use their own store <repo>\v8\.data\s2-spike\home\.data\claude-pool: sign in once with CLAUDE_CONFIG_DIR set to it, then run `claude` and /login (or copy your .credentials.json there).
+   
+   next: heronry doctor, then heronry start
+PASS  init exit 0
+   board      started          pid 21428  http://127.0.0.1:55585
+   broker     started          pid 6340  http://127.0.0.1:55589
+   pool       started          pid 33720  http://127.0.0.1:55588
+   mcp        started          pid 22492  http://127.0.0.1:55586
+   bridge     skipped          (no slack map configured)
+   supervisor started          pid 11976
+   setup      first run: finish setup at http://127.0.0.1:55585/ui/setup?code=<redacted>  (the link signs you in once, within 24 h)
+   spawned stub seat engineer.s2-drill : {"session_id":"engineer:41920b5a-05f1-4d2d-8291-bec724af2af9"}
+   health 0.9.1; seat engineer.s2-drill row active pid 23684 liveness alive
+PASS  board healthy at 0.9.1
+PASS  a stub seat is live
+   fleet after:  board=25784/up broker=11656/up pool=35144/up mcp=21188/up bridge=32616/up supervisor=35436/up
+PASS  fleet pids unchanged
+elapsed 83s
+RESULT: all checks passed

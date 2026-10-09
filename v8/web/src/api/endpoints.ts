@@ -5,6 +5,7 @@
 // filter change is one place, and an absent filter is omitted rather than sent as "".
 import { api, apiEnvelope, BoardApiError, postJson } from "./client";
 import type {
+  KnowledgeLesson,
   QuoteIn,
   ActivityDay,
   ConversationRow,
@@ -35,6 +36,7 @@ import type {
   CodeStatus,
   CodeFaq,
   CodeSession,
+  PainRow,
 } from "./types";
 
 function qs(params: Record<string, string | number | null | undefined>): string {
@@ -65,6 +67,9 @@ export type TicketsFilter = {
 };
 export const getTicketsTable = (f: TicketsFilter = {}) =>
   api<TicketsTable>(`/v1/tickets/table${qs(f)}`);
+
+/** The pain store, newest first; `status` is open|fixed|ticket|duplicate|invalid|all (the board defaults to open). */
+export const getPains = (status: string = "all", q?: string | null) => api<PainRow[]>(`/v1/pains${qs({ status, q })}`);
 
 export const getTicketPage = (id: string, include?: string | null) =>
   api<TicketPage>(`/v1/tickets/${encodeURIComponent(id)}/page${qs({ include })}`);
@@ -204,7 +209,8 @@ export const updateDoc = (id: string, b: { body_md?: string; title?: string; tag
 // ------------------------------------------------------------------ S-LIBRARY (design-34bf11cc07 §4.3)
 /** GET /v1/knowledge — strategies, domains (all statuses, with linked tickets) and lessons. */
 export const getKnowledge = () => api<KnowledgeView>("/v1/knowledge");
-export const getDoc = (id: string) => api<DocRecord>(`/v1/docs/${encodeURIComponent(id)}`);
+/** S17: the doc GET returns the head by default; the editor needs the whole body (all=true). */
+export const getDoc = (id: string) => api<DocRecord>(`/v1/docs/${encodeURIComponent(id)}?all=true`);
 export const getDocDiff = (id: string) => api<DocDiff>(`/v1/docs/${encodeURIComponent(id)}/diff`);
 /** POST /v1/docs — the owner authors a knowledge doc (active). */
 export const createKnowledgeDoc = (b: { doc_type: string; title: string; body_md: string; tags: string[]; scope?: string }) =>
@@ -214,6 +220,9 @@ export const approveDoc = (id: string) =>
   postJson<{ doc: DocRecord; target: DocRecord | null }>(`/v1/docs/${encodeURIComponent(id)}/approve`, {});
 export const rejectDoc = (id: string) =>
   postJson<{ doc: DocRecord; target: null }>(`/v1/docs/${encodeURIComponent(id)}/reject`, {});
+/** POST /v1/lessons/{id}/retire — an owner (or architect) retires a lesson; recall and lookup never return it again. */
+export const retireLesson = (id: string, reason: string) =>
+  postJson<KnowledgeLesson>(`/v1/lessons/${encodeURIComponent(id)}/retire`, { reason });
 /** POST /v1/library/import — one bounded server-side fetch of a skills.sh skill → a strategy_hl doc. */
 export const importSkill = (b: { url: string; tags?: string[] }) =>
   postJson<{ doc: DocRecord; created: boolean; fetched: string }>("/v1/library/import", b);
@@ -229,7 +238,16 @@ export const putSettings = (b: UserSettings) => postJson<UserSettings>("/v1/me/s
 export const sendSlackTestPing = () => postJson<{ delivered: boolean }>("/v1/me/settings/slack/test", {});
 
 /** Atomic explicit title + exact raw words. Omitting title preserves legacy caller behavior. */
-export const createEpic = (words: string, choice?: EpicSeatChoice, title?: string, tags: string[] = [], workflow?: string) =>
+export interface EpicPolicy { sme?: boolean; project?: string }
+
+/** e0cec S6: an epic's policy tags — `sme:on` only when switched on (off is the default), `project:<key>` when set. */
+export const policyTags = (p?: EpicPolicy): string[] => [
+  ...(p?.project?.trim() ? [`project:${p.project.trim()}`] : []),
+  ...(p?.sme ? ["sme:on"] : []),
+];
+
+export const createEpic = (words: string, choice?: EpicSeatChoice, title?: string, tags: string[] = [], workflow?: string,
+  policy?: EpicPolicy) =>
   postJson<TicketRecord>("/v1/tickets", {
     kind: "epic",
     // S14: the published workflow version the epic pins (the board defaults to standard@1)
@@ -240,8 +258,8 @@ export const createEpic = (words: string, choice?: EpicSeatChoice, title?: strin
     // S-ROLES (design-34bf11cc07 §4.1) + S-UI: one model and one effort per role, recorded as
     // `model:<role>=<id>` / `seat-effort:<role>=<level>` tags (edp8/seat_choice.py); t-683d0033bb: the
     // owner's plain tags lead, so the Library auto-link (edp8/library.autolink) can match them.
-    ...(choice || libraryTags(tags).length
-      ? { tags: [...libraryTags(tags), ...(choice ? epicChoiceTags(choice) : [])] } : {}),
+    ...(choice || libraryTags(tags).length || policyTags(policy).length
+      ? { tags: [...libraryTags(tags), ...policyTags(policy), ...(choice ? epicChoiceTags(choice) : [])] } : {}),
   });
 
 /** t-683d0033bb: the owner's tags that can match a Library doc — plain words only, as the board's
@@ -249,23 +267,75 @@ export const createEpic = (words: string, choice?: EpicSeatChoice, title?: strin
 export const libraryTags = (tags: string[]): string[] =>
   [...new Set(tags.map((t) => t.trim().toLowerCase()).filter((t) => t && !/[:=]/.test(t) && t !== "quick"))];
 
-/** The per-role models and efforts chosen in the new-epic dialog or Actions → Models…. */
+/** S7: one entry of a role's option list — a catalog id and the effort it runs at (`""` = unnamed). */
+export interface SeatOption { model: string; effort: string }
+
+/** `<id>@<effort>`; the id may carry `[1m]`, so the effort is split off at the LAST `@`. */
+export const optionToken = (o: SeatOption): string => (o.effort ? `${o.model}@${o.effort}` : o.model);
+export function parseOptionToken(token: string): SeatOption {
+  const t = token.trim();
+  const at = t.lastIndexOf("@");
+  return at > 0 ? { model: t.slice(0, at).trim(), effort: t.slice(at + 1).trim() } : { model: t, effort: "" };
+}
+export const sameOption = (a: SeatOption, b: SeatOption): boolean => a.model === b.model && a.effort === b.effort;
+
+/** The per-role models and efforts chosen in the new-epic dialog or Actions → Models…. `roleOptions` is
+ *  S7's ordered option list per role (first = the default); a role without one keeps the legacy single
+ *  `model:<role>=<id>` + `seat-effort:<role>=<level>` pair. */
 export interface EpicSeatChoice {
   roleModels: Record<string, string>;
   roleEfforts: Record<string, string>;
+  roleOptions?: Record<string, SeatOption[]>;
 }
 
-export const epicChoiceTags = (c: EpicSeatChoice): string[] => [
-  ...Object.entries(c.roleModels).filter(([r, m]) => r && m).map(([r, m]) => `model:${r}=${m}`),
-  ...Object.entries(c.roleEfforts).filter(([r, e]) => r && e).map(([r, e]) => `seat-effort:${r}=${e}`),
-];
+/** `model:<role>=<id>@<effort>|<id>@<effort>` for a role with an option list; else the legacy pair. */
+export const epicChoiceTags = (c: EpicSeatChoice): string[] => {
+  const listed = Object.entries(c.roleOptions ?? {}).filter(([r, o]) => r && o.length);
+  const inList = new Set(listed.map(([r]) => r));
+  return [
+    ...listed.map(([r, o]) => `model:${r}=${o.map(optionToken).join("|")}`),
+    ...Object.entries(c.roleModels).filter(([r, m]) => r && m && !inList.has(r)).map(([r, m]) => `model:${r}=${m}`),
+    ...Object.entries(c.roleEfforts).filter(([r, e]) => r && e && !inList.has(r)).map(([r, e]) => `seat-effort:${r}=${e}`),
+  ];
+};
 
 /** An epic's tags with its seat choice replaced: every `model:<role>=`, `seat-model:` and
- *  `seat-effort:` entry goes, the new per-role picks come in, every other tag keeps its place. */
+ *  `seat-effort:` entry goes, the new per-role picks come in, every other tag keeps its place
+ *  (a story's `seat:<role>=` pick is not a `model:` tag, so it stays). */
 export const withChoiceTags = (tags: string[], c: EpicSeatChoice): string[] => [
   ...tags.filter((t) => !/^(model:[^=]+=|seat-model:|seat-effort:)/.test(t)),
   ...epicChoiceTags(c),
 ];
+
+/** Each role's option list from an epic's tags (`model:<role>=` entries, `|`-separated). */
+export function roleOptionsFromTags(tags: string[]): Record<string, SeatOption[]> {
+  const out: Record<string, SeatOption[]> = {};
+  for (const t of tags) {
+    const m = /^model:([^=]+)=(.*)$/.exec(t);
+    if (!m) continue;
+    out[m[1].trim()] = m[2].split("|").map(parseOptionToken).filter((o) => o.model);
+  }
+  return out;
+}
+
+/** A story's picks from its tags: `seat:<role>=<id>@<effort>`. */
+export function storyPicksFromTags(tags: string[]): Record<string, SeatOption> {
+  const out: Record<string, SeatOption> = {};
+  for (const t of tags) {
+    const m = /^seat:([^=]+)=(.*)$/.exec(t);
+    if (m) out[m[1].trim()] = parseOptionToken(m[2]);
+  }
+  return out;
+}
+
+/** A story's tags with its pick for `role` replaced (null = no pick: the role's default option runs). */
+export const withStoryPick = (tags: string[], role: string, pick: SeatOption | null): string[] => [
+  ...tags.filter((t) => !t.startsWith(`seat:${role}=`)),
+  ...(pick ? [`seat:${role}=${optionToken(pick)}`] : []),
+];
+
+/** The effort an option runs at: the one it names, clamped to the model's cap by the caller. */
+export const optionEffort = (o: SeatOption): string => o.effort || "medium";
 
 /** GET /v1/tickets/{id} — the bare record (tags among it). */
 export const getTicket = (id: string) => api<TicketRecord>(`/v1/tickets/${encodeURIComponent(id)}`);
@@ -277,17 +347,21 @@ export function choiceFromTags(tags: string[], catalog: { roles: Record<string, 
   const tag = (prefix: string) => tags.filter((t) => t.startsWith(prefix)).map((t) => t.slice(prefix.length));
   const perRole = (prefix: string) => Object.fromEntries(tag(prefix).filter((v) => v.includes("="))
     .map((v) => [v.slice(0, v.indexOf("=")).trim(), v.slice(v.indexOf("=") + 1).trim()]));
-  const roleModels = perRole("model:");
+  const roleOptions = roleOptionsFromTags(tags);
   const roleEfforts = perRole("seat-effort:");
   const oldModel = tag("seat-model:").filter((v) => v && v !== "claude").pop();
   const oldEffort = tag("seat-effort:").filter((v) => !v.includes("=")).pop();
   const roles = Object.keys(catalog.roles);
+  const first = (r: string): SeatOption | undefined => roleOptions[r]?.[0];
+  const roleModels = Object.fromEntries(roles.map((r) => {
+    const m = first(r)?.model ?? oldModel;
+    return [r, m && catalog.roles[r].includes(m) ? m : catalog.defaults[r] ?? catalog.roles[r][0] ?? ""];
+  }));
   return {
-    roleModels: Object.fromEntries(roles.map((r) => {
-      const m = roleModels[r] ?? oldModel;
-      return [r, m && catalog.roles[r].includes(m) ? m : catalog.defaults[r] ?? catalog.roles[r][0] ?? ""];
-    })),
-    roleEfforts: Object.fromEntries(roles.map((r) => [r, roleEfforts[r] ?? oldEffort ?? "medium"])),
+    roleModels,
+    // the first option's own effort when it names one and its model is the one shown
+    roleEfforts: Object.fromEntries(roles.map((r) => [r,
+      (first(r)?.model === roleModels[r] && first(r)?.effort) || roleEfforts[r] || oldEffort || "medium"])),
   };
 }
 
@@ -359,7 +433,7 @@ export const mintCodeSession = async (): Promise<CodeSession | null> => {
 // ------------------------------------------------------------------ C19 quotes
 /** One doc version's markdown source (immutable per version): what a doc quote is verified against. */
 export const getDocSource = (id: string, version: number) =>
-  api<DocRecord>(`/v1/docs/${encodeURIComponent(id)}${qs({ version })}`);
+  api<DocRecord>(`/v1/docs/${encodeURIComponent(id)}${qs({ version, all: "true" })}`);
 /** One message (its ticket, for a quote card's link to a message on another thread). */
 export const getMessage = (id: string) => api<{ id: string; ticket_id: string; text: string }>(`/v1/messages/${encodeURIComponent(id)}`);
 /** Does this board take `quotes[]` on messages (C18)? Its message contract names them; a pre-C18
@@ -379,6 +453,14 @@ export const getScopeDocs = (scope: string) => api<{ id: string; doc_type: strin
 /** GET /v1/decisions?scope= — the scope's live and withdrawn decisions (the epic's participants only). */
 export const getScopeDecisions = (scope: string) =>
   api<{ decisions: { id: string; text: string; status: string }[] }>(`/v1/decisions${qs({ scope })}`);
+/** GET /v1/artifacts/search — the one `$` picker source: finalised artifacts the caller may read, `epicId`'s own
+ *  first (group "scope"), the rest after, each row naming its epic (S16, owner m-ec3b411172). */
+export interface ArtifactSearchRow {
+  id: string; form: string; title: string; uri: string; content_type: string;
+  epic_id: string | null; epic_title: string | null; ticket_id: string | null; created_at: string; group: "scope" | "board";
+}
+export const searchArtifacts = (q: string, epicId: string | null, limit = 40) =>
+  api<ArtifactSearchRow[]>(`/v1/artifacts/search${qs({ q, epic_id: epicId ?? undefined, limit })}`);
 /** GET /v1/find — exact words ∪ semantic hits; ticket hits carry title+status, doc hits their title. */
 export const findBoard = (q: string, types: string, k = 20) =>
   api<{ type: string; id: string; title?: string; status?: string; snippet?: string }[]>(`/v1/find${qs({ q, types, k })}`);
