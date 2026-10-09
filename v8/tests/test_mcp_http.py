@@ -15,6 +15,7 @@ import pytest
 import uvicorn
 from fastapi.testclient import TestClient
 
+import edp8
 from edp8 import mcp_server
 from edp8.board import Board
 from edp8.bundles import ROLE_BUNDLES
@@ -89,6 +90,7 @@ def _run(coro):
 def test_healthz_reports_version_and_roles(stack):
     h = httpx.get(f"{stack['mcp']}/healthz").json()
     assert h["ok"] and h["transport"] == "streamable-http/stateless"
+    assert h["version"] == edp8.__version__ and h["git_rev"]  # the launcher's stray check compares `version`
     assert set(h["roles"]) == set(ROLE_BUNDLES)
 
 

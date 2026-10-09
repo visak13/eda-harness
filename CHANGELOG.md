@@ -15,8 +15,27 @@ This release fixes what qa found in the 0.10.7 candidate.
 - **From 0.10.5, 0.10.6 or 0.10.7:** run `heronry update --release-url <0.10.8 release folder> --previous-url <your
   current release folder>`, or run `install-heronry.cmd` from the 0.10.8 release folder. Restart open seats, and
   reload any open board tab.
+- **From 0.10.0 to 0.10.4 (preview builds), desktop app:** run `install-heronry.cmd` from the 0.10.8 release
+  folder (double-click it, or type it in a terminal). It checks every file against `SHA256SUMS`, stops the code
+  server and the services, installs the `.msi` and starts Heronry again.
+- **From 0.9.x, desktop app (the `.msi`): by hand, this once.** 0.9.x's `heronry update` refuses a desktop
+  install ("the desktop bundle updates through its installer"). From 0.10 on, `heronry update` and the tray's
+  **Check for update** install the new `.msi` themselves.
+  1. `heronry stop all --force`: stops every service and takes the seats offline. Running codex seats are
+     processes of the installed `heronry.exe` and would lock the install folder.
+  2. Run `Heronry Desktop-0.10.8.msi`: double-click it, or `msiexec /i "Heronry Desktop-0.10.8.msi"`. It
+     upgrades in place; your board data and settings stay. If Windows still shows a "files in use" dialog
+     naming Heronry, keep its default, **Automatically close applications**: it is safe.
+  3. `heronry start`, or open Heronry Desktop.
+- **From 0.9.x, command line (`install.ps1` / `install.sh`):** `heronry update`.
+- The first start refreshes the agent home (role cards, skills, hooks, guides) and merges the new model catalog
+  into yours. A file you edited is kept, with the new version beside it as `<file>.new`.
+- After an update or a board restart, a Claude Code session that was open through it may have lost the edp8
+  tools: run `/mcp` and pick Reconnect for edp8. Seats reconnect on their own.
 
 ### Fixed
+- **Start:** a second `heronry start` leaves a running MCP server alone. It used to stop and restart it, which
+  dropped the edp8 tools from open Claude Code sessions until they reconnected.
 - **EDP Chat in Restricted Mode:** it loads in a folder you have not trusted yet. Git features stay off until you
   trust the folder.
 - **Update:** after an update, `heronry start` restarts a code server that still serves the previous EDP Chat, so

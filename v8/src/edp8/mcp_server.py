@@ -384,8 +384,12 @@ def build_http_app(roles: list[str] | None = None) -> Starlette:
     from edp_contracts.identity import home_identity
     identity = home_identity()
 
+    # version is the package version, like the board's /v1/health: `heronry start` stops a service whose version is
+    # not the installed one, and the rev ("v0.10.8" installed, a sha in a checkout) never matched (CI install smoke)
+    from edp8 import __version__ as package_version
+
     async def healthz(_: Request) -> JSONResponse:
-        return JSONResponse({"ok": True, "version": VERSION, "started_at": STARTED_AT,
+        return JSONResponse({"ok": True, "version": package_version, "git_rev": VERSION, "started_at": STARTED_AT,
                              "roles": roles, "transport": "streamable-http/stateless", **identity})
 
     # S13: a workflow's custom role (not a built-in bundle) is served the kernel bundle on /mcp/<role>;
