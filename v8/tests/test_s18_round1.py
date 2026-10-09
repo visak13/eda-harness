@@ -1,6 +1,7 @@
 """S18 round-1 regressions (t-fb9350ba64): the adversary's hostile probes from report-8c32953372 (commit 8b3482da),
 moved into the default suite, plus the repair contracts' extra paths. Synthetic boards and data; process calls are
 fakes."""
+import sys
 import html
 import json
 
@@ -8,6 +9,10 @@ import pytest
 
 from test_e0cec_s5_guest import rig, _post, OWNER, ARCH, GUEST
 from test_s17_summary_first import http, _doc, _call
+
+
+# the MSI / Win32 update path (msiexec, ctypes.windll): Windows-only code, so Windows-only tests
+WINDOWS_ONLY = pytest.mark.skipif(sys.platform != "win32", reason="Windows-only (MSI / Win32 API)")
 
 
 @pytest.mark.parametrize('canary', ['S18CanaryPlainText98765', 'S18Canary<red>&blue!'])
@@ -50,6 +55,7 @@ def test_msi_stop_failure_does_not_reach_installer(tmp_path, monkeypatch):
     assert result['state'] == 'failed' and 'services did not stop' in result['reason'] and 'error' not in result
 
 
+@WINDOWS_ONLY
 @pytest.mark.parametrize('failure', ['park', 'resume', 'none'])
 def test_msi_seat_coordination_failures_are_not_success(tmp_path, monkeypatch, failure):
     from edp8 import update_helper as h
@@ -116,6 +122,7 @@ def test_s18_1_guest_html_screens_every_source_path_and_old_versions(rig, tmp_pa
     assert canary in html.unescape(owner['html'] + owner['title'])
 
 
+@WINDOWS_ONLY
 def test_s18_2_resume_failure_after_install_is_incomplete_and_names_the_seats(tmp_path, monkeypatch):
     """S18-2: the install stays, the outcome is `incomplete` (never ok) and names the seats that did not resume."""
     from edp8 import update_helper as h, updater
@@ -137,6 +144,7 @@ def test_s18_2_resume_failure_after_install_is_incomplete_and_names_the_seats(tm
     assert 'seat-b' in updater.result_text(out) and not updater.result_text(out).startswith('Updated to')
 
 
+@WINDOWS_ONLY
 def test_s18_2_stop_failure_with_services_down_still_installs(tmp_path, monkeypatch):
     """S18-2: a stop that reports failure proceeds only when the stopped state is verified (health is gone)."""
     from edp8 import update_helper as h
@@ -242,13 +250,14 @@ def test_s18_4_repeated_siblings_get_occurrence_selectors_and_readable_paths_sta
     body = ('# Manual\n## Example\nfirst ordinary case\n## Example\nsecond case\n## Setup\nplain\n'
             '# Other\n## Setup\nother setup\n')
     did = _doc(http, body=body)
+    # the head read already returned these sections (add05dd2 already-read): re-read them with fresh=True
     head = _call(http, 'eng', 'doc_read', id=did)['value']
     hs = [s['h'] for s in head.get('map', [])] or None
-    one = _call(http, 'eng', 'doc_read', id=did, section='# Manual > ## Example ⟨1⟩')['value']
-    two = _call(http, 'eng', 'doc_read', id=did, section='# Manual > ## Example ⟨2⟩', version=one['version'])['value']
+    one = _call(http, 'eng', 'doc_read', id=did, section='# Manual > ## Example ⟨1⟩', fresh=True)['value']
+    two = _call(http, 'eng', 'doc_read', id=did, section='# Manual > ## Example ⟨2⟩', version=one['version'], fresh=True)['value']
     assert 'first ordinary case' in one['body_md'] and 'second case' in two['body_md']
     assert _call(http, 'eng', 'doc_read', id=did, section='# Other')['ok']  # a unique line stays plain
-    setup = _call(http, 'eng', 'doc_read', id=did, section='# Other > ## Setup')['value']
+    setup = _call(http, 'eng', 'doc_read', id=did, section='# Other > ## Setup', fresh=True)['value']
     assert 'other setup' in setup['body_md']
     bad = _call(http, 'eng', 'doc_read', id=did, section='# Manual > ## Example ⟨3⟩')
     assert not bad['ok'] and 'Example ⟨2⟩' in bad['error']['message']

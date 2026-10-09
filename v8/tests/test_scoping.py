@@ -112,14 +112,14 @@ def test_agent_created_epic_pages_no_owner(client, board, two_epics, published):
     for _, e in board.store.events_since(0):
         if e.subject_id == b:
             assert not board.relevant(e, owner), e
-    # a message to a CLOSED seat on the agent epic goes to its live architect, not to 'owner'
+    # a message to a CLOSED seat on the agent epic hints its architect (5ea77f0d: no revive), never 'owner'
     _reg(client, f"engineer.{b}", "engineer")
     _session(client, "sid-eng-b", f"engineer.{b}", b, "dead")
     published.clear()
     client.post("/v1/messages", json={"ticket_id": b, "kind": "question", "to": f"engineer.{b}", "text": "?"},
                 headers={"X-Participant": "bot"})
-    fyi = [x for x in published if x[2] == "fyi"]
-    assert fyi and fyi[0][1] == f"architect.{b}"
+    hints = board.store.query("event", {"subject_id": b, "kind": EventKind.board_hint}, limit=10)
+    assert hints and f"engineer.{b}" in hints[0].data["text"]
     assert not [x for x in published if x[1] == "owner"]
 
 

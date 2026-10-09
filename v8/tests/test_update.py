@@ -153,7 +153,7 @@ def test_update_backs_up_stops_installs_starts_and_keeps_pins(inst, tmp_path):
         inst["env"]["EDP_UPDATE_INSTALL_CMD"] = _fake(RECORD, str(tmp_path / "installed.json"), "0", "{wheel}", "{with}")
         r = cli(inst, "update", "--release-url", str(rel), *_prev(tmp_path))
         assert r.returncode == 0, r.stdout + r.stderr
-        assert "compat check passed (1 workflow(s))" in r.stdout and "backed up the DB to" in r.stdout, r.stdout
+        assert "compat check passed (1 workflow(s))" in r.stdout and "backup: the DB to" in r.stdout, r.stdout
         res = _wait_result(inst)
         assert res["state"] == "ok" and res["to"] == "99.0.0", res
         installed = json.loads((tmp_path / "installed.json").read_text(encoding="utf-8"))

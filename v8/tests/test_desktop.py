@@ -559,6 +559,7 @@ def test_the_window_allows_text_selection_and_carries_the_bridge(monkeypatch):
     fake = types.SimpleNamespace(settings={"OPEN_EXTERNAL_LINKS_IN_BROWSER": True},
                                  create_window=lambda title, **kw: seen.update(kw) or "window")
     app = desktop.Desktop("H")
+    monkeypatch.setattr(app, "menu", lambda: [])  # off Windows the real menu imports pywebview, which CI lacks
     assert desktop.make_window(app, fake) == "window"
     assert seen["text_select"] is True
     assert isinstance(seen["js_api"], desktop.Bridge)

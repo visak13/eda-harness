@@ -3,6 +3,8 @@ DB, and the parked seats are resumed exactly once per update. Process calls are 
 
 from __future__ import annotations
 
+import sys
+
 import sqlite3
 
 import pytest
@@ -10,6 +12,10 @@ import pytest
 from edp8 import update_helper as h
 from edp8 import updater
 from test_update_s10 import _staged_msis
+
+
+# the MSI / Win32 update path (msiexec, ctypes.windll): Windows-only code, so Windows-only tests
+WINDOWS_ONLY = pytest.mark.skipif(sys.platform != "win32", reason="Windows-only (MSI / Win32 API)")
 
 
 def _db(path, *, extra_column=False, rows=("a",)):
@@ -160,6 +166,7 @@ def test_the_runner_never_waits_for_the_pool_to_resume_seats_itself(tmp_path, mo
     assert not any(u.endswith("/v1/pool/capabilities") for u in calls) and resumes == {"seat-a": 1}
 
 
+@WINDOWS_ONLY
 def test_a_guard_whose_exe_an_earlier_msi_moved_aside_is_still_an_install_process(monkeypatch):
     """The owner's 13:05 update: a code guard left by a rolled-back update ran from C:\Config.Msi\*.rbf (the MSI
     moved its in-use heronry.exe aside) while holding the install folder's DLLs. It was not stopped, so the

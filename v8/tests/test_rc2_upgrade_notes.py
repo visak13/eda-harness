@@ -30,21 +30,13 @@ def _release_notes(version: str) -> str:
 
 def test_the_release_notes_give_the_one_supported_0_9_upgrade():
     notes = _release_notes(edp8.__version__)
-    assert "### Upgrading" in notes  # 0.10.1 (architect m-4812de0b3c): from 0.10.0 and from 0.9.x, one section
+    assert "### Upgrading" in notes  # 0.10.1 (architect m-4812de0b3c): every supported hop, one section
     section = notes.split("### Upgrading", 1)[1].split("\n### ", 1)[0]
-    # t-fd7cf3a6b5: 0.10.0's updater always ends at msiexec 1639 in the default (spaced) folder, so that hop is by hand
-    from_010 = section.split("- **From 0.10.0", 1)[1].split("\n- **", 1)[0]
-    assert "by hand" in from_010 and "1639" in from_010
-    for step in ("`heronry stop code`", "edp8.feed_driver", "`heronry stop all --force`",
-                 f'Heronry Desktop-{edp8.__version__}.msi', "`heronry start code`", "one live window per seat"):
-        assert step in from_010, step
-    # qa m-69f785c0f0: typed in PowerShell 5.1, a plain `INSTALLFOLDER="…"` reaches msiexec whole-token quoted (1639);
-    # Start-Process with a backtick-quoted value keeps the quotes, and -Wait holds step 6 until msiexec ends
-    step5 = next(line for line in from_010.splitlines() if "Start-Process msiexec" in line)
-    assert "INSTALLFOLDER=`\"" in step5 and "-Wait" in step5 and "MSIINSTALLPERUSER=1 ALLUSERS=2" in step5
+    # the last public release is 0.9.x, so every release's notes keep its by-hand desktop step (CI run 37995840203)
+    from_09 = section.split("- **From 0.9.x, desktop app", 1)[1].split("\n- **", 1)[0]
     for step in STEPS:
-        assert step in section, step
-    assert f'msiexec /i "Heronry Desktop-{edp8.__version__}.msi"' in section
+        assert step in from_09, step
+    assert f'msiexec /i "Heronry Desktop-{edp8.__version__}.msi"' in from_09
     assert "command line (`install.ps1` / `install.sh`):** `heronry update`" in section
     assert "/mcp" in section  # RC2 item 6: the one action an open Claude Code session may need
     # the RC2 gate (architect m-0b95d8413e): kept codex seats lock the install folder, so the 0.9.x step stops

@@ -24,6 +24,10 @@ V8 = Path(__file__).resolve().parents[1]
 SERVER_DIR = "code-server-9.9.9-windows-amd64"
 
 
+# the MSI / Win32 update path (msiexec, ctypes.windll): Windows-only code, so Windows-only tests
+WINDOWS_ONLY = pytest.mark.skipif(sys.platform != "win32", reason="Windows-only (MSI / Win32 API)")
+
+
 def _tar(path: Path, members: dict[str, bytes]) -> str:
     with tarfile.open(path, "w:gz") as tf:
         for name, data in members.items():
@@ -169,6 +173,7 @@ def test_no_npm_install_hint_for_code_server_remains():
     assert hits == [], hits
 
 
+@WINDOWS_ONLY
 def test_no_download_opt_out_makes_a_missing_code_server_not_installed(tmp_path, monkeypatch):
     empty = tmp_path / "emptybin"
     empty.mkdir()

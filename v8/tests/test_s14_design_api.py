@@ -157,7 +157,8 @@ def test_every_preset_dry_runs_to_done(preset, home):
 def test_the_standard_dry_run_is_faithful(home):
     texts = [e["text"] for e in wd.dry_run(wf.build_standard())["timeline"] if e["kind"] != "wake"]
     assert "owner spawns architect" in texts and "architect spawns engineer" in texts
-    assert any(t.startswith("board pairs qa.") for t in texts)
+    # S4's one-qa guard (ea6dc4d2): the epic's architect spawns its one qa; the board pairs only when none is live
+    assert "architect spawns qa" in texts or any(t.startswith("board pairs qa.") for t in texts)
     assert "owner: answer design_signoff" in texts
 
 

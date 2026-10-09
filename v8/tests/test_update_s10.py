@@ -4,6 +4,8 @@ and the runner's close/timeout/park/board-event steps. The real drill is v8/scri
 
 from __future__ import annotations
 
+import sys
+
 import hashlib
 import json
 import os
@@ -15,6 +17,10 @@ import pytest
 from edp8 import update_helper as uh
 from edp8 import updater
 from edp8.updater import UpdateError
+
+
+# the MSI / Win32 update path (msiexec, ctypes.windll): Windows-only code, so Windows-only tests
+WINDOWS_ONLY = pytest.mark.skipif(sys.platform != "win32", reason="Windows-only (MSI / Win32 API)")
 
 
 @pytest.fixture
@@ -140,6 +146,7 @@ def test_compat_gate_outcomes(tmp_path, capsys):
         updater._compat_gate({}, db, lambda: (2, [], "usage"), "2.0.0")
 
 
+@WINDOWS_ONLY
 def test_msi_compat_check_hands_the_runner_the_extract_and_reads_its_answer(monkeypatch, home, tmp_path):
     import edp_contracts.proc as proc
     seen = {}
@@ -283,6 +290,7 @@ def _msi_run(monkeypatch, rplan, *, timeout_leaves_new: bool, health=None):
     return json.loads(Path(rplan["result"]).read_text(encoding="utf-8")), state["calls"]
 
 
+@WINDOWS_ONLY
 def test_a_msiexec_that_outlives_its_timeout_with_nothing_changed_rolls_back_without_reinstalling(monkeypatch, rplan):
     res, calls = _msi_run(monkeypatch, rplan, timeout_leaves_new=False)
     assert res["state"] == "rolled_back" and "did not finish" in res["reason"]
@@ -295,6 +303,7 @@ def test_a_rollback_is_only_rolled_back_when_the_board_reports_the_old_version(m
     assert res["state"] == "failed" and "did not come back" in res["reason"] and res["health_version"] == "9.9.9"
 
 
+@WINDOWS_ONLY
 def test_a_msiexec_that_outlives_its_timeout_after_committing_is_removed_and_the_old_msi_reinstalled(monkeypatch, rplan):
     res, calls = _msi_run(monkeypatch, rplan, timeout_leaves_new=True)
     assert res["state"] == "rolled_back" and res["installed"] == "0.9.1"

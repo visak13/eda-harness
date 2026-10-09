@@ -5,6 +5,8 @@ this pins the branch logic: what is rolled back how, and what the result says.""
 
 from __future__ import annotations
 
+import sys
+
 import json
 from pathlib import Path
 
@@ -12,6 +14,10 @@ import pytest
 
 from edp8 import update_helper as uh
 from edp8.updater import _msi_version, parse_sums
+
+
+# the MSI / Win32 update path (msiexec, ctypes.windll): Windows-only code, so Windows-only tests
+WINDOWS_ONLY = pytest.mark.skipif(sys.platform != "win32", reason="Windows-only (MSI / Win32 API)")
 
 
 def test_sha256sums_keeps_a_file_name_with_spaces():
@@ -308,6 +314,7 @@ def test_the_seat_above_a_feed_is_found_through_its_shells_and_a_reused_parent_p
     assert uh._seat_above(30, table)["pid"] == 31
 
 
+@WINDOWS_ONLY
 def test_update_refuses_up_front_naming_a_live_seat_the_pool_does_not_track(monkeypatch, tmp_path):
     """Architect m-95b5fe285e: before anything is downloaded, parked or stopped, `heronry update` refuses while a
     live seat outside the pool's active rows runs a feed monitor from the install folder, and names it."""
@@ -336,6 +343,7 @@ def test_update_refuses_up_front_naming_a_live_seat_the_pool_does_not_track(monk
     assert "Nothing changed" in msg
 
 
+@WINDOWS_ONLY
 def test_msiexec_gets_each_property_value_quoted_never_the_whole_token(monkeypatch, tmp_path):
     """t-fd7cf3a6b5: the owner's update into the default folder (Heronry contributors/Heronry Desktop) exited 1639.
     A list argv made subprocess quote the whole `INSTALLFOLDER=<dir>` token, a form msiexec refuses; it wants

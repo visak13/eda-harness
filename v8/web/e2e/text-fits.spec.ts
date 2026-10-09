@@ -45,9 +45,9 @@ async function populate(page: Page): Promise<void> {
       svc("code-server", { port: 19500, note: "installed, started by heronry start code", autostart: true }), svc("embedder", { state: "down", health: "down", pid: null, port: null, uptime: null }), svc("tailnet-proxy", { managed: false })],
   })));
   await page.route("**/v1/admin/teammates", (route) => route.request().method() === "GET" ? route.fulfill(ok([
-    ["maria-del-carmen", "owner", true, true, true, null], ["tobias", "owner", false, false, true, "2026-10-09T14:00:00Z"], ["guest-reviewer", "guest", false, false, false, null], ["dev-ops-lead", "owner", false, false, false, "2026-10-12T10:00:00Z"],
+    ["maria-del-carmen", "owner", true, true, true, null], ["tobias", "owner", false, false, true, "2026-10-09T14:00:00Z"], ["guest-viewer", "guest", false, false, false, null], ["dev-ops-lead", "owner", false, false, false, "2026-10-12T10:00:00Z"],
   ].map(([handle, role, admin, init, tok, inv]) => ({ id: handle, handle, role, admin, init_human: init, has_token: tok, last_seen: "2026-10-09T13:00:00Z", invite_expires: inv })))) : route.fallback());
-  await page.route("**/v1/admin/tokens/agents", (route) => route.fulfill(ok(["architect", "engineer", "adversary", "reviewer", "qa", "designer"]
+  await page.route("**/v1/admin/tokens/agents", (route) => route.fulfill(ok(["architect", "engineer", "adversary", "qa", "designer"]
     .map((role) => ({ handle: `${role}.epic-0cec8d1c31`, participant_id: `${role}.epic-0cec8d1c31`, role, model: "claude-sonnet-5-5", last_seen: new Date().toISOString(), revoked: false })))));
   await page.route("**/v1/code", (route) => route.request().method() === "GET" ? route.fulfill(ok({ port: 19500, url: "http://127.0.0.1:19500", running: true, version: "4.116.0", default_folder: "C:\Users\owner\heronry", start_command: "heronry start code", installed: true })) : route.fallback());
   // synthetic data only: the real page shows this computer's tailnet name

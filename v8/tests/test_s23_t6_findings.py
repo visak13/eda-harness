@@ -98,8 +98,9 @@ def _write_calls(rig) -> dict[str, tuple[str, dict]]:
     e = rig["epic"]
     story = rig["owner"]._request("POST", "/v1/tickets", json={"kind": "story", "work_type": "feature",
                                                                "title": "S", "parent_id": e})["value"]["id"]
-    rig["owner"]._request("POST", "/v1/messages", json={"ticket_id": e, "kind": "note", "text": "do the work"})
-    ask = rig["owner"]._request("GET", f"/v1/epics/{e}/asks")["value"]["asks"][-1]["id"]  # S4 E6: a task serves an ask
+    # S4 E6: a task serves a requirement or a finding (the asks ledger is gone, s-aa76c83998)
+    ask = rig["owner"]._request("POST", "/v1/messages", json={"ticket_id": e, "kind": "finding",
+                                                               "text": "do the work"})["value"]["id"]
     return {
         "doc_create": ("owner", {"doc_type": "note", "title": "big", "body_md": BIG, "scope": e}),
         "message_send": ("owner", {"ticket_id": e, "kind": "note", "text": BIG}),

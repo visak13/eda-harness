@@ -84,27 +84,6 @@ def _one(html: str, pattern: str) -> str:
 # --------------------------------------------------------------------------- /ui/me
 
 
-def test_signoff_card_pinned(rig, ui_prefix):
-    page = rig["client"].get(f"{ui_prefix}/me", params={"as": "owner"}).text
-    frag = _one(page, r"<article class='signoff-card'>.*?</article>")
-    kt, kcrit = rig["kt"], rig["kcrit"]
-    assert frag == (
-        f"<article class='signoff-card'><div class='who'>sign-off wanted on "
-        f"<a href='{ui_prefix}/ticket/{kt}'>{kt}</a> · <span class='object-id'>{kcrit}</span></div>"
-        f"<p>strategy doc signed by the owner</p><details open><summary>shape "
-        f"<span class='muted'>strategy_hl v1</span></summary><div class='doc-md'>"
-        f"<h1>Walking skeleton</h1>\n<ul>\n<li>build the <strong>thin</strong> thread first</li>\n</ul>"
-        f"</div></details><form class='signoff-actions' method='post' action='{ui_prefix}/me/verdict'>"
-        f"<input type='hidden' name='as_' value='owner'><input type='hidden' name='token' value=''>"
-        f"<input type='hidden' name='criterion_id' value='{kcrit}'>"
-        f"<input type='hidden' name='ticket_id' value='{kt}'>"
-        f"<input type='hidden' name='evidence_version' value='1'>"
-        f"<input name='note' placeholder='optional note to the author…'>"
-        f"<button name='verdict' value='pass' title='approve — the ticket can close'>Approve</button>"
-        f"<button name='verdict' value='fail' class='btn-fail' "
-        f"title='send back — add a note saying what is missing'>Needs work</button></form></article>")
-
-
 def test_asks_grouped_by_ticket(rig, ui_prefix):
     page = rig["client"].get(f"{ui_prefix}/me", params={"as": "owner"}).text
     assert page.count("class='fold ask-group'") == 2  # one group per ticket

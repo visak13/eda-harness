@@ -35,7 +35,11 @@ def kill_ours(ident: ProcId, grace: float) -> None:
     """Stop a process only when it carries this run's marker: never a fleet pid (dec-a8951bd35b)."""
     ours = {p.pid for p in proc.scan_env_marker(MARK, RUN)}
     import psutil
-    if ident.pid not in ours and not psutil.pid_exists(ident.pid):
+    try:  # a killed child stays a zombie until reaped (POSIX); its environ is unreadable, so it is never "ours"
+        gone = psutil.Process(ident.pid).status() == psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        gone = True
+    if ident.pid not in ours and gone:
         return  # already gone
     assert ident.pid in ours, f"pid {ident.pid} is not a process this test started; refusing to kill it"
     kill_tree(ident, grace=grace)

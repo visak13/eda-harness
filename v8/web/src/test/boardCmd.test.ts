@@ -19,7 +19,8 @@ describe("resolveBoardCmd", () => {
     expect(resolveBoardCmd(".venv/Scripts/edp8-board.exe --x 1", REPO, (p) => p === want)).toEqual([want, "--x", "1"]);
   });
 
-  it("treats a backslash path (the PowerShell form) as a path, not a bare launcher", () => {
+  // a backslash separates paths only on Windows, where PowerShell types this form
+  it.skipIf(process.platform !== "win32")("treats a backslash path (the PowerShell form) as a path, not a bare launcher", () => {
     const bsl = String.fromCharCode(92);
     const want = path.resolve(REPO, ".venv/Scripts/edp8-board.exe");
     expect(resolveBoardCmd([".venv", "Scripts", "edp8-board.exe"].join(bsl), REPO, (p) => p === want)).toEqual([want]);

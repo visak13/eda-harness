@@ -2,11 +2,23 @@
 moved into the default suite. Each failed on main@bfbef15d and passes with its fix; the three negative controls
 (legacy guest read, SSE foreign evidence_ref, loopback guest boundary) pass on both. All tokens are synthetic
 canaries; every board and process boundary is private."""
+import sys
 import asyncio
+import importlib.util
 import json
+
+import pytest
 
 from test_e0cec_s5_guest import (rig, _post, _upload, _feed, _frames, _data,
                                OWNER, ARCH, GUEST, GINA_T, ADMIN)
+
+
+# the pool package lives in edp-pool/; the v8 env has it only when edp-pool/src is on the path
+NEEDS_POOL = pytest.mark.skipif(importlib.util.find_spec("edp_pool") is None, reason="edp_pool not installed in this env")
+
+
+# the MSI / Win32 update path (msiexec, ctypes.windll): Windows-only code, so Windows-only tests
+WINDOWS_ONLY = pytest.mark.skipif(sys.platform != "win32", reason="Windows-only (MSI / Win32 API)")
 
 
 def test_guest_settles_owner_ask(rig):
@@ -19,6 +31,7 @@ def test_guest_settles_owner_ask(rig):
     assert b._settled(ask['id']) is None, 'guest note cleared an owner-addressed ask'
 
 
+@NEEDS_POOL
 def test_codex_no_effort_cap(tmp_path, monkeypatch):
     from edp_pool.codex_launcher import CodexSpawner
     from edp_pool import codex_launcher
@@ -128,6 +141,7 @@ def test_updater_staged_msi_tamper(tmp_path, monkeypatch):
     assert not any(reached), f'tampered verified-cache MSI reached installer; outcome={result}'
 
 
+@WINDOWS_ONLY
 def test_updater_helper_exception_recovery(tmp_path, monkeypatch):
     from edp8 import update_helper as helper
     plan = {'from_version': '0.9.1', 'to_version': '0.9.2', 'result': str(tmp_path / 'result.json'),
@@ -160,6 +174,7 @@ def test_updater_helper_exception_recovery(tmp_path, monkeypatch):
     assert res['state'] == 'rolled_back' and 'KeyError' in res['error'] and res['resumed'] == ['synthetic-seat']
 
 
+@WINDOWS_ONLY
 def test_f2_recovery_failure_keeps_both_errors(tmp_path, monkeypatch):
     """F2: when the restart itself raises, the receipt says failed and names the original and the recovery error."""
     from edp8 import update_helper as helper
@@ -276,6 +291,7 @@ def _capture_popen(monkeypatch, module):
     return captured
 
 
+@NEEDS_POOL
 def test_f4_codex_resume_and_a_pass_through_effort_are_capped(tmp_path, monkeypatch):
     """F4: the launcher clamps after every source of effort, on resume too: a process-env EDP_CODEX_EFFORT and an
     extra_env one that never went through the pool's clamp."""
@@ -293,6 +309,7 @@ def test_f4_codex_resume_and_a_pass_through_effort_are_capped(tmp_path, monkeypa
     assert captured['EDP_CODEX_EFFORT'] == 'low' and captured['EDP_SEAT_EFFORT'] == 'low'
 
 
+@NEEDS_POOL
 def test_f4_pi_thinking_is_capped(tmp_path, monkeypatch):
     from edp_pool import pi_launcher
     _low_cap_catalog(tmp_path, 'pi', 'openai/gpt-6-astra')
@@ -303,6 +320,7 @@ def test_f4_pi_thinking_is_capped(tmp_path, monkeypatch):
     assert captured['EDP_PI_THINKING'] == 'low'
 
 
+@NEEDS_POOL
 def test_f4_pool_clamp_records_capped_harness_effort(tmp_path):
     from edp_pool.codex_launcher import CodexSpawner
     from edp_pool.service import PoolService
@@ -360,6 +378,7 @@ def test_f6_a_changed_previous_msi_fails_before_anything_stops(tmp_path, monkeyp
     assert actions == [] and result['state'] == 'failed' and 'old.msi changed' in result['reason']
 
 
+@WINDOWS_ONLY
 def test_f6_a_change_after_the_first_check_never_reaches_msiexec(tmp_path, monkeypatch):
     """F6: the digest is checked again at the last moment; a change during the stop restarts the old version."""
     from edp8 import update_helper as helper

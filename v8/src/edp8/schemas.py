@@ -1005,6 +1005,7 @@ ENUMS: dict[str, type[StrEnum]] = {
     "WorkflowAction": WorkflowAction,
     "TeammateAction": TeammateAction,
     "AskState": AskState,
+    "RequirementState": RequirementState,
 }
 
 

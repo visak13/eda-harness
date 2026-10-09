@@ -64,7 +64,7 @@ def test_ticket_skill_last_step_is_a_direct_link_with_the_button():
     assert "Approve criterion" in step and "Needs work" in step and "criterion card" in step
     card = (V8 / "web/src/components/CriterionCard.tsx").read_text(encoding="utf-8")
     assert "Approve criterion" in card and "Needs work" in card
-    assert "Needs you" in step  # says not to send the owner hunting there
+    assert "Needs you" not in step  # the Needs you view is gone (s-aa76c83998); the link is the only route
     assert not re.search(r"https?://(127\.0\.0\.1|localhost)", step)  # no hardcoded link base
     # the template block itself: link on its own line, not closed by punctuation
     tpl = step.split("```", 2)[1]

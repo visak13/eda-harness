@@ -104,15 +104,12 @@ def test_gate_open_carries_a_legacy_drafted_epic_that_has_both_pieces(board, ps)
     assert board.ticket(epic.id).status == TicketStatus.signed_off
 
 
-def test_gate_open_refuses_a_story_and_a_quick_task_without_a_note(board, ps):
+def test_gate_open_refuses_a_story(board, ps):
+    # a quick task has no design step any more (owner m-85520c3bd1, design-63db8a7d42 N): its words are the design
     epic = _epic(board, ps)
     s = board.ticket_create(ps["arch"], kind=TicketKind.story, work_type=WorkType.feature, title="S", parent_id=epic.id)
     with pytest.raises(BoardError, match="answered on the epic"):
         board.gate_open(s.id, Gate.design_signoff, by="arch")
-    q = board.ticket_create(ps["owner"], kind=TicketKind.story, work_type=WorkType.feature, title="Q",
-                            words="w", tags=["quick"], assignee="eng")
-    with pytest.raises(BoardError, match="no design note"):
-        board.gate_open(q.id, Gate.design_signoff, by="eng")
 
 
 def test_gate_open_refuses_a_lint_offender_with_the_answer_s_words(board, ps):
@@ -134,19 +131,13 @@ def test_quick_standalone_ticket_walks_owner_note_signoff_checker_done(board, ps
     q = board.ticket_create(ps["owner"], kind=TicketKind.story, work_type=WorkType.feature, title="Q",
                             words="rename the tab", tags=["quick"], assignee="eng")
     assert q.parent_id is None and q.status == TicketStatus.ready
-    # no edit before the owner signs the engineer's design note
-    with pytest.raises(BoardError, match="design sign-off"):
-        board.ticket_update(ps["eng"], q.id, status=TicketStatus.in_progress)
-    note = board.doc_create(ps["eng"], doc_type=DocType.note, title="Design", body_md="what/how", scope=q.id)
-    board.ticket_update(ps["eng"], q.id, design_ref=note.id)
-    board.gate_open(q.id, Gate.design_signoff, by="eng", note="please review")
-    board.gate_answer(ps["owner"], q.id, Gate.design_signoff, "go")
+    # no design step (owner m-85520c3bd1, design-63db8a7d42 N): the owner's words are the design
     board.ticket_update(ps["eng"], q.id, status=TicketStatus.in_progress)
     c = board.criterion_create(ps["eng"], ticket_id=q.id, text="tab reads Seats", check=Check.verdict)
     rep = board.doc_create(ps["eng"], doc_type=DocType.report, title="R", body_md="done", scope=q.id)
     board.criterion_update(ps["eng"], c.id, evidence_ref=rep.id)
     board.ticket_update(ps["eng"], q.id, status=TicketStatus.in_review)
-    # the board-derived checker verdicts (on a quick task: the owner, from Needs you)
+    # the board-derived checker verdicts (on a quick task: the owner)
     assert c.checked_by == board.checker_for(board.ticket(q.id)) == "owner"
     views.record_verdict(board, ps["owner"], criterion_id=c.id, verdict="pass", evidence_version=1)
     assert board.ticket(q.id).status == TicketStatus.done

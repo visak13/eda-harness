@@ -155,7 +155,7 @@ def test_admin_update_check_and_apply_backup_stop_upgrade_start(inst, tmp_path):
 
         # backup -> stop (the detached `heronry update`'s own output), then upgrade -> start (the helper's log)
         out = next(inst["home"].rglob("update-run.out")).read_text(encoding="utf-8", errors="replace")
-        i_backup, i_stop = out.index("backed up the DB to"), out.index("stopped the supervisor and services")
+        i_backup, i_stop = out.index("backup: the DB to"), out.index("stop: the supervisor and services")
         assert i_backup < i_stop, out
         log = next(inst["home"].rglob("update.log")).read_text(encoding="utf-8", errors="replace")
         assert log.index("install exit 0") < log.index("start exit 0"), log

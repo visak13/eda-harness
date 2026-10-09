@@ -116,7 +116,7 @@ Inside a `store.transaction()`, the Board checks the invariants and writes typed
   - `_INDEXED` lists the queryable columns per type (`store.py:29`). Tables are created from `OBJECT_TYPES`, plus `doc_versions`, `seq`, `idem` and `store_meta` (`store.py:116`).
   - `transaction(immediate=)` nests writes, commits once, and only then runs `after_commit` callbacks. That is how events reach the feed after a durable commit (`store.py:81`, `store.py:108`).
   - `put` stamps the next global seq (`store.py:337`). `query`/`query_seq`/`events_since` page by seq (`store.py:371`, `store.py:508`). `fts_search` is the FTS5 leg (`store.py:295`).
-  - Open-time migrations retire roles and migrate the reviewer role and doc layout (`store.py:183`).
+  - Open-time migrations retire roles and move the retired review role's rows to qa and migrate the doc layout (`store.py:183`).
 - **Talks to:** `schemas`. It is used by `board`, `idempotency` (the `idem` table), `workflow.WorkflowRegistry`, `knowledge`, `records` and `pains`.
 
 ### `schemas.py` (~1075 lines)

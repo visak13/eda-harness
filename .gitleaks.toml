@@ -47,3 +47,20 @@ condition = "AND"
 paths = ['''^v8/docs/evidence/astra-seat\.md$''']
 regexTarget = "secret"
 regexes = ['''^EDP_HARNESS=pi$''']
+
+# Planted fake credentials the guest-leak tests and the live guest probe feed the redactor (e0cec S5):
+# they must look like a key so the redaction is proven. None is a live credential.
+[[allowlists]]
+description = "planted fake credentials in the guest redaction tests and probe"
+targetRules = ["generic-api-key", "curl-auth-header"]
+condition = "AND"
+paths = [
+  '''^v8/tests/test_[a-z0-9_]+\.py$''',
+  '''^v8/scripts/guest_live_probe\.py$''',
+]
+regexTarget = "match"
+regexes = [
+  '''0123456789abcdef''',
+  '''tok-SEAT-SECRET-123''',
+  '''tok-abcdef-123456''',
+]
