@@ -8,6 +8,9 @@ rem
 rem It shows each step and ends with the result; the window stays open until a key is pressed. Nothing is hidden:
 rem the Windows Installer shows its own progress bar, and its log is named at the end.
 setlocal EnableExtensions
+rem Started from PowerShell 7, the PSModulePath it passes down hides Windows PowerShell's own modules (Get-FileHash
+rem was "not recognized" on the CI runner); unset, powershell.exe builds its default.
+set "PSModulePath="
 set "HERE=%~dp0"
 set "DIR=%LOCALAPPDATA%\Programs\Heronry contributors\Heronry Desktop"
 set "EXE=%DIR%\heronry.exe"
@@ -22,7 +25,7 @@ echo.
 
 echo [1/6] Checking the installer against SHA256SUMS
 if not defined MSI (echo   No "Heronry Desktop-*.msi" beside this script. & goto :fail)
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$n = Split-Path -Leaf $env:MSI; $s = (Get-FileHash -Algorithm SHA256 -LiteralPath $env:MSI).Hash.ToLower(); $l = @(Get-Content -LiteralPath (Join-Path $env:HERE 'SHA256SUMS') -ErrorAction SilentlyContinue | Where-Object { $_.EndsWith('  ' + $n) }); if (-not $l) { '  ' + $n + ' is not listed in SHA256SUMS'; exit 1 }; if ($l[0].Split(' ')[0] -ne $s) { '  checksum mismatch for ' + $n; exit 1 }; '  OK ' + $s"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$n = Split-Path -Leaf $env:MSI; $f = [IO.File]::OpenRead($env:MSI); try { $s = -join ([Security.Cryptography.SHA256]::Create().ComputeHash($f) | ForEach-Object { $_.ToString('x2') }) } finally { $f.Dispose() }; $l = @(Get-Content -LiteralPath (Join-Path $env:HERE 'SHA256SUMS') -ErrorAction SilentlyContinue | Where-Object { $_.EndsWith('  ' + $n) }); if (-not $l) { '  ' + $n + ' is not listed in SHA256SUMS'; exit 1 }; if ($l[0].Split(' ')[0] -ne $s) { '  checksum mismatch for ' + $n; exit 1 }; '  OK ' + $s"
 if errorlevel 1 goto :fail
 
 set "CODE_WAS_RUNNING="

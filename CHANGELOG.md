@@ -34,6 +34,8 @@ This release fixes what qa found in the 0.10.7 candidate.
   tools: run `/mcp` and pick Reconnect for edp8. Seats reconnect on their own.
 
 ### Fixed
+- **install-heronry.cmd from PowerShell 7:** started from a PowerShell 7 terminal, it stopped at the checksum
+  step with "Get-FileHash is not recognized". It now checks the installer the same way from any terminal.
 - **Start:** a second `heronry start` leaves a running MCP server alone. It used to stop and restart it, which
   dropped the edp8 tools from open Claude Code sessions until they reconnected.
 - **EDP Chat in Restricted Mode:** it loads in a folder you have not trusted yet. Git features stay off until you
