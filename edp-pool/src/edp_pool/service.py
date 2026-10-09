@@ -92,6 +92,20 @@ def _split_handle(handle: str) -> tuple[str | None, str | None]:
     return handle[:idx], handle[idx + 1:]
 
 
+_SECRET_ENV = ("TOKEN", "SECRET", "PASSWORD", "API_KEY", "APIKEY", "CREDENTIAL")
+
+
+def _public_row(row: dict) -> dict:
+    """A session row as GET /v1/sessions serves it: the shell env's secrets (the seat's EDP8_TOKEN, any provider
+    key) are replaced by "<redacted>". The pool's API is loopback-only but unauthenticated, so any local process
+    could otherwise read every seat's board token (qa report-e7d6cb204c v7). The stored row keeps them for resume."""
+    env = (row.get("spawn_settings") or {}).get("env")
+    if not isinstance(env, dict):
+        return row
+    clean = {k: ("<redacted>" if v and any(s in str(k).upper() for s in _SECRET_ENV) else v) for k, v in env.items()}
+    return {**row, "spawn_settings": {**row["spawn_settings"], "env": clean}}
+
+
 def _row_matches_recipe(row: dict, recipe_id: str) -> bool:
     """Does a session row belong to `recipe_id`?
 
@@ -2857,7 +2871,7 @@ def create_app(
         # unfiltered full list, exactly as before (compatibility). Rows
         # persisted by an OLD pool have no `recipe_id` key → read with
         # `.get`, never `[...]`, so a legacy row filters out, never raises.
-        rows = list(svc.sessions.values())
+        rows = [_public_row(r) for r in list(svc.sessions.values())]
         if recipe_id is None:
             return rows
         return [r for r in rows if _row_matches_recipe(r, recipe_id)]

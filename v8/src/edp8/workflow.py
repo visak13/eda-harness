@@ -38,7 +38,7 @@ KERNEL_PREAMBLE = """<!-- edp kernel preamble (ships with the app; not editable 
 A seat with the edp-wake mod (`subscribe()` returns `wake: "mod"`, no `monitor_cmd`) never arms a Monitor.
 **Heartbeat:** `context_delta(cursor=<your last cursor>)`; `context()` only at boot or on resync_required.
 **Feed and wake:** you wake on events addressed to you and on your tickets; on an idle wake with your work
-in progress, resume the next unbuilt item of your plan; end the turn silently only when handed off or blocked.
+in progress, resume the next unbuilt item of your plan; only when handed off or blocked, end with one short line.
 **Communication:** report on the board only (`message_send` on the ticket thread); nobody reads the shell.
 **Close:** `inbox()` → `record_status` → close when your work is handed off.
 

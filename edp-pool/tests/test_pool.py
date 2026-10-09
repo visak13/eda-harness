@@ -487,3 +487,16 @@ def test_spawn_settings_record_whether_the_session_continues_an_old_one(client):
     svc = client.app.state.svc
     row = svc.sessions[r.json()["session_id"]]
     assert row["spawn_settings"]["resume_session"] is None and "resumed_at" not in row
+
+
+def test_sessions_listing_redacts_the_shell_env_secrets(client):
+    """qa report-e7d6cb204c v7: the loopback pool API is unauthenticated, so GET /v1/sessions must not hand out a
+    seat's board token or a provider key; the stored row keeps them for resume, and plain values stay readable."""
+    from edp_pool.service import _public_row
+    row = {"session_id": "s", "spawn_settings": {"env": {"EDP8_TOKEN": "tok-x", "OPENAI_API_KEY": "sk-x",
+                                                          "EDP_SPAWN_TICKET": "t-1", "EDP8_BOARD_URL": "http://b"}}}
+    env = _public_row(row)["spawn_settings"]["env"]
+    assert env == {"EDP8_TOKEN": "<redacted>", "OPENAI_API_KEY": "<redacted>", "EDP_SPAWN_TICKET": "t-1",
+                   "EDP8_BOARD_URL": "http://b"}
+    assert row["spawn_settings"]["env"]["EDP8_TOKEN"] == "tok-x"  # the stored row is untouched
+    assert _public_row({"session_id": "s"}) == {"session_id": "s"}

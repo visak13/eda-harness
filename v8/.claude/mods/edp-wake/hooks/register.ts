@@ -13,8 +13,8 @@ const NO_LISTENER_TEXT =
   're-arm it whenever it ends. Then continue your plan.'
 const HEARTBEAT_TEXT =
   'heartbeat: context_delta(cursor=your last valid cursor) for anything new and answer it, then RESUME THE NEXT ' +
-  'UNBUILT ITEM of your plan doc. End the turn silently when your ticket is in_review/done, you are blocked ' +
-  '(said so on the board), or you hold no ticket.'
+  'UNBUILT ITEM of your plan doc. When your ticket is in_review/done, you are blocked (said so on the board), or ' +
+  'you hold no ticket, end the turn with one short line: an empty reply makes Claude Code prompt you again.'
 
 // Splits a stream of text pieces into complete lines; the tail waits for its newline.
 export function lineSplitter(): (piece: string) => string[] {

@@ -142,8 +142,8 @@ _DELIVERED_KEEP = 4000
 
 _LIVENESS_NEXT = ("heartbeat: you are mid-plan. context_delta(cursor=your last valid cursor) for anything new, "
                   "answer it, then RESUME THE NEXT UNBUILT ITEM of your plan doc — a quiet board is not a reason to "
-                  "stop. End the turn silently only when your ticket is in_review/done or you are blocked "
-                  "(record_status(status=blocked) and a deviation first).")
+                  "stop. Only when your ticket is in_review/done or you are blocked (record_status(status=blocked) and a "
+                  "deviation first), end the turn with one short line: an empty reply is prompted again.")
 _CHANGES_NEXT = ("heartbeat: the board changed for you after your feed last woke you. "
                  "context_delta(cursor=your last valid cursor), answer what is new, then continue your plan.")
 _RESYNC_NEXT = ("heartbeat: your orientation changed (scope, retention or a board reset). "

@@ -22,8 +22,9 @@ Use a table for 3+ rows of same-shaped state; complete sentences everywhere
 
 ## Never write
 
-- Anything on a no-change wake: `reconcile.changed=false` + wait ⇒ end the
-  turn with ZERO text.
+- More than one short line on a no-change wake: `reconcile.changed=false` +
+  wait ⇒ one short line. Not zero: an empty turn is prompted again, a second
+  model turn (qa report-e7d6cb204c v7).
 - Narrated grounding ("checking…", "checked:") — the tool trail narrates.
 - Re-derivations of settled record — cite id + gloss; the record wins.
 - A second explanation of a standing condition you explained this session.

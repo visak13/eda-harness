@@ -34,6 +34,10 @@ This release fixes what qa found in the 0.10.7 candidate.
   tools: run `/mcp` and pick Reconnect for edp8. Seats reconnect on their own.
 
 ### Fixed
+- **Seat tokens:** the pool's session list no longer shows each seat's board token or provider keys. The pool
+  answers on this computer only, but any program running here could read them.
+- **Quiet wakes cost one model turn, not two:** a seat with nothing to do now ends a heartbeat with one short
+  line. An empty reply made Claude Code prompt the seat a second time.
 - **install-heronry.cmd from PowerShell 7:** started from a PowerShell 7 terminal, it stopped at the checksum
   step with "Get-FileHash is not recognized". It now checks the installer the same way from any terminal.
 - **Start:** a second `heronry start` leaves a running MCP server alone. It used to stop and restart it, which
