@@ -186,7 +186,11 @@ def test_parked_seats_are_interrupted_too_and_only_the_updaters_park_is_relaunch
         launched = {r["handle"] for r in new}
         assert not launched & set(HANDLES[:2]), f"an ordinary parked seat was relaunched: {launched}"
         assert not rows[HANDLES[2]].get("park_for_update"), "the updater's park flag is spent once the pool resumes it"
-        assert rows[HANDLES[2]]["state"] == "active", rows[HANDLES[2]]  # the one automatic relaunch
+        deadline = time.monotonic() + 30  # the one automatic relaunch: `resuming` until its shell reports in
+        while rows[HANDLES[2]]["state"] == "resuming" and time.monotonic() < deadline:
+            time.sleep(0.5)
+            rows = {r["handle"]: r for r in _rows(base)}
+        assert rows[HANDLES[2]]["state"] == "active", rows[HANDLES[2]]
         assert len(_stub_shells()) >= 1
     finally:
         for pid in (pool2_id, pool_id):
