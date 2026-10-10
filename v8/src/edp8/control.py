@@ -83,6 +83,14 @@ def make_handler(token: str, port_ref: list[int], dispatch: Dispatch) -> type[Ba
 
         def do_POST(self) -> None:  # noqa: N802
             if not self._authorised():
+                # read a small body first: closing with unread bytes resets the socket on Windows, and the caller
+                # then loses the 403 (WinError 10053 in CI)
+                try:
+                    n = int(self.headers.get("Content-Length") or 0)
+                except ValueError:
+                    n = 0
+                if 0 < n <= 65536:
+                    self.rfile.read(n)
                 self._send(403, {"ok": False, "error": "forbidden"})
                 return
             try:
