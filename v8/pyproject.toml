@@ -97,7 +97,8 @@ artifacts = ["src/edp8/webapp/dist/**", "vscode-ext/edp-code/edp-code.vsix"]
 # skips its freshness check when web/src is absent, and dist rides along as an artifact.
 only-include = [
   "src", "hatch_build.py", "README.md", "LICENSE", "NOTICE",
-  ".claude/commands", ".claude/skills", ".claude/output-styles", ".claude/hooks", "guides", ".mcp.json", "models.json", "CLAUDE.md",
+  ".claude/commands", ".claude/skills", ".claude/output-styles", ".claude/hooks", ".claude/mods", "guides", ".mcp.json",
+  "models.json", "CLAUDE.md",
   "assets/brand/heronry/heronry-splash.png", "assets/brand/heronry/icons", "vscode-ext/code-server.lock.json",
   "vscode-ext/extensions.txt", "vscode-ext/extensions.lock.json", "vscode-ext/edp-code/edp-code.vsix",
   "docs/operator/code-tab-faq.md", "docs/operator/remote-access.md",
