@@ -1,0 +1,611 @@
+{
+  "$defs": {
+    "CheckerRule": {
+      "additionalProperties": false,
+      "properties": {
+        "when": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/When"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role"
+      ],
+      "title": "CheckerRule",
+      "type": "object"
+    },
+    "GateDef": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "answerers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Answerers",
+          "type": "array"
+        },
+        "requires": {
+          "items": {
+            "$ref": "#/$defs/Precondition"
+          },
+          "title": "Requires",
+          "type": "array"
+        },
+        "answer_requires": {
+          "items": {
+            "$ref": "#/$defs/Precondition"
+          },
+          "title": "Answer Requires",
+          "type": "array"
+        },
+        "question": {
+          "default": "",
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "GateDef",
+      "type": "object"
+    },
+    "HookSetting": {
+      "additionalProperties": false,
+      "properties": {
+        "on": {
+          "default": true,
+          "title": "On",
+          "type": "boolean"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "title": "HookSetting",
+      "type": "object"
+    },
+    "Precondition": {
+      "additionalProperties": false,
+      "description": "One named check. `message`/`hint` are templates filled from the predicate's detail\n({id} {kind} {status} {to} {role} plus predicate fields). `hook` ties it to a hook's on/off.",
+      "properties": {
+        "check": {
+          "title": "Check",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        },
+        "when": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/When"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "code": {
+          "default": "transition",
+          "enum": [
+            "scope",
+            "transition"
+          ],
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "default": "",
+          "title": "Message",
+          "type": "string"
+        },
+        "hint": {
+          "default": "",
+          "title": "Hint",
+          "type": "string"
+        },
+        "hook": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hook"
+        },
+        "phase": {
+          "default": "both",
+          "enum": [
+            "open",
+            "answer",
+            "both"
+          ],
+          "title": "Phase",
+          "type": "string"
+        }
+      },
+      "required": [
+        "check"
+      ],
+      "title": "Precondition",
+      "type": "object"
+    },
+    "RoleDef": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "default": "",
+          "title": "Label",
+          "type": "string"
+        },
+        "human": {
+          "default": false,
+          "title": "Human",
+          "type": "boolean"
+        },
+        "card": {
+          "default": "",
+          "title": "Card",
+          "type": "string"
+        },
+        "card_md": {
+          "default": "",
+          "title": "Card Md",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "harness": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Harness"
+        },
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effort"
+        },
+        "bundle": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bundle"
+        },
+        "spawnable": {
+          "default": false,
+          "title": "Spawnable",
+          "type": "boolean"
+        },
+        "may_spawn": {
+          "items": {
+            "type": "string"
+          },
+          "title": "May Spawn",
+          "type": "array"
+        },
+        "may_create": {
+          "items": {
+            "type": "string"
+          },
+          "title": "May Create",
+          "type": "array"
+        },
+        "criterion_author": {
+          "default": false,
+          "title": "Criterion Author",
+          "type": "boolean"
+        },
+        "criterion_checker": {
+          "default": false,
+          "title": "Criterion Checker",
+          "type": "boolean"
+        },
+        "gate_answerer": {
+          "default": false,
+          "title": "Gate Answerer",
+          "type": "boolean"
+        },
+        "doc_types": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Doc Types",
+          "type": "array"
+        },
+        "capacity_class": {
+          "anyOf": [
+            {
+              "enum": [
+                "builder",
+                "planner",
+                "checker"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capacity Class"
+        },
+        "max_concurrent": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Concurrent"
+        },
+        "kernel": {
+          "default": true,
+          "title": "Kernel",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "RoleDef",
+      "type": "object"
+    },
+    "TransitionDef": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "title": "From",
+          "type": "string"
+        },
+        "to": {
+          "title": "To",
+          "type": "string"
+        },
+        "requires": {
+          "items": {
+            "$ref": "#/$defs/Precondition"
+          },
+          "title": "Requires",
+          "type": "array"
+        },
+        "auto": {
+          "default": false,
+          "title": "Auto",
+          "type": "boolean"
+        },
+        "auto_when": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/When"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "title": "TransitionDef",
+      "type": "object"
+    },
+    "When": {
+      "additionalProperties": false,
+      "description": "Which tickets a precondition (or checker rule) applies to; every set field must match.",
+      "properties": {
+        "kinds": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kinds"
+        },
+        "not_kinds": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Not Kinds"
+        },
+        "work_types": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Work Types"
+        },
+        "quick": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quick"
+        },
+        "parentless": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parentless"
+        },
+        "from_in": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From In"
+        },
+        "from_not_in": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From Not In"
+        },
+        "quick_root": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quick Root"
+        }
+      },
+      "title": "When",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "version": {
+      "default": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "name": {
+      "default": "",
+      "title": "Name",
+      "type": "string"
+    },
+    "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+    },
+    "builtin": {
+      "default": false,
+      "title": "Builtin",
+      "type": "boolean"
+    },
+    "published": {
+      "default": false,
+      "title": "Published",
+      "type": "boolean"
+    },
+    "source": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source"
+    },
+    "roles": {
+      "items": {
+        "$ref": "#/$defs/RoleDef"
+      },
+      "title": "Roles",
+      "type": "array"
+    },
+    "kinds": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Kinds",
+      "type": "array"
+    },
+    "statuses": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Statuses",
+      "type": "array"
+    },
+    "terminal": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Terminal",
+      "type": "array"
+    },
+    "transitions": {
+      "items": {
+        "$ref": "#/$defs/TransitionDef"
+      },
+      "title": "Transitions",
+      "type": "array"
+    },
+    "checkers": {
+      "items": {
+        "$ref": "#/$defs/CheckerRule"
+      },
+      "title": "Checkers",
+      "type": "array"
+    },
+    "caps": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Caps",
+      "type": "object"
+    },
+    "gates": {
+      "items": {
+        "$ref": "#/$defs/GateDef"
+      },
+      "title": "Gates",
+      "type": "array"
+    },
+    "permissions": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "title": "Permissions",
+      "type": "object"
+    },
+    "hooks": {
+      "additionalProperties": {
+        "$ref": "#/$defs/HookSetting"
+      },
+      "title": "Hooks",
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "roles",
+    "kinds",
+    "statuses",
+    "transitions",
+    "checkers"
+  ],
+  "title": "WorkflowDef",
+  "type": "object"
+}
